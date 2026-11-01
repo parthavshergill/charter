@@ -47,8 +47,8 @@ These are under `vars` in `cloudflare/wrangler.jsonc`. Change a value and run `n
 | `CHARTER_GAMES_PER_DAY` | 500 | New tables a day, for the whole server. This limits storage, not spending. |
 | `CHARTER_GAMES_PER_IP_DAY` | 100 | New tables a day, for one IP address. |
 | `CHARTER_TABLE_AWAY_MS` | 180000 | A table pauses after this long with none of its people there. |
-| `CHARTER_DESCRIBE_MODEL` | `claude-haiku-5-5` | The model that writes a law's description. |
-| `CHARTER_DESCRIBE_EFFORT` | `medium` | The effort of that call. |
+| `CHARTER_DESCRIBE_MODEL` | `claude-sonnet-5-5` | The model that writes a law's description. |
+| `CHARTER_DESCRIBE_EFFORT` | `low` | The effort of that call. |
 | `CHARTER_PRICE_INPUT_USD` | 4 | Dollars per million input tokens, for Opus and for any model with no prices of its own. |
 | `CHARTER_PRICE_OUTPUT_USD` | 20 | Dollars per million output tokens, the same way. |
 | `CHARTER_PRICE_CACHE_READ_USD` | 0.20 | Dollars per million cache-read tokens, the same way. |

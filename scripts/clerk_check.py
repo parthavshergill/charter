@@ -411,8 +411,8 @@ def check_descriptions(srv, data, port, api_port):
     # What goes out.
     check(len(StandIn.describe_requests) == before + 1, "one law, one call")
     body = StandIn.describe_requests[-1]
-    check(body["model"] == "claude-haiku-5-5" and body["output_config"] == {"effort": "medium"}, "it uses its own model and effort")
-    for banned in ("temperature", "top_p", "top_k", "fallbacks", "thinking", "tools", "tool_choice"):
+    check(body["model"] == "claude-sonnet-5-5" and body["output_config"] == {"effort": "low"} and body["fallbacks"] == "default", "it uses its own model and effort")
+    for banned in ("temperature", "top_p", "top_k", "thinking", "tools", "tool_choice"):
         check(banned not in body, f"it sends no {banned}")
     check(len(body["messages"]) == 1 and body["messages"][0]["role"] == "user", "it sends no prefill")
     sent = json.dumps(body)

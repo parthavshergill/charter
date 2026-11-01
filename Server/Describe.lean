@@ -25,7 +25,7 @@ No description is a normal case: a hand-written law, a clerk resting on budget, 
 or an empty reply. The screen then shows the source with a short note.
 
 The call goes through `Formalize.runRequest`, so the budgets cover it and it is priced as the model it
-went to. It does not send `fallbacks`, because the description model has no server-side fallback for a
+went to. It sends `fallbacks` only for a Sonnet model, because Haiku has no server-side fallback for a
 refusal. It sends no temperature, no top_p, no top_k and no prefill.
 -/
 
@@ -36,7 +36,7 @@ open Lean Charter CharterServer.Game
 def maxWords : Nat := 45
 /-- How many replies a description can get. A later one is told that the last was too long. -/
 def maxAttempts : Nat := 2
-/-- This allows for thinking as well as the few words of the reply. At `medium` effort a hard law can
+/-- This allows for thinking as well as the few words of the reply. At a higher effort a hard law can
 think for a thousand tokens or more. -/
 def maxOutputTokens : Nat := 4000
 /-- A person is waiting with the source already on screen, so this does not wait long. -/
@@ -175,9 +175,9 @@ structure Settings where
 
 def settings (root : System.FilePath) : IO Settings := do
   let api ← Formalize.settings root
-  return { api := { api with model := (← IO.getEnv "CHARTER_DESCRIBE_MODEL").getD "claude-haiku-5-5"
+  return { api := { api with model := (← IO.getEnv "CHARTER_DESCRIBE_MODEL").getD "claude-sonnet-5-5"
                              promptPath := root / "Server" / "describer.md" }
-           effort := (← IO.getEnv "CHARTER_DESCRIBE_EFFORT").getD "medium" }
+           effort := (← IO.getEnv "CHARTER_DESCRIBE_EFFORT").getD "low" }
 
 /-- The user message holds the law and nothing else. On a second try it also holds the last reply. -/
 def userMessage (L : Law) (retry : Option (String × Nat)) : String :=
@@ -188,13 +188,16 @@ def userMessage (L : Law) (retry : Option (String × Nat)) : String :=
     s!"{base}\n\n<last_reply>\n{Clerk.neutralize prior}\n</last_reply>\n\nThat reply has {words} words. Write it again in at most 40 words, with nothing else."
 
 def requestBody (cfg : Settings) (system user : String) : Json :=
-  Json.mkObj
+  let fields : List (String × Json) :=
     [ ("model", cfg.api.model)
     , ("max_tokens", toJson maxOutputTokens)
     , ("stream", toJson true)
     , ("output_config", Json.mkObj [("effort", cfg.effort)])
     , ("system", Json.arr #[Json.mkObj [("type", "text"), ("text", system)]])
     , ("messages", Json.arr #[Json.mkObj [("role", "user"), ("content", user)]]) ]
+  let fallback : List (String × Json) :=
+    if cfg.api.model.startsWith "claude-sonnet" then [("fallbacks", "default")] else []
+  Json.mkObj (fields ++ fallback)
 
 /-! ## The reply -/
 

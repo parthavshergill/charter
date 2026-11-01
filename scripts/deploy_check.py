@@ -369,13 +369,13 @@ def description_prices(api, root):
         return model, rows[-1], rows[0]
 
     model, cost, clerk = description_cost()
-    check(model == "claude-haiku-5-5", "the default description model is Haiku")
-    check(cost == 150, f"1000 input and 100 output tokens cost $0.000150 at Haiku's prices ({cost} millionths)")
+    check(model == "claude-sonnet-5-5", "the default description model is Sonnet")
+    check(cost == 3000, f"1000 input and 100 output tokens cost $0.003000 at Sonnet's prices ({cost} millionths)")
     check(clerk == 100, f"the clerk's call is still at Opus prices: 10 input and 3 output tokens are $0.000100 ({clerk} millionths)")
-    _, cost, _ = description_cost(CHARTER_PRICE_HAIKU_INPUT_USD="1", CHARTER_PRICE_HAIKU_OUTPUT_USD="5")
+    _, cost, _ = description_cost(CHARTER_DESCRIBE_MODEL="claude-haiku-5-5", CHARTER_PRICE_HAIKU_INPUT_USD="1", CHARTER_PRICE_HAIKU_OUTPUT_USD="5")
     check(cost == 1500, f"CHARTER_PRICE_HAIKU_* change those prices ({cost} millionths)")
-    model, cost, _ = description_cost(CHARTER_DESCRIBE_MODEL="claude-sonnet-5-5")
-    check(model == "claude-sonnet-5-5" and cost == 3000, f"another description model is priced as that model ({cost} millionths)")
+    model, cost, _ = description_cost(CHARTER_DESCRIBE_MODEL="claude-haiku-5-5")
+    check(model == "claude-haiku-5-5" and cost == 150, f"another description model is priced as that model ({cost} millionths)")
     model, cost, _ = description_cost(CHARTER_DESCRIBE_MODEL="a-model-with-no-prices")
     check(cost == 6000, f"a model with no prices of its own is charged at the highest ({cost} millionths)")
 

@@ -45,7 +45,7 @@ structure Prices where
   cacheWrite : Micros := 5000000
   deriving Inhabited
 
-/-- The list prices of `claude-haiku-5-5`, which writes the law descriptions. That call uses no cache,
+/-- The list prices of `claude-haiku-5-5`, if it writes the law descriptions. That call uses no cache,
 so the two cache prices are only estimates, at the same ratios as Opus. -/
 def haikuPrices : Prices := { input := 100000, output := 500000, cacheRead := 5000, cacheWrite := 125000 }
 

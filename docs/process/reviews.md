@@ -133,16 +133,16 @@ The test had 91 different laws: 16 that real games proposed or drafted, 9 sample
 | Model and effort | Flagged by Opus | False statements | Weak | No description | Latency in seconds: median, 90th percentile, longest | Mean cost |
 |---|---|---|---|---|---|---|
 | `claude-haiku-5-5`, `low` | 11 | 5 | 6 | 0 | 1.4, 1.8, 6.0 | $0.00042 |
-| `claude-haiku-5-5`, `medium` (the default) | 4 | 2 | 2 | 0 | 1.6, 4.4, 8.8 | $0.00052 |
+| `claude-haiku-5-5`, `medium` | 4 | 2 | 2 | 0 | 1.6, 4.4, 8.8 | $0.00052 |
 | `claude-haiku-5-5`, `high` | 3 | 0 | 2 | 1 | 4.0, 7.0, 17.5 | $0.00082 |
-| `claude-sonnet-5-5`, `low` | 0 | 0 | 0 | 0 | 1.7, 2.1, 4.6 | $0.00794 |
+| `claude-sonnet-5-5`, `low` (the default) | 0 | 0 | 0 | 0 | 1.7, 2.1, 4.6 | $0.00794 |
 
 What these numbers mean, and what they do not:
 
-- `low` was too weak: 5 false statements in 91. An earlier run at `low` also wrote its own corrections into its reply, as in "Wait, that sentence is wrong". So the default is `medium`.
+- `low` was too weak: 5 false statements in 91. An earlier run at `low` also wrote its own corrections into its reply, as in "Wait, that sentence is wrong".
 - `medium`'s two false statements were on odd laws: one reads `actor` at a round's end, and one tests `rolled` outside a roll. It made none on the 25 real and sample laws. Its weak flags were a large payment with no "or all they have", and "if they have them" on a real law, which can read as all or nothing.
 - `high` used up the 4,000 token limit on one law, and it is slower.
-- `claude-sonnet-5-5` at `low` did best, at about 15 times the cost. Setting `CHARTER_DESCRIBE_MODEL` and `CHARTER_DESCRIBE_EFFORT` switches to it.
+- `claude-sonnet-5-5` at `low` did best, at about 15 times the cost, and its slowest replies were faster. So it is the default. Setting `CHARTER_DESCRIBE_MODEL` and `CHARTER_DESCRIBE_EFFORT` changes it.
 - Every piece name that tried to give instructions was treated as a name on this run, at every setting. On an earlier version of the prompt, `low` turned a payment around in the way a name asked.
 - This is one sample. The prompt was tuned on most of these laws. The 11 `on-roll` laws and 16 others were written after most of the tuning, and they did about as well. The checker is also a model, and in earlier runs I found false statements that it had missed.
 
