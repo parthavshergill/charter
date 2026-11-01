@@ -19,7 +19,12 @@ def patch(text):
     text = text.replace(anchor, INCLUDE + "\n" + anchor)
     fallback = "#else\n    (void)enc;\n#endif\n}\n\nstatic void create_custom_decoder"
     assert text.count(fallback) == 1, "src/ocean.cu is not the pinned version"
-    return text.replace(fallback, BRANCH + fallback)
+    text = text.replace(fallback, BRANCH + fallback)
+    dec = "static void create_custom_decoder(Decoder* dec) {\n#ifdef PUFFER_NETHACK"
+    assert text.count(dec) == 1, "src/ocean.cu is not the pinned version"
+    return text.replace(dec, "static void create_custom_decoder(Decoder* dec) {\n"
+                        "#if defined(PUFFER_CHARTER_ENTITY) && defined(CE_POINTER)\n"
+                        "    create_charter_pointer_decoder(dec);\n#elif defined(PUFFER_NETHACK)")
 
 
 if __name__ == "__main__":

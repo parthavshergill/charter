@@ -20,6 +20,7 @@ def tables(layout):
 def header(layout):
     ts = tables(layout)
     lst = lambda xs: "{" + ", ".join(str(x) for x in xs) + "}"
+    names = [t[0] for t in ts]
     starts, acc = [], 0
     for _, _, rows, _ in ts:
         starts.append(acc)
@@ -36,6 +37,14 @@ def header(layout):
         f"#define CE_ROWS_LIST {lst(t[2] for t in ts)}",
         f"#define CE_WIDTH_LIST {lst(t[3] for t in ts)}",
         f"#define CE_ROWSTART_LIST {lst(starts)}",
+        "// For the pointer decoder (CE_POINTER): which tables hold kinds, spots and links, and where their actions are.",
+        f"#define CE_KIND_TABLE {names.index('kinds')}",
+        f"#define CE_SPOT_TABLE {names.index('spots')}",
+        f"#define CE_LINK_TABLE {names.index('links')}",
+        f"#define CE_ACT_SPOT {layout['actions']['spot']}",
+        f"#define CE_ACT_LINK {layout['actions']['link']}",
+        f"#define CE_SPOT_KINDS {layout['limits']['spot_kinds']}",
+        f"#define CE_LINK_KINDS {layout['limits']['link_kinds']}",
         "",
     ])
 

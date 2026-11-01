@@ -9,3 +9,11 @@
 #define CE_ROWS_LIST {1, 6, 8, 9, 24, 60, 84, 16, 1}
 #define CE_WIDTH_LIST {17, 10, 27, 28, 18, 28, 15, 27, 85}
 #define CE_ROWSTART_LIST {0, 1, 7, 15, 24, 48, 108, 192, 208}
+// For the pointer decoder (CE_POINTER): which tables hold kinds, spots and links, and where their actions are.
+#define CE_KIND_TABLE 3
+#define CE_SPOT_TABLE 5
+#define CE_LINK_TABLE 6
+#define CE_ACT_SPOT 215
+#define CE_ACT_LINK 131
+#define CE_SPOT_KINDS 8
+#define CE_LINK_KINDS 1
