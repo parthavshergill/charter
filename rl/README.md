@@ -39,6 +39,25 @@ cd rl && modal run modal_app.py --action eval --run <name>/try1 --subjects "rand
 `train` writes `/vol/<run>/train.log`, `ckpt/` and a meta JSON next to the first and last checkpoint, on the volume
 `charter-rl`. Behind an HTTPS proxy, install `modal[api-proxy-support]` and set `SSL_CERT_FILE` to its CA bundle.
 
+Long and packed runs (from `rl/flat2`):
+
+```bash
+# several runs on one GPU, built once; each gets --vec.num_threads of the CPUs. CHARTER_RL_GPU picks T4, L4 or A10G.
+CHARTER_RL_GPU=L4 nohup modal run --detach modal_app.py --action train-many --cpus 16 --spawn --minutes 200 --max-dollars 6 \
+  --run '[["<name>/a", "--env.shaping_points=0.5"], ["<name>/b", ""]]' --train-args "--vec.num_threads=8" &
+# carry on a stopped run from its newest checkpoint, in ckpt/a<k>/, counting steps over all attempts
+modal run modal_app.py --action train --run <name>/a --resume --train-args "--train.total_timesteps=500_000_000 ..."
+# imitation of hand at any size: collects games at 2 to 6 seats, then clones (or reuses --subjects <data.npz>)
+modal run modal_app.py --action bc --run <name>/bc --games 1200 --train-args "--hidden 256 --epochs 10"
+# copy a checkpoint, its meta and its run's logs to /vol/<CHARTER_RL_NAME>/keep/<label>/, never overwriting
+modal run modal_app.py --action keep --subjects <path to .bin> --out <label>
+```
+
+With `--spawn` the client waits on the call, and `--detach` keeps the call running if the client goes away. Every 10
+minutes training writes a meta next to each new checkpoint (with its total steps, train args and the commit) and
+commits the volume. `env/bot_score` in the training log is the win rate in games where `bot_share` put bots in
+the other seats.
+
 ## PufferLib patches
 
 `rl/puffer/patches/` is applied to every build (`--no-patch` turns it off):

@@ -47,6 +47,7 @@ struct Log {
     float episode_return, episode_length, win_seat0, win_seat1, win_seat2, win_seat3;
     float points, points_share, rounds, decisions, invalid_rate, laws_proposed, laws_passed;
     float hist_score, hist_n, seats;
+    float bot_score, bot_n;   // games where bot_share put bots in the other seats
     float n;
 };
 
@@ -177,7 +178,10 @@ static void finish(Env* env) {
     l->invalid_rate += env->moves ? (float)env->invalid / env->moves : 0.0f;
     l->laws_proposed += info[5];
     l->laws_passed += info[6];
-    if (env->tag > 0) {
+    if (env->num_agents > 1 && env->playing == 1) {
+        l->bot_score += won;
+        l->bot_n += 1.0f;
+    } else if (env->tag > 0) {
         l->hist_score += won;
         l->hist_n += 1.0f;
         env->boundary_reached = 1;
@@ -433,4 +437,6 @@ void puf_log(Log* log, Dict* out) {
     dict_set(out, "hist_score", log->hist_score);
     dict_set(out, "hist_n", log->hist_n);
     dict_set(out, "seats", log->seats);
+    dict_set(out, "bot_score", log->bot_n > 0 ? log->bot_score / log->bot_n : 0.0f);
+    dict_set(out, "bot_n", log->bot_n);
 }
