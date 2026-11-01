@@ -21,7 +21,8 @@ Full mode only (refused in restricted mode):
 
   seat.py say --game CODE --seat S [--to T] TEXT     talk to the table, or privately to seat T
   seat.py offer --game CODE --seat S --give brick:1,wool:1 --get ore:1 [--to T]
-  seat.py propose --game CODE --seat S (--text RULE | --sample ID)
+  seat.py propose --game CODE --seat S (--text RULE | --sample ID) [--check]
+  seat.py declare --game CODE --seat S --res RES --n N
 
 Modes. The mode is chosen once, by `new`, and kept with the game; later commands use it.
 
@@ -163,7 +164,8 @@ def options(view, seat, mode, game):
         decl = view.get("declarations") or {}
         if decl.get("can"):
             top = decl.get("max", 12)
-            levels = DECLARE_LEVELS if mode == "restricted" else list(range(0, top + 1))
+            # The policy's levels. Full mode can declare any other number with `seat.py declare`.
+            levels = DECLARE_LEVELS
             for res in view.get("resources", []):
                 for n in levels:
                     if n <= top:
@@ -348,13 +350,27 @@ def render(view, seat, game, opts):
     lines.append("")
     if opts:
         lines.append("Your moves (answer with: seat.py play --game CODE --seat S N):")
+        declares = {}
         for n, o in enumerate(opts):
+            mv = o.get("move") or {}
+            if mv.get("t") == "declare":
+                # Many numbers per resource: one line each, as N=amount.
+                declares.setdefault(mv["res"], []).append(f"{n}={mv['n']}")
+                continue
             lines.append(f"  {n}: {o['label']}")
+        if declares:
+            lines.append("  Declarations (a public number per resource; it moves nothing, only laws read it,"
+                         " and it uses an action). Number=amount:")
+            for res, items in declares.items():
+                lines.append(f"    declare {res}: " + " ".join(items))
     else:
         lines.append("You have no moves now.")
     if game["mode"] == "full":
         lines.append("")
-        lines.append("Also (full mode): seat.py say/offer/propose; see seat.py --help.")
+        samples = ", ".join(x["id"] for x in view.get("samples", []))
+        lines.append("Also (full mode): seat.py say / offer / propose / declare; see seat.py <command> --help.")
+        if samples:
+            lines.append(f"Sample laws for `propose --sample ID`: {samples}")
     return "\n".join(lines)
 
 
@@ -365,7 +381,7 @@ def talk_lines(game, seat):
         return []
     out = []
     for l in t.get("lines", []):
-        who = f"seat {l.get('seat')}" if "seat" in l else l.get("from", "?")
+        who = f"seat {l.get('by')}"
         to = f" (to seat {l['to']})" if l.get("to") is not None else ""
         out.append(f"{who}{to}: {l.get('text')}")
     return out
@@ -583,6 +599,15 @@ def cmd_offer(a):
     print("OK: offer made. It goes away at the end of your turn.")
 
 
+def cmd_declare(a):
+    game = load_game(a.game)
+    check_mode(game, a)
+    full_only(game, "declare numbers other than its own levels (use the numbered list)")
+    mv = {"t": "declare", "res": a.res, "n": a.n}
+    check_ok(http(game["server"], "POST", f"/api/games/{game['code']}/move", {"token": seat_token(game, a.seat), "move": mv}))
+    print(f"OK: declared {a.n} {a.res}.")
+
+
 def cmd_propose(a):
     game = load_game(a.game)
     check_mode(game, a)
@@ -654,6 +679,12 @@ def main():
     o.add_argument("--get", required=True)
     o.add_argument("--to", type=int, default=None)
     o.set_defaults(fn=cmd_offer)
+
+    d = sub.add_parser("declare", help="(full mode) declare any number for a resource, on your turn")
+    seat_args(d)
+    d.add_argument("--res", required=True)
+    d.add_argument("--n", type=int, required=True)
+    d.set_defaults(fn=cmd_declare)
 
     pr = sub.add_parser("propose", help="(full mode) propose a law in the rule language, or a sample law")
     seat_args(pr)
