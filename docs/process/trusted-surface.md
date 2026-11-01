@@ -107,6 +107,10 @@ All ten commandments rest on the same 134 definitions: the data types of a game,
 - **The clerk and the descriptions, as code.** `make clerk-check` tests the clerk's memory and reply handling. It tests what a description call sends, that a description goes only with the law it was written for, that no client can supply one, and what shows when there is none. The check of what descriptions say was a one-time test, and `docs/process/reviews.md` gives its results.
 - **The whole server.** `make smoke` plays a full game over HTTP, restarts the server, and checks that the game replays from its log.
 
+## A full game of the real Island
+
+`a_full_island_game_exists`, in `Charter/Proofs/IslandWitness.lean`, has the kernel replay one complete game of the real Island at 4 seats, through `Engine.step`, with the real dice. So the promises' conditions can be met on the real game, not only on the three test games. Bots played the game, and a script added one deal and one law. The events are in `Charter/Games/IslandGameEvents.lean`, which `scripts/island_game.lean` writes. The server does not import this theorem. If a change to the Island or the engine makes the game illegal, the build fails, and that script can play a new game.
+
 ## How the proofs are checked
 
 `make audit` does three things, with no sandbox, so it runs on macOS:

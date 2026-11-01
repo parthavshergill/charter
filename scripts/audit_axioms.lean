@@ -20,7 +20,7 @@ def allowed : List Name := [``propext, ``Classical.choice, ``Quot.sound]
 /-- This theorem is one a reader of the constitution sees. -/
 def isShown (m n : Name) : Bool :=
   (m == `Charter.Constitution || m == `Charter.Constitution.Supporting ||
-    m == `Charter.Constitution.Examples) &&
+    m == `Charter.Constitution.Examples || m == `Charter.Proofs.IslandWitness) &&
   !n.isInternal &&
   match n with
   | .str _ s => !s.startsWith "eq_"

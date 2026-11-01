@@ -21,5 +21,6 @@ import Charter.Games.PirateRepublic
 import Charter.Games.PirateRepublicTests
 import Charter.Games.PirateRepublicWords
 import Charter.Games.Witnesses
+import Charter.Proofs.IslandWitness
 import Charter.Scene.OfState
 import Charter.Scene.LookCheck

@@ -17,6 +17,7 @@ echo "== Kernel replay (leanchecker) =="
 modules=$(find Charter/Words Charter/Engine Charter/Proofs Charter/Constitution -name '*.lean' \
   | sed -e 's/\.lean$//' -e 's#/#.#g' | sort)
 modules="Charter.Sha256 Charter.Words Charter.Engine Charter.Constitution Charter.Games.Tiny Charter.Games.Witnesses $modules"
+modules="HexGrid HexGrid.Basic Charter.Games.HexMap Charter.Games.Island Charter.Games.IslandGame Charter.Games.IslandGameEvents $modules"
 lake env leanchecker $modules
 echo "Replayed $(echo "$modules" | wc -w | tr -d ' ') modules through the kernel."
 
