@@ -50,7 +50,7 @@ The kicker, for those who care, is that the game is written in Lean. There are t
 
 2. **It's what makes the core loop possible.** A law is data in a small rule language, and the engine runs it. The theorems cover every law that language can express, including ones nobody has thought of yet. So a player can invent a rule mid-game, the clerk can draft it, and the promises still hold with no new proof. The clerk can get your rule wrong, but it can't write a law that breaks the constitution. The language has no way to say one. A law can't even name a player.
 
-3. **[Vibecheck](https://fmxai.org/vibecheck/).** Charter was built for this formal methods hackathon, so it's also a way to explore what's possible when you build regular software from scratch in Lean. The constitution's theorems matter for the game's correctness. Nearly everything else, including the server, is written in Lean by AI for no good reason. In the words of Donald Knuth: "Beware of bugs in the above code; I have only proved it correct, not tried it."
+3. **[Vibecheck](https://fmxai.org/vibecheck/).** Charter was built for this formal methods hackathon, so it's also a way to explore what's possible when you build regular software from scratch in Lean. The constitution's theorems matter for the game's correctness. Nearly everything else, including the server, is written in Lean by AI for no good reason. In the [paraphrased] words of Donald Knuth: "This might be proofslop, but at least there's proofs?"
 
 ## What you have to trust
 
