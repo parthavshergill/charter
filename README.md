@@ -54,7 +54,7 @@ The kicker, for those who care, is that the game is written in Lean. There are t
 
 ## What you have to trust
 
-- **The constitution.** Read the [theorems](Charter/Constitution.lean) and the definitions they use. That's about 2,900 lines, and they are the part that matters.
+- **The constitution.** Read the [theorems](Charter/Constitution.lean) and the definitions they use. That's about 3,000 lines, and they are the part that matters.
 - **Lean itself.** It checks the proofs.
 
 Nothing proves the server, the screen or the clerk's drafting. CI checks the proofs on every pull request, and it runs Comparator on the main theorems when a change can affect them. A run by hand with Comparator's `--paranoid` kernels passed too.
@@ -63,7 +63,7 @@ Nothing proves the server, the screen or the clerk's drafting. CI checks the pro
 
 ## How the other bits work
 
-- **The board** is drawn by three.js from a stream of commands that Lean sends. A world's look is data in Lean, too. The menus and panels are about 2,400 lines of JavaScript.
+- **The board** is drawn by three.js from a stream of commands that Lean sends. A world's look is data in Lean, too. The menus and panels are about 2,500 lines of JavaScript.
 - **Build checks** cover what doesn't need a full proof. Lean's `#guard` and similar checks stop the build if a piece has no model, a board goes over its triangle budget, or a shipped extension pack's rules aren't valid.
 
 ## Sounds
