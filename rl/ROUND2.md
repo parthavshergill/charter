@@ -38,6 +38,32 @@ Don't block the others: they start without you, and pick up your improvements at
 
 **Evaluate each milestone** with `rl/eval` at about 50M, 100M, 200M, 500M steps, against `hand`, `random`, and `champion` once it exists, on training and held-out games. Post a comment starting `PROGRESS` on your PR after each, with the one table, the steps and the spend. Then finish with the `RESULT` report, including a score-over-steps table and what you'd try next.
 
+## Read the games: is it reward hacking, or real strategy?
+
+The owner requires this. A rising score is not enough. At every `PROGRESS` milestone, read real games, not only numbers.
+
+**`speed`:** make `rl/eval` save a small sample of full game logs per table, on the volume, in the event format `make spectate` replays, plus a short readable summary of each game: moves by type, what was built and when, trades, votes, points over time. Do this early, because the others need it.
+
+**At each milestone, every training agent reads at least 5 games** across training and held-out games and different opponents, and adds a `REVIEW` section to its `PROGRESS` comment, quoting specific games. Answer these:
+- **Why did it win or lose?** Can you describe its plan in a sentence, and does that plan make sense for this game?
+- **Durable or hollow?** Does it build an economy, expand and convert it to points, and adapt to the board? Or does it win through one odd trick?
+- **Warning signs:**
+  - a win from something that isn't good play: an opponent bot's blind spot, the tie rule, or letting the round limit decide
+  - stalling, ending turns with moves available, or games that run to the limit
+  - repeated pointless actions, or bank trades that burn value
+  - collecting shaped reward without winning more
+  - strategies that beat one opponent but collapse against another
+  - votes that follow one fixed pattern whatever the law says
+  - performance from memorising seats or a board, and not holding up on random maps
+- **Cross-play:** does the same policy hold up against opponents it didn't train with? A big gap is a warning sign.
+
+**If you find reward hacking:** stop spending on that run, and post a comment starting `REWARD-HACK` on your PR, and on PR #11, with the games, the mechanism and the root cause. Then rethink the setup rather than tuning around it. The cause will be one of:
+- **the training setup** (reward, opponents, self-play pool): fix it on your branch
+- **the harness** (an observation, mask or evaluation problem): file `HARNESS-BUG` for `speed`
+- **the game** (a rule that really is exploitable): don't change the rules. Report it in your `RESULT`, and in a comment starting `GAME-ISSUE` on PR #11, so that the owner can decide
+
+Report what you changed and whether it worked. An honest "it's exploiting X" is a more useful result than a higher number.
+
 **The goal:** beat `hand` clearly on training games, then `champion`, and do well on the held-out games, which are never used for tuning choices. Use the training games to choose settings, and only report held-out results.
 
 Time limit: about 6 hours, or your spending limit, whichever comes first. Post what you have.
