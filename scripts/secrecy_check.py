@@ -18,6 +18,8 @@ tables that differ only in hidden things. This script adds the HTTP layer.
 """
 import json, os, re, shutil, sys, tempfile
 
+sys.dont_write_bytecode = True
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from smoke import Server, check, free_port  # noqa: E402
 
