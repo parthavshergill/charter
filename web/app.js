@@ -1702,6 +1702,7 @@ function proclamation(v) {
     h("h2", {}, v.winner === v.you ? `${capital(v.game?.word || "the island")} is yours.` : `${capital(v.game?.word || "the island")} is ${w?.name}'s.`),
     order.map(s => h("div", { class: "standing" }, shield(s.seat, seatColor(s.seat)), h("span", {}, nameOf(s.seat)), h("span", { class: "fine" }, pieces(s)), h("b", {}, String(s.points)))),
     h("p", { class: "note-line", style: { marginTop: "12px" } }, nLaws ? `${plural(nLaws, "law")} in force at the end.` : "It ended under the constitution alone."),
+    v.realTokens ? h("p", { class: "note-line" }, `The Claude seats at this table spent ${v.realTokens.toLocaleString("en-US")} real tokens.`) : null,
     h("details", { class: "formal" }, h("summary", {}, "Check the dice"), h("div", { class: "fine", style: { fontFamily: "var(--mono)", fontSize: "12px", wordBreak: "break-all" } }, `Seed ${v.serverSeed}. Fingerprint published at the start: ${v.fingerprint}.`)),
     h("div", { class: "bar" }, h("button", { class: "act", onclick: () => openDock({ t: "chronicle" }) }, "Read the chronicle")));
 }
