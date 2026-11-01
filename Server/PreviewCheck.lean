@@ -170,7 +170,7 @@ def playAndCheck (spec : GameSpec) (seats seed : Nat) (idle : Bool) (every : Nat
 def run : IO Bool := do
   let mut t : Tally := {}
   for spec in gameSpecs do
-    for seats in [2, 3, 4] do
+    for seats in [2, 3, 4].filter (fun n => spec.minSeats ≤ n && n ≤ spec.maxSeats) do
       for seed in [1, 2] do
         t := playAndCheck spec seats (seed * 1000 + seats) false 2 t
       t := playAndCheck spec seats (7000 + seats) true 3 t

@@ -33,7 +33,7 @@ def pips (G : GameDef) (n : Nat) : Nat := Scene.chanceOf G n
 
 /-- What a spot is worth: 10 per pip, and 5 per resource it touches. -/
 def spotValue (G : GameDef) (v : Nat) : Nat :=
-  let rs := G.map.regions.filter (·.spots.contains v)
+  let rs := (paidRegions G).filter (·.spots.contains v)
   (rs.map fun r => 10 * pips G r.number).sum + 5 * (rs.map (·.res)).eraseDups.length
 
 def isFree (s : State G) (v : Nat) : Bool :=
