@@ -162,7 +162,7 @@ def actOfJson (g : Game) (seat : Nat) (a : Json) : Except String Act := do
 
 /-- What a game's spots pay, in words. -/
 def spotPays (G : GameDef) (v : Nat) : String :=
-  let rs := G.map.regions.filter (·.spots.contains v)
+  let rs := (paidRegions G).filter (·.spots.contains v)
   if rs.isEmpty then "pays nothing" else ", ".intercalate (rs.map fun r => s!"{r.res} on {r.number}")
 
 /-- The fixed facts of a game: the same for every seat at every moment, so they stay in the cache. -/
@@ -176,8 +176,9 @@ def gameFacts (spec : GameSpec) : String :=
     let near := (G.map.links.filterMap fun l =>
       if l.1 == v then some l.2 else if l.2 == v then some l.1 else none)
     s!"{v}: {spotPays G v}; next to {", ".intercalate (near.map toString)}")
-  s!"## This game: {G.name}
-The first seat to {G.targetPoints} points wins, within {G.rounds} rounds. Dice: {G.diceCount} dice with {G.diceSides} sides. The resources are {res}. The bank trades {G.bankRate} of a resource for 1 of another. A law costs {Text.bundleText G.lawFee} to propose. In setup each seat places, free: {", ".intercalate G.setupPieces}.
+  let guide := if spec.guide.isEmpty then "" else s!"\n\n{spec.guide}"
+  s!"## This game: {spec.name}
+The first seat to {G.targetPoints} points wins, within {G.rounds} rounds. Dice: {G.diceCount} dice with {G.diceSides} sides. The resources are {res}. The bank trades {G.bankRate} of a resource for 1 of another. A law costs {Text.bundleText G.lawFee} to propose. In setup each seat places, free: {", ".intercalate G.setupPieces}.{guide}
 
 Pieces:
 {pieces}
@@ -251,7 +252,9 @@ def legalBlock (sit : Situation) : String :=
     let linkText := if links.isEmpty then "" else
       " on link: " ++ ", ".intercalate (links.map fun l => s!"{l.1}-{l.2}")
     s!"- {k} ({cost}){spotText}{linkText}"
-  let trades := legal.filterMap fun | .bankTrade a b => some (a, b) | _ => none
+  let trades := legal.filterMap fun
+    | .bankTrade a b => if markRes G a || markRes G b then none else some (a, b)
+    | _ => none
   let gives := (trades.map (·.1)).eraseDups
   let bank := gives.map fun a =>
     s!"- bank: give {s.rules.bankRate} {a} for 1 of {", ".intercalate ((trades.filter (·.1 == a)).map (·.2))}"

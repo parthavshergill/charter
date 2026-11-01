@@ -277,11 +277,14 @@ def actorOf : Event → Option Nat
 /-- All the sentences for one accepted event. Each has its actor, kind, text and weight. -/
 def sentences (g : Game) (s s' : State G) (e : Event) : List (Option Nat × String × String × Bool) :=
   let actor := actorOf e
-  let moneyLines := (groupEntries (newEntries s s')).filterMap (entryLine g)
+  -- A counter is not money, so it gets no line of its own. A pack's note says what a roll means.
+  let moneyLines := ((groupEntries (newEntries s s')).filter (!markRes G ·.res)).filterMap (entryLine g)
   let rolled :=
     if s'.rollsMade != s.rollsMade then
       match s'.currentSeat, s'.lastRoll with
-      | some p, some r => [(some p, "roll", s!"{g.nameOf p} rolled {r}.", false)]
+      | some p, some r =>
+        [(some p, "roll", s!"{g.nameOf p} rolled {r}.", false)] ++
+          ((g.spec.rollNotes.filter (·.1 == r)).map fun n => ((none : Option Nat), "roll", n.2, true))
       | _, _ => []
     else []
   let roundLine :=
@@ -344,7 +347,9 @@ def create (j : Json) : Except String Game := do
   if seats < minSeats || maxSeats < seats then throw s!"a table has {minSeats} to {maxSeats} seats"
   let seed ← j.getObjValAs? Nat "_serverSeed"
   let some spec := specOf? (jStr j "game") | throw s!"there is no game called {(jStr j "game").getD ""}"
-  pure { spec, room := Lobby.Room.new code minSeats seats, serverSeed := UInt64.ofNat seed, events := 1 }
+  if seats < spec.minSeats || spec.maxSeats < seats then
+    throw s!"{spec.name} has {spec.minSeats} to {spec.maxSeats} seats"
+  pure { spec, room := Lobby.Room.new code spec.minSeats seats, serverSeed := UInt64.ofNat seed, events := 1 }
 
 /-- Seat the players and start. -/
 def start (g : Game) : Except String Game :=
@@ -353,11 +358,13 @@ def start (g : Game) : Except String Game :=
   | .ok (room, _) =>
     if h : minSeats ≤ room.filled ∧ room.filled ≤ maxSeats ∧ g.nonces ≠ [] then
       let names := ", ".intercalate ((List.range room.filled).map g.nameOf)
+      let founded := g.spec.G.foundingLaws.map fun L =>
+        ({ event := g.events, actor := none, text := s!"In force from the founding: {Text.lawLine L}", kind := "law", major := true } : Line)
       .ok { g with
         room := room
         live := some ⟨initialState g.spec.G room.filled g.serverSeed g.nonces, .start _ _ _ h.1 h.2.1 h.2.2⟩
-        chronicle := g.chronicle.push
-          { event := g.events, actor := none, text := s!"The game began with {names}.", kind := "turn", major := true } }
+        chronicle := (g.chronicle.push
+          { event := g.events, actor := none, text := s!"The game began with {names}.", kind := "turn", major := true }) ++ founded.toArray }
     else
       .error s!"the game cannot start: it needs {minSeats} to {maxSeats} seats and at least one player's nonce"
 

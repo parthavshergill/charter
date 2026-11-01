@@ -711,6 +711,28 @@ section Games
 #guard (specOf? (some "belt")).map (·.id) == some "belt"
 #guard (specOf? (some "nowhere")).isNone
 
+-- A pack has a name, a sentence and seats. The base game comes first, and its table sizes have not changed.
+#guard gameSpecs.head?.map (·.id) == some islandSpec.id
+#guard gameSpecs.all fun d => !d.name.isEmpty && !d.blurb.isEmpty && minSeats ≤ d.minSeats && d.maxSeats ≤ maxSeats
+#guard (islandSpec.minSeats, islandSpec.maxSeats) == (minSeats, maxSeats)
+#guard (notCatanSpec.minSeats, notCatanSpec.maxSeats) == (3, 4)
+
+-- A game with no counter has all its resources on the screen, so old games read as they did.
+#guard islandSpec.G.resources.map (·.name) == goodsOf islandSpec.G
+#guard beltSpec.G.resources.map (·.name) == goodsOf beltSpec.G
+#guard goodsOf notCatanSpec.G == ["timber", "grain", "ore", "wool", "brick", "laurel"]
+#guard (paidRegions notCatanSpec.G).length == 18
+
+-- Founding laws can be read back from the formal text the screen shows, and their sentences name the laws' goods.
+#guard notCatanSpec.G.foundingLaws.all fun L =>
+  match Rules.parseProposal (Rules.printProposal (.law L)) (notCatanSpec.G.resources.map (·.name)) with
+  | .ok (.law L') => Rules.printProposal (.law L') == Rules.printProposal (.law L)
+  | _ => false
+#guard notCatanSpec.G.foundingLaws.all fun L => !(Text.lawText L).isEmpty
+#guard ((Text.lawText Games.NotCatan.lawAlarm).splitOn ",,").length == 1
+#guard ((Text.lawText Games.NotCatan.lawAlarm).splitOn "their timber, grain, ore, wool and brick together is more than 7").length == 2
+#guard ((Text.lawText Games.NotCatan.lawAlarm).splitOn "half of their timber, grain, ore, wool and brick, each rounded down, to the bank").length == 2
+
 -- A law can use only the resources of its own game.
 #guard (Rules.parseProposal "(law \"x\" (set-cost city (bundle (ice 1))))").toOption.isNone
 #guard (Rules.parseProposal "(law \"x\" (set-cost lane (bundle (ice 1))))" (beltSpec.G.resources.map (·.name))).toOption.isSome

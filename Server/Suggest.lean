@@ -54,7 +54,7 @@ def visibleTalk (seat : Nat) (talk : List Talk.Line) : List Talk.Line :=
 
 /-- What this seat harvests, from the pieces on the board. -/
 def collectsOf {G : GameDef} (s : State G) (p : Nat) : String :=
-  let parts := G.map.regions.filterMap fun r =>
+  let parts := (paidRegions G).filterMap fun r =>
     let total := (s.pieces.filter fun x =>
         x.owner == p && match x.loc with
           | .spot v => r.spots.contains v
