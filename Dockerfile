@@ -24,6 +24,7 @@ RUN apt-get update \
  && install -d -o charter -g charter /data
 COPY --from=build /src/.lake/build/bin/charter-server /app/charter-server
 COPY --from=build /src/web /app/web
+COPY --from=build /src/packs /app/packs
 COPY --from=build /src/Server/formalizer.md /src/Server/player_rules.md /app/Server/
 ENV PORT=8080 CHARTER_BIND=0.0.0.0 CHARTER_ROOT=/app CHARTER_DATA=/data/games
 USER charter

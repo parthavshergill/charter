@@ -13,3 +13,4 @@ import Charter.Games.NotCatanTests
 import Charter.Scene.Belt
 import Charter.Games.Witnesses
 import Charter.Scene.OfState
+import Charter.Scene.LookCheck

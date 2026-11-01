@@ -2,6 +2,7 @@ import HexGrid
 import GpuCmd
 import Charter.Games.HexMap
 import Charter.Scene.Models
+import Charter.Scene.Look
 
 /-!
 # The diorama (lean-gpu-cmd)
@@ -37,6 +38,44 @@ inductive Marker where
   | spot (v : Vertex) (raised : Bool)
   | link (e : Edge)
 
+/-- A hut beside a road, once the road has seen enough rounds. -/
+def hut (seed : Nat) : List Part :=
+  let side := if seed % 2 == 0 then 0.15 else -0.15
+  let u := 0.2 * (rnd seed 4 - 0.5)
+  house u side 0 0x7A5A3A plaster2 0.085 0.1 0.055
+
+/-- The base game's square: paving and a stone with a gold cap. -/
+def islandSquare : List Part :=
+  let paving := (List.range 6).map fun i =>
+    let a := pi / 3.0 * i.toFloat + pi / 6.0
+    hexp (0.36 * Float.cos a) 0 (0.36 * Float.sin a) 0.2 0.006 (if i % 2 == 0 then 0xAEA282 else 0xC6BA9C)
+  paving ++
+    [ hexp 0 0 0 0.84 0.008 0xB6AA8C, hexp 0 0.008 0 0.25 0.012 0xE0D7BF
+    , box 0 0.02 0 0.16 0.02 0.08 stoneDark, box 0 0.04 0 0.11 0.25 0.035 0x5F5A52
+    , box 0 0.29 0 0.13 0.018 0.05 gold ]
+
+/-- The base game's treasury: a chest, with a pile of coins as long as it holds something. -/
+def islandChest (total : Nat) : List Part :=
+  let body : List Part :=
+    [ box 0 0 0 0.8 0.3 0.5 0x7A4D28, gable 0 0.3 0 0.5 0.14 0.8 0x8C5C31 (pi / 2.0)
+    , box 0 0.13 0.255 0.11 0.14 0.014 gold, box (-0.3) 0 0 0.05 0.32 0.525 0x3E2716, box 0.3 0 0 0.05 0.32 0.525 0x3E2716 ]
+  let coins := (List.range (min total 40)).map fun i =>
+    let col := i % 8
+    let lvl := i / 8
+    let cx := -0.42 + (col % 4).toFloat * 0.23
+    let cz := 0.52 + (col / 4).toFloat * 0.23
+    cyl cx (lvl.toFloat * 0.042) cz 0.1 0.04 (if (i + lvl) % 3 == 0 then 0xF0C95C else gold)
+  body ++ coins
+
+/-- The base game's tiles in the 2D board. -/
+def islandFlat : Option Res → UInt32
+  | some "grain" => 0xF5C518
+  | some "timber" => 0x2F9E44
+  | some "ore" => 0x8FA3C4
+  | some "wool" => 0x9BE15D
+  | some "brick" => 0xE0612A
+  | _ => 0xF0D9A0
+
 /-- What one world looks like. Everything that names a resource or a piece is here, so a game with
 other resources and pieces can be drawn by the same code. -/
 structure Theme where
@@ -65,6 +104,29 @@ structure Theme where
   /-- The model of a piece this game has its own look for, by kind and seat. Such a piece is known by
   its shape, so it has no name over it. Other pieces, such as those laws make, do. -/
   ownModel : PieceKind → Nat → Option (List Part) := fun _ _ => none
+  /-- The model of a piece a law made, by its name and seat. It has its name over it. -/
+  madeModel : String → Nat → List Part := lawPieceModel
+  /-- The colour of each seat. The model functions above use the same colours. -/
+  seats : List UInt32 := seatColors
+  /-- This world's mesh files, as `defineMeshFile` commands, with ids above the primitives' ids. -/
+  meshDefs : List Cmd := []
+  /-- What a tile is, by resource and seed, standing on the tile's base. Empty means the plain hex in
+  the colour `ground`. The board stays a hex layout: pieces stand on the corners at height `top`. -/
+  tileTop : Option Res → Nat → List Part := fun _ _ => []
+  /-- What lights up on a tile whose number just came up. -/
+  hotParts : List Part := [{ mesh := mHex, sx := 0.96, sy := 0.004, sz := 0.96, rgb := withAlpha 0xFFE27A 0.42 }]
+  /-- A law's monument, by what the law is about. -/
+  monumentModel : MonumentKind → List Part := monument
+  /-- What the monuments stand around, on the first tile. -/
+  square : List Part := islandSquare
+  /-- What stands beside a link piece after enough rounds, by seed. -/
+  roadside : Nat → List Part := hut
+  /-- The treasury, by how much it holds. -/
+  treasury : Nat → List Part := islandChest
+  /-- The colour of a tile in the 2D board. -/
+  flat : Option Res → UInt32 := islandFlat
+  /-- Words, colours, fonts and marks off the board. -/
+  look : Look := {}
 
 instance : Inhabited Theme :=
   ⟨{ tableColor := 0, ground := fun _ => 0, decor := fun _ _ _ _ => [], growth := fun _ _ _ _ _ => []
@@ -250,7 +312,9 @@ def tileCmds (inp : Input) (i : Nat) (t : TileDef) : List Cmd :=
       | _ => 0
     let count := 1 + isCity + min 1 (inp.round / 10)
     inp.theme.growth t.res (seed + 17 * j) count (vx - x) (vz - z)
-  let ground := Cmd.draw mHex { pos := vec3 x baseY z, scale := vec3 0.992 tileH 0.992 } (inp.theme.ground t.res) (tilePick i)
+  let ground := match inp.theme.tileTop t.res seed with
+    | [] => [Cmd.draw mHex { pos := vec3 x baseY z, scale := vec3 0.992 tileH 0.992 } (inp.theme.ground t.res) (tilePick i)]
+    | parts => parts.map (·.at x baseY z 0 (tilePick i))
   let token := match t.number with
     | some n =>
       let pips := inp.chance n
@@ -264,10 +328,8 @@ def tileCmds (inp : Input) (i : Nat) (t : TileDef) : List Cmd :=
       , (cyl x (top + 0.035) z 0.205 0.006 (if hot then 0xFFE08A else 0xFBF6E8)).at 0 0 0
       , .label (toString n) (vec3 (x - 0.015) (top + 0.11) (z - 0.015)) (F32.ofFloat 0.3) (if red then 0xB5281F else ink) 0 ] ++ dots
     | none => []
-  let glow := if hot then
-      [Cmd.draw mHex { pos := vec3 x top z, scale := vec3 0.96 0.004 0.96 } (withAlpha 0xFFE27A 0.42) 0]
-    else []
-  [ground] ++ glow ++ placeAll decor x top z ++ placeAll grown x top z ++ token
+  let glow := if hot then placeAll inp.theme.hotParts x top z else []
+  ground ++ glow ++ placeAll decor x top z ++ placeAll grown x top z ++ token
 
 /-! ## The square in the middle -/
 
@@ -282,21 +344,14 @@ def monumentSlot (i : Nat) : Float × Float :=
   let (r, a) := slots[i % slots.length]!
   (r * Float.cos a, r * Float.sin a)
 
-def squareCmds (x z : Float) (laws : List (Nat × MonumentKind)) : List Cmd :=
-  let paving := (List.range 6).map fun i =>
-    let a := pi / 3.0 * i.toFloat + pi / 6.0
-    hexp (0.36 * Float.cos a) 0 (0.36 * Float.sin a) 0.2 0.006 (if i % 2 == 0 then 0xAEA282 else 0xC6BA9C)
-  let centre :=
-    [ hexp 0 0 0 0.84 0.008 0xB6AA8C, hexp 0 0.008 0 0.25 0.012 0xE0D7BF
-    , box 0 0.02 0 0.16 0.02 0.08 stoneDark, box 0 0.04 0 0.11 0.25 0.035 0x5F5A52
-    , box 0 0.29 0 0.13 0.018 0.05 gold ]
+def squareCmds (t : Theme) (x z : Float) (laws : List (Nat × MonumentKind)) : List Cmd :=
   let raised := laws.zipIdx.flatMap fun ((id, k), i) =>
     let (mx, mz) := monumentSlot i
-    let parts := (monument k).map (Part.scaled 1.5)
+    let parts := (t.monumentModel k).map (Part.scaled 1.5)
     let pick := lawPick id
     parts.map (·.at (x + mx) (top + 0.008) (z + mz) 0 pick) ++
     [.label s!"Law {id}" (vec3 (x + mx) (top + 0.47) (z + mz)) (F32.ofFloat 0.085) 0xFFF6E0 pick]
-  placeAll (paving ++ centre) x top z ++ raised
+  placeAll t.square x top z ++ raised
 
 /-! ## Pieces -/
 
@@ -322,18 +377,12 @@ def wallParts (seat : Nat) : List Part :=
   [ box 0 0 0 0.78 0.06 0.075 stone, box 0 0.06 0 0.74 0.016 0.055 (seatColor seat)
   , box (-0.26) 0.06 0 0.05 0.04 0.09 stoneDark, box 0.26 0.06 0 0.05 0.04 0.09 stoneDark ]
 
-/-- A hut beside a road, once the road has seen enough rounds. -/
-def hut (seed : Nat) : List Part :=
-  let side := if seed % 2 == 0 then 0.15 else -0.15
-  let u := 0.2 * (rnd seed 4 - 0.5)
-  house u side 0 0x7A5A3A plaster2 0.085 0.1 0.055
-
 def linkCmds (inp : Input) (j : Nat) (r : LinkPiece) : List Cmd :=
   let (x, z) := r.e.toPixel 1.0
   let a := edgeAngle r.e
   let seed := 977 * (j + 1) + (hashText (toString r.owner))
   let growth :=
-    if seed % 3 == 0 && inp.round ≥ 6 + seed % 7 then hut seed else []
+    if seed % 3 == 0 && inp.round ≥ 6 + seed % 7 then inp.theme.roadside seed else []
   let parts := inp.theme.linkModel r.kind r.owner ++ growth
   placeAll parts x top z a
 
@@ -374,8 +423,8 @@ def spotCmds (inp : Input) (j : Nat) (b : SpotPiece) : List Cmd :=
     | .settlement => (inp.theme.smallModel seed b.owner inp.round, (0, 0))
     | .city => (inp.theme.largeModel seed b.owner inp.round, (0, 0))
     | .custom k true =>
-      ((inp.theme.ownModel k b.owner).getD (lawPieceModel k b.owner), (0.2 * Float.cos turnOf, 0.2 * Float.sin turnOf))
-    | .custom k false => ((inp.theme.ownModel k b.owner).getD (lawPieceModel k b.owner), (0, 0))
+      ((inp.theme.ownModel k b.owner).getD (inp.theme.madeModel k b.owner), (0.2 * Float.cos turnOf, 0.2 * Float.sin turnOf))
+    | .custom k false => ((inp.theme.ownModel k b.owner).getD (inp.theme.madeModel k b.owner), (0, 0))
   let name : List Cmd := match b.shape with
     | .custom k _ =>
       if (inp.theme.ownModel k b.owner).isSome then []
@@ -426,21 +475,12 @@ def landCmds (tiles : List TileDef) : List Cmd :=
     [ .draw mLand { pos := vec3 x 0.02 z, scale := vec3 1.2 0.085 1.2 } 0x4F9AA3 0
     , .draw mLand { pos := vec3 x 0.02 z, scale := vec3 1.1 0.12 1.1 } 0xDCC793 0 ]
 
-/-- The chest stands on the table, on the near side of the tray. Its pile shows what it holds. -/
-def treasuryCmds (total : Nat) : List Cmd :=
+/-- The treasury stands on the table, on the near side of the map. Its pile shows what it holds. -/
+def treasuryCmds (t : Theme) (total : Nat) : List Cmd :=
   let x := 5.95
   let z := -2.0
   let r := -0.8
-  let body : List Part :=
-    [ box 0 0 0 0.8 0.3 0.5 0x7A4D28, gable 0 0.3 0 0.5 0.14 0.8 0x8C5C31 (pi / 2.0)
-    , box 0 0.13 0.255 0.11 0.14 0.014 gold, box (-0.3) 0 0 0.05 0.32 0.525 0x3E2716, box 0.3 0 0 0.05 0.32 0.525 0x3E2716 ]
-  let coins := (List.range (min total 40)).map fun i =>
-    let col := i % 8
-    let lvl := i / 8
-    let cx := -0.42 + (col % 4).toFloat * 0.23
-    let cz := 0.52 + (col / 4).toFloat * 0.23
-    cyl cx (lvl.toFloat * 0.042) cz 0.1 0.04 (if (i + lvl) % 3 == 0 then 0xF0C95C else gold)
-  (body ++ coins).map (·.at x 0 z r treasuryPick)
+  (t.treasury total).map (·.at x 0 z r treasuryPick)
 
 /-! ## The whole table -/
 
@@ -468,16 +508,17 @@ def render (inp : Input) : List Cmd :=
   , .camera (vec3 11.2 11.0 11.2) (vec3 0 0.05 0) (F32.ofFloat (-viewRadius))
   , .light (vec3 (-0.62) (-1) (-0.2)) (F32.ofFloat 1.2) ] ++
   meshes ++
+  inp.theme.meshDefs ++
   inp.theme.surround ++
   inp.theme.under inp.tiles ++
   (inp.tiles.zipIdx.flatMap fun (t, i) => tileCmds inp i t) ++
   (match inp.tiles.head? with
-   | some t => let (x, z) := t.hex.toPixel 1.0; squareCmds x z inp.laws
+   | some t => let (x, z) := t.hex.toPixel 1.0; squareCmds inp.theme x z inp.laws
    | none => []) ++
   (inp.linkPieces.zipIdx.flatMap fun (r, j) => linkCmds inp j r) ++
   (inp.spotPieces.zipIdx.flatMap fun (b, j) => spotCmds inp j b) ++
   inp.markers.flatMap markerCmds ++
-  treasuryCmds inp.treasuryTotal
+  treasuryCmds inp.theme inp.treasuryTotal
 
 def renderBytes (inp : Input) : ByteArray := GpuCmd.encode (render inp)
 

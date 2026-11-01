@@ -3,6 +3,7 @@
 // and rule statement is written by Lean. What is here is presentation: what to show, when, and where.
 import { renderBoard2D } from "./board2d.js";
 import { resIcon, uiIcon, pieceIcon, shield, chargeOf, waxSeal } from "./icons.js";
+import { applyLook } from "./look.js";
 
 const app = document.getElementById("app");
 const params = new URLSearchParams(location.search);
@@ -95,8 +96,19 @@ async function lobby() {
     fill(packList, h("span", { class: "smallcaps lbl" }, "World"), defs.map(d =>
       h("button", { class: "pack" + (d.id === game ? " on" : ""), "aria-pressed": d.id === game ? "true" : "false", onclick: () => { game = d.id; showPacks(); showSeats(); } }, d.name)));
     packNote.textContent = defs.find(d => d.id === game)?.blurb || "";
+    const d = defs.find(x => x.id === game);
+    if (d) { applyLook(d.look); tagline.textContent = d.look.tagline; showBackdrop(d); }
   };
   api("/api/defs").then(list => { defs = list; game = list[0]?.id ?? null; showPacks(); showSeats(); });
+  // The page's background is the chosen game's own empty board. The first pack's board comes first.
+  const tagline = h("p", { class: "sub" });
+  let stagePlayer = null, stageShown = null;
+  const showBackdrop = async d => {
+    if (!stagePlayer || stageShown === d.id) return;
+    stageShown = d.id;
+    const buf = await api(`/api/defs/${d.id}/scene`);
+    if (stageShown === d.id && buf.byteLength > 4) stagePlayer.render(buf);
+  };
   const nameOk = () => {
     const v = name.value.trim();
     if (!v) { err.textContent = "A player needs a name."; name.focus(); return false; }
@@ -113,7 +125,7 @@ async function lobby() {
   const tables = h("div", { class: "tablelist" });
   const page = h("div", { class: "titlepage vellum" },
     h("h1", {}, "Charter"), h("div", { class: "rule" }),
-    h("p", { class: "sub" }, "Settle an island. Rewrite its rules. The constitution holds."),
+    tagline,
     h("label", { class: "field" }, name),
     seg, packList, packNote,
     h("button", { class: "act gold", onclick: async () => {
@@ -129,8 +141,9 @@ async function lobby() {
   loadPlayer(stage.querySelector("canvas")).then(async p => {
     if (!p) return;
     p.setInsets({ l: Math.min(innerWidth * .46, 480), r: 16, t: 16, b: 16 });
-    const buf = await api("/api/island");
-    if (buf.byteLength > 4) p.render(buf);
+    stagePlayer = p;
+    const d = defs.find(x => x.id === game);
+    if (d) showBackdrop(d);
   });
   // Only the tables this browser holds a seat at. No route lists every table, because a code is what
   // lets a person reach one. Any table lost from the server is left out.
@@ -396,6 +409,7 @@ function showFoundingLaws(prev, v) {
 }
 function renderAll() {
   if (!G.view) return;
+  applyLook(G.view.look);
   renderHouses(); renderHerald(); renderLedge(); renderPrompt(); renderSlips(); renderRail(); renderDock(); renderCenter();
   if (!G.use3d) renderBoard2D(G.ui.svg, G.view, seatColor, onPick);
   updateInsets();
@@ -1300,7 +1314,7 @@ function gathering(v) {
 function proclamation(v) {
   const w = seat(v.winner);
   const order = [...v.seats].sort((a, b) => b.points - a.points);
-  const pieces = s => Object.entries(s.pieces || {}).filter(([k, n]) => n > 0 && k !== "road").map(([k, n]) => plural(n, k)).join(", ");
+  const pieces = s => Object.entries(s.pieces || {}).filter(([k, n]) => n > 0 && !(v.look?.quietPieces || []).includes(k)).map(([k, n]) => plural(n, k)).join(", ");
   const nLaws = (v.laws || []).length;
   return h("div", { class: "proclaim" },
     h("div", { class: "smallcaps" }, v.round >= v.rounds && w?.points < v.target ? `All ${v.rounds} rounds played` : `Round ${v.round}`),

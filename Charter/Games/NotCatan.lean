@@ -234,6 +234,10 @@ def theme : Scene.Theme :=
       else if k == "relic" then some (relicModel seat)
       else if k == "wreath" then some (wreathModel seat)
       else if k == "harbor" then some (harborModel seat)
-      else none }
+      else none
+    look :=
+      { marks := Scene.islandMarks ++
+          [ ("laurel", "laurel"), ("alarm", "alarm"), ("knight", "knight"), ("relic", "relic")
+          , ("wreath", "wreath"), ("harbor", "harbor") ] } }
 
 end Charter.Games.NotCatan

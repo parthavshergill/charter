@@ -3,6 +3,7 @@ import Charter.Games.Belt
 import Charter.Games.NotCatan
 import Charter.Scene.OfState
 import Charter.Scene.Belt
+import Charter.Scene.LookCheck
 
 /-!
 # The games this server can run
@@ -56,6 +57,8 @@ structure GameSpec where
   rollNotes : List (Nat × String) := []
   /-- What it means while the treasury holds a counter, for the mark by the dice. -/
   upNote : String := ""
+  /-- The folder, under the server's root, that holds this pack's mesh files. -/
+  meshFolder : String := ""
 
 def islandSpec : GameSpec :=
   { id := "island"
@@ -108,6 +111,20 @@ def specOf? (id : Option String) : Option GameSpec :=
   | none => some islandSpec
   | some i => gameSpecs.find? (·.id == i)
 
+/-- The hash of each mesh file this pack's look names. -/
+def GameSpec.meshHashes (d : GameSpec) : List String :=
+  d.layout.theme.meshDefs.filterMap fun
+    | .defineMeshFile _ sha _ _ _ => some sha
+    | _ => none
+
+/-- The folder that holds the mesh file with this hash, if a pack names it. -/
+def meshFolderOf (hash : String) : Option String :=
+  (gameSpecs.find? (·.meshHashes.contains hash)).map (·.meshFolder)
+
+/-- Every mesh file, under the server's root. -/
+def meshFiles : List String :=
+  gameSpecs.flatMap fun d => d.meshHashes.map fun h => s!"{d.meshFolder}/{h}.mesh"
+
 /-! ## Counters
 
 A game can have a resource that no piece and no law fee costs. Nobody wants it for itself, so it is a
@@ -123,6 +140,19 @@ def goodsOf (G : GameDef) : List Res := (G.resources.map (·.name)).filter (!mar
 
 /-- The regions that pay goods. -/
 def paidRegions (G : GameDef) : List Region := G.map.regions.filter (!markRes G ·.res)
+
+/-! ## Does every pack have a look?
+
+A new pack's problems print here, and the build stops. Add what they name. The two lines below are old
+gaps, kept so the older packs look as they did: the Belt's dock wears a law-made model with its name
+over it, and Not Catan's relic is gold whoever owns it. -/
+
+/--
+info: [("belt", ["piece dock has no model"]),
+ ("not-catan", ["piece relic does not show the owner's colour for seats [0, 1, 2, 3, 4, 5]"])]
+-/
+#guard_msgs in
+#eval (gameSpecs.map fun d => (d.id, Scene.lookProblems d.G d.layout)).filter (!·.2.isEmpty)
 
 /-! ## What a game's pieces are for
 

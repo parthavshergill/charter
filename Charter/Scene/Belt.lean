@@ -80,6 +80,16 @@ def theme : Theme :=
     smallModel := outpost
     largeModel := station
     linkModel := fun k seat => if k == "lane" then lane seat else wallParts seat
-    harbours := false }
+    harbours := false
+    flat := fun
+      | some "helium" => 0x8E7CC3
+      | some "alloy" => 0x8C95A3
+      | some "ice" => 0x9CC4D8
+      | some "crystal" => 0xB05A9C
+      | _ => 0xF0D9A0
+    look :=
+      { marks :=
+          [ ("helium", "helium"), ("alloy", "alloy"), ("ice", "ice"), ("crystal", "crystal")
+          , ("lane", "road"), ("outpost", "settlement"), ("station", "city"), ("dock", "made") ] } }
 
 end Charter.Scene.BeltLook

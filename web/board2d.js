@@ -2,7 +2,6 @@
 // pick id of the matching legal moves, the same id the 3D player reports.
 const NS = "http://www.w3.org/2000/svg";
 const SCALE = 52;
-const RES_COLOR = { grain: "#f5c518", timber: "#2f9e44", ore: "#8fa3c4", wool: "#9be15d", brick: "#e0612a", helium: "#8e7cc3", alloy: "#8c95a3", ice: "#9cc4d8", crystal: "#b05a9c" };
 
 function el(tag, attrs, parent) {
   const n = document.createElementNS(NS, tag);
@@ -22,7 +21,7 @@ export function renderBoard2D(svg, view, seatColor, onPick) {
       const a = Math.PI / 180 * (60 * i - 90);
       return `${cx + SCALE * Math.cos(a)},${cy + SCALE * Math.sin(a)}`;
     }).join(" ");
-    el("polygon", { points: pts, fill: RES_COLOR[t.res] || "#f0d9a0", stroke: "#f3e6c8", "stroke-width": 3 }, svg);
+    el("polygon", { points: pts, fill: t.color || "#f0d9a0", stroke: "#f3e6c8", "stroke-width": 3 }, svg);
     if (t.number != null) {
       el("circle", { cx, cy, r: 15, fill: view.lastRoll === t.number ? "#ffd23f" : "#fbf3df", stroke: "#8c785f" }, svg);
       const n = el("text", { x: cx, y: cy + 6, "text-anchor": "middle", "font-size": 17, "font-weight": 700, fill: "#2a2017" }, svg);
