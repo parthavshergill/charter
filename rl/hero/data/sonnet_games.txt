@@ -6,7 +6,7 @@ PJUXZ restricted
 QRYYQ restricted
 YQGBG restricted
 GUTUS restricted
-SNBEM restricted
+# SNBEM restricted  -- excluded: seat 2 was driven by two Sonnet agents at once (a launch mistake), so the game is not a fair table
 WNACY restricted
 VPCYN restricted
 BHJUA restricted
