@@ -435,11 +435,9 @@ function renderHerald() {
   if (v.phase === "lobby") { fill(U.herald); return; }
   const last = U.herald.querySelector(".die");
   const die = v.lastRoll != null ? h("div", { class: "die" + (G.prevRoll !== v.rollsMade ? " hit" : ""), title: "The last roll" }, String(v.lastRoll)) : null;
-  // A counter in the treasury is something still in effect, such as an alarm after a 7.
-  const marks = (v.marksUp || []).map(m => h("div", { class: "upmark", title: m.note, "aria-label": m.note }, resIcon(m.res, "res")));
   void last;
   G.prevRoll = v.rollsMade;
-  fill(U.herald, h("div", { class: "tab" }, v.phase === "setup" ? "The founding" : v.phase === "ended" ? "The end" : `Round ${v.round}`), die, marks, U.clock);
+  fill(U.herald, h("div", { class: "tab" }, v.phase === "setup" ? "The founding" : v.phase === "ended" ? "The end" : `Round ${v.round}`), die, U.clock);
 }
 /** The time left in this turn, quietly. It comes from the server, which keeps the real clock. */
 function renderClock() {

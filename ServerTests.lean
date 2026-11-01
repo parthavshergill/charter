@@ -810,15 +810,28 @@ section Games
 #guard goodsOf notCatanSpec.G == ["timber", "grain", "ore", "wool", "brick", "laurel"]
 #guard (paidRegions notCatanSpec.G).length == 18
 
+-- A resource nothing costs is a counter. It stays off the screen, and so does a region that pays it.
+def withCounter : GameDef :=
+  { islandSpec.G with
+    resources := islandSpec.G.resources ++ [⟨"flag", 5⟩]
+    map := { islandSpec.G.map with regions := islandSpec.G.map.regions ++ [⟨"flag", 7, [0]⟩] } }
+#guard markRes withCounter "flag" && !markRes withCounter "grain"
+#guard !(goodsOf withCounter).contains "flag" && (paidRegions withCounter).length == 18
+
 -- Founding laws can be read back from the formal text the screen shows, and their sentences name the laws' goods.
 #guard notCatanSpec.G.foundingLaws.all fun L =>
   match Rules.parseProposal (Rules.printProposal (.law L)) (notCatanSpec.G.resources.map (·.name)) with
   | .ok (.law L') => Rules.printProposal (.law L') == Rules.printProposal (.law L)
   | _ => false
 #guard notCatanSpec.G.foundingLaws.all fun L => !(Text.lawText L).isEmpty
-#guard ((Text.lawText Games.NotCatan.lawAlarm).splitOn ",,").length == 1
-#guard ((Text.lawText Games.NotCatan.lawAlarm).splitOn "their timber, grain, ore, wool and brick together is more than 7").length == 2
-#guard ((Text.lawText Games.NotCatan.lawAlarm).splitOn "half of their timber, grain, ore, wool and brick, each rounded down, to the bank").length == 2
+#guard notCatanSpec.G.foundingLaws.map (·.title) ==
+  [ "A 7 costs big hands half", "A new knight takes ore from each seat ahead"
+  , "The third knight or sixth road earns a wreath", "A harvest that empties the bank pays nobody" ]
+#guard notCatanSpec.G.foundingLaws.map Text.lawText ==
+  [ "When a 7 is rolled, for each player, if their timber, grain, ore, wool and brick together is more than 7, they pay half of their timber, grain, ore, wool and brick, each rounded down, to the bank."
+  , "Anyone who builds a knight gets 1 ore from every other player with more points than the builder and at least 1 ore."
+  , "Anyone with exactly 2 knights who builds a knight gets 3 laurel from the bank.\nAnyone with exactly 5 roads who builds a road gets 3 laurel from the bank.\nEach time a wreath is built, the bank pays 3 laurel to the treasury."
+  , "Each time a player is paid at harvest, if the bank's holding of that resource is equal to 0, they pay all of it to the bank." ]
 
 -- A law can use only the resources of its own game.
 #guard (Rules.parseProposal "(law \"x\" (set-cost city (bundle (ice 1))))").toOption.isNone

@@ -209,21 +209,24 @@ def extension_pack(srv):
     srv.post(f"/api/games/{t}/bot", {})
     v = srv.get(f"/api/games/{t}/view?token={token}")
     check(v["game"]["name"] == "Not Catan" and v["game"]["blurb"], "the view names the pack")
-    check(len(v["laws"]) == 7 and all(l["english"] and l["by"] is None for l in v["laws"]), "founding laws are in force from the start, with their sentences")
-    check([l["id"] for l in v["laws"]] == list(range(7)), "founding laws take the first ids")
-    check(sum(l["text"].startswith("In force from the founding") for l in v["chronicle"]) == 7, "the chronicle states each founding law")
-    check("alarm" not in v["resources"] and "laurel" in v["resources"], "a counter is off the screen, and a good a piece costs is on it")
-    check(all(y["res"] != "alarm" for m in v["legalMoves"] for y in m.get("yields", [])), "a corner does not show the counter")
+    check(len(v["laws"]) == 4 and all(l["english"] and l["by"] is None for l in v["laws"]), "founding laws are in force from the start, with their sentences")
+    check([l["id"] for l in v["laws"]] == list(range(4)), "founding laws take the first ids")
+    check(sum(l["text"].startswith("In force from the founding") for l in v["chronicle"]) == 4, "the chronicle states each founding law")
+    check("laurel" in v["resources"], "a good a piece costs is on the screen")
+    check("marksUp" not in v, "the view has no mark by the dice")
+    check(all(y["number"] != 7 for m in v["legalMoves"] for y in m.get("yields", [])), "no corner pays on a 7")
     check(len(v["board"]["tiles"]) == 19 and sum(1 for x in v["board"]["tiles"] if x["res"] is None) == 1, "the board has 19 hexes and one desert")
     scene = srv.raw(f"/api/games/{t}/scene?token={token}")
     picks = [x["pick"] for x in v["legalMoves"] if x["pick"] is not None]
-    SCENES.append((scene, picks, ["Law 0", "Law 6"]))
+    SCENES.append((scene, picks, ["Law 0", "Law 3"]))
     code = None
     for n in (3, 4):
         code, end = bots_only(srv, n, "not-catan", "settlement")
         check(end["target"] == 10 and end["bankRate"] == 4, "the pack keeps its target and bank rate")
         check(end["bank"].get("timber", 0) + sum(s["hand"]["timber"] for s in end["seats"]) + end["treasury"].get("timber", 0) == 19, "19 timber are in the game, wherever they are")
-        check(sum(s["hand"].get("alarm", 0) for s in end["seats"]) == 0, "no hand keeps the counter")
+        sevens = [l["text"] for l in end["chronicle"] if l["text"].endswith("rolled 7.")]
+        paid = [l["text"] for l in end["chronicle"] if l["text"].startswith("By law, on a 7,")]
+        check(len(sevens) > 0, f"bots saw {len(sevens)} sevens, and {len(paid)} of them cost a big hand")
     return code
 
 

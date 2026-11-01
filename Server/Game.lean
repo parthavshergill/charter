@@ -303,7 +303,7 @@ def sentences (g : Game) (s s' : State G) (e : Event) : List (Option Nat × Stri
     | none => none
   let all := newEntries s s'
   let others := all.take (all.length - ((rollLaw.map (·.2.length)).getD 0))
-  -- A counter is not money, so it gets no line of its own. A pack's note says what a roll means.
+  -- A counter is not money, so it gets no line of its own.
   let moneyLines := ((groupEntries others).filter (!markRes G ·.res)).filterMap (entryLine g)
   let rollLawLine := match rollLaw with
     | some (r, part) =>
@@ -315,8 +315,7 @@ def sentences (g : Game) (s s' : State G) (e : Event) : List (Option Nat × Stri
     if s'.rollsMade != s.rollsMade then
       match s'.currentSeat, s'.lastRoll with
       | some p, some r =>
-        [(some p, "roll", s!"{g.nameOf p} rolled {r}.", false)] ++
-          ((g.spec.rollNotes.filter (·.1 == r)).map fun n => ((none : Option Nat), "roll", n.2, true))
+        [(some p, "roll", s!"{g.nameOf p} rolled {r}.", false)]
       | _, _ => []
     else []
   let roundLine :=
