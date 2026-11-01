@@ -14,7 +14,12 @@ Formats:
 A custom encoder `<name>` gets format `puffer-<name>`, and its own `policy.py` in rl/arch/<name>/ (or rl/<name>/)
 defines `load_policy(path, meta)`. It can reuse `mingru_step` and `Player` from here.
 """
+import os
+
 import numpy as np
+
+
+TURN_RESET = os.environ.get("CHARTER_TURN_RESET") == "1"
 
 
 def sigmoid(x):
@@ -62,18 +67,25 @@ class Player:
 
     def reset(self):
         self.state = self.net.initial_state()
+        self.last = None
 
     def act(self, game):
         obs = game.obs()
         mask = game.mask()
+        if TURN_RESET and getattr(self, "last", None) == 0:
+            # In self-play training, the zero observations of waiting ticks drive MinGRU's state to 0.5 (its fixed
+            # point at zero input) before each turn. With CHARTER_TURN_RESET=1, eval does the same after end turn.
+            self.state = [np.full_like(s, 0.5) for s in self.state]
         logits, _, self.state = self.net.forward(obs, self.state)
         logits = logits[:len(mask)].astype(np.float64)
         logits[mask == 0] = -np.inf
         if self.greedy:
-            return int(np.argmax(logits))
+            self.last = int(np.argmax(logits))
+            return self.last
         p = np.exp(logits - logits.max())
         p /= p.sum()
-        return int(self.rng.choice(len(p), p=p))
+        self.last = int(self.rng.choice(len(p), p=p))
+        return self.last
 
 
 def read_puffer_bin(path, obs_size, hidden, layers, act_size):
