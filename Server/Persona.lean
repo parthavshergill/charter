@@ -67,7 +67,12 @@ def casts : List (String × List (String × String)) :=
       , ("Stemonitis", "a thin chocolate-tube mould who speaks only in points of order and remembers every slight")
       , ("Little Arcyria", "a young pink mould who is very new to politics and much too keen on it")
       , ("Old Lycogala", "a wolf's-milk slime who whispers, chuckles, and hints at long-buried scandal")
-      , ("Trichia", "a glittering mould who is vain about her spores and will trade anything for a compliment") ]) ]
+      , ("Trichia", "a glittering mould who is vain about her spores and will trade anything for a compliment") ])
+  , ("ai-bubble",
+      [ ("Odile Marchetti", "the head of Larkspur Foundry, a former concert pianist who speaks in measured, serene sentences about inevitability")
+      , ("Tunde Bell", "the head of Ninefold, an ex-commodities trader who counts everything out loud and trusts no number he did not write down")
+      , ("Greta Nyland", "the head of Tessera Works, a safety-minded engineer who warns about the crash while building as fast as anyone")
+      , ("Cassius Oyelaran", "the head of Brightwater Cognition, a relentless showman who has never met a slide he could not improve") ]) ]
 
 /-- One seat's persona. -/
 structure Persona where
