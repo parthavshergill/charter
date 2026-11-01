@@ -258,48 +258,37 @@ static void create_charter_entity_encoder(Encoder* enc) {
     };
 }
 
-// ---- Pointer decoder (built with -DCE_POINTER) ---------------------------------------------------------
+// ---- Pointer decoder (built with -DCE_POINTER), layout version 2 ----------------------------------------
 //
-// The plain decoder gives every action one fixed output: logits = W h. On a new map, "spot 37" is a different
-// place, so a fixed output per spot cannot say which spot is good. The pointer decoder adds a score that comes
-// from the spot's own row, and the piece kind's own row, as the encoder saw them (r = relu(W_t x), E numbers):
+// The plain decoder gives every action one fixed output: logits = W h. A placement is an action by its row of the
+// `places` table, and a bank trade by a pair of rows of `resources`, whose order is shuffled each game, so a fixed
+// output cannot know what the row holds. The pointer decoder adds a score from those rows, as the encoder saw them
+// (r = relu(W_t x), E numbers per row), and a query from the hidden state:
 //
-//   q_spot = A_spot h,  q_link = A_link h                                   (E numbers each; A is 2E x H)
-//   logit(spot v, kind k) += sum_e q_spot[e] * r_spot[v][e] * r_kind[CE_LINK_KINDS + k][e]
-//   logit(link j)         += sum_e q_link[e] * r_link[j][e] * r_kind[0][e]
+//   q_place, q_give, q_get = A h                                              (E numbers each; A is 3E x H)
+//   logit(place p)     += q_place . r_places[p]                               at CE_ACT_PLACE + p
+//   logit(bank i -> j) += q_give . r_res[i] + q_get . r_res[j]                at CE_ACT_BANK + i * resources + j
 //
-// With -DCE_POINTER_BANK as well, bank trades are scored from the two resources' own rows (rows are shuffled
-// each game, so a fixed output per row pair cannot know which resource it names):
-//
-//   logit(bank i -> j)    += sum_e q_give[e] * r_res[i][e] + sum_e q_get[e] * r_res[j][e]       (A is 4E x H)
-//
-// Action numbers follow rl/lean/CharterRL/Actions.lean: spot = CE_ACT_SPOT + k * spots + v,
-// link = CE_ACT_LINK + j (one link kind), bank = CE_ACT_BANK + i * resources + j. The decoder's gradient on r goes back into the encoder through
-// ext_grad. rl/entity/entity_torch.py `pointer_logits` is the reference.
+// Action numbers follow rl/layout.json (rl/lean/CharterRL/Actions.lean). The decoder's gradient on r goes back into
+// the encoder through ext_grad. rl/entity/entity_torch.py `pointer_logits` is the reference. (The layout-1 version,
+// which scored spots and links, is in this file's history.)
 #ifdef CE_POINTER
-static constexpr int CE_NSPOT = CE_ROWS[CE_SPOT_TABLE];
-static constexpr int CE_NLINK = CE_ROWS[CE_LINK_TABLE];
-static_assert(CE_LINK_KINDS == 1, "the pointer decoder handles one link kind");
+static constexpr int CE_NPLACE = CE_ROWS[CE_PLACE_TABLE];
 static constexpr int CE_NRES = CE_ROWS[CE_RES_TABLE];
-#ifdef CE_POINTER_BANK
-static constexpr int CE_PQ = 4;      // query blocks: spot, link, bank give, bank get
 static constexpr int CE_NBANK = CE_NRES * CE_NRES;
-#else
-static constexpr int CE_PQ = 2;
-static constexpr int CE_NBANK = 0;
-#endif
-static_assert(CE_ROWS[CE_KIND_TABLE] == CE_LINK_KINDS + CE_SPOT_KINDS, "kinds table: link kinds, then spot kinds");
+static constexpr int CE_PQ = 3;
+static_assert(CE_ACT_BANK + CE_NBANK <= CE_ACT_PLACE && CE_ACT_PLACE + CE_NPLACE == CE_ACT_SIZE, "layout 2 actions");
 
 struct CharterPointerWeights {
     DecoderWeights base;  // first, so code that reads DecoderWeights (pufferl.cu reads .continuous) still works
-    Prec ptr;             // A: (CE_PQ * E, H): spots, links, then (CE_POINTER_BANK) bank give and bank get
+    Prec ptr;             // A: (3E, H): place, bank give, bank get
 };
 
 struct CharterPointerActivations {
     DecoderActivations base;
     CharterEntityActivations* enc;
-    Prec q;        // (B, CE_PQ * E)
-    Prec grad_q;   // (B, CE_PQ * E), training only
+    Prec q;        // (B, 3E)
+    Prec grad_q;   // (B, 3E), training only
     Prec ptr_wgrad, grad_in2;
 };
 
@@ -309,41 +298,31 @@ __device__ __forceinline__ float ce_r(const precision_t* ent_h, int B, int t, in
     return fmaxf(v, 0.0f);
 }
 
-// One thread per (b, spot v, kind k), and per (b, link j): add the pointer score to the logit.
+// One thread per (b, place row) and per (b, bank pair): add the pointer score to that action's logit.
 __global__ void cp_forward_kernel(precision_t* __restrict__ out, const precision_t* __restrict__ q,
         const precision_t* __restrict__ ent_h, int B, int od1) {
     int64_t idx = (int64_t)blockIdx.x * blockDim.x + threadIdx.x;
-    const int per = CE_NSPOT * CE_SPOT_KINDS + CE_NLINK + CE_NBANK;
+    const int per = CE_NPLACE + CE_NBANK;
     if (idx >= (int64_t)B * per) return;
     int b = idx / per, i = idx - (int64_t)b * per;
     const precision_t* qb = q + (int64_t)b * CE_PQ * CE_E;
     float sum = 0.0f;
     int act;
-    if (i < CE_NSPOT * CE_SPOT_KINDS) {
-        int k = i / CE_NSPOT, v = i - k * CE_NSPOT;
-        for (int e = 0; e < CE_E; e++)
-            sum += to_float(qb[e]) * ce_r(ent_h, B, CE_SPOT_TABLE, b, v, e)
-                 * ce_r(ent_h, B, CE_KIND_TABLE, b, CE_LINK_KINDS + k, e);
-        act = CE_ACT_SPOT + k * CE_NSPOT + v;
-    } else if (i < CE_NSPOT * CE_SPOT_KINDS + CE_NLINK) {
-        int j = i - CE_NSPOT * CE_SPOT_KINDS;
-        for (int e = 0; e < CE_E; e++)
-            sum += to_float(qb[CE_E + e]) * ce_r(ent_h, B, CE_LINK_TABLE, b, j, e)
-                 * ce_r(ent_h, B, CE_KIND_TABLE, b, 0, e);
-        act = CE_ACT_LINK + j;
+    if (i < CE_NPLACE) {
+        for (int e = 0; e < CE_E; e++) sum += to_float(qb[e]) * ce_r(ent_h, B, CE_PLACE_TABLE, b, i, e);
+        act = CE_ACT_PLACE + i;
     } else {
-        int m = i - CE_NSPOT * CE_SPOT_KINDS - CE_NLINK;
-        int gi = m / CE_NRES, gj = m - gi * CE_NRES;
+        int m = i - CE_NPLACE, gi = m / CE_NRES, gj = m - gi * CE_NRES;
         for (int e = 0; e < CE_E; e++)
-            sum += to_float(qb[2 * CE_E + e]) * ce_r(ent_h, B, CE_RES_TABLE, b, gi, e)
-                 + to_float(qb[3 * CE_E + e]) * ce_r(ent_h, B, CE_RES_TABLE, b, gj, e);
+            sum += to_float(qb[CE_E + e]) * ce_r(ent_h, B, CE_RES_TABLE, b, gi, e)
+                 + to_float(qb[2 * CE_E + e]) * ce_r(ent_h, B, CE_RES_TABLE, b, gj, e);
         act = CE_ACT_BANK + m;
     }
     int64_t o = (int64_t)b * od1 + act;
     out[o] = from_float(to_float(out[o]) + sum);
 }
 
-// One thread per (b, e): gradients on q and on every spot, link and kind row's r, for that e.
+// One thread per (b, e): gradients on q and on every places and resources row's r, for that e.
 // G is the assembled logit gradient (B, od1). ext_grad gets d loss / d r (the encoder applies relu').
 __global__ void cp_backward_kernel(precision_t* __restrict__ grad_q, precision_t* __restrict__ ext_grad,
         const precision_t* __restrict__ G, const precision_t* __restrict__ q,
@@ -354,46 +333,16 @@ __global__ void cp_backward_kernel(precision_t* __restrict__ grad_q, precision_t
     const precision_t* g = G + (int64_t)b * od1;
     const precision_t* qb = q + (int64_t)b * CE_PQ * CE_E;
     precision_t* gq = grad_q + (int64_t)b * CE_PQ * CE_E;
-    float qs = to_float(qb[e]);
-    float ql = to_float(qb[CE_E + e]);
     auto ext = [&](int t, int r) -> precision_t& {
         return ext_grad[((int64_t)ce_rowstart_dev[t] * B + (int64_t)b * ce_rows_dev[t] + r) * CE_E + e];
     };
-    float rk[CE_SPOT_KINDS], dk[CE_SPOT_KINDS];
-    for (int k = 0; k < CE_SPOT_KINDS; k++) {
-        rk[k] = ce_r(ent_h, B, CE_KIND_TABLE, b, CE_LINK_KINDS + k, e);
-        dk[k] = 0.0f;
+    float qp = to_float(qb[e]), dqp = 0.0f;
+    for (int p = 0; p < CE_NPLACE; p++) {
+        float gv = to_float(g[CE_ACT_PLACE + p]);
+        dqp += gv * ce_r(ent_h, B, CE_PLACE_TABLE, b, p, e);
+        ext(CE_PLACE_TABLE, p) = from_float(gv * qp);
     }
-    float dqs = 0.0f;
-    for (int v = 0; v < CE_NSPOT; v++) {
-        float rs = ce_r(ent_h, B, CE_SPOT_TABLE, b, v, e), ds = 0.0f;
-        for (int k = 0; k < CE_SPOT_KINDS; k++) {
-            float gv = to_float(g[CE_ACT_SPOT + k * CE_NSPOT + v]);
-            dqs += gv * rs * rk[k];
-            ds += gv * rk[k];
-            dk[k] += gv * rs;
-        }
-        ext(CE_SPOT_TABLE, v) = from_float(ds * qs);
-    }
-    for (int k = 0; k < CE_SPOT_KINDS; k++)
-        ext(CE_KIND_TABLE, CE_LINK_KINDS + k) = from_float(dk[k] * qs);
-    float r0 = ce_r(ent_h, B, CE_KIND_TABLE, b, 0, e), dql = 0.0f, d0 = 0.0f;
-    for (int j = 0; j < CE_NLINK; j++) {
-        float rl = ce_r(ent_h, B, CE_LINK_TABLE, b, j, e);
-        float gv = to_float(g[CE_ACT_LINK + j]);
-        dql += gv * rl * r0;
-        d0 += gv * rl;
-        ext(CE_LINK_TABLE, j) = from_float(gv * ql * r0);
-    }
-    ext(CE_KIND_TABLE, 0) = from_float(d0 * ql);
-#if CE_SEEDED_ERROR == 4
-    dqs *= 1.5f;  // seeded error: a wrong gradient on A
-#endif
-    gq[e] = from_float(dqs);
-    gq[CE_E + e] = from_float(dql);
-#ifdef CE_POINTER_BANK
-    // logit(i, j) += qg . r_i + qt . r_j: each resource row gets the gradient of both roles.
-    float qg = to_float(qb[2 * CE_E + e]), qt = to_float(qb[3 * CE_E + e]), dqg = 0.0f, dqt = 0.0f;
+    float qg = to_float(qb[CE_E + e]), qt = to_float(qb[2 * CE_E + e]), dqg = 0.0f, dqt = 0.0f;
     float rr[CE_NRES], dr[CE_NRES];
     for (int i = 0; i < CE_NRES; i++) { rr[i] = ce_r(ent_h, B, CE_RES_TABLE, b, i, e); dr[i] = 0.0f; }
     for (int i = 0; i < CE_NRES; i++)
@@ -405,9 +354,12 @@ __global__ void cp_backward_kernel(precision_t* __restrict__ grad_q, precision_t
             dr[j] += gv * qt;
         }
     for (int i = 0; i < CE_NRES; i++) ext(CE_RES_TABLE, i) = from_float(dr[i]);
-    gq[2 * CE_E + e] = from_float(dqg);
-    gq[3 * CE_E + e] = from_float(dqt);
+#if CE_SEEDED_ERROR == 4
+    dqp *= 1.5f;  // seeded error: a wrong gradient on A
 #endif
+    gq[e] = from_float(dqp);
+    gq[CE_E + e] = from_float(dqg);
+    gq[2 * CE_E + e] = from_float(dqt);
 }
 
 static Prec cp_forward(void* w, void* activations, Prec input, cudaStream_t stream) {
@@ -418,8 +370,8 @@ static Prec cp_forward(void* w, void* activations, Prec input, cudaStream_t stre
     Prec q = {.data = a->q.data, .shape = {B, CE_PQ * CE_E}};
     puf_mm(&input, &cw->ptr, &q, stream);
     int od1 = cw->base.output_dim + 1;
-    int per = CE_NSPOT * CE_SPOT_KINDS + CE_NLINK + CE_NBANK;
-    cp_forward_kernel<<<grid_size(B * per), BLOCK_SIZE, 0, stream>>>(out.data, q.data, a->enc->ent_h.data, B, od1);
+    cp_forward_kernel<<<grid_size(B * (CE_NPLACE + CE_NBANK)), BLOCK_SIZE, 0, stream>>>(
+        out.data, q.data, a->enc->ent_h.data, B, od1);
     return out;
 }
 
@@ -430,11 +382,11 @@ static Prec cp_backward(void* w, void* activations, Float grad_logits, Float gra
     Prec grad_in = decoder_backward(&cw->base, &a->base, grad_logits, grad_logstd, grad_value, stream);
     int B = a->base.saved_input.shape[0];
     int od1 = cw->base.output_dim + 1;
-    // Every spot, link and kind row is written for every (b, e); other tables keep zero.
+    // Every places and resources row is written for every (b, e); other tables keep zero.
     cudaMemsetAsync(a->enc->ext_grad.data, 0, numel(a->enc->ext_grad.shape) * sizeof(precision_t), stream);
     cp_backward_kernel<<<grid_size(B * CE_E), BLOCK_SIZE, 0, stream>>>(
         a->grad_q.data, a->enc->ext_grad.data, a->base.grad_out.data, a->q.data, a->enc->ent_h.data, B, od1);
-    puf_mm_tn(&a->grad_q, &a->base.saved_input, &a->ptr_wgrad, stream);   // (2E, H)
+    puf_mm_tn(&a->grad_q, &a->base.saved_input, &a->ptr_wgrad, stream);   // (3E, H)
     puf_mm_nn(&a->grad_q, &cw->ptr, &a->grad_in2, stream);                // (B, H)
     int n = B * cw->base.hidden_dim;
     add_kernel<<<grid_size(n), BLOCK_SIZE, 0, stream>>>(grad_in.data, a->grad_in2.data, n);
@@ -486,7 +438,7 @@ static void* cp_create_weights(void* self) {
     cw->base.hidden_dim = d->hidden_dim;
     cw->base.output_dim = d->output_dim;
     cw->base.continuous = d->continuous;
-    assert(d->output_dim == CE_ACT_SPOT + CE_NSPOT * CE_SPOT_KINDS + 1 && "696 actions: 695 and the no-op");
+    assert(d->output_dim == CE_ACT_SIZE + 1 && "the layout's actions and the no-op");
     return cw;
 }
 

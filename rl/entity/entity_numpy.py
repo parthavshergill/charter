@@ -7,8 +7,8 @@ Formats, chosen by the meta's `format`:
 - `npz-entity`: the same arrays in an `.npz`: `in_<table>`, `out`, `decoder`, `gru0`, ...
 
 The meta must give `entity_dim` (E). The table layout comes from rl/layout.json. With `"pointer": 1` in the meta,
-the decoder block is followed by the pointer block `ptr` (2E x hidden, or 4E with `"pointer": 2`, which also
-scores bank trades), and the pointer scores are added
+the decoder block is followed by the pointer block `ptr` (3E x hidden, layout 2: places and bank trades), and the
+pointer scores are added
 (charter_entity.cu, CE_POINTER; entity_torch.py `pointer_logits`).
 """
 import json
@@ -41,19 +41,15 @@ def entity_encode(obs, tables, w_in, w_out, keep=None):
     return w_out @ np.concatenate(pooled)
 
 
-def pointer_scores(rows, h, ptr, act_size, act_spot, act_link, E=None, act_bank=None):
-    """The pointer decoder's added scores (act_size,): see entity_torch.pointer_logits."""
-    E = E or ptr.shape[0] // 2
+def pointer_scores(rows, h, ptr, act_size, act_place, act_bank):
+    """The pointer decoder's added scores (act_size,), layout 2: see entity_torch.pointer_logits."""
+    E = ptr.shape[0] // 3
     q = ptr @ h
-    rk, rs, rl = rows["kinds"], rows["spots"], rows["links"]
     out = np.zeros(act_size, np.float32)
-    spot = np.einsum("e,ve,ke->kv", q[:E], rs, rk[1:])
-    out[act_spot:act_spot + spot.size] = spot.reshape(-1)
-    out[act_link:act_link + rl.shape[0]] = rl @ (q[E:2 * E] * rk[0])
-    if ptr.shape[0] == 4 * E:
-        rr = rows["resources"]
-        bank = (rr @ q[2 * E:3 * E])[:, None] + (rr @ q[3 * E:])[None, :]
-        out[act_bank:act_bank + bank.size] = bank.reshape(-1)
+    rp, rr = rows["places"], rows["resources"]
+    out[act_place:act_place + rp.shape[0]] = rp @ q[:E]
+    bank = (rr @ q[E:2 * E])[:, None] + (rr @ q[2 * E:])[None, :]
+    out[act_bank:act_bank + bank.size] = bank.reshape(-1)
     return out
 
 
@@ -73,8 +69,7 @@ class EntityNet(FlatNet):
         y = self.decoder @ x
         logits = y[:-1]
         if self.ptr is not None:
-            logits = logits + pointer_scores(rows, x, self.ptr, len(logits), self.acts["spot"], self.acts["link"],
-                                             self.E, self.acts["bank"])
+            logits = logits + pointer_scores(rows, x, self.ptr, len(logits), self.acts["place"], self.acts["bank"])
         return logits, y[-1], out
 
 
@@ -91,7 +86,7 @@ def read_entity_bin(path, tables, E, hidden, layers, act_size, pointer=0):
     w_in = [block(E, width) for _, _, _, width in tables]
     w_out = block(hidden, len(tables) * E)
     dec = block(act_size + 1, hidden)
-    ptr = block((4 if pointer == 2 else 2) * E, hidden) if pointer else None
+    ptr = block(3 * E, hidden) if pointer else None
     grus = [block(3 * hidden, hidden) for _ in range(layers)]
     if pos != len(w) and (len(w) + 7) & ~7 != pos:
         raise ValueError(f"{path}: {len(w)} floats, expected {pos} for this shape")
@@ -103,7 +98,8 @@ def load_entity(path, meta, layout_path=LAYOUT):
     tables = base_tables(layout)
     assert meta["obs_size"] == layout["base_size"], "the entity encoder reads the base tables only"
     E = meta["entity_dim"]
-    pointer = int(meta.get("pointer", 0))   # 1: spots and links, 2: also bank trades
+    pointer = int(meta.get("pointer", 0))
+    assert layout["version"] == 2 and meta.get("layout", 2) == 2, "this pointer decoder is for layout 2"
     if meta["format"] == "puffer-entity":
         w_in, w_out, dec, ptr, grus = read_entity_bin(path, tables, E, meta["hidden"], meta["layers"],
                                                       meta["act_size"], pointer)

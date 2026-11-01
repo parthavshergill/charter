@@ -30,33 +30,24 @@ def rows(obs, tables, w_in, t):
     return torch.relu(x @ w_in[t].T)
 
 
-def pointer_logits(obs, tables, w_in, h, ptr, kind_t, spot_t, link_t, act_spot, act_link, act_size,
-                   res_t=None, act_bank=None, E=None):
-    """The pointer decoder's added scores, as a (B, act_size) tensor that is zero outside spot, link (and bank)
-    actions. `ptr` has 2E rows, or 4E with the bank part (pass res_t and act_bank, and E).
+def pointer_logits(obs, tables, w_in, h, ptr, place_t, res_t, act_place, act_bank, act_size):
+    """The pointer decoder's added scores (layout 2), as a (B, act_size) tensor, zero outside placement and bank
+    actions. ptr is (3E, H): q = h @ ptr.T is split into q_place, q_give, q_get (E each).
 
-    q = h @ ptr.T, split into q_spot and q_link (E each).
-    logit(spot v, kind k) = sum_e q_spot[e] * r_spot[v][e] * r_kind[1 + k][e]    at act_spot + k * spots + v
-    logit(link j)         = sum_e q_link[e] * r_link[j][e] * r_kind[0][e]        at act_link + j
-    logit(bank i -> j)    = q_give . r_res[i] + q_get . r_res[j]                  at act_bank + i * res + j
+    logit(place p)     = q_place . r_places[p]                     at act_place + p
+    logit(bank i -> j) = q_give . r_res[i] + q_get . r_res[j]      at act_bank + i * resources + j
     """
-    E = E or ptr.shape[0] // 2
+    E = ptr.shape[0] // 3
     q = h @ ptr.T
-    qs, ql = q[:, :E], q[:, E:2 * E]
-    rk = rows(obs, tables, w_in, kind_t)            # (B, 1 + kinds, E)
-    rs = rows(obs, tables, w_in, spot_t)            # (B, spots, E)
-    rl = rows(obs, tables, w_in, link_t)            # (B, links, E)
-    spot = torch.einsum("be,bve,bke->bkv", qs, rs, rk[:, 1:])     # (B, kinds, spots)
-    link = torch.einsum("be,bje,be->bj", ql, rl, rk[:, 0])        # (B, links)
     B = obs.shape[0]
+    rp = rows(obs, tables, w_in, place_t)                         # (B, places, E)
+    rr = rows(obs, tables, w_in, res_t)                           # (B, res, E)
+    place = (rp * q[:, None, :E]).sum(2)
+    give = (rr * q[:, None, E:2 * E]).sum(2)
+    get = (rr * q[:, None, 2 * E:]).sum(2)
+    bank = (give[:, :, None] + get[:, None, :]).reshape(B, -1)
     out = torch.zeros(B, act_size, dtype=obs.dtype)
-    out = out.index_put((torch.arange(B)[:, None], act_spot + torch.arange(spot[0].numel())[None, :]),
-                        spot.reshape(B, -1))
-    out = out.index_put((torch.arange(B)[:, None], act_link + torch.arange(link.shape[1])[None, :]), link)
-    if ptr.shape[0] == 4 * E:
-        rr = rows(obs, tables, w_in, res_t)                       # (B, res, E)
-        give = (rr * q[:, None, 2 * E:3 * E]).sum(2)              # (B, res)
-        get = (rr * q[:, None, 3 * E:]).sum(2)
-        bank = (give[:, :, None] + get[:, None, :]).reshape(B, -1)
-        out = out.index_put((torch.arange(B)[:, None], act_bank + torch.arange(bank.shape[1])[None, :]), bank)
+    ar = torch.arange(B)[:, None]
+    out = out.index_put((ar, act_place + torch.arange(place.shape[1])[None, :]), place)
+    out = out.index_put((ar, act_bank + torch.arange(bank.shape[1])[None, :]), bank)
     return out
