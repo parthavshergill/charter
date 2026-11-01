@@ -1,0 +1,5 @@
+name = "charter"
+defaultTargets = ["Charter"]
+
+[[lean_lib]]
+name = "Charter"

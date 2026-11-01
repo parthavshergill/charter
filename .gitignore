@@ -1,0 +1,6 @@
+.env
+.venv/
+.lake/
+data/
+results/
+.claude/
