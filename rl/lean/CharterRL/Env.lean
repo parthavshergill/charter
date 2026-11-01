@@ -1,0 +1,400 @@
+import Lean.Data.Json
+import CharterRL.Obs
+
+/-!
+# The environment
+
+One game, for any mix of seats played by the caller and seats played by strategies of the arena's pool. `reset` starts
+a game and `step` applies a caller's action. Between them the environment runs everything that is not the caller's
+to decide, and stops at the next decision. Every change to a game goes through `Engine.step`, here or in the arena's
+`advance`.
+
+Laws reach a table one way: at the start of a turn, by chance, `injectLaw` has the seat whose turn it is propose one
+from the game's library. Seats then vote in turn order before anything else happens. A seat's vote is a decision for
+the caller only under `voteMode := .policy`.
+-/
+
+namespace CharterRL
+open Lean Charter CharterServer CharterServer.Bots CharterServer.Arena
+
+/-- A seat that the caller plays: it asks for nothing, so the arena's loop passes it by. -/
+def silent : Strategy := Strategy.ofSeat "caller" fun _ _ _ => []
+
+/-- One game in progress. -/
+structure Env where
+  T : Tables
+  settings : Settings
+  lineup : Array SeatPlan
+  seed : Nat
+  G : GameDef
+  ctx : Ctx G
+  setupTable : Arena.Table G
+  playTable : Arena.Table G
+  play : Play G
+  ep : Episode
+  /-- This game's fixed numbers, with the laws in force as of `lawsSeen`. -/
+  base : FloatArray
+  /-- For the chances the environment draws. It has nothing to do with the dice. -/
+  draws : UInt64
+  /-- The turn that has already had its chance of a law. -/
+  lawTurn : Nat := 0
+  lawsSeen : List Nat := []
+  decision : Decision := .none
+  /-- The last `step` was refused. -/
+  refused : Bool := false
+  /-- Each seat's pips when setup ended. -/
+  opening : Array Nat := #[]
+  pointsSeen : Array Nat := #[]
+  rewards : FloatArray
+  proposed : Nat := 0
+  passed : Nat := 0
+  decisions : Nat := 0
+
+instance : Inhabited Env := ⟨
+  { T := default, settings := {}, lineup := #[], seed := 0, G := default.G, ctx := default,
+    setupTable := default, playTable := default,
+    play := Play.start (initialState (default : Tables).G 0 0 []) 0, ep := default,
+    base := FloatArray.empty, draws := 0, rewards := FloatArray.empty }⟩
+
+/-- A list of zeros, one per seat. -/
+private def seatZeros : FloatArray :=
+  (List.range maxSeats).foldl (fun a _ => a.push 0) FloatArray.empty
+
+/-- The next chance. -/
+private def Env.draw (e : Env) : UInt64 × Env :=
+  let next := e.draws + 0x9E3779B97F4A7C15
+  (scramble next, { e with draws := next })
+
+/-- Who plays a seat, now. -/
+private def Env.planOf (e : Env) (seat : Nat) : Option Opponent :=
+  match e.lineup[seat]? with
+  | some p => if e.play.state.phase == .setup then p.setup else p.play
+  | none => Option.none
+
+/-- This seat's context, under the weights of what plays it. -/
+private def ctxOf {G : GameDef} (board : Board G) (o : Opponent) : Ctx G := { weights := o.weights, board }
+
+/-- The first vote that is due: the first open law, and the first seat in turn order that has not voted and can. -/
+private def nextVoter {G : GameDef} (s : State G) : Option (Nat × Nat × Law) :=
+  s.openProposals.findSome? fun p =>
+    match p.body with
+    | .deal _ => Option.none
+    | .law L =>
+      (s.turnOrder.find? fun q => !(p.votes.any (·.1 == q)) && Engine.canAct s q).map (·, p.id, L)
+
+/-- Refill the law rows when the laws in force have changed, and give a new piece its row. -/
+private def Env.syncLaws (e : Env) : Env :=
+  let s := e.play.state
+  let ids := s.laws.map (·.1)
+  if ids == e.lawsSeen then e else
+  { e with
+    lawsSeen := ids
+    base := writeLaws e.base e.G s.laws
+    ep := e.ep.seat s.rules.pieces }
+
+/-- A law has a row for each new piece it makes, and a place among the laws in force. -/
+private def Env.lawFits (e : Env) (L : Law) : Bool :=
+  let free := (e.ep.rowKind.toList.drop maxLinkKinds).filter (· == "") |>.length
+  let linkFree := (e.ep.rowKind.toList.take maxLinkKinds).filter (· == "") |>.length
+  let news := L.clauses.filterMap fun | .newPiece p => some p | _ => Option.none
+  let isLink (p : PieceDef) : Bool := match p.placement with | .link => true | _ => false
+  e.play.state.laws.length < maxLaws &&
+    (news.filter (!isLink ·)).length ≤ free && (news.filter isLink).length ≤ linkFree
+
+/-- At the start of a turn in play, by chance, the seat whose turn it is proposes a law from the library. The engine
+may refuse one, for example if it is already in force, so this tries each in turn from a random place. -/
+private def Env.injectLaw (e : Env) : Env :=
+  let s := e.play.state
+  if e.settings.lawEvery == 0 || s.phase != .actions || s.turnsTaken == e.lawTurn then e else
+  let e := { e with lawTurn := s.turnsTaken }
+  let (x, e) := e.draw
+  let lib := e.T.library
+  if x.toNat % e.settings.lawEvery != 0 || lib.isEmpty then e else
+  let (y, e) := e.draw
+  match s.currentSeat with
+  | Option.none => e
+  | some seat =>
+    let start := y.toNat % lib.size
+    let tries := (List.range lib.size).map fun i => lib[(start + i) % lib.size]!
+    let found := tries.findSome? fun L =>
+      if e.lawFits L then
+        match Engine.step e.G s (.propose seat (.law L)) with
+        | .ok s' => some (Event.propose seat (.law L), s')
+        | .error _ => Option.none
+      else Option.none
+    match found with
+    | some (ev, s') => { e with play := e.play.commit {} e.playTable ev s', proposed := e.proposed + 1 }
+    | Option.none => e
+
+/-- Record each seat's pips the first time the game is in play. -/
+private def Env.noteOpening (e : Env) : Env :=
+  let s := e.play.state
+  if !e.opening.isEmpty || s.phase == .setup then e else
+  let pipsAt (v : Nat) := e.ctx.board.spotPips.getD v 0
+  let opening := s.pieces.foldl (fun acc x => match x.loc with
+    | .spot v => acc.modify x.owner (· + pipsAt v)
+    | .link _ => acc) (Array.replicate s.turnOrder.length 0)
+  { e with opening }
+
+/-- Cast a vote that is not the caller's to choose, or that is the caller's under a vote mode that handles it. -/
+private def Env.castVote (e : Env) (seat id : Nat) (L : Law) : Option Env :=
+  let s := e.play.state
+  let wanted : Bool × Env := match e.planOf seat with
+    | some o =>
+      let c := ctxOf e.ctx.board o
+      let yes := (o.strategy.decide c s [seat]).findSome? fun
+        | .vote q i y => if q == seat && i == id then some y else Option.none
+        | _ => Option.none
+      (yes.getD false, e)
+    | Option.none =>
+      match e.settings.voteMode with
+      | .bot => (lawOk e.ctx s seat id L, e)
+      | _ =>
+        let (x, e) := e.draw
+        (x % 2 == 0, e)
+  match Engine.step e.G s (.vote seat id wanted.1) with
+  | .ok s' => some { wanted.2 with play := wanted.2.play.commit {} wanted.2.playTable (.vote seat id wanted.1) s' }
+  | .error _ =>
+    match Engine.step e.G s (.vote seat id false) with
+    | .ok s' => some { e with play := e.play.commit {} e.playTable (.vote seat id false) s' }
+    | .error _ => Option.none
+
+/-- Run until a caller must decide or the game ends. A law passing is counted here, by the law's id appearing. -/
+private def Env.settle (e : Env) : Nat → Env
+  | 0 => { e with decision := .none }
+  | fuel + 1 =>
+    let e := e.syncLaws
+    let s := e.play.state
+    if s.phase == .ended then { e with decision := .none } else
+    let e := e.injectLaw
+    let e := e.noteOpening
+    let s := e.play.state
+    if s.phase == .ended then { e with decision := .none } else
+    match nextVoter s with
+    | some (seat, id, L) =>
+      let callerDecides := (e.planOf seat).isNone && e.settings.voteMode == .policy
+      if callerDecides then { e with decision := .vote seat id L } else
+      match e.castVote seat id L with
+      | some e' => Env.settle e' fuel
+      | Option.none => { e with decision := .none }
+    | Option.none =>
+      match s.currentSeat with
+      | Option.none => { e with decision := .none }
+      | some seat =>
+        if (e.planOf seat).isNone then { e with decision := .turn seat } else
+        let table := if s.phase == .setup then e.setupTable else e.playTable
+        match advance {} table e.play with
+        | some (_, p) => Env.settle { e with play := p } fuel
+        | Option.none => { e with decision := .none }
+
+/-- How many events a game can have, including those the environment adds. -/
+private def Env.fuel (e : Env) : Nat := eventCap e.G e.lineup.size + 1000
+
+/-- The reward of each seat when the game is over: for winning, and for its place, with the winner first and then by
+points and turn order. -/
+private def Env.finalRewards (e : Env) : FloatArray := Id.run do
+  let s := e.play.state
+  let seats := s.turnOrder.length
+  let key (q : Nat) : Nat := (if s.winner == some q then 100000 else 0) + s.pointsOf q * 10 + (maxSeats - q)
+  let order := (s.turnOrder.toArray.qsort fun a b => key a > key b).toList
+  let mut out := seatZeros
+  for (q, rank) in order.zipIdx do
+    let standing := 1 - 2 * Float.ofNat rank / Float.ofNat (max 1 (seats - 1))
+    let win := if s.winner == some q then e.settings.rewardWin else 0
+    out := out.set! q (win + e.settings.rewardStanding * standing)
+  return out
+
+/-- Work out the rewards since the last action. -/
+private def Env.reckon (e : Env) : Env := Id.run do
+  let s := e.play.state
+  let mut rewards := seatZeros
+  let mut e := e
+  if e.settings.shapingPoints != 0 then
+    let now := (List.range s.turnOrder.length).toArray.map s.pointsOf
+    for q in [0:now.size] do
+      let gained := Float.ofNat now[q]! - Float.ofNat (e.pointsSeen.getD q 0)
+      rewards := rewards.set! q (e.settings.shapingPoints * gained / Float.ofNat (max 1 e.G.targetPoints))
+    e := { e with pointsSeen := now }
+  if s.phase == .ended then
+    let final := e.finalRewards
+    for q in [0:maxSeats] do
+      rewards := rewards.set! q (rewards.get! q + final.get! q)
+  return { e with rewards }
+
+/-- Start a game with this seed. The map, the dice, the row order and the laws all follow from the seed. -/
+def Env.start (T : Tables) (settings : Settings) (lineup : Array SeatPlan) (seed : Nat) : Except String Env := do
+  let seats := lineup.size
+  let G := if settings.randomMap then randomMap T.G seed else T.G
+  if settings.randomMap && !G.shapeChecks then
+    throw s!"a random map of {T.id} failed the game's checks, with seed {seed}"
+  let board : Board G := if settings.randomMap then Board.remap G T else { T.board with }
+  let ep := Episode.make G settings.slotOrder seed
+  let names := (G.resources.map (·.name)).toArray
+  let planFor (pick : SeatPlan → Option Opponent) : Arena.Table G :=
+    { plans := lineup.map fun p => match pick p with
+        | some o => (o.strategy, ctxOf board o)
+        | Option.none => (silent, { weights := .default, board })
+      names }
+  let s := startOf G seats seed
+  let e : Env :=
+    { T, settings, lineup, seed, G, ctx := { weights := .default, board }
+      setupTable := planFor (·.setup), playTable := planFor (·.play)
+      play := Play.start s seats, ep
+      base := template T ep G seats settings.moveRows
+      draws := mix seed 77, lawsSeen := s.laws.map (·.1)
+      pointsSeen := Array.replicate seats 0, rewards := seatZeros }
+  return (Env.settle e e.fuel).reckon
+
+/-- Apply an action for the seat that must decide. An action not on offer, or one the engine refuses, changes nothing
+and sets `refused`. -/
+def Env.step (e : Env) (action : Nat) : Env :=
+  let bad := { e with refused := true, rewards := seatZeros }
+  match decode e.T e.ep e.decision action with
+  | Option.none => bad
+  | some ev =>
+    match Engine.step e.G e.play.state ev with
+    | .error _ => bad
+    | .ok s' =>
+      let table := if e.play.state.phase == .setup then e.setupTable else e.playTable
+      let lawsBefore := s'.laws.length != e.play.state.laws.length
+      let e' := { e with
+        play := e.play.commit {} table ev s'
+        refused := false
+        decisions := e.decisions + 1
+        passed := if lawsBefore then e.passed + 1 else e.passed }
+      (Env.settle e' e'.fuel).reckon
+
+/-- The numbers for the seat that must decide. -/
+def Env.observation (e : Env) : FloatArray :=
+  observe e.T e.ep e.ctx e.settings e.base e.play.state e.decision
+
+/-- The actions on offer. -/
+def Env.legalActions (e : Env) : List (Nat × Event) := legal e.T e.ep e.ctx e.play.state e.decision
+
+def Env.mask (e : Env) : ByteArray := maskOf e.legalActions
+
+/-- What this named strategy would do now, as an action. `none` if it wants something with no action, such as an
+offer, or there is no decision. -/
+def Env.suggest (e : Env) (name : String) : Option Nat := do
+  let o ← opponents.find? (·.name == name)
+  let seat ← e.decision.seat?
+  let s := e.play.state
+  let wants := (o.strategy.decide (ctxOf e.ctx.board o) s [seat]).filter (seatOf · == some seat)
+  match e.decision with
+  | .vote _ id _ =>
+    wants.findSome? fun
+      | .vote _ i yes => if i == id then some (if yes then actVoteYes else actVoteNo) else Option.none
+      | _ => Option.none
+  | _ =>
+    let moves := wants.filter fun | .move .. => true | _ => false
+    let (chosen : Event) ← (moves.find? fun ev => (Engine.step e.G s ev).toOption.isSome)
+    encode e.T e.ep e.decision chosen
+
+/-! ## Numbers about a game, for the caller. `infoNames` is their order. -/
+
+def infoNames : List String :=
+  [ "over", "winner", "round", "events", "rejected", "proposed", "passed", "decisions", "offers" ]
+  ++ (List.range maxSeats).map (s!"points{·}") ++ (List.range maxSeats).map (s!"opening{·}")
+
+def Env.info (e : Env) : FloatArray :=
+  let s := e.play.state
+  let seat (f : Nat → Nat) := (List.range maxSeats).map fun q =>
+    if q < s.turnOrder.length then Float.ofNat (f q) else 0
+  let first : List Float :=
+    [ if s.phase == .ended then 1 else 0
+    , match s.winner with | some w => Float.ofNat w | Option.none => -1
+    , Float.ofNat s.round, Float.ofNat e.play.events, Float.ofNat e.play.rejected
+    , Float.ofNat e.proposed, Float.ofNat e.passed, Float.ofNat e.decisions
+    , Float.ofNat (e.play.offersMade.foldl (· + ·) 0) ]
+  (first ++ seat s.pointsOf ++ seat (e.opening.getD · 0)).foldl FloatArray.push FloatArray.empty
+
+/-! ## Reading a configuration -/
+
+private def jGet (j : Json) (k : String) : Option Json := (j.getObjVal? k).toOption
+
+private def readFloat (j : Json) (k : String) (dflt : Float) : Except String Float :=
+  match jGet j k with
+  | Option.none => pure dflt
+  | some v =>
+    match v.getNum? with
+    | .ok n => pure n.toFloat
+    | .error _ => throw s!"{k} must be a number"
+
+private def readBool (j : Json) (k : String) (dflt : Bool) : Except String Bool :=
+  match jGet j k with
+  | Option.none => pure dflt
+  | some v =>
+    match v.getBool? with
+    | .ok b => pure b
+    | .error _ => throw s!"{k} must be true or false"
+
+/-- The settings of a configuration. An unknown key is an error, so a misspelt switch cannot pass unnoticed. -/
+def readSettings (j : Json) : Except String Settings := do
+  let known := ["game", "seats", "lineup", "seed", "law_every", "vote_mode", "move_rows", "preview", "random_map",
+    "slot_order", "reward_win", "reward_standing", "shaping_points"]
+  match j.getObj? with
+  | .error _ => throw "a configuration must be an object"
+  | .ok kvs =>
+    for (k, _) in kvs.toList do
+      if !known.contains k then throw s!"there is no setting called {k}"
+  let d : Settings := {}
+  let lawEvery ← match jGet j "law_every" with
+    | Option.none => pure d.lawEvery
+    | some v => match v.getNat? with
+      | .ok n => pure n
+      | .error _ => throw "law_every must be a whole number"
+  let voteMode ← match jGet j "vote_mode" with
+    | Option.none => pure d.voteMode
+    | some v => match v.getStr? with
+      | .ok "random" => pure .random
+      | .ok "bot" => pure .bot
+      | .ok "policy" => pure .policy
+      | _ => throw "vote_mode must be random, bot or policy"
+  let slotOrder ← match jGet j "slot_order" with
+    | Option.none => pure d.slotOrder
+    | some v => match v.getStr? with
+      | .ok "shuffled" => pure .shuffled
+      | .ok "game" => pure .game
+      | _ => throw "slot_order must be shuffled or game"
+  pure
+    { lawEvery, voteMode, slotOrder
+      moveRows := ← readBool j "move_rows" d.moveRows
+      preview := ← readBool j "preview" d.preview
+      randomMap := ← readBool j "random_map" d.randomMap
+      rewardWin := ← readFloat j "reward_win" d.rewardWin
+      rewardStanding := ← readFloat j "reward_standing" d.rewardStanding
+      shapingPoints := ← readFloat j "shaping_points" d.shapingPoints }
+
+/-- One seat of a lineup: `caller`, a strategy's name, or `first+then` for one thing in setup and another after. -/
+def readSeat (text : String) : Except String SeatPlan := do
+  let one (name : String) : Except String (Option Opponent) :=
+    if name == "caller" then pure Option.none
+    else match opponents.find? (·.name == name) with
+      | some o => pure (some o)
+      | Option.none => throw s!"there is no strategy called {name}. There are {opponents.map (·.name)}"
+  match text.splitOn "+" with
+  | [a] =>
+    let o ← one a
+    pure { setup := o, play := o }
+  | [a, b] => pure { setup := ← one a, play := ← one b }
+  | _ => throw s!"a seat cannot be {text}"
+
+/-- A new game from a configuration. -/
+def Env.ofJson (j : Json) : Except String Env := do
+  let settings ← readSettings j
+  let id ← j.getObjValAs? String "game"
+  let some T := tablesOf? id | throw s!"there is no game called {id}"
+  let lineup ← j.getObjValAs? (List String) "lineup"
+  let seats := lineup.length
+  if seats < T.minSeats || T.maxSeats < seats then
+    throw s!"{id} has {T.minSeats} to {T.maxSeats} seats, and this lineup has {seats}"
+  match T.problems with
+  | [] => pure ()
+  | ps => throw s!"{id} does not fit the layout: {ps}"
+  let plans ← lineup.mapM readSeat
+  let seed := match jGet j "seed" with
+    | some v => (v.getNat?.toOption).getD 1
+    | Option.none => 1
+  Env.start T settings plans.toArray seed
+
+end CharterRL

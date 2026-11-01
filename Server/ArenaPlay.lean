@@ -128,6 +128,22 @@ def Play.note (p : Play G) (e : Event) : Play G :=
     | none => p
   | _ => p
 
+/-- Keep an event the engine accepted: count it, and make the state cheap to read again. `thrown` says the arena
+ended a turn that a seat threw away. -/
+def Play.commit (o : Options) (t : Table G) (p : Play G) (e : Event) (s' : State G) (thrown : Bool := false) : Play G :=
+  let s := p.state
+  let p := p.note e
+  let added := s'.journal.length - s.journal.length
+  let s' := if o.dropJournal then { s' with journal := [] } else s'
+  let posted := p.posted + added
+  let again := o.compactEvery != 0 && posted ≥ o.compactEvery
+  let s' := if again then compact t.names t.plans.size s' else s'
+  { p with
+    state := s'
+    events := p.events + 1
+    rejected := if thrown then p.rejected + 1 else p.rejected
+    posted := if again then 0 else posted }
+
 /-- One step of a game: the chosen event and the game after it. `none` means nothing can happen. -/
 def advance (o : Options) (t : Table G) (p : Play G) : Option (Event × Play G) :=
   let s := p.state
@@ -137,18 +153,7 @@ def advance (o : Options) (t : Table G) (p : Play G) : Option (Event × Play G) 
     | none => (endForcibly s, true)
   match chosen with
   | none => none
-  | some (e, s') =>
-    let p := p.note e
-    let added := s'.journal.length - s.journal.length
-    let s' := if o.dropJournal then { s' with journal := [] } else s'
-    let posted := p.posted + added
-    let again := o.compactEvery != 0 && posted ≥ o.compactEvery
-    let s' := if again then compact t.names t.plans.size s' else s'
-    some (e, { p with
-      state := s'
-      events := p.events + 1
-      rejected := if thrown then p.rejected + 1 else p.rejected
-      posted := if again then 0 else posted })
+  | some (e, s') => some (e, p.commit o t e s' thrown)
 
 /-- Play on until the game ends, or for this many more events. -/
 def run (o : Options) (t : Table G) : Nat → Play G → Play G
