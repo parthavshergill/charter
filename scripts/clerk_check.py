@@ -458,6 +458,28 @@ def main():
         d = t.draft(seat0, "difference", "DIFFERENCE: You didn't say how much, so this uses 1.\n" + LATER)
         check(d["review"]["difference"] == "You didn't say how much, so this uses 1.", "the difference line reaches the review")
 
+        # The clerk's language knows the roll, and the program reads a roll law back in plain words.
+        block = StandIn.requests[-1]["body"]["system"][0]["text"]
+        check("(on-roll effect+)" in block and "| rolled |" in block, "the clerk's language lists on-roll and rolled")
+        ROLL_LAWS = [
+            ("On a 2, everyone pays 1 grain to the treasury.",
+             '(law "Snake eyes" (on-roll (for-each-player (= rolled 2) (transfer each treasury grain 1))))',
+             "When a 2 is rolled, every player pays 1 grain to the treasury."),
+            ("On a 12, the bank pays everyone 1 wool.",
+             '(law "Boxcars" (on-roll (for-each-player (= rolled 12) (transfer bank each wool 1))))',
+             "When a 12 is rolled, every player gets 1 wool from the bank."),
+            ("On a 7, a seat holding more than 7 resources in total pays half of each resource to the bank.",
+             '(law "Seven penalty" (on-roll (for-each-player (and (= rolled 7) (< 7 (+ (holding each grain) (+ (holding each timber) (+ (holding each ore) (+ (holding each wool) (holding each brick))))))) (transfer each bank grain (/ (holding each grain) 2)) (transfer each bank timber (/ (holding each timber) 2)) (transfer each bank ore (/ (holding each ore) 2)) (transfer each bank wool (/ (holding each wool) 2)) (transfer each bank brick (/ (holding each brick) 2)))))',
+             "When a 7 is rolled, for each player, if their grain, timber, ore, wool and brick together is more than 7, they pay half of their grain, timber, ore, wool and brick, each rounded down, to the bank."),
+        ]
+        for words, formal, statement in ROLL_LAWS:
+            check(words in block, f"the clerk has an example for: {words}")
+            d = t.draft(seat0, words, formal)
+            check(d["outcome"] == "ready" and d["attempt"] == 1, f"this roll law passes the checks: {words}")
+            check(d["review"]["statement"].startswith(statement), f"it reads back in plain words: {statement}")
+        d = t.draft(seat0, "a harvest word on a roll", ['(law "x" (on-roll (transfer bank treasury res 1)))', LATER])
+        check(d["attempt"] == 2 and d["review"]["text"] == LATER, "a roll law that names the harvested resource is sent back")
+
         # Typed formal text skips the model, and is still remembered.
         count = len(StandIn.requests)
         d = t.draft(seat0, '(law "Typed" (set-bank-rate 5))')

@@ -25,12 +25,12 @@ A theorem means only what its words mean. These files define the words. Read the
 * `Words/Books.lean`: accounts, entries and the journal.
 * `Words/Deal.lean`: what a deal can say.
 * `Words/State.lean`: the game state, events, and the rules in force.
-* `Words/LawEffects.lean`: what a law does when it runs, and the dice payout.
+* `Words/Turns.lean`: what comes after a turn, and how long a game can be.
+* `Words/LawEffects.lean`: what a law does when it runs, the dice payout, and the whole of a roll.
 * `Words/Payments.lean`: what deals owe, and what trades and fees move.
 * `Words/Placing.lean`: when a build is allowed, what it costs, and the board after it.
 * `Words/LawChecks.lean`: which laws can pass.
 * `Words/DealChecks.lean`: which deals can run.
-* `Words/Turns.lean`: what comes after a turn, and how long a game can be.
 * `Words/Dice.lean`: the seed, a new game, and the dice.
 * `Words/Valid.lean`: the checks every game must pass.
 * `Words/Renaming.lean`: what it means to rename every seat.

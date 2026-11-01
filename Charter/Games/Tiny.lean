@@ -84,6 +84,24 @@ def tinyFounded : GameDef :=
 
 theorem tinyFounded_valid : tinyFounded.Valid := by decide +kernel
 
+/-- A law that reacts to a 7. The bank pays the seat whose turn starts 1 timber, and pays every seat 1
+grain. On any other roll it does nothing. -/
+def luckySeven : Law :=
+  { title := "Lucky seven"
+    clauses := [.onRoll
+      [ .when (.eq .rolled (.lit 7)) [.transfer .bank .actor (.lit "timber") (.lit 1)]
+      , .forEach (.eq .rolled (.lit 7)) [.transfer .bank .each (.lit "grain") (.lit 1)] ]] }
+
+/-- Tiny Settlers with two dice, so a 7 can come up, and with a founding law that reacts to one. -/
+def tinySevens : GameDef :=
+  { tinySettlers with
+    name := "Tiny Sevens"
+    diceCount := 2
+    diceSides := 6
+    foundingLaws := [luckySeven] }
+
+theorem tinySevens_valid : tinySevens.Valid := by decide +kernel
+
 /-- A law that pays each seat from each seat, three levels deep. That is 8 payments at 2 seats and 216
 at 6, which is over the limit of 64. -/
 def tooManyPayments : Law :=

@@ -1,6 +1,7 @@
 import Charter.Constitution
 import Charter.Games.Tiny
 import Charter.Proofs.Witness
+import Charter.Proofs.Replay
 
 /-!
 # Examples
@@ -11,6 +12,8 @@ These show that the promises are not empty:
   founding law.
 * The conditions the theorems assume can be met. `tinySettlers_valid` gives a valid game, and the last
   example here gives a reachable state.
+* A law can react to a roll. `a_seven_moves_money` plays a real game in which a 7 moves money, and laws
+  over the payment limits are rejected.
 * The promises reject bad steps. Each `..._is_rejected` theorem shows a named part of a commandment
   saying no to a forged step. Next to most is an `example` of the honest step, which it allows.
 
@@ -378,6 +381,164 @@ example : BlockedTradesAreRejected (offerGame 0) (.move 1 (.accept 0)) := by
     simp [State.tradeBlocked, offerGame, sampleGame, initialState]
   · intro p q give get he
     cases he
+
+/-! ## Laws that react to the roll -/
+
+/-- The entries of the Lucky Seven law when the roll starts the turn of `actor`, in a game with no
+pieces on the map. -/
+def luckySevenEntries (actor : Seat) : List Entry :=
+  [ ⟨.bank, .player actor, "timber", 1, .lawEffect⟩
+  , ⟨.bank, .player 0, "grain", 1, .lawEffect⟩
+  , ⟨.bank, .player 1, "grain", 1, .lawEffect⟩ ]
+
+/-- A test of one roll: the next turn change shows a 7, starts the turn of `actor`, and makes exactly
+the Lucky Seven entries. -/
+def sevenPays (r : Except String (State tinySevens)) (actor : Seat) : Bool :=
+  match r with
+  | .error _ => false
+  | .ok s =>
+    match Engine.step tinySevens s .forceEndTurn with
+    | .error _ => false
+    | .ok s' =>
+      s'.lastRoll == some 7 && s'.rollsMade == s.rollsMade + 1 && s.isLastTurn == false &&
+        s'.currentSeat == some actor && newEntries s s' == luckySevenEntries actor
+
+/-- A 7 really moves money, in a real game. Every seat skips setup. The first roll of this game is a
+7, and it pays nobody from the map. The founding law still fires: the bank pays the seat whose turn
+starts and every seat. So each hypothesis of `RollPaysExactly` is met on a 7. -/
+theorem a_seven_moves_money :
+    ∃ s s', Reachable tinySevens s ∧ Engine.step tinySevens s .forceEndTurn = .ok s' ∧
+      EndsTurn s .forceEndTurn ∧ s'.rollsMade = s.rollsMade + 1 ∧ s.isLastTurn = false ∧
+      s'.lastRoll = some 7 ∧ s'.currentSeat = some 0 ∧
+      newEntries s s' = luckySevenEntries 0 ∧ newEntries s s' = rollEntries s 7 := by
+  have hc : sevenPays (Engine.replay tinySevens 2 42 [3] (List.replicate 3 .forceEndTurn)) 0 = true := by
+    decide +kernel
+  cases hr : Engine.replay tinySevens 2 42 [3] (List.replicate 3 .forceEndTurn) with
+  | error m =>
+    rw [hr] at hc
+    simp [sevenPays] at hc
+  | ok s =>
+    rw [hr] at hc
+    cases hs : Engine.step tinySevens s .forceEndTurn with
+    | error m => simp [sevenPays, hs] at hc
+    | ok s' =>
+      simp only [sevenPays, hs, Bool.and_eq_true, beq_iff_eq] at hc
+      obtain ⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩ := hc
+      have hreach : Reachable tinySevens s :=
+        ((X_what_you_vote_on_is_what_runs tinySevens tinySevens_valid).1 s).mpr
+          ⟨2, 42, [3], _, by decide, by decide, hr⟩
+      have hroll := (X_what_you_vote_on_is_what_runs tinySevens tinySevens_valid).2.2.2.1
+        s s' .forceEndTurn hreach hs trivial h2
+      have hval : rollAt tinySevens s.seed s.rollsMade = 7 := by
+        have h7 := VIII_nobody_controls_the_dice tinySevens tinySevens_valid s s' .forceEndTurn hreach hs
+        rcases h7.2.2.2.1 with ⟨h8, _⟩ | ⟨_, h8⟩
+        · omega
+        · rw [h1] at h8
+          exact (Option.some.inj h8).symm
+      refine ⟨s, s', hreach, hs, trivial, h2, h3, h1, h4, h5, ?_⟩
+      rw [hroll.1 h3, hval]
+
+/-- The next roll of that game is also a 7, and the law acts for seat 1, whose turn it starts. -/
+theorem the_actor_is_the_seat_whose_turn_starts :
+    sevenPays (Engine.replay tinySevens 2 42 [3] (List.replicate 4 .forceEndTurn)) 1 = true := by
+  decide +kernel
+
+/-- The Lucky Seven game with the first roll about to come, and seat 1 next to play. -/
+def sevenGame : State tinySevens :=
+  { initialState tinySevens 2 42 [3] with phase := .actions }
+
+/-- The roll about to come in `sevenGame`. -/
+def sevenRoll : Nat := rollAt tinySevens sevenGame.seed sevenGame.rollsMade
+
+/-- The honest entries: on a 7, the law pays exactly what it says. -/
+example : rollEntries (sevenGame.afterPosting sevenGame.entriesBeforeRoll) sevenRoll =
+    luckySevenEntries 1 := by
+  decide +kernel
+
+/-- On any other roll, the law moves nothing. -/
+example : rollEntries sevenGame 8 = [] := by decide +kernel
+
+/-- A roll that skips the law's payments. X rejects this: the entries of a roll must be exactly
+`rollEntries`, and those are not empty. -/
+theorem skipped_seven_is_rejected :
+    ([] : List Entry) ≠ rollEntries (sevenGame.afterPosting sevenGame.entriesBeforeRoll) sevenRoll := by
+  decide +kernel
+
+/-- On a 7, a step takes 1 grain from seat 0 for seat 1, and no law asks for it. V rejects this. -/
+theorem forged_seven_payment_is_rejected :
+    ¬ MoneyLeavesSeatOnlyFor sevenGame sevenGame .forceEndTurn
+      ⟨.player 0, .player 1, "grain", 1, .lawEffect⟩ := by
+  intro h
+  have hEnd : ⟨.player 0, .player 1, "grain", 1, .lawEffect⟩ ∉
+      rollEntries (sevenGame.afterPosting sevenGame.entriesBeforeRoll) sevenRoll := by decide +kernel
+  have hRound : ⟨.player 0, .player 1, "grain", 1, .lawEffect⟩ ∉
+      sevenGame.roundEndLawEntries := by decide +kernel
+  rcases h 0 rfl with ⟨hr, _⟩ | ⟨hr, _⟩ | ⟨hr, _⟩ | ⟨_, _, hf, _⟩ | ⟨_, h1⟩
+  · cases hr
+  · cases hr
+  · cases hr
+  · cases hf
+  · rcases h1 with ⟨_, _, _, he, _⟩ | ⟨_, h2⟩
+    · cases he
+    · rcases h2 with h2 | h2
+      · exact hRound h2
+      · exact hEnd h2
+
+/-- On a 7, the bank pays the timber to seat 0, but the law pays the seat whose turn starts, which is
+seat 1. V rejects this. -/
+theorem wrong_actor_is_rejected :
+    ¬ MoneyLeavesBankOnlyFor sevenGame .forceEndTurn ⟨.bank, .player 0, "timber", 1, .lawEffect⟩ := by
+  intro h
+  have hEnd : ⟨.bank, .player 0, "timber", 1, .lawEffect⟩ ∉
+      rollEntries (sevenGame.afterPosting sevenGame.entriesBeforeRoll) sevenRoll := by decide +kernel
+  have hRound : ⟨.bank, .player 0, "timber", 1, .lawEffect⟩ ∉
+      sevenGame.roundEndLawEntries := by decide +kernel
+  rcases h (Or.inl rfl) with ⟨hr, _⟩ | ⟨hr, _⟩ | ⟨_, h1⟩
+  · cases hr
+  · cases hr
+  · rcases h1 with ⟨_, _, _, he, _⟩ | ⟨_, h2⟩
+    · cases he
+    · rcases h2 with h2 | h2
+      · exact hRound h2
+      · exact hEnd h2
+
+/-- The honest entry is allowed: the bank pays seat 1, whose turn the roll starts. -/
+example : MoneyLeavesBankOnlyFor sevenGame .forceEndTurn ⟨.bank, .player 1, "timber", 1, .lawEffect⟩ :=
+  fun _ => Or.inr (Or.inr ⟨rfl, Or.inr ⟨trivial, Or.inr (by decide +kernel)⟩⟩)
+
+/-- With no law that reacts to a roll, a roll is the harvest alone. So a saved game with no such law
+replays as it always did. -/
+theorem no_roll_law_means_harvest_alone {G : GameDef} (s : State G) (roll : Nat)
+    (h : ∀ x ∈ s.laws, ∀ c ∈ x.2.clauses, ∀ b, c ≠ .onRoll b) :
+    rollEntries s roll = harvestEntries s roll :=
+  Proofs.rollEntries_no_roll_law s roll h
+
+/-- A law that reacts to a roll, with this many transfers for each seat. -/
+def wideRollLaw (transfers : Nat) : Law :=
+  { title := "Wide"
+    clauses := [.onRoll [.forEach .yes
+      (List.replicate transfers (.transfer .each .treasury (.lit "grain") (.lit 1)))]] }
+
+/-- A game of 6 seats, the most a game can have, with these laws in force. -/
+def sixSeatGame (laws : List (Nat × Law)) : State tinySettlers :=
+  { initialState tinySettlers 6 42 [25283273] with phase := .actions, laws := laws }
+
+/-- A roll law counts against the limit on one law. At 6 seats, 10 transfers for each seat pass. -/
+example : lawProblems tinySettlers (sixSeatGame []) (wideRollLaw 10) = [] := by decide +kernel
+
+/-- At 6 seats, 11 transfers for each seat ask for 66 payments on one roll, over the limit of 64. -/
+theorem roll_law_over_the_cap_is_rejected :
+    "this law could make too many payments at once" ∈
+      lawProblems tinySettlers (sixSeatGame []) (wideRollLaw 11) := by
+  decide +kernel
+
+/-- Roll laws count against the limit on all laws in force. Two laws of 60 payments are in force. A
+third would make 180, over the limit of 128. -/
+theorem roll_laws_over_the_total_cap_are_rejected :
+    "the laws in force could make too many payments at once" ∈
+      lawProblems tinySettlers (sixSeatGame [(0, wideRollLaw 10), (1, wideRollLaw 10)])
+        (wideRollLaw 10) := by
+  decide +kernel
 
 /-- The conditions the theorems assume can be met: this new game is reachable. -/
 example : Reachable tinySettlers (initialState tinySettlers 2 42 [25283273]) :=

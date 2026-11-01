@@ -118,6 +118,24 @@ theorem harvestEntries_form {s : State G} {roll : Nat} {x : Entry}
     exact ⟨fun _ _ he => (by cases he), fun _ _ he => (by cases he), by simp, by simp⟩
   · exact ⟨h.2.1, h.2.2, by rw [h.1]; simp, by rw [h.1]; simp⟩
 
+/-- A roll is the harvest, then what laws do in reaction to the roll. -/
+theorem rollEntries_cases {s : State G} {roll : Nat} {x : Entry}
+    (hx : x ∈ rollEntries s roll) : x ∈ harvestEntries s roll ∨ LawForm x := by
+  simp only [rollEntries, List.mem_append] at hx
+  refine hx.imp id (fun hx => ?_)
+  cases hn : s.nextRoller with
+  | none => simp [hn] at hx
+  | some a =>
+    simp only [hn] at hx
+    exact lawEntries_form _ _ x hx
+
+theorem rollEntries_form {s : State G} {roll : Nat} {x : Entry}
+    (hx : x ∈ rollEntries s roll) : NotDeposit x.src ∧ NotDeposit x.dst ∧
+      x.reason ≠ .dealPayment ∧ x.reason ≠ .refund := by
+  rcases rollEntries_cases hx with h | h
+  · exact harvestEntries_form h
+  · exact ⟨h.2.1, h.2.2, by rw [h.1]; simp, by rw [h.1]; simp⟩
+
 /-- A deal's payment comes from a term of a running deal. -/
 theorem duePayments_form {s : State G} {x : Entry} (hx : x ∈ s.duePayments) :
     x.reason = .dealPayment ∧ ∃ d ∈ s.deals, ∃ p ∈ d.deal.allPays,
@@ -203,7 +221,7 @@ theorem closing_gone {s : State G} (hl : s.isLastTurn = true) (hnd : (s.deals.ma
 
 theorem mem_turnEntries {s : State G} {roll : Nat} {x : Entry} (hx : x ∈ turnEntries s roll) :
     (s.isLastTurn = true ∧ x ∈ s.roundEndEntries) ∨
-    x ∈ harvestEntries (s.afterPosting s.entriesBeforeRoll) roll := by
+    x ∈ rollEntries (s.afterPosting s.entriesBeforeRoll) roll := by
   have before : x ∈ s.entriesBeforeRoll → s.isLastTurn = true ∧ x ∈ s.roundEndEntries := by
     intro h
     unfold State.entriesBeforeRoll at h
@@ -242,7 +260,7 @@ def SeatOut (s s' : State G) (e : Event) (x : Entry) (i : Seat) : Prop :=
        x ∈ lawEntries (s.afterPosting (s.costEntries b k)) (.build b k)) ∨
      (EndsTurn s e ∧
        (x ∈ s.roundEndLawEntries ∨
-        x ∈ harvestEntries (s.afterPosting s.entriesBeforeRoll)
+        x ∈ rollEntries (s.afterPosting s.entriesBeforeRoll)
           (rollAt G s.seed s.rollsMade)))))
 
 /-- Everything commandment V says about one entry. -/
@@ -306,7 +324,7 @@ theorem vconj_payment {s s' : State G} {e : Event} {x : Entry} (hx : x ∈ s.due
 /-- A law's entry at a turn change. -/
 theorem vconj_turnLaw {s s' : State G} {e : Event} {x : Entry} (hf : LawForm x) (hend : EndsTurn s e)
     (hx : x ∈ s.roundEndLawEntries ∨
-      x ∈ harvestEntries (s.afterPosting s.entriesBeforeRoll) (rollAt G s.seed s.rollsMade)) :
+      x ∈ rollEntries (s.afterPosting s.entriesBeforeRoll) (rollAt G s.seed s.rollsMade)) :
     VConj s s' e x :=
   vconj_plain hf.2.1 hf.2.2 (by rw [hf.1]; simp) (by rw [hf.1]; simp)
     (fun _ _ => Or.inr (Or.inr (Or.inr (Or.inr ⟨hf.1, Or.inr ⟨hend, hx⟩⟩))))
@@ -323,14 +341,18 @@ theorem vconj_turn {s : State G} {e : Event} (hend : EndsTurn s e)
     · obtain ⟨hr, i, _, h1, h2⟩ := refundEntries_form h
       exact vconj_refund (closingDeals_mem hd)
         (closing_gone (s := { s with books := b, journal := j }) hl hnd hd _) hr h1 h2
-  · obtain ⟨h1, h2, h3, h4⟩ := harvestEntries_form hx
+  · obtain ⟨h1, h2, h3, h4⟩ := rollEntries_form hx
     refine vconj_plain h1 h2 h3 h4 ?_
     intro i hi
-    rcases harvestEntries_cases hx with hb | hb
-    · have := (baseHarvest_form hb).1
-      rw [hi] at this
-      cases this
-    · exact Or.inr (Or.inr (Or.inr (Or.inr ⟨hb.1, Or.inr ⟨hend, Or.inr hx⟩⟩)))
+    have hlaw : LawForm x := by
+      rcases rollEntries_cases hx with hh | hb
+      · rcases harvestEntries_cases hh with hb | hb
+        · have := (baseHarvest_form hb).1
+          rw [hi] at this
+          cases this
+        · exact hb
+      · exact hb
+    exact Or.inr (Or.inr (Or.inr (Or.inr ⟨hlaw.1, Or.inr ⟨hend, Or.inr hx⟩⟩)))
 
 /-- The entries of a bundle go between the two accounts given. -/
 theorem mem_bundleEntries {a b : Account} {bd : Bundle} {r : Reason} {x : Entry}

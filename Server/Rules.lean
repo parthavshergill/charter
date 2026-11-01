@@ -64,6 +64,7 @@ def parseBundle (rs : List Res) : SExp → P Bundle
 def parseExpr (rs : List Res) : SExp → P Expr
   | .num i => if 0 ≤ i then .ok (.lit i.toNat) else .error "negative number"
   | .atom "amount" => .ok .harvestedAmount
+  | .atom "rolled" => .ok .rolled
   | .list [.atom "holding", p, r] => return .holding (← parseParty p) (← parseResRef rs r)
   | .list [.atom "points", p] => return .points (← parseParty p)
   | .list [.atom "count", p, k] => return .count (← parseParty p) (← parseKind k)
@@ -124,6 +125,7 @@ def parseClause (rs : List Res) : SExp → P Clause
   | .list (.atom "on-build" :: k :: body) =>
       return .onBuild (← parseKind k) (← parseEffects1 rs "on-build" body)
   | .list (.atom "on-round-end" :: body) => .onRoundEnd <$> parseEffects1 rs "on-round-end" body
+  | .list (.atom "on-roll" :: body) => .onRoll <$> parseEffects1 rs "on-roll" body
   | .list [.atom "set-cost", k, b] => return .setCost (← parseKind k) (← parseBundle rs b)
   | .list [.atom "set-points", k, n] => return .setPoints (← parseKind k) (← parseNat n)
   | .list [.atom "set-bank-rate", n] => return .setBankRate (← parseNat n)
@@ -197,6 +199,7 @@ def bundleS (b : Bundle) : SExp :=
 def exprS : Expr → SExp
   | .lit n => natS n
   | .harvestedAmount => .atom "amount"
+  | .rolled => .atom "rolled"
   | .holding p r => .list [.atom "holding", partyS p, resRefS r]
   | .points p => .list [.atom "points", partyS p]
   | .count p k => .list [.atom "count", partyS p, .atom k]
@@ -236,6 +239,7 @@ def clauseS : Clause → SExp
   | .onHarvest b => .list (.atom "on-harvest" :: effectsS b)
   | .onBuild k b => .list (.atom "on-build" :: .atom k :: effectsS b)
   | .onRoundEnd b => .list (.atom "on-round-end" :: effectsS b)
+  | .onRoll b => .list (.atom "on-roll" :: effectsS b)
   | .setCost k b => .list [.atom "set-cost", .atom k, bundleS b]
   | .setPoints k n => .list [.atom "set-points", .atom k, natS n]
   | .setBankRate n => .list [.atom "set-bank-rate", natS n]
@@ -278,6 +282,7 @@ def sampleLaws : List (String × String) :=
   [ ("cheap-cities", "(law \"Cheaper cities\" (set-cost city (bundle (grain 2) (ore 2))))")
   , ("cheap-roads", "(law \"Free timber roads\" (set-cost road (bundle (brick 1))))")
   , ("bank-rate", "(law \"A fairer bank\" (set-bank-rate 3))")
+  , ("seven-penalty", "(law \"Seven penalty\" (on-roll (for-each-player (and (= rolled 7) (< 7 (+ (holding each grain) (+ (holding each timber) (+ (holding each ore) (+ (holding each wool) (holding each brick))))))) (transfer each bank grain (/ (holding each grain) 2)) (transfer each bank timber (/ (holding each timber) 2)) (transfer each bank ore (/ (holding each ore) 2)) (transfer each bank wool (/ (holding each wool) 2)) (transfer each bank brick (/ (holding each brick) 2)))))")
   , ("harvest-tithe", "(law \"Harvest tithe\" (on-harvest (transfer actor treasury res (/ amount 2))))")
   , ("poor-relief", "(law \"Poor relief\" (on-round-end (for-each-player (<= (points each) 2) (transfer treasury each grain 1) (transfer treasury each wool 1))))")
   , ("build-gift", "(law \"City gift\" (on-build city (for-each-player true (transfer each actor grain 1))))")
