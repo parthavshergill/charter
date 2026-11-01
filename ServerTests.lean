@@ -8,6 +8,7 @@ import Server.Suggest
 import Server.Describe
 import Server.RoundTrip
 import Server.GenericCheck
+import Server.SecrecyCheck
 
 /-!
 # Tests of the deal sentences, the clerk's memory and the descriptions

@@ -42,6 +42,7 @@ run:
 
 smoke: install
 	python3 scripts/smoke.py
+	python3 scripts/secrecy_check.py
 
 clerk-check: install
 	python3 scripts/clerk_check.py

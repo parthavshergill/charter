@@ -454,8 +454,17 @@ def bankShortLine (x : State G) (roll : Nat) : Option String :=
     let words := short.map fun r => if x.balance .bank r == 0 then s!"no {r}" else s!"too little {r}"
     some s!"On {Text.rollName roll}, the bank had {Text.andList words} to pay anyone."
 
-/-- All the sentences for one accepted event. Each has its actor, kind, text and weight. -/
-def sentences (g : Game) (s s' : State G) (e : Event) : List (Option Nat × String × String × Bool) :=
+/-- How many of a step's entries belong to the round's end, before the roll. Only a turn change has any. -/
+def roundEndSplit (s : State G) (e : Event) : Nat :=
+  match e with
+  | .move _ .endTurn | .forceEndTurn => s.entriesBeforeRoll.length
+  | _ => 0
+
+/-- All the sentences for one accepted event. Each has its actor, kind, text and weight. `split` is
+`roundEndSplit` of the true state. A viewer's state may not be able to work it out, when what the round's
+end does depends on something hidden. -/
+def sentences (g : Game) (s s' : State G) (e : Event) (split : Nat := roundEndSplit s e) :
+    List (Option Nat × String × String × Bool) :=
   let actor := actorOf e
   let rollLaw := match s'.lastRoll with
     | some r => if s'.rollsMade != s.rollsMade then some (r, rollLawPart s r) else none
@@ -470,7 +479,7 @@ def sentences (g : Game) (s s' : State G) (e : Event) : List (Option Nat × Stri
   let endsTurn := match e with
     | .move _ .endTurn | .forceEndTurn => true
     | _ => false
-  let atRoundEnd := if endsTurn then s.entriesBeforeRoll.length else 0
+  let atRoundEnd := if endsTurn then split else 0
   let afterEnd := s.afterRoundEnd
   let thisRoll := if s'.rollsMade != s.rollsMade then s'.lastRoll else none
   -- Which laws these payments came from, for each moment that has any.
@@ -545,19 +554,25 @@ def sentences (g : Game) (s s' : State G) (e : Event) : List (Option Nat × Stri
 
 /-- **The chronicle lines one step adds, as this viewer may know them.** They are built from the states
 and the event as `observe` gives them to this viewer, and from the public parts of the game. -/
-def linesFrom (pub : Game) (v : Option Nat) (s s' : State G) (e : Event) : List (Option Nat × String × String × Bool) :=
-  let sec := pub.spec.secrecy
-  let seen := observeEvent sec v e
-  let lines := sentences pub (observe sec v s) (observe sec v s') seen
+def linesOf (pub : Game) (v : Option Nat) (o o' : State G) (seen : Event) (split : Nat) :
+    List (Option Nat × String × String × Bool) :=
+  let lines := sentences pub o o' seen split
   match seen, lines with
   | .move p (.declare r _), (actor, kind, _, major) :: rest =>
-    if sec.seesDeclared v p then lines
+    if pub.spec.secrecy.seesDeclared v p then lines
     else (actor, kind, s!"{pub.nameOf p} declared a sealed number of {r}.", major) :: rest
   | _, _ => lines
 
-/-- The same, from the whole game. It reads the game only through `Game.publicFor`. -/
+/-- The same, from the true states and event, through `observe`. -/
+def linesFrom (pub : Game) (v : Option Nat) (s s' : State G) (e : Event) (split : Nat) :
+    List (Option Nat × String × String × Bool) :=
+  let sec := pub.spec.secrecy
+  linesOf pub v (observe sec v s) (observe sec v s') (observeEvent sec v e) split
+
+/-- The same, from the whole game. It reads the game only through `Game.publicFor`, and the true state
+only for `roundEndSplit`. -/
 def stepLines (g : Game) (v : Option Nat) (s s' : State G) (e : Event) : List (Option Nat × String × String × Bool) :=
-  linesFrom (g.publicFor v) v s s' e
+  linesFrom (g.publicFor v) v s s' e (roundEndSplit s e)
 
 /-- Laws that left the open list in this step, with how they ended. -/
 def closedLaws (g : Game) (s s' : State G) (e : Event) : List Decision :=

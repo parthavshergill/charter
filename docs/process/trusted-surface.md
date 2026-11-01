@@ -83,7 +83,7 @@ All ten commandments rest on the same 134 definitions: the data types of a game,
 - **The Lean kernel and compiler.** The kernel checks the proofs. The compiler builds the server that runs `Engine.step`. No proof uses `native_decide`, so no proof trusts the compiler.
 - **Lean's own library.** Lists, numbers and strings come from it. So does the hash table in `Charter/Words/Fast.lean`, whose lemmas the `@[csimp]` theorems use.
 - **`@[csimp]`.** The compiler runs the faster function that each such theorem proves equal to a plain one. The kernel checks the equality. The compiler is already trusted to do the replacement.
-- **The server's duties.** The theorems cannot see four things. The server must decide who may send an event for a seat. It must decide who may send `forceEndTurn`. It must publish the fingerprint first, use each player's own nonce, when the player supplies one, and keep its seed from clients until the game ends. It must check `G.Valid` before it runs a game, because the engine never checks it. For the Island, `island_valid` proves that check.
+- **The server's duties.** The theorems cannot see five things. The server must decide who may send an event for a seat. It must decide who may send `forceEndTurn`. It must publish the fingerprint first, use each player's own nonce, when the player supplies one, and keep its seed from clients until the game ends. It must check `G.Valid` before it runs a game, because the engine never checks it. For the Island, `island_valid` proves that check. It must build what it sends a seat from `observe`, which drops the state's seed and whatever the game hides. That `observe` does so is proved, and that the server uses it is tested, as the section on what a seat may know says.
 - **The seed's size.** `commitmentOf` hashes a 64-bit seed with no salt. A very large search could find the seed from its fingerprint.
 - **SHA-256, to hide the seed.** Neither side alone can choose the dice, assuming four things. The server publishes the fingerprint before players add nonces. It uses each player's own nonce, when the player supplies one. It keeps its seed secret until the game ends. SHA-256 hides the seed. These assumptions are not proved.
 
@@ -117,6 +117,32 @@ Promise X is proved from the `Law` value onward. People and Claude seats read th
 
 **What a reader must review.** `Readable`, the parsers and printers in `Server/Rules.lean`, and the type `SExp` in `Server/SExp.lean`.
 
+## What a seat may know
+
+A game can hide things. High Card hides each seat's cards, seals its bets until the round ends, and hides each roll from all but the seat it deals to. The engine still holds everything. The server hides things through one function, `observe`, in `Server/Secrecy.lean`.
+
+**What is proved.** `nobody_sees_what_is_hidden`, in `Server/SecrecyPromise.lean`:
+
+    theorem nobody_sees_what_is_hidden {G : GameDef} (sec : Secrecy) (viewer : Option Seat)
+        (s₁ s₂ : State G) (hRunning : s₁.phase ≠ .ended) :
+        observe sec viewer s₁ = observe sec viewer s₂ ↔ HiddenDifference sec viewer s₁ s₂
+
+While a game runs, two states look the same to a viewer exactly when they differ only in what is hidden from it. From left to right, a seat learns nothing hidden from `observe`. From right to left, `observe` keeps everything else, so it cannot pass by showing nothing. Two short theorems go with it: `the_end_reveals_everything`, and `unmarked_games_hide_only_the_seed`, which says that every older game sees what it saw before, apart from the seed. Comparator checks all three. `Server/SecrecyExamples.lean` meets every hypothesis on a real state, and shows that a server that sent the whole state is rejected.
+
+Two more theorems, in `Server/SecrecyReach.lean`, carry the promise to code that the server runs. `previews_hide`: a law's preview is the same for two states that differ only in what is hidden. `chronicle_hides`: so are the chronicle lines of one step. It has one more condition: the two steps give the same number of entries to the round's end. That count is told to every viewer. `make audit` checks these two. Comparator does not, because they need the whole server.
+
+**What a reader must review.** The ten definitions in `Server/Secrecy.lean`, 111 lines with their comments: `Secrecy`, `owns`, `seesHolding`, `seesAmount`, `seesDeclared`, `seesRoll`, `shownEntry`, `observe`, `HiddenDifference` and `observeEvent`. The rest of the statement is the game state, which the commandments already use.
+
+**What is tested, not proved.** That the server builds what it sends from `observe`. Three checks stand behind it:
+
+- `Server/SecrecyCheck.lean` plays two tables of High Card with the same moves and different seeds. Seat 0 draws the same cards at both, and seat 1 does not. After every event it compares everything seat 0 and a spectator would be sent: the view, the scene, a Claude seat's prompt, the clerk's prompt and a bot's choice. They are the same. Seat 1's view differs, so the test is not empty. `lake build` runs it.
+- `scripts/secrecy_check.py` lists every read of the true state in the ten files that build what is sent, each with its reason, and every route, each with what it sends. A new read or a new route fails until someone adds it. Then it plays High Card over HTTP and checks what each seat is sent. `make smoke` runs it.
+- The preview of a law in a game that hides something is worked out twice: with hidden numbers at 0 and with them set high. If the figures differ, the screen shows none. This is a test. Figures that depend on a hidden number in a way it does not reach could show, worked out as if that number were 0.
+
+**What is trusted.** The server limit that no trade, offer or deal can carry hidden goods. `applyLive` checks it, and the engine does not know it. The pack's choice of what to hide: hiding the roll means nothing in a game whose hexes pay on it, because the harvest shows the roll. Nothing checks this.
+
+**What a seat can still work out.** What the game itself makes public. A showdown that pays the highest card says who had it. A movement of hidden goods shows, without its amount. Points from hidden goods leave other seats' scores short until the end. Table talk is free text, and a seat can say anything, true or not.
+
 ## What is tested but not proved
 
 - **SHA-256 is the real SHA-256.** `Charter/Engine/Sha256.lean` checks the NIST example vectors and the padding boundaries. `Charter/EngineTests.lean` checks two more values against Python's `hashlib`.
@@ -145,7 +171,7 @@ Promise X is proved from the `Law` value onward. People and Claude seats read th
 
 `bash scripts/comparator.sh` runs Lean's Comparator, `lake comparator`, inside its bubblewrap sandbox. Comparator needs Linux, so the script uses a Docker container. CI runs it on each pull request that can change a theorem. `make audit` does not run it, and neither replaces the other.
 
-Comparator accepted 22 theorems, which `comparator.json` lists: the ten commandments, the six supporting promises, and the six witnesses in `Charter/Proofs/Witness.lean` and `Charter/Proofs/IslandWitness.lean`. With `--paranoid`, the five other checkers that ship with Lean accepted them too. CI does not use `--paranoid`, so that was a run by hand, and a later change needs a new one.
+`comparator.json` lists 25 theorems: the ten commandments, the six supporting promises, the six witnesses in `Charter/Proofs/Witness.lean` and `Charter/Proofs/IslandWitness.lean`, and the three secrecy theorems in `Server/SecrecyPromise.lean`. Comparator accepted the first 22. The secrecy theorems came later, and need a new run. With `--paranoid`, the five other checkers that ship with Lean accepted those 22 too. CI does not use `--paranoid`, so that was a run by hand, and a later change needs a new one.
 
 For those theorems, Comparator checks three things:
 
@@ -156,4 +182,4 @@ For those theorems, Comparator checks three things:
 Two limits apply:
 
 - **The definitions are shared.** The challenge imports the same words, named parts and engine as the proofs. So a changed definition changes both sides, and Comparator shows no difference. A reader must still review the definitions. `scripts/statement_lock.sh` guards the words and named parts. It does not guard the engine, the Island, HexGrid or SHA-256.
-- **It judges only those 22 theorems.** `Constitution/Examples.lean`, `Charter/EngineTests.lean` and other theorems that those 22 do not use are outside it. `make audit` covers the theorems in `Charter` modules.
+- **It judges only those 25 theorems.** `Constitution/Examples.lean`, `Charter/EngineTests.lean` and other theorems that those 25 do not use are outside it. `make audit` covers the theorems in `Charter` modules and in the secrecy files.
