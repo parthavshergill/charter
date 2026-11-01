@@ -40,9 +40,13 @@ def family : List Piece :=
      ⟨p, "racket", .spot (spotOf (2 * p))⟩, ⟨p, "racket", .spot (spotOf (2 * p + 1))⟩]) ++
     [⟨3, "front", .spot (spotOf 9)⟩]
 
+/-- The dirt the bank has not handed out, in the treasury, where the first roll puts it. -/
+def stocked (s : St) : St :=
+  { s with books := (s.books.postAll [⟨.bank, .treasury, "dirt", s.balance .bank "dirt", .trade⟩]).getD s.books }
+
 /-- The table in the middle of a round, at seat `i`'s turn. Everyone holds 1 dirt. The reward is 20. -/
 def table (i : Nat) : St :=
-  fund (give (give (give (give { fresh with phase := .actions, pieces := family, turnIndex := i }
+  stocked <| fund (give (give (give (give { fresh with phase := .actions, pieces := family, turnIndex := i }
     0 [("dirt", 1)]) 1 [("dirt", 1)]) 2 [("dirt", 1)]) 3 [("dirt", 1)]) 20
 
 /-- The current seat ends its turn. -/
@@ -55,11 +59,11 @@ def reward (s : St) : Nat := s.balance .treasury "cash"
 
 -- Seat 0 talks on its turn. At the roll that starts seat 1's turn it takes all 20 of the reward, and it
 -- hands over its dirt. Both its rackets close. Every other seat loses one racket, and keeps its dirt.
--- The roll then puts 1 back in the reward.
+-- The roll then puts 4 back in the reward, for the 8 rackets that ran when the dice fell.
 #guard match next (declaring (table 0) [(0, "dirt", 1)]) with
   | some s =>
     holds s 0 "cash" == 20 && holds s 0 "dirt" == 0 && rackets s 0 == 0 &&
-      [1, 2, 3].all (fun p => rackets s p == 1 && holds s p "dirt" == 1) && reward s == 2
+      [1, 2, 3].all (fun p => rackets s p == 1 && holds s p "dirt" == 1) && reward s == 4
   | none => false
 
 -- Talking costs the talker its rackets, but not its fronts.
@@ -70,27 +74,30 @@ def reward (s : St) : Nat := s.balance .treasury "cash"
 -- The reward goes once. Seat 1 plays on after seat 0 talked, and at the next roll nobody is paid again,
 -- though seat 0's declaration still stands. Three rackets run now, so the reward grows by 1.
 #guard match (next (declaring (table 0) [(0, "dirt", 1)])).bind next with
-  | some s => holds s 0 "cash" == 20 && rackets s 1 == 1 && reward s == 3
+  | some s => holds s 0 "cash" == 20 && rackets s 1 == 1 && reward s == 5
   | none => false
 
--- Declaring dirt with no dirt in hand is not talking: nothing happens but the roll's 2.
+-- Declaring dirt with no dirt in hand is not talking: nothing happens but the roll's 4.
 #guard match next (declaring { table 0 with books := ((table 0).books.postAll [⟨.player 0, .bank, "dirt", 1, .trade⟩]).getD (table 0).books } [(0, "dirt", 3)]) with
-  | some s => holds s 0 "cash" == 0 && rackets s 0 == 2 && reward s == 22
+  | some s => holds s 0 "cash" == 0 && rackets s 0 == 2 && reward s == 24
   | none => false
 
--- Seat 3 is last in the round. If it talks, it is paid at the round's end, before the declarations clear,
--- and nobody's rackets pay that round.
+-- Seat 3 is last in the round, and sees what everyone did. If it talks, it is paid at the round's end,
+-- before the declarations clear, and it gets only half the reward: 10 of 20. The other half stays, and the
+-- next round's first roll adds 1 for the 3 rackets left. The others are paid for the rackets they ran
+-- this round, and get their dirt. The talker gets neither.
 #guard match next (declaring (table 3) [(3, "dirt", 1)]) with
   | some s =>
-    holds s 3 "cash" == 20 && rackets s 3 == 0 && [0, 1, 2].all (fun p => rackets s p == 1 && holds s p "cash" == 0)
+    holds s 3 "cash" == 10 && rackets s 3 == 0 && holds s 3 "dirt" == 0 && reward s == 11 &&
+      [0, 1, 2].all (fun p => rackets s p == 1 && holds s p "cash" == 4 && holds s p "dirt" == 2)
   | none => false
 
 /-! ## The take -/
 
 -- Nobody talks. At the round's end each racket pays its owner 2 cash, and cash is worth a point:
--- two fronts, two rackets and four cash make 8.
+-- two fronts, two rackets and four cash make 8. Each seat that runs a racket gets 1 dirt.
 #guard match next (table 3) with
-  | some s => [0, 1, 2, 3].all (fun p => holds s p "cash" == 4 && rackets s p == 2) && s.pointsOf 0 == 8
+  | some s => [0, 1, 2, 3].all (fun p => holds s p "cash" == 4 && rackets s p == 2 && holds s p "dirt" == 2) && s.pointsOf 0 == 8
   | none => false
 
 /-! ## The heat -/
@@ -107,9 +114,10 @@ def building : St :=
   | some s => give s 1 [("wine", 2), ("fish", 1)]
   | none => fresh
 
--- A new racket gives its builder 1 dirt from the treasury. Building it adds nothing to the reward.
+-- A new racket gives no dirt at once, so a seat cannot build one and talk in the same turn. Building it
+-- adds nothing to the reward.
 #guard match step game building (.move 1 (.place "racket" (.spot (spotOf 0)))) with
-  | .ok s => reward s == 0 && holds s 1 "dirt" == 1 && rackets s 1 == 1 && s.balance .treasury "dirt" == 39
+  | .ok s => reward s == 0 && holds s 1 "dirt" == 0 && rackets s 1 == 1
   | .error _ => false
 
 /-- Seats 0 and 1 run two more rackets each, so twelve run in all. -/
@@ -118,9 +126,9 @@ def busy : List Piece :=
     [⟨p, "front", .spot (spotOf (10 + 2 * p))⟩, ⟨p, "racket", .spot (spotOf (10 + 2 * p))⟩,
      ⟨p, "front", .spot (spotOf (11 + 2 * p))⟩, ⟨p, "racket", .spot (spotOf (11 + 2 * p))⟩]
 
--- Twelve rackets running make the reward grow by 4 on a roll.
+-- Twelve rackets running make the reward grow by 6 on a roll.
 #guard match next { fund (table 0) 0 with pieces := busy } with
-  | some s => reward s == 24
+  | some s => reward s == 26
   | none => false
 
 end Charter.Games.Omerta.Tests

@@ -8,8 +8,8 @@ A crime family shares one city. Fronts are shops on the street corners, and a ra
 room of a front. Rackets pay the family every round, and the more rackets run, the faster the district
 attorney's reward for a witness grows. The reward sits in the treasury, where everyone can watch it grow.
 
-Anyone who has seen a racket built holds dirt. On your turn you can talk: declare your dirt. At the next
-roll of the dice, or at the round's end if you were last, you take the whole reward. Then the police
+A seat that runs a racket through a round's end gets dirt. On your turn you can talk: declare your dirt.
+At the next roll of the dice you take the whole reward, or half of it at the round's end if you were last. Then the police
 close every racket of yours, and every other seat that runs a racket loses its newest one.
 
 The engine has no hidden information and no secret moves, so the oath is spoken across the table. The
@@ -21,7 +21,8 @@ A seat declares only on its own turn, and the order of seats never changes. So a
 round's end lets the last seat see everyone's choice and talk with no risk. Here the reward goes to the
 first seat that talks, at the next roll, before anyone else can answer. The reward also grows on every
 roll, not only at the round's end. So the first seat of a round gets the first chance, and a later seat
-gets a larger reward, and neither is safe.
+gets a larger reward, and neither is safe. The last seat sees everything, so a talk at the round's end
+pays only half, and the rest waits in the treasury.
 -/
 
 namespace Charter.Games.Omerta
@@ -79,11 +80,11 @@ def runsRacket : Cond := .lt (.lit 0) (rackets .each)
 /-- Close one racket of this seat: its newest. -/
 def closeOne : Effect := .movePiece .each .bank "racket"
 
-/-- What happens when someone talks. Whoever talks shares the reward, hands over their dirt and loses
-every racket. Everyone else loses their newest racket. A seat can hold at most 4 rackets. -/
-def theRaid : List Effect :=
+/-- What happens when someone talks. Whoever talks takes their share of `pot`, hands over their dirt and
+loses every racket. Everyone else loses their newest racket. A seat can hold at most 4 rackets. -/
+def theRaid (pot : Expr) : List Effect :=
   [ .forEach talksNow
-      [ pay .treasury .each "cash" (.divBy reward talkers)
+      [ pay .treasury .each "cash" (.divBy pot talkers)
       , pay .each .treasury "dirt" (held .each "dirt")
       , closeOne, closeOne, closeOne, closeOne ]
   , .when (.lt (.lit 0) talkers)
@@ -94,28 +95,25 @@ def theRaid : List Effect :=
 /-- How many rackets run in the whole city. -/
 def allRackets : Expr := .totalOver .yes (rackets .each)
 
-/-- **The take.** Each racket pays its owner 2 cash at the round's end, unless someone talks at that
-moment. Cash is worth a point. -/
+/-- **The take.** At each round's end each racket pays its owner 2 cash, and each seat that runs a racket
+gets 1 dirt. A seat that talks at that moment gets neither. Cash is worth a point. -/
 def lawTake : Law :=
-  { title := "Each racket pays 2 cash a round, and cash is worth a point"
+  { title := "Each racket pays 2 cash a round, and a seat that runs one gets dirt"
     clauses :=
-      [ .onRoundEnd [.when (.eq talkers (.lit 0)) [.forEach runsRacket [pay .bank .each "cash" (.mul (rackets .each) (.lit 2))]]]
+      [ .onRoundEnd [.forEach (.and runsRacket (.not talksNow)) [pay .bank .each "cash" (.mul (rackets .each) (.lit 2)), pay .treasury .each "dirt" (.lit 1)]]
       , .setWorth "cash" 1 ] }
 
-/-- **The heat.** On every roll the reward grows by 1 cash for every 3 rackets running in the city. A new
-racket gives its builder 1 dirt. Dirt is kept in the treasury, and every roll sweeps the bank's dirt
-there, so nobody can buy it from the bank. -/
+/-- **The heat.** On every roll the reward grows by 1 cash for every 2 rackets running in the city. Dirt is
+kept in the treasury, and every roll sweeps the bank's dirt there, so nobody can buy it from the bank. -/
 def lawHeat : Law :=
   { title := "The more rackets run, the faster the reward grows"
-    clauses :=
-      [ .onRoll [pay .bank .treasury "cash" (.div allRackets 3), pay .bank .treasury "dirt" (held .bank "dirt")]
-      , .onBuild "racket" [pay .treasury .actor "dirt" (.lit 1)] ] }
+    clauses := [.onRoll [pay .bank .treasury "cash" (.div allRackets 2), pay .bank .treasury "dirt" (held .bank "dirt")]] }
 
-/-- **Talking.** It acts on every roll, which comes right after a seat's turn, and at the round's end,
-which comes right after the last seat's turn. -/
+/-- **Talking.** It acts on every roll, which comes right after a seat's turn, and pays the whole reward.
+It acts again at the round's end, which comes right after the last seat's turn, and pays half. -/
 def lawTalk : Law :=
   { title := "Whoever talks first takes the reward, and the police close the rackets"
-    clauses := [.onRoll theRaid, .onRoundEnd theRaid] }
+    clauses := [.onRoll (theRaid reward), .onRoundEnd (theRaid (.div reward 2))] }
 
 def foundingLaws : List Law := [lawTake, lawHeat, lawTalk]
 
