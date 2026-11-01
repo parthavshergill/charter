@@ -7,6 +7,7 @@ import Charter.Games.StrikeTheEarthWords
 import Charter.Games.PirateRepublicWords
 import Charter.Scene.OfState
 import Charter.Scene.LookCheck
+import Server.GameFacts
 
 /-!
 # The games this server can run
@@ -176,22 +177,6 @@ def meshFolderOf (hash : String) : Option String :=
 def meshFiles : List String :=
   gameSpecs.flatMap fun d => d.meshHashes.map fun h => s!"{d.meshFolder}/{h}.mesh"
 
-/-! ## Counters
-
-A game can have a resource that no piece costs. Nobody wants it for itself, so it is a
-counter that laws read, such as a flag a law keeps in the treasury. The screen and the Claude seats leave it out of hands,
-trades and what a corner pays. It is still in the books and the laws' text, and the rules treat it like
-any other resource. -/
-
-/-- This resource is a counter and not a good. -/
-abbrev markRes := Scene.markRes
-
-/-- The resources a person trades and holds. -/
-def goodsOf (G : GameDef) : List Res := (G.resources.map (·.name)).filter (!markRes G ·)
-
-/-- The regions that pay goods. -/
-def paidRegions (G : GameDef) : List Region := G.map.regions.filter (!markRes G ·.res)
-
 /-! ## Does every pack have a look?
 
 A new pack's problems print here, and the build stops. Add what they name. The line below is an old
@@ -202,27 +187,5 @@ info: [("not-catan", ["piece relic does not show the owner's colour for seats [0
 -/
 #guard_msgs in
 #eval (gameSpecs.map fun d => (d.id, Scene.lookProblems d.G d.layout)).filter (!·.2.isEmpty)
-
-/-! ## What a game's pieces are for
-
-The policies and the chronicle ask these, so they need no piece names. -/
-
-/-- The game's own piece that goes on a spot, such as a settlement. -/
-def spotPiece (G : GameDef) : Option PieceDef :=
-  G.pieces.find? fun d => match d.placement with
-    | .spot => true
-    | _ => false
-
-/-- The game's own piece that goes on a link, such as a road. -/
-def linkPiece (G : GameDef) : Option PieceDef :=
-  G.pieces.find? fun d => match d.placement with
-    | .link => true
-    | _ => false
-
-/-- The game's own piece that replaces another, such as a city, and the piece it replaces. -/
-def upgradePiece (G : GameDef) : Option (PieceDef × PieceKind) :=
-  G.pieces.findSome? fun d => match d.placement with
-    | .upgrade k => some (d, k)
-    | _ => none
 
 end CharterServer

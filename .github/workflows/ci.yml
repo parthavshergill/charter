@@ -54,6 +54,9 @@ jobs:
       - name: Build everything
         run: lake build
 
+      - name: Check that the arena's bot plays as the hand bot does
+        run: make arena-check
+
       - name: Check the proofs
         run: make audit
 

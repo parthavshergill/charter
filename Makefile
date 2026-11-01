@@ -31,7 +31,7 @@ GAME ?= island
 KINDS ?= claude
 MAX_MINUTES ?= 360
 
-.PHONY: install run smoke clerk-check deploy-check audit measure sim spectate contact-sheet
+.PHONY: install run smoke clerk-check deploy-check arena-check audit measure sim spectate contact-sheet
 
 install:
 	@command -v lake >/dev/null || { echo "lake not found: install elan from https://github.com/leanprover/elan"; exit 1; }
@@ -68,6 +68,11 @@ contact-sheet:
 	@test -n "$(PACK)" || { echo "say which pack: make contact-sheet PACK=<id>"; exit 1; }
 	lake build charter-contact
 	python3 scripts/contact_sheet.py $(PACK)
+
+arena-check:
+	lake build charter-arena
+	.lake/build/bin/charter-arena --check-fixture scripts/fixtures/bot-game.jsonl
+	.lake/build/bin/charter-arena --check-reference 2
 
 audit:
 	bash scripts/audit.sh

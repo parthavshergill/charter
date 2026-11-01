@@ -6,6 +6,7 @@ import Server.Text
 import Server.Seat
 import Server.Suggest
 import Server.Describe
+import Server.ArenaPlay
 
 /-!
 # Tests of the deal sentences, the clerk's memory and the descriptions
@@ -598,5 +599,117 @@ def staleSpec : GameSpec :=
 #guard (json (withPack notCatanSpec {}) (lawOf "(law \"\" (set-bank-rate 3))")).compress == "{\"status\":\"none\"}"
 
 end Descriptions
+
+/-! ## The arena
+
+These run in the interpreter, so they use few games. `charter-arena --check-reference`
+and `--check-fixture` compare the bot with its old self. -/
+
+namespace ArenaTests
+open Arena Bots
+
+/-- The game these tests play. -/
+abbrev arenaSpec : GameSpec := islandSpec
+
+/-- A table of hand bots, with these weights by seat. -/
+def tableOf (weights : List Weights) : Table arenaSpec.G :=
+  let board := Board.of arenaSpec.G
+  { plans := weights.toArray.map fun W => (hand, { weights := W, board })
+    names := (arenaSpec.G.resources.map (·.name)).toArray }
+
+/-- Play a game, and give the winning seat. -/
+def winner (weights : List Weights) (seed : Nat) : Option Nat :=
+  (playGame {} (tableOf weights) seed).state.winner
+
+def plain : List Weights := List.replicate 4 Weights.default
+
+/-- The first seat offers. -/
+def firstOffers (W : Weights := {}) : List Weights :=
+  { W with offerLimit := 2 } :: List.replicate 3 W
+
+/-- Everyone offers. Nobody takes an offer unless it pays well. -/
+def nobodyTakes : List Weights :=
+  List.replicate 4 { Weights.default with offerLimit := 2, acceptMargin := 5 }
+
+/-! Same input, same game. -/
+
+#guard winner plain 1 == winner plain 1
+#guard ((playGame {} (tableOf plain) 2).state.pieces.map (·.loc)) == ((playGame {} (tableOf plain) 2).state.pieces.map (·.loc))
+
+/-! The fast way and the plain way play the same game. -/
+
+#guard
+  let fast := playGame {} (tableOf plain) 3
+  let slow := playGame { compactEvery := 0, dropJournal := false } (tableOf plain) 3
+  fast.events == slow.events && fast.state.winner == slow.state.winner &&
+    (fast.state.turnOrder.map fun p => bal fast.state p "ore") == (slow.state.turnOrder.map fun p => bal slow.state p "ore")
+
+/-! Hand bots win equally when seats rotate. All seats play alike, so on one seed each rotation is the
+same game and the same seat wins. Rotated through the seats, each of four players wins exactly once. -/
+
+#guard
+  match winner plain 4 with
+  | none => false
+  | some seat =>
+    let winners := (List.range 4).map fun turn => (seat + turn) % 4
+    winners.mergeSort == [0, 1, 2, 3]
+
+/-! By default nobody offers. With a limit, the seat offers, and others can accept. -/
+
+#guard
+  let g := playGame {} (tableOf plain) 5
+  g.offersMade == #[0, 0, 0, 0] && g.offersAccepted == #[0, 0, 0, 0] && g.rejected == 0
+
+#guard
+  let g := playGame {} (tableOf (firstOffers)) 5
+  (g.offersMade[0]! > 0) && (g.offersAccepted[0]! > 0) && g.offersAccepted[0]! ≤ g.offersMade[0]! &&
+    g.offersMade.toList.drop 1 == [0, 0, 0]
+
+/-! Offers are limited by the weight, per turn. -/
+
+#guard
+  let g := playGame {} (tableOf (List.replicate 4 { Weights.default with offerLimit := 1 })) 5
+  let turns := g.state.turnsTaken
+  g.offersMade.foldl (· + ·) 0 ≤ turns
+
+/-! Other seats decide by their own weights. -/
+
+#guard
+  let g := playGame {} (tableOf nobodyTakes) 5
+  (g.offersMade.foldl (· + ·) 0 > 0) && g.offersAccepted == #[0, 0, 0, 0]
+
+/-! A strategy that says nothing still ends, and a seat speaks only for itself. -/
+
+/-- A table of one kind of strategy. -/
+def tableWith (st : Strategy) : Table arenaSpec.G :=
+  let board := Board.of arenaSpec.G
+  { plans := Array.replicate 4 (st, { weights := {}, board })
+    names := (arenaSpec.G.resources.map (·.name)).toArray }
+
+/-- Says nothing. -/
+def mute : Strategy := Strategy.ofSeat "mute" fun _ _ _ => []
+
+/-- Tries to end the turn of every other seat, and to send the timer's event. -/
+def cheat : Strategy :=
+  { name := "cheat"
+    decide := fun _ s _ => s.turnOrder.map (fun p => Event.move p .endTurn) ++ [.forceEndTurn] }
+
+#guard
+  let g := playGame {} (tableWith mute) 6
+  g.state.phase == .ended && g.rejected == g.events && g.events == g.state.turnsTaken
+
+#guard
+  let g := playGame {} (tableWith cheat) 6
+  g.state.phase == .ended && g.rejected == 0 && g.events == g.state.turnsTaken
+
+/-! The weights' table says what the default weights are. -/
+
+#guard params.all fun p => p.min ≤ p.get Weights.default && p.get Weights.default ≤ p.max
+#guard (params.map (·.name)).eraseDups.length == params.length
+#guard (Weights.default.withValue "pipValue" 12).pipValue == 12
+#guard (Weights.default.withValue "myOwn" 3).extraOr "myOwn" 0 == 3
+#guard Weights.default.extraOr "myOwn" 7 == 7
+
+end ArenaTests
 
 end ServerTests
