@@ -27,8 +27,8 @@ typedef float obs_t;
 #define MAX_GAMES 8
 // Layout version 2 (rl/layout.json). puf_init checks these against the library.
 #define CHARTER_ACTS 515
-#define CHARTER_BASE_OBS 13513
-#define CHARTER_FULL_OBS 17225
+#define CHARTER_BASE_OBS 11465
+#define CHARTER_FULL_OBS 15177
 #ifdef CHARTER_MOVE_ROWS
 #define OBS_SIZE CHARTER_FULL_OBS
 #else

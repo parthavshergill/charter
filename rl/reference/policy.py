@@ -2,7 +2,7 @@
 
 A policy is a weights file plus a JSON meta next to it (`<file>.json`):
 
-    {"name": "flat-1", "format": "puffer-flat", "obs_size": 13513, "act_size": 516, "hidden": 128, "layers": 1,
+    {"name": "flat-1", "format": "puffer-flat", "obs_size": 11465, "act_size": 516, "hidden": 128, "layers": 1,
      "settings": {"vote_mode": "bot"}}
 
 Formats:

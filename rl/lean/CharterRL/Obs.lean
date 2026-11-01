@@ -144,7 +144,6 @@ private def plYield := cPl "yield_gain"
 private def plCostTotal := cPl "cost_total"
 private def plShort := cPl "my_short"
 private def plKind := cPl "kind"
-private def plByRes := cPl "pips_by_res"
 
 private def lawFounding := tLaws.col "founding"
 private def lawShapeAt := tLaws.col "on_harvest"
@@ -442,7 +441,6 @@ private def writePlaces (a : FloatArray) (T : Tables) (ctx : Ctx G) (ep : Episod
     for (r, n) in pay do
       value := value + n * demand[r]!
       if income[me * nres + r]! == 0 then fresh := fresh + n
-      a := put a w oPlaces row (plByRes + r) (a.get! (oPlaces + row * w.width + plByRes + r) + ofNat n / 6)
     a := at_ a plDemand (ofNat value / 60)
     a := at_ a plNew (ofNat fresh / 15)
     let under : Option PieceDef := match e.placement with

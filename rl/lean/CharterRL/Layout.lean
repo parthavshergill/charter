@@ -142,13 +142,13 @@ def tProposal : Table :=
 /-- One row per legal placement, in `placeOrder`. Action `actPlace + i` places row `i`'s piece. For a piece on a
 spot, `at` is the spot; for one on a link, `at` and `at_b` are its ends, and the spot columns are those of the end
 with more pips that is free (or of `at` if neither is). Spot numbers are on the scale of `maxSpots`, so a
-row can be matched with its rows of `spots`. -/
+row can be matched with its rows of `spots`, which have the pips by resource. -/
 def tPlaces : Table :=
   { name := "places", rows := maxPlaceRows
     cols := ones
         [ "real", "on_link", "on_spot", "on_upgrade", "on_attach", "at", "at_b", "x", "y", "pips", "goods"
         , "demand_value", "new_for_me", "free_ends", "reach_me", "points_gain", "yield_gain", "cost_total", "my_short" ]
-      ++ across .kinds ["kind"] ++ across .res ["pips_by_res"] }
+      ++ across .kinds ["kind"] }
 
 /-- The optional table: one row per legal action, with what the engine says it would change. -/
 def tMoves : Table :=

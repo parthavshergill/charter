@@ -78,7 +78,8 @@ actions, at most 8 resources, 60 spots, 84 links, 24 tiles, 16 laws) refused lar
 
 - **Seats.** `seats` in `[env]` gives the seat counts, for example `2-6` (the default) or `4`; each game draws one
   that the game allows (Not Catan takes 3 or 4). `num_agents` must be the most of them (6 for `2-6`), and `[vec] total_agents` a multiple of `num_agents`
-  (3072 by default: 512 envs, as at 2048 with 4 seats). Agent `i`
+  (1536 by default: 256 envs. The GPU holds every agent's observation for the whole horizon, 1536 x 64 x 11465
+  floats is 4.5 GB; 3072 agents did not fit on a T4). Agent `i`
   plays game seat `seat_of[i]`, drawn afresh each game; agents past the seat count sit the game out. Each tick,
   exactly one agent may act. The others see zeros and a mask with only the no-op (action 515), written once when they
   start waiting. Bots inside the env (`hand`, `fair`, `closed`, `champion`) play without ticks.
@@ -89,18 +90,18 @@ actions, at most 8 resources, 60 spots, 84 links, 24 tiles, 16 laws) refused lar
   then attaching, then a new piece on a spot, then a piece on a link; within each, by the spot's pips (a link: its
   better free end), most first; then by spot and kind row. Row `i` of `places` describes action `387 + i`: its kind
   (one-hot over kind rows), placement, spot numbers (`at`, `at_b` for a link's other end, on the scale of 100, so a
-  row can be matched with its `spots` row), the spot's pips, goods, pips by resource, demand, reach, points and yield
-  gained, cost and shortfall. The order does not use names, so it is the same under renaming. At most 128 rows: past
+  row can be matched with its `spots` row, which has the pips by resource), the spot's pips, goods, demand, reach,
+  points and yield gained, cost and shortfall. The order does not use names, so it is the same under renaming. At most 128 rows: past
   that, `place_overflow` is 1 and the rest have no action. No game here comes near it (the most seen is 100, in
   setup on a 100-spot map). A turn always has end turn, and a setup turn always has a row, so a seat is never left
   without an action.
-- **Observation.** 13513 floats of fixed tables (`rl/layout.json`): global, seats (this seat first, then turn
+- **Observation.** 11465 floats of fixed tables (`rl/layout.json`): global, seats (this seat first, then turn
   order, 6 rows), resources (16), kinds (16), spots (100: map, pieces, and the links and tiles at each spot), laws
-  (48), the open proposal, and places (128 x 51). No names. Rows of resources and kinds are in a new random order
+  (48), the open proposal, and places (128 x 35). No names. Rows of resources and kinds are in a new random order
   each game (`slot_order = shuffled`; `game` keeps the game's order). With `move_rows = 1` (and a build with
-  `-DCHARTER_MOVE_ROWS`) a table of up to 64 legal moves and what each changes is appended: 17225 floats.
-- **Cost of the change.** The observation is 3 times as long, and `places` is half of it, so a flat encoder at hidden
-  128 has about 1.8M weights in its first layer (v1: 0.57M), and env time per observation went up (see Known limits).
+  `-DCHARTER_MOVE_ROWS`) a table of up to 64 legal moves and what each changes is appended: 15177 floats.
+- **Cost of the change.** The observation is 2.6 times as long, and `places` is 39% of it, so a flat encoder at hidden
+  128 has about 1.5M weights in its first layer (v1: 0.57M), and env time per observation went up (see Known limits).
   A linear decoder still gives each action one fixed output: row `i` of `places` means "the i-th placement in this
   order", which is more stable across maps than v1's "this spot number", but choosing well among rows needs an
   encoder that scores each row from its own features (a pointer over rows), which is the encoder agents' choice.
