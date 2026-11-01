@@ -146,7 +146,7 @@ Promise X is proved from the `Law` value onward. People and Claude seats write t
 
 `bash scripts/comparator.sh` runs Lean's Comparator, `lake comparator`, inside its bubblewrap sandbox. Comparator needs Linux, so the script uses a Docker container. CI runs it on each pull request that can change a theorem. `make audit` does not run it, and neither replaces the other.
 
-Comparator accepted 24 theorems, which `comparator.json` lists: the ten commandments, the six supporting promises, the six witnesses in `Charter/Proofs/Witness.lean` and `Charter/Proofs/IslandWitness.lean`, and the two statements in `Server/ParserFacts.lean`. With `--paranoid`, the five other checkers that ship with Lean accepted the first 22. CI does not use `--paranoid`, so that was a run by hand. It has not run on the two statements about the parser.
+Comparator accepted 24 theorems, which `comparator.json` lists: the ten commandments, the six supporting promises, the six witnesses in `Charter/Proofs/Witness.lean` and `Charter/Proofs/IslandWitness.lean`, and the two statements in `Server/ParserFacts.lean`. With `--paranoid`, the five other checkers that ship with Lean accepted them too. CI does not use `--paranoid`, so that was a run by hand, and a later change needs a new one.
 
 For those theorems, Comparator checks three things:
 
