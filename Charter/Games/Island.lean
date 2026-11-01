@@ -56,7 +56,7 @@ def regionOf (t : TileDef) : Option Region :=
   | some r, some n => some { res := r, number := n, spots := t.hex.vertices.map spotId }
   | _, _ => none
 
-/-- The Island game: first to 10 points, within 30 rounds. -/
+/-- The Island game: first to 10 points, within 24 rounds. -/
 def island : GameDef where
   name := "The Island"
   resources := [⟨"grain", 30⟩, ⟨"timber", 30⟩, ⟨"ore", 30⟩, ⟨"wool", 30⟩, ⟨"brick", 30⟩]
@@ -74,7 +74,7 @@ def island : GameDef where
   diceCount := 2
   diceSides := 6
   targetPoints := 10
-  rounds := 30
+  rounds := 24
   bankRate := 4
   setupPieces := ["settlement", "road"]
 
