@@ -241,7 +241,7 @@ S        := seat number
 - `on-build`, `upgrade` and `attach` can name a piece this same law defines, in any order. `set-cost` and `set-points` on such a piece come after its `new-piece` clause.
 - A law can't use a piece that it also removes by repealing the law that made it.
 - In a bundle, each resource appears once.
-- A deal has at least two distinct signers. The proposer is one. Each payer deposits enough to cover the worst case: for each resource, the amount per round of all their payments, every-round and on-build together, times the rounds. A deal runs for at least 1 round.
+- A deal has at least two distinct signers. The proposer is one. Each payer deposits enough to cover the worst case: for each resource, the amount per round of all their payments, every-round and on-build together, times the rounds. A deal runs for at least 1 round. A deal can ask each signer for at most 4 different resources.
 - `(no-trade A B)` is one signer's promise. A must sign and B must be a different seat in the game. B need not sign. While the deal runs, A and B can't trade with each other, in either direction. B can still trade with anyone else.
 - When several signers promise not to trade with a seat, write one `no-trade` term for each signer.
 

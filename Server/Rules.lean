@@ -336,15 +336,12 @@ def sampleLaws : List (String × String) :=
   , ("settlement-worth", "(law \"Founders' honour\" (set-points settlement 2))")
   , ("lighthouse", "(law \"Lighthouses\" (new-piece lighthouse (bundle (ore 2) (brick 2)) (points 2) (attach settlement) (yield 1) (limit 2)))") ]
 
-/-- The text for a simple deal form: `a` pays `b` each round, and `b` may pay `a` back. Deposits
-are worked out here so that the deal covers what it could owe. -/
-def formDeal (a b : Seat) (rounds exitNotice : Nat) (give : Res) (giveN : Nat)
-    (get : Option (Res × Nat)) : Deal :=
-  let pays : List Pay :=
-    (if giveN == 0 then [] else [{ src := a, dst := .seat b, res := give, amount := giveN }]) ++
-    (match get with
-     | some (r, n) => if n == 0 then [] else [{ src := b, dst := .seat a, res := r, amount := n }]
-     | none => [])
+/-- The deal from the simple form: each round `a` pays `b` all of `give`, and `b` pays `a` all of
+`get`. Either list can be empty. Deposits are worked out here so that the deal covers what it could owe. -/
+def formDeal (a b : Seat) (rounds exitNotice : Nat) (give get : Bundle) : Deal :=
+  let pay (src dst : Seat) (x : Res × Nat) : Pay := { src, dst := .seat dst, res := x.1, amount := x.2 }
+  let moved := fun (x : Res × Nat) => x.2 != 0
+  let pays : List Pay := (give.filter moved).map (pay a b) ++ (get.filter moved).map (pay b a)
   { title := s!"A deal of {rounds} rounds"
     signers := [a, b]
     rounds := rounds

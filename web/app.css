@@ -197,7 +197,9 @@ svg.shield { width: 16px; height: 19px; flex: none; vertical-align: -4px; clip-p
 /* ---------- slips: offers and picks on the table ---------- */
 .slips { position: fixed; top: 128px; left: var(--s4); display: grid; gap: var(--s2); width: 238px; z-index: 9; }
 .slip { padding: var(--s2) var(--s3); font-size: 14px; }
-.slip .terms { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 2px 0 var(--s2); }
+.slip .terms { display: flex; flex-wrap: wrap; align-items: center; gap: 2px var(--s3); margin: 2px 0 var(--s2); }
+.slip .forline { display: inline-flex; align-items: center; gap: var(--s2); }
+.slip .fine { margin-bottom: var(--s1); color: var(--ink-2); }
 .slip .row { display: flex; gap: var(--s2); }
 .slip .act { min-height: 30px; padding: 2px 12px; font-size: 14px; }
 .pickmenu { position: fixed; padding: var(--s2); display: grid; gap: var(--s1); z-index: 15; }
@@ -294,6 +296,11 @@ details.formal[open] summary::before { content: "− "; }
 .refusal .stampword { display: inline-block; padding: 2px 10px; margin-bottom: var(--s2); font-size: 20px; letter-spacing: .12em; color: var(--wax); border: 2px solid var(--wax); transform: rotate(-3deg); }
 .refusal .stampword.fresh { animation: stampIn .28s cubic-bezier(.2,.9,.3,1.2); }
 .refusal p { margin: 0; font-size: 16px; line-height: 1.35; }
+.refusal.strike { padding-bottom: 0; }
+.strikesamples { margin-top: var(--s3); font-size: 14px; color: var(--ink-2); }
+.strikesamples .samples { margin: var(--s1) 0 0; }
+.refusal.strike .formal { margin-top: var(--s3); }
+.formalnote, .refusal .formalnote { margin: var(--s2) 0 0; font-size: 14px; color: var(--ink-2); }
 .fail { margin: var(--s3) 0; font-size: 16px; }
 .proposebar { position: sticky; bottom: calc(-1 * var(--s4)); margin: var(--s3) calc(-1 * var(--s4)) calc(-1 * var(--s4)); padding: var(--s3) var(--s4); background: var(--paper), var(--vellum-2); display: flex; align-items: center; gap: var(--s3); box-shadow: 0 -1px 0 var(--vellum-3); }
 .proposebar .act { flex: 1; }
@@ -390,11 +397,23 @@ svg.wax { width: 96px; height: 96px; filter: drop-shadow(0 3px 2px rgba(0,0,0,.3
 .bankrow button { width: 30px; height: 30px; display: grid; place-items: center; background: var(--field); box-shadow: inset 0 0 0 1px var(--vellum-3); }
 @media (hover: hover) { .bankrow button:hover { background: var(--gold-2); } }
 .offerform { margin-top: var(--s4); display: grid; gap: var(--s2); }
-.pickrow { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1); }
-.pickrow .lbl { width: 44px; font-size: 14px; color: var(--ink-2); }
-.pickrow button { width: 34px; height: 34px; display: grid; place-items: center; background: var(--field); box-shadow: inset 0 0 0 1px var(--vellum-3); }
-.pickrow button.on { background: var(--gold); box-shadow: inset 0 0 0 2px var(--ink); }
-.pickrow .num { width: 48px; margin-left: var(--s2); padding: 4px 6px; background: var(--field); border: 1px solid var(--ink-3); text-align: center; }
+.pickrow { display: grid; grid-template-columns: 36px 1fr; gap: var(--s1); }
+.pickrow .lbl { padding-top: 9px; font-size: 14px; color: var(--ink-2); }
+.tiles { display: flex; flex-wrap: wrap; gap: var(--s1) 6px; }
+.tile { width: 40px; display: grid; }
+.tile .add { position: relative; height: 40px; display: grid; place-items: center; background: var(--field); box-shadow: inset 0 0 0 1px var(--vellum-3); }
+@media (hover: hover) { .tile .add:hover { background: var(--gold-2); } }
+.tile.in .add { background: var(--gold); box-shadow: inset 0 0 0 2px var(--ink); }
+.tile.off:not(.in) .add svg { opacity: .32; }
+.tile .n { position: absolute; top: -6px; right: -6px; min-width: 19px; height: 19px; padding: 0 3px; background: var(--ink); color: var(--vellum); font-size: 13px; line-height: 19px; text-align: center; font-variant-numeric: tabular-nums; }
+.tile .left { position: absolute; right: 3px; bottom: 1px; font-size: 11px; line-height: 1; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.tile.in .left { color: var(--gold-ink); }
+.tile .less { height: 22px; margin-top: 2px; color: var(--ink); font-size: 18px; font-weight: 600; line-height: 1; background: var(--field); box-shadow: inset 0 0 0 1px var(--vellum-3); }
+/* Hidden, and still taking its room: on a phone the sheet grows upward, so a new row would pull the tile off the finger. */
+.tile .less:disabled { visibility: hidden; }
+@media (hover: hover) { .tile .less:hover { background: var(--vellum-3); } }
+.offernote { min-height: 20px; font-size: 14px; line-height: 20px; color: var(--ink-2); }
+.offernote.stop { color: var(--wax); }
 .selectline { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); }
 .selectline select { flex: 1; padding: 5px 6px; background: var(--field); border: 1px solid var(--ink-3); color: var(--ink); }
 .selectline .num { width: 48px; padding: 4px 6px; background: var(--field); border: 1px solid var(--ink-3); text-align: center; }
@@ -604,9 +623,12 @@ svg.seal { position: absolute; left: 50%; top: 100%; width: 52px; height: 52px; 
   .dock .x { top: 0; right: 0; width: 44px; height: 44px; }
   .dock h2, .lawshead { padding-right: var(--s6); }
   .bankrow { flex-wrap: wrap; }
-  .bankrow button, .pickrow button { flex: none; width: 44px; height: 44px; }
-  .pickrow .lbl { width: 100%; }
-  .pickrow .num, .selectline .num, .selectline select, .declaresheet .drow input, .talkinput select, .talkinput .input { min-height: 44px; font-size: 16px; }
+  .bankrow button { flex: none; width: 44px; height: 44px; }
+  .tile { width: 44px; }
+  .tile .add { height: 44px; }
+  .tile .less { height: 44px; }
+  .pickrow .lbl { padding-top: 11px; }
+  .selectline .num, .selectline select, .declaresheet .drow input, .talkinput select, .talkinput .input { min-height: 44px; font-size: 16px; }
   .declaresheet .drow { grid-template-columns: 24px 1fr 64px auto; }
   details.formal summary { display: flex; align-items: center; min-height: 44px; }
   .promises summary { align-items: center; min-height: 44px; }

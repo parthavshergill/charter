@@ -21,8 +21,9 @@ A description is kept in the table's clerk log. It survives a restart and goes t
 of that log. A clerk note and a description are different lines of that log, and neither reads as the
 other. No route takes a description from a client.
 
-No description is a normal case: a hand-written law, a clerk resting on budget, a failed call, a refusal
-or an empty reply. The screen then shows the source with a short note.
+No description is a normal case: a hand-written law, a refusal, an empty reply, or the clerk on strike
+because of a problem on our side, such as a failed call or a used-up budget. The screen then shows the
+source with a short note. A problem on our side says so.
 
 The call goes through `Formalize.runRequest`, so the budgets cover it and it is priced as the model it
 went to. It sends `fallbacks` only for a Sonnet model, because Haiku has no server-side fallback for a
@@ -103,8 +104,10 @@ inductive Status where
   | ready (text : String)
   /-- A pack's own words about one of its founding laws, and the pack's name. -/
   | pack (name text : String)
-  /-- The call was refused, failed or came back with nothing to show. -/
+  /-- The call was refused or came back with nothing to show. -/
   | failed
+  /-- A problem on our side stopped the call. -/
+  | strike
   deriving BEq
 
 /-- One table's descriptions, by the key of the law. A law that is not here has none. -/
@@ -117,6 +120,7 @@ def json (book : Book) (L : Law) : Json :=
   | some (.ready text) => Json.mkObj [("status", "ready"), ("text", text)]
   | some (.pack name text) => Json.mkObj [("status", "pack"), ("text", text), ("pack", name)]
   | some .failed => Json.mkObj [("status", "failed")]
+  | some .strike => Json.mkObj [("status", "strike")]
   | none => Json.mkObj [("status", "none")]
 
 /-- Who wrote the description of a law and what it says, if the law has one. -/
@@ -223,31 +227,33 @@ private def newJob (code : String) : IO Formalize.Job := do
            stop := ← IO.mkRef (pure ())
            cancelled := ← IO.mkRef false }
 
-/-- Ask for a description of this law, on this thread. `none` means the law gets no description, and the
-reason goes to the server's log. A reply that stays too long is not cut, since a cut could change what
-it says. -/
-def run (cfg : Settings) (code : String) (L : Law) : IO (Option String) := do
-  let some key := cfg.api.key | return none
+/-- Ask for a description of this law, on this thread. An error is the status of a law that gets no
+description, and the reason goes to the server's log. A reply that stays too long is not cut, since a
+cut could change what it says. -/
+def run (cfg : Settings) (code : String) (L : Law) : IO (Except Status String) := do
+  let some key := cfg.api.key
+    | IO.eprintln s!"[{code}] no description: this server has no API key"
+      return .error .strike
   let system ← try IO.FS.readFile cfg.api.promptPath catch _ => pure ""
   if system.isEmpty then
     IO.eprintln s!"[{code}] the description prompt is missing"
-    return none
+    return .error .strike
   let mut retry : Option (String × Nat) := none
   for _ in [0:maxAttempts] do
     let job ← newJob code
     let body := requestBody cfg system (userMessage L retry)
-    let outcome ← Formalize.runRequest job (Formalize.curlConfig cfg.api key body maxSeconds) cfg.api.model
+    let outcome ← Formalize.requestRetrying job (Formalize.curlConfig cfg.api key body maxSeconds) cfg.api.model maxSeconds
     if !usable outcome then
       IO.eprintln s!"[{code}] no description from {cfg.api.model}: {(Formalize.failureOf outcome).getD "the reply did not finish"}"
-      return none
+      return .error (if (Formalize.failureOf outcome).isSome && (Formalize.declined outcome).isNone then .strike else .failed)
     let text := clean (← job.state.get).text
     if text.isEmpty then
       IO.eprintln s!"[{code}] no description: the reply was empty"
-      return none
+      return .error .failed
     let words := wordCount text
-    if words ≤ maxWords then return some text
+    if words ≤ maxWords then return .ok text
     retry := some (text, words)
   IO.eprintln s!"[{code}] no description: the reply stayed too long"
-  return none
+  return .error .failed
 
 end CharterServer.Describe

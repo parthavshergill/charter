@@ -7,6 +7,7 @@ import Server.Seat
 import Server.Suggest
 import Server.Describe
 import Server.RoundTrip
+import Server.GenericCheck
 
 /-!
 # Tests of the deal sentences, the clerk's memory and the descriptions
@@ -33,6 +34,12 @@ def say (text : String) : String :=
 
 /-! ## Deals -/
 
+-- The deal form with several resources each way: a payment and a deposit for each one.
+#guard say (Rules.printProposal (.deal (Rules.formDeal 0 1 2 1 [("grain", 1), ("ore", 2)] [("brick", 3), ("wool", 1)]))) ==
+  "Between Mara and Ada, for 2 rounds. / " ++
+  "Every round, Mara pays Ada 1 grain, Mara pays Ada 2 ore, Ada pays Mara 3 brick and Ada pays Mara 1 wool. / " ++
+  "Mara sets aside 2 grain, Mara sets aside 4 ore, Ada sets aside 6 brick and Ada sets aside 2 wool. What is left goes back when the deal ends. / " ++
+  "Any signer can end it with 1 round's notice."
 #guard say "(deal \"A gift\" (signers 0 1) (rounds 2) (exit-notice 0) (deposits (0 grain 3)) (every-round (pay 0 1 grain 1)))" ==
   "Between Mara and Ada, for 2 rounds. / Every round, Mara pays Ada 1 grain. / " ++
   "Mara sets aside 3 grain. What is left goes back when the deal ends. / " ++
@@ -583,6 +590,38 @@ def line (kind : String) (to : Option Nat := none) : Talk.Line := { event := 0, 
     let sit := Player.situation seatGame s 0
     sit.myTurn && (fallbackEvents sit).all fun ev => (ev.getObjVal? "t").toOption == some "move"
   | none => false
+
+/-! ## What one trade can carry -/
+
+def fiveGoods : List Res := ["grain", "timber", "ore", "wool", "brick"]
+
+def offerOf (give get : List Res) : Json :=
+  let side (rs : List Res) : Json :=
+    Json.arr (rs.map fun r => Json.mkObj [("res", Json.str r), ("n", toJson (1 : Nat))]).toArray
+  Json.mkObj [("t", "move"), ("seat", toJson 0),
+    ("move", Json.mkObj [("t", "offer"), ("to", Json.null), ("give", side give), ("get", side get)])]
+
+def proposeOf (d : Deal) : Json :=
+  Json.mkObj [("t", "propose"), ("seat", toJson 0), ("text", Rules.printProposal (.deal d))]
+
+#guard Game.maxGoodsPerSide == 4
+-- A Claude seat's offer can carry several resources, and it reaches the engine as sent.
+#guard isEvent (actsOf "{\"action\":\"offer\",\"to\":null,\"give\":[{\"res\":\"ore\",\"n\":1},{\"res\":\"grain\",\"n\":2}],\"get\":[{\"res\":\"brick\",\"n\":1},{\"res\":\"wool\",\"n\":1}]}")
+-- An offer: 4 different resources pass, on either side, and 5 do not.
+#guard (Game.overLimit seatGame (offerOf (fiveGoods.take 4) (fiveGoods.take 4))).isNone
+#guard Game.overLimit seatGame (offerOf fiveGoods ["grain"]) == some Game.offerLimitProblem
+#guard Game.overLimit seatGame (offerOf ["grain"] fiveGoods) == some Game.offerLimitProblem
+-- A deal from the form: the same on each side, and the text it prints still reads as a deal.
+#guard (Game.overLimit seatGame (proposeOf (Rules.formDeal 0 1 2 1 ((fiveGoods.take 4).map (·, 1)) ((fiveGoods.take 4).map (·, 2))))).isNone
+#guard (Game.overLimit seatGame (proposeOf (Rules.formDeal 0 1 2 1 (fiveGoods.map (·, 1)) [("grain", 1)]))).isSome
+#guard (Game.overLimit seatGame (proposeOf (Rules.formDeal 0 1 2 1 [("grain", 1)] (fiveGoods.map (·, 1))))).isSome
+-- Other events are never over it, and the limit does not stop a law.
+#guard (Game.overLimit seatGame (Json.mkObj [("t", "start")])).isNone
+#guard (Game.overLimit seatGame (Json.mkObj [("t", "propose"), ("seat", toJson 0), ("text", "(law \"T\" (set-bank-rate 3))")])).isNone
+-- A replay does not read the limit: `apply` gets past it to the engine, which asks for the cards.
+#guard match Game.apply seatGame (offerOf fiveGoods ["grain"]), Game.applyLive seatGame (offerOf fiveGoods ["grain"]) with
+  | .error replayed, .error live => replayed != Game.offerLimitProblem && live == Game.offerLimitProblem
+  | _, _ => false
 
 end Seats
 

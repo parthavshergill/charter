@@ -35,10 +35,12 @@ inductive Final where
   | ready (formal : String) (difference : Option String) (viaClaude : Bool)
   | refused (reason : String)
   | failed (message : String)
+  /-- The clerk cannot work because of a problem on our side. -/
+  | strike (message : String)
   | cancelled
 
 structure JobState where
-  /-- `sent`, `connected`, `thinking`, `drafting`, `parsing`, `checking`, `previewing`, or `done`. -/
+  /-- `sent`, `retrying`, `connected`, `thinking`, `drafting`, `parsing`, `checking`, `previewing`, or `done`. -/
   stage : String := "sent"
   attempt : Nat := 1
   retryReason : Option String := none
@@ -88,6 +90,10 @@ def maxOutputTokens : Nat := 8000
 def maxSeconds : Nat := 150
 /-- How many replies a draft can get before it stops. Each later one is told what was wrong. -/
 def maxAttempts : Nat := 3
+/-- How many times one reply is asked for, when the API has a problem that can pass. -/
+def maxTries : Nat := 3
+/-- A person is waiting, so a longer wait than this ends the tries. -/
+def maxRetryWaitMs : Nat := 10000
 /-- A difference line should be under about 30 words. Past this, the clerk is asked to write it again. -/
 def maxDifferenceWords : Nat := 40
 
@@ -260,13 +266,108 @@ structure Outcome where
   apiErrorMessage : Option String := none
   stopReason : Option String := none
   exitCode : UInt32 := 0
-  /-- No request was made, because a budget is used up. This says so, in words for the table. -/
+  /-- No request was made, because a budget is used up. This says which one, for the server's log. -/
   resting : Option String := none
 
 def apiError (j : Json) : Option (String × String) :=
   match jField j "error" with
   | some e => some ((jStr e "type").getD "error", (jStr e "message").getD "")
   | none => none
+
+/-- An error message from the API, made safe for the log: one short line that holds no key. -/
+def scrubbed (config message : String) : String :=
+  let m := match config.splitOn "x-api-key: " with
+    | _ :: rest :: _ =>
+      let key := (rest.splitOn "\"").headD ""
+      if key.isEmpty then message else message.replace key "[key]"
+    | _ => message
+  Clerk.cut 300 (Clerk.oneLine (" ".intercalate ((m.splitOn " ").map fun w => if w.startsWith "sk-" then "[key]" else w)))
+
+#guard scrubbed "header = \"x-api-key: abc123\"\n" "bad key abc123 here" == "bad key [key] here"
+#guard scrubbed "" "your key sk-ant-xyz is bad" == "your key [key] is bad"
+
+/-- What a player reads when the clerk cannot work because of a problem on our side. No key, status code
+or file name goes here. The reason goes to the server's log. -/
+def onStrike : String :=
+  "The clerk is on strike! Sorry, that's on us. The rest of the game still works, and you can write a rule in formal text."
+
+/-- Why a request did not produce a reply, in words for the server's log and for a person running
+`make sim`. `none` means it worked. Players never read this: see `finalOf`. -/
+def failureOf (o : Outcome) : Option String :=
+  let detail := " ".intercalate <|
+    (o.http.map (s!"HTTP {·}")).toList ++ o.apiErrorType.toList ++ o.apiErrorMessage.toList
+  if o.resting.isSome then o.resting
+  else if o.exitCode == 28 then some "no reply within the time limit (curl exit 28)"
+  else if o.exitCode == 6 || o.exitCode == 7 then some s!"no connection to the API (curl exit {o.exitCode})"
+  else if o.exitCode == 127 then some "this server cannot run curl (curl exit 127)"
+  else if o.exitCode != 0 then some s!"the connection to the API failed (curl exit {o.exitCode})"
+  else
+    match o.http, o.apiErrorType with
+    | some 401, _ | _, some "authentication_error" => some s!"the API key was refused: {detail}"
+    | some 402, _ | _, some "billing_error" => some s!"the API account has a billing problem: {detail}"
+    | some 403, _ | _, some "permission_error" => some s!"this API key may not use this model: {detail}"
+    | some 404, _ | _, some "not_found_error" => some s!"the API found no such model or path: {detail}"
+    | some 429, _ | _, some "rate_limit_error" => some s!"the API's rate limit was reached: {detail}"
+    | some 529, _ | _, some "overloaded_error" => some s!"the API is overloaded: {detail}"
+    | some c, _ =>
+      if c ≥ 400 || o.apiErrorType.isSome then some s!"the API returned an error: {detail}"
+      else
+        match o.stopReason with
+        | some "refusal" => some "the model refused"
+        | some "max_tokens" => some "the reply ran past its length limit"
+        | some _ => none
+        | none => some s!"the reply ended before it finished: {detail}"
+    | none, _ => some "the connection closed without a reply"
+
+/-- The request itself is the problem, so the player can do something about it. This is not our fault,
+and these words stay as they are when everything else goes on strike. -/
+def declined (o : Outcome) (suggesting : Bool := false) : Option String :=
+  if o.exitCode != 0 || o.apiErrorType.isSome || o.http.any (· ≥ 400) then none
+  else
+    match o.stopReason with
+    | some "refusal" =>
+      some (if suggesting then "Claude declined to suggest a rule. Try again, or write your own rule."
+        else "Claude declined to draft this. Rephrase it, or write the formal text yourself.")
+    | some "max_tokens" =>
+      some (if suggesting then "The suggestion ran past its length limit. Try again, or write your own rule."
+        else "The draft ran past its length limit. Try a simpler rule.")
+    | _ => none
+
+/-- How a request that did not produce a reply ends a draft. `none` means it worked. -/
+def finalOf (o : Outcome) (suggesting : Bool := false) : Option Final :=
+  match declined o suggesting with
+  | some m => some (.failed m)
+  | none =>
+    if o.resting.isSome then some (.strike Spend.restingWords)
+    else (failureOf o).map fun _ => .strike onStrike
+
+/-- Can asking again help? The API's list is at `platform.claude.com/docs/en/api/errors`. -/
+def retryable (o : Outcome) : Bool :=
+  o.resting.isNone && (
+  [28, 6, 7, 16, 18, 35, 52, 55, 56, 92].contains o.exitCode.toNat ||
+  (o.exitCode == 0 && match o.http with
+   | some c => c == 408 || c == 409 || c == 429 || c ≥ 500 || (c < 400 && o.apiErrorType.isNone && o.stopReason.isNone)
+   | none => true) ||
+  (match o.apiErrorType with
+   | some t => t == "rate_limit_error" || t == "overloaded_error" || t == "api_error" || t == "timeout_error"
+   | none => false))
+
+#guard onStrike.length < 130
+#guard retryable { http := some 529, apiErrorType := some "overloaded_error" }
+#guard retryable { http := some 500, apiErrorType := some "api_error" }
+#guard retryable { http := some 504, apiErrorType := some "timeout_error" }
+#guard retryable { http := some 429, apiErrorType := some "rate_limit_error" }
+#guard retryable { http := some 200, apiErrorType := some "overloaded_error" }
+#guard retryable { http := some 200 }
+#guard retryable { exitCode := 7, http := some 0 }
+#guard !retryable { http := some 401, apiErrorType := some "authentication_error" }
+#guard !retryable { http := some 402, apiErrorType := some "billing_error" }
+#guard !retryable { http := some 400, apiErrorType := some "invalid_request_error" }
+#guard !retryable { http := some 413, apiErrorType := some "request_too_large" }
+#guard !retryable { http := some 200, stopReason := some "refusal" }
+#guard !retryable { resting := some "the budget" }
+#guard (declined { http := some 200, stopReason := some "refusal" }).isSome
+#guard (declined { http := some 529, stopReason := some "refusal" }).isNone
 
 /-- Count what the request that just ended cost. A request stopped part way has no final output count,
 so that part is estimated from what arrived, at about four characters a token. -/
@@ -279,7 +380,9 @@ private def chargeJob (job : Job) (model : String) : IO Unit := do
 here, so this is where the budgets are checked and charged. `model` is the model named in the request,
 which sets the price. -/
 def runRequest (job : Job) (config model : String) : IO Outcome := do
-  if let some why ← Spend.resting? job.table then return { resting := some why }
+  if let some why ← Spend.whyResting job.table then
+    IO.eprintln s!"[{job.table}] no request to {model}: {why}"
+    return { resting := some why }
   -- These fields describe one request, so a request that gets no reply must not repeat the last one's.
   job.state.modify fun st =>
     { st with inputTokens := 0, cacheReadTokens := 0, cacheWriteTokens := 0, outputTokens := 0 }
@@ -321,42 +424,11 @@ def runRequest (job : Job) (config model : String) : IO Outcome := do
     if let .ok j := Json.parse raw then
       if let some (t, m) := apiError j then
         out := { out with apiErrorType := some t, apiErrorMessage := some m }
+  out := { out with apiErrorMessage := out.apiErrorMessage.map (scrubbed config) }
+  if !(← job.cancelled.get) then
+    if let some why := failureOf out then
+      IO.eprintln s!"[{job.table}] request to {model} failed: {why}"
   return out
-
-/-- A plain message for a request that did not produce a reply. `none` means it worked. -/
-def failureOf (o : Outcome) (suggesting : Bool := false) : Option String :=
-  let hint := if suggesting then "Try again, or write your own rule." else "Write the formal text yourself, or try again."
-  if o.resting.isSome then o.resting
-  else if o.exitCode == 28 then some s!"No reply after {maxSeconds} seconds. {hint}"
-  else if o.exitCode == 6 || o.exitCode == 7 then some s!"Could not reach Claude: no connection. {hint}"
-  else if o.exitCode == 127 then some (if suggesting then "This server cannot run curl, so it cannot reach Claude. Write your own rule." else "This server cannot run curl, so it cannot reach Claude. Write the formal text yourself.")
-  else if o.exitCode != 0 then some s!"The connection to Claude failed (curl error {o.exitCode}). {hint}"
-  else
-    match o.http, o.apiErrorType with
-    | some 401, _ | _, some "authentication_error" => some "The API key was refused. Check ANTHROPIC_API_KEY in .env."
-    | some 402, _ | _, some "billing_error" => some (if suggesting then "The API account has a billing problem. Write your own rule." else "The API account has a billing problem. Write the formal text yourself.")
-    | some 403, _ | _, some "permission_error" => some "This API key is not allowed to use this model."
-    | some 404, _ | _, some "not_found_error" => some "This server's model name was not found. Check CHARTER_MODEL."
-    | some 429, _ | _, some "rate_limit_error" =>
-      let wait := match o.retryAfter.bind String.toNat? with
-        | some n => s!" Try again in {n} seconds."
-        | none => " Try again shortly."
-      some s!"Claude's rate limit was reached.{wait}"
-    | some 529, _ | _, some "overloaded_error" => some "Claude is overloaded. Try again shortly."
-    | some c, _ =>
-      if c ≥ 500 then some s!"Claude's service had an error ({c}). {hint}"
-      else if c ≥ 400 then some s!"The request was rejected: {o.apiErrorMessage.getD s!"error {c}"}"
-      else if o.apiErrorType.isSome then some s!"Claude's service had an error. {hint}"
-      else
-        match o.stopReason with
-        | some "refusal" =>
-          some (if suggesting then s!"Claude declined to suggest a rule. {hint}"
-            else "Claude declined to draft this. Rephrase it, or write the formal text yourself.")
-        | some "max_tokens" =>
-          some (if suggesting then s!"The suggestion ran past its length limit. {hint}"
-            else "The draft ran past its length limit. Try a simpler rule.")
-        | _ => none
-    | none, _ => some s!"The connection closed without a reply. {hint}"
 
 /-! ## Reading the reply -/
 
@@ -406,7 +478,7 @@ def problemsOf (g : Game) (seat : Nat) (text : String) : Except String (List Str
     match p with
     | .law L => pure (lawProblems g.spec.G s L)
     | .deal d =>
-      pure (dealProblems s d ++ (if d.signers.contains seat then [] else ["you must be one of the signers of your own deal"]))
+      pure (dealProblems s d ++ dealLimitProblems d ++ (if d.signers.contains seat then [] else ["you must be one of the signers of your own deal"]))
 
 /-- Say a constitution problem as a plain sentence. -/
 def sentence (s : String) : String :=
@@ -438,6 +510,42 @@ def addSpent (job : Job) : IO Unit :=
     { st with spentInput := st.spentInput + st.inputTokens, spentCacheRead := st.spentCacheRead + st.cacheReadTokens
               spentCacheWrite := st.spentCacheWrite + st.cacheWriteTokens, spentOutput := st.spentOutput + st.outputTokens }
 
+/-- How long to wait before asking again, after `tries` tries. -/
+def retryWaitMs (o : Outcome) (tries : Nat) : Nat :=
+  match o.retryAfter.bind String.toNat? with
+  | some n => n * 1000
+  | none => 1000 * 2 ^ (tries - 1)
+
+#guard retryWaitMs {} 1 == 1000 && retryWaitMs {} 2 == 2000
+#guard retryWaitMs { retryAfter := some "7" } 1 == 7000
+
+/-- One request, asked again up to `maxTries` times while the problem can pass. It stops early if the wait
+is too long for a person, or if the time for one request has already gone by. Asks that are not the last
+are added to what the draft has spent here. The caller adds the last one. -/
+def requestRetrying (job : Job) (config model : String) (seconds : Nat := maxSeconds) : IO Outcome := do
+  let start ← IO.monoMsNow
+  let mut tries := 1
+  repeat
+    let out ← runRequest job config model
+    if tries ≥ maxTries || !retryable out || (← job.cancelled.get) then return out
+    let wait := retryWaitMs out tries
+    if wait > maxRetryWaitMs || (← IO.monoMsNow) + wait > start + seconds * 1000 then return out
+    addSpent job
+    touch job fun st => { st with stage := "retrying", text := "", thinking := "" }
+    let mut left := wait + (← IO.rand 0 250)
+    while left > 0 do
+      if ← job.cancelled.get then return out
+      IO.sleep 100
+      left := left - min 100 left
+    touch job fun st => { st with stage := "sent" }
+    tries := tries + 1
+  return {}
+
+/-- End a job because of a problem on our side: the reason goes to the log, and the player gets `onStrike`. -/
+def strike (job : Job) (why : String) : IO Unit := do
+  IO.eprintln s!"[{job.table}] the clerk cannot work: {why}"
+  touch job fun st => { st with stage := "done", final := some (.strike onStrike) }
+
 /-- Run a draft on this thread. `current` reads the game as it is now, for each check. `notes` is
 the table's clerk log, and `Clerk.memoryBlock` takes only this seat's part of it. -/
 def run (job : Job) (cfg : Settings) (current : IO (Option Game)) (notes : List Clerk.Note) : IO Unit := do
@@ -452,11 +560,10 @@ def run (job : Job) (cfg : Settings) (current : IO (Option Game)) (notes : List 
     | .ok () => finish (.ready job.words.trimAscii.toString none false)
     | .error e => finish (.refused e)
     return
-  let some key := cfg.key
-    | finish (.failed "This server has no API key. Set ANTHROPIC_API_KEY in .env, or write the formal text yourself.")
+  let some key := cfg.key | strike job "this server has no API key"
   let system ← try IO.FS.readFile cfg.promptPath catch _ => pure ""
   if system.isEmpty then
-    finish (.failed "The clerk's instructions are missing from this server.")
+    strike job s!"the instructions are missing: {cfg.promptPath}"
     return
   let some g ← current | finish (.failed "The game is gone.")
   let some s := g.state | finish (.failed "The game has not started.")
@@ -466,13 +573,13 @@ def run (job : Job) (cfg : Settings) (current : IO (Option Game)) (notes : List 
     touch job fun st => { st with stage := "sent", attempt := n, text := "", thinking := "",
                                   retryReason := retry.map (·.2) }
     let body := requestBody cfg system (userMessage g s job.seat memory job.words retry)
-    let outcome ← runRequest job (curlConfig cfg key body) cfg.model
+    let outcome ← requestRetrying job (curlConfig cfg key body) cfg.model
     addSpent job
     if ← isCancelled then
       finish .cancelled
       return
-    if let some msg := failureOf outcome then
-      finish (.failed msg)
+    if let some f := finalOf outcome then
+      finish f
       return
     let text := (← job.state.get).text
     let reply := parseReply text

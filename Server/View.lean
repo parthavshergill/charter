@@ -288,6 +288,7 @@ def view (g : Game) (code : String) (you : Option Nat) (drafting : List Nat) (bo
       , ("turn", toJson s.currentSeat), ("lastRoll", toJson s.lastRoll)
       , ("rollsMade", toJson s.rollsMade)
       , ("target", toJson G.targetPoints), ("bankRate", toJson s.rules.bankRate)
+      , ("maxGoodsPerSide", toJson Game.maxGoodsPerSide)
       , ("prompt", promptOf g s you legal)
       , ("seats", Json.arr (s.turnOrder.map (seatJson g (some s) showPersona)).toArray)
       , ("pieces", Json.arr (s.pieces.map pieceJson).toArray)
@@ -359,6 +360,7 @@ def draftJson (g : Game) (book : Describe.Book) (you : Nat) (job : Formalize.Job
       [("outcome", "ready"), ("viaClaude", toJson viaClaude), ("review", reviewJson g book you formal diff)]
     | some (.refused why) => [("outcome", "refused"), ("reason", why)]
     | some (.failed msg) => [("outcome", "failed"), ("reason", msg)]
+    | some (.strike msg) => [("outcome", "failed"), ("reason", msg), ("strike", toJson true)]
     | some .cancelled => [("outcome", "cancelled")]
   Json.mkObj (base ++ final)
 
@@ -422,7 +424,7 @@ def checkText (g : Game) (text : String) : Json :=
       | .deal d => [("english", Json.str (Text.dealText g.nameOf d))]
     let problems := match g.state, p with
       | some s, .law L => lawProblems g.spec.G s L
-      | some s, .deal d => dealProblems s d
+      | some s, .deal d => dealProblems s d ++ Game.dealLimitProblems d
       | none, _ => ["the game has not started"]
     Json.mkObj ([("ok", toJson true), ("problems", toJson problems),
       ("text", Rules.printProposal p)] ++ english)
