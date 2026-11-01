@@ -7,7 +7,7 @@
 # make sim          plays complete games with no browser. See below.
 # make spectate     opens a finished run in the browser, as a spectator.
 #
-# make sim GAMES=1 SEATS=4 [GAME=island] [SEED=n] [PERSONAS=trader,schemer,...] [KINDS=claude,bot]
+# make sim GAMES=1 SEATS=4 [GAME=island|belt|not-catan] [SEED=n] [PERSONAS=trader,schemer,...] [KINDS=claude,bot]
 #          [MAX_MINUTES=360] [RESUME=results/<run>]
 # It needs an API key for Claude seats: ANTHROPIC_API_KEY, or CHARTER_ENV_FILE naming a file with it.
 # Results go to results/<run>/, which git ignores.

@@ -411,8 +411,9 @@ said. A law can only change the rate for all. -/
 def threeForOne : Law := { title := "Everyone has a harbor", clauses := [.setBankRate 3] }
 #guard (problems threeForOne).isEmpty
 
-/-- The harbor law at a round's end, for every seat. Its payments, counted at 6 seats, take the founding
-laws over the limit, even though a game of this pack has at most 4 seats. So the harbor reacts to a harvest. -/
+/-- The harbor law at a round's end, for every seat. It plans 48 payments at 6 seats, even though a game of
+this pack has at most 4 seats, and the same law on a harvest plans 8. It would leave a table little room for
+its own laws, so the harbor reacts to a harvest. -/
 def harborEachRound : Law :=
   { title := "Harbors swap at the round's end"
     clauses := [.onRoundEnd [.forEach (.lt (.lit 0) (.count .each "harbor"))
@@ -426,8 +427,10 @@ def harborEachRound : Law :=
           [.transfer .each .bank (.lit "grain") (.lit 3), .transfer .bank .each (.lit "ore") (.lit 1)] ]]] }
 
 #guard (problems harborEachRound 4).isEmpty
-#guard (problems harborEachRound 6).contains "the laws in force could make too many payments at once" ||
-  !({ game with foundingLaws := game.foundingLaws.dropLast ++ [harborEachRound] } : GameDef).checks
+#guard (problems harborEachRound 6).contains "the laws in force could make too many payments at once"
+#guard ({ game with foundingLaws := game.foundingLaws.dropLast ++ [harborEachRound] } : GameDef).checks
+#guard plannedTotal game.startingLaws 6 + 40 ≥ plannedTotal
+  ({ game with foundingLaws := game.foundingLaws.dropLast ++ [harborEachRound] } : GameDef).startingLaws 6
 
 /-! ### An award that moves
 

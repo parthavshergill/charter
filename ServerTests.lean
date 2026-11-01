@@ -729,7 +729,9 @@ section Games
   | .ok (.law L') => Rules.printProposal (.law L') == Rules.printProposal (.law L)
   | _ => false
 #guard notCatanSpec.G.foundingLaws.all fun L => !(Text.lawText L).isEmpty
-#guard !(Text.lawText Games.NotCatan.lawAlarm).contains ",,"
+#guard ((Text.lawText Games.NotCatan.lawAlarm).splitOn ",,").length == 1
+#guard ((Text.lawText Games.NotCatan.lawAlarm).splitOn "their timber, grain, ore, wool and brick together is more than 7").length == 2
+#guard ((Text.lawText Games.NotCatan.lawAlarm).splitOn "half of their timber, grain, ore, wool and brick, each rounded down, to the bank").length == 2
 
 -- A law can use only the resources of its own game.
 #guard (Rules.parseProposal "(law \"x\" (set-cost city (bundle (ice 1))))").toOption.isNone

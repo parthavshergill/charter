@@ -374,7 +374,9 @@ def sentText (c : Ctx) : Cond → String
     | none =>
       let isWord (e : Expr) := if isPluralExpr e then "are" else "is"
       match cond with
-      | .lt (.lit n) b => s!"{exprText c b} {isWord b} more than {n}"
+      | .lt (.lit n) b =>
+        if (holdingsSum b).isSome then s!"{exprText c b} {isWord b} more than {n}"
+        else s!"{n} is less than {exprText c b}"
       | .lt a b => s!"{exprText c a} {isWord a} less than {exprText c b}"
       | .le a b => s!"{exprText c a} {isWord a} at most {exprText c b}"
       | .eq a b => s!"{exprText c a} {isWord a} equal to {exprText c b}"
