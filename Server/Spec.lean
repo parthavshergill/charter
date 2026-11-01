@@ -3,6 +3,7 @@ import Charter.Games.Belt
 import Charter.Games.NotCatan
 import Charter.Games.NotCatanWords
 import Charter.Games.SlimeParliamentWords
+import Charter.Games.PirateRepublicWords
 import Charter.Scene.OfState
 import Charter.Scene.Belt
 import Charter.Scene.LookCheck
@@ -116,10 +117,25 @@ def slimeSpec : GameSpec :=
     foundingWords := Games.SlimeParliament.foundingWords
     guide := "You are a slime mould on a damp log. Oatmeal, dew, rot and pollen are the goods. A tendril costs oatmeal and dew. A node costs oatmeal, dew and rot. A swelling replaces a node. A puffball attaches to a node, costs pollen and oatmeal, and gives every seat pollen. The founding laws say more." }
 
+def pirateSpec : GameSpec :=
+  { id := "pirate-republic"
+    name := "The Pirate Republic"
+    blurb := "Nassau, 1715. Elect a captain, make promises, and depose the captain when they break them."
+    G := Games.PirateRepublic.game
+    valid := Games.PirateRepublic.game_valid
+    layout :=
+      { tiles := Games.PirateRepublic.tiles, spots := Games.PirateRepublic.spots, edges := Games.PirateRepublic.edges
+        links := Games.PirateRepublic.links, theme := Games.PirateRepublic.theme, word := "the Bahamas" }
+    minSeats := 3
+    maxSeats := 4
+    meshFolder := "packs/pirate-republic/meshes"
+    foundingWords := Games.PirateRepublic.foundingWords
+    guide := "You are a pirate of Nassau. Rum, powder and timber are goods, and each plunder is worth 1 point. From round 2 each seat starts each round with 1 ballot, and ballots can be traded. To stand for captain, declare a number of ballot on your turn. The seat that alone declared the most ballots it really holds at the round's end takes the hat, and a tie leaves the hat where it is. The hat gets a copy of all plunder the dice pay anyone. Whoever holds the hat can declare rum, up to 3, and each other seat pays that much to the captain at the round's end. In round 5 declare pardon, or declare and hold 3 powder, or lose your newest wharf at the round's end. A fort is not a wharf." }
+
 instance : Inhabited GameSpec := ⟨islandSpec⟩
 
 /-- Every game this server can run. The first is the default. -/
-def gameSpecs : List GameSpec := [islandSpec, beltSpec, notCatanSpec, slimeSpec]
+def gameSpecs : List GameSpec := [islandSpec, beltSpec, notCatanSpec, slimeSpec, pirateSpec]
 
 /-- The game with this id. A log entry with no id is from before there was a choice: it is the Island. -/
 def specOf? (id : Option String) : Option GameSpec :=
