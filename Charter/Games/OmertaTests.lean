@@ -136,4 +136,9 @@ def busy : List Piece :=
   | some s => reward s == 22
   | none => false
 
+-- From round 5 the reward grows twice as fast: twelve rackets make it grow by 4 on a roll.
+#guard match next { fund (table 0) 0 with pieces := busy, round := 5 } with
+  | some s => reward s == 24
+  | none => false
+
 end Charter.Games.Omerta.Tests
