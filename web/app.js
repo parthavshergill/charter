@@ -1024,10 +1024,11 @@ function buildDraftDesk() {
   U.words.addEventListener("keydown", e => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); submitDraft(); } });
   U.draftBtn = h("button", { class: "act gold", onclick: () => submitDraft() }, "Draft it");
   U.cancelBtn = h("button", { class: "act", onclick: () => cancelDraft() }, "Cancel");
+  U.suggestBtn = h("button", { class: "link", onclick: () => askSuggestion() }, "Suggest a rule");
   U.samplesBox = h("div", { class: "samples" });
   U.draftBody = h("div", {});
   U.proposeBar = h("div", { class: "proposebar", hidden: true });
-  U.draftBar = h("div", { class: "draftbar" }, U.draftBtn, U.cancelBtn);
+  U.draftBar = h("div", { class: "draftbar" }, U.draftBtn, U.cancelBtn, U.suggestBtn);
   U.desk = h("div", {}, h("h2", {}, "A new rule"), U.words, U.draftBar, U.samplesBox, U.draftBody, U.proposeBar);
 }
 async function submitDraft(sample) {
@@ -1045,6 +1046,32 @@ async function submitDraft(sample) {
   renderDraft(); renderRail();
   pollDraft();
 }
+// The clerk suggests a rule. It comes back as an ordinary draft, and its words go in the box.
+async function askSuggestion() {
+  G.draftGen = (G.draftGen || 0) + 1;
+  const gen = G.draftGen;
+  G.wordsBefore = G.ui.words.value;
+  setWords("");
+  G.draft = { stage: "sent", mode: "suggest", words: "", elapsedMs: 0, quietMs: 0, text: "", thinking: "", attempt: 1, optimistic: true };
+  renderDraft(); renderRail();
+  const r = await api(`/api/games/${G.code}/suggest`, { token: G.token });
+  if (gen !== G.draftGen) return;
+  if (r.ok === false) { G.draft = { outcome: "failed", mode: "suggest", reason: r.error, words: "" }; renderDraft(); return; }
+  G.draft = r;
+  renderDraft(); renderRail();
+  pollDraft();
+}
+function setWords(text) {
+  G.ui.words.value = text;
+  if (text) store.set(`charter.words.${G.code}`, text); else store.del(`charter.words.${G.code}`);
+  G.ui.growWords();
+}
+// A finished suggestion goes in the box, unless the player has started to write there.
+function placeSuggestion(d) {
+  if (d.mode !== "suggest" || d.outcome !== "ready" || G.suggestPlaced === d.id) return;
+  G.suggestPlaced = d.id;
+  if (!G.ui.words.value.trim()) setWords(d.words);
+}
 async function pollDraft() {
   clearTimeout(G.draftPolling);
   const gen = G.draftGen;
@@ -1055,6 +1082,7 @@ async function pollDraft() {
   if (d?.id == null) { if (G.draft && !G.draft.outcome && !G.draft.optimistic) { G.draft = { outcome: "failed", reason: "The server lost this draft. Try again.", words: G.ui.words.value }; renderDraft(); } return; }
   const beat = G.draft && (d.text !== G.draft.text || d.thinking !== G.draft.thinking || d.stage !== G.draft.stage);
   G.draft = d; G.draftBeat = beat;
+  placeSuggestion(d);
   renderDraft(); renderRail();
   if (!d.outcome) G.draftPolling = setTimeout(pollDraft, 220);
 }
@@ -1064,6 +1092,7 @@ async function checkDraft() {
     if (d?.id != null && d.outcome !== "cancelled") {
       G.draft = d;
       if (!G.ui.words.value && d.words) G.ui.words.value = d.words;
+      if (d.outcome) G.suggestPlaced = d.id;
       if (!d.outcome) pollDraft();
     }
   } catch {}
@@ -1078,6 +1107,7 @@ async function refreshDraftReview() {
 async function cancelDraft() {
   G.draftGen = (G.draftGen || 0) + 1;
   clearTimeout(G.draftPolling);
+  if (G.draft?.mode === "suggest" && !G.ui.words.value.trim()) setWords(G.wordsBefore || "");
   G.draft = null;
   api(`/api/games/${G.code}/draft-cancel`, { token: G.token });
   renderDraft(); renderRail();
@@ -1093,19 +1123,28 @@ function renderDraft() {
   const running = d && !d.outcome;
   const typed = U.words.value.trim();
   const same = d && (d.words || "").trim() === typed;
+  const suggesting = d?.mode === "suggest";
+  // Asking never takes away words the player wrote: it shows on an empty box, or on the clerk's own words.
+  const canSuggest = !running && (!typed || (suggesting && same));
   U.cancelBtn.hidden = !running;
   U.draftBtn.hidden = running;
   U.draftBtn.disabled = !typed;
-  fill(U.draftBtn, d?.outcome === "ready" && !same ? "Redraft" : d?.outcome === "refused" || d?.outcome === "failed" ? "Draft again" : "Draft it");
+  fill(U.draftBtn, d?.outcome === "ready" && !same ? "Redraft" : !suggesting && (d?.outcome === "refused" || d?.outcome === "failed") ? "Draft again" : "Draft it");
   U.draftBtn.classList.toggle("gold", !(d?.outcome === "ready" && same));
   U.draftBtn.hidden = running || (d?.outcome === "ready" && same);
-  U.draftBar.hidden = !running && d?.outcome === "ready" && same;
+  U.suggestBtn.hidden = !canSuggest;
+  fill(U.suggestBtn, suggesting && d?.outcome === "ready" ? "Suggest another" : "Suggest a rule");
+  U.draftBar.hidden = !running && d?.outcome === "ready" && same && !canSuggest;
   // Ready-made laws, one click away, while the desk is empty.
   U.samplesBox.hidden = !!d || !!typed;
   if (!d && !typed) fill(U.samplesBox, (v?.samples || []).slice(0, 5).map(s => h("button", { class: "link", title: s.english, onclick: () => submitDraft(s.id) }, s.title)));
   U.proposeBar.hidden = true;
   if (!d) { fill(U.draftBody); return; }
   if (running) { fill(U.draftBody, draftingView(d)); return; }
+  if (suggesting && (d.outcome === "refused" || d.outcome === "failed")) {
+    fill(U.draftBody, h("p", { class: "fail" }, d.reason));
+    return;
+  }
   if (d.outcome === "refused") {
     fill(U.draftBody, h("div", { class: "refusal" }, h("div", { class: "stampword" }, "REFUSED"), h("p", {}, d.reason)));
     return;
@@ -1119,6 +1158,7 @@ function renderDraft() {
   const rv = d.review;
   if (!rv) { fill(U.draftBody, h("p", { class: "fail" }, "This rule no longer reads against the table. Draft it again.")); return; }
   fill(U.draftBody, h("div", { class: same ? "" : "dim" },
+    d.why ? h("div", { class: "advice" }, h("div", { class: "advicehead" }, d.whyStale ? "The clerk's advice, before the table last changed" : "The clerk's advice"), h("p", {}, d.why)) : null,
     h("div", { class: "titleline" }, rv.title),
     statementOf(rv.statement),
     rv.difference ? h("p", { class: "diff" }, rv.difference) : null,
@@ -1139,12 +1179,14 @@ function draftingView(d) {
   const stalled = d.quietMs > 15000;
   const secs = Math.floor((d.elapsedMs || 0) / 1000);
   const tick = h("span", { class: "tick" + (G.draftBeat ? " beat" : "") });
+  // A suggestion's reply has labelled lines. While it comes in, show only the words it proposes.
+  const shown = d.mode === "suggest" ? (/^WORDS:\s*(.*)$/m.exec(d.text || "")?.[1] || "") : d.text;
   const statusText = stalled ? `Nothing from Claude for ${Math.floor(d.quietMs / 1000)} s.` : (d.optimistic ? "Sending to Claude." : STAGE_TEXT[d.stage] || d.stage);
   return h("div", {},
     h("div", { class: "status" + (stalled ? " stalled" : "") }, stalled ? null : tick, h("span", {}, statusText), h("span", { class: "elapsed" }, `${secs} s`)),
     d.attempt > 1 ? h("p", { class: "retryline" }, `The last draft was sent back. ${d.retryReason} Trying again.`) : null,
     d.thinking && d.stage === "thinking" ? h("p", { class: "thought" }, lastSentences(d.thinking)) : null,
-    d.text ? h("div", { class: "clerk" }, d.text, d.stage === "drafting" ? h("span", { class: "nib" }) : null) : null);
+    shown ? h("div", { class: "clerk" }, shown, d.stage === "drafting" ? h("span", { class: "nib" }) : null) : null);
 }
 function lastSentences(t) {
   const clean = t.replace(/\s+/g, " ").trim();
