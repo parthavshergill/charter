@@ -31,7 +31,7 @@ ACTS = LAYOUT["act_size"] + 1
 def collect(games, out, seed=7):
     """Like rl/imitation/collect.py, with the training settings: random maps and shuffled rows."""
     from charter import Game
-    obs, masks, acts, game_ids = [], [], [], []
+    obs, masks, acts, game_ids, seats, returns = [], [], [], [], [], []
     for k in range(games):
         gid = ["island", "not-catan"][k % 2]
         n = 3 + (k // 2) % 2   # 3 or 4 seats: what both training games allow
@@ -46,10 +46,14 @@ def collect(games, out, seed=7):
             masks.append(np.packbits(m))
             acts.append(a)
             game_ids.append(k)
+            seats.append(g.seat)
             g.step(a)
+        r = g.rewards()   # each seat's final reward: the value target for this game's decisions
+        returns.extend(float(r[s]) for s in seats[len(returns):])
     os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
     np.savez_compressed(out, obs=np.stack(obs), mask=np.stack(masks), action=np.array(acts, np.int16),
-                        game=np.array(game_ids, np.int32))
+                        game=np.array(game_ids, np.int32), seat=np.array(seats, np.int8),
+                        ret=np.array(returns, np.float32))
     print(f"{len(acts)} decisions from {games} games, wrote {out}", flush=True)
 
 
@@ -101,6 +105,7 @@ def main():
     ap.add_argument("--epochs", type=int, default=6)
     ap.add_argument("--batch", type=int, default=512)
     ap.add_argument("--lr", type=float, default=2e-3)
+    ap.add_argument("--vf-coef", type=float, default=0.0, help="also fit the value to each seat's final reward")
     args = ap.parse_args()
     if args.collect:
         collect(args.collect, args.data)
@@ -109,6 +114,7 @@ def main():
     obs = torch.tensor(z["obs"].astype(np.float32))
     mask = torch.tensor(np.unpackbits(z["mask"], axis=1)[:, :ACTS].astype(bool))
     act = torch.tensor(z["action"].astype(np.int64))
+    ret = torch.tensor(z["ret"]) if "ret" in z else None
     held = torch.tensor(z["game"] % 10 == 0)
     tr, te = (~held).nonzero().squeeze(1), held.nonzero().squeeze(1)
     torch.manual_seed(0)
@@ -117,11 +123,12 @@ def main():
     opt = torch.optim.Adam(pol.parameters(), lr=args.lr)
 
     def loss_acc(idx):
-        logits, _ = pol(obs[idx])
+        logits, value = pol(obs[idx])
         logits = logits.masked_fill(~mask[idx], -1e9)
+        vloss = F.mse_loss(value, ret[idx]) if args.vf_coef and ret is not None else 0.0
         choice = mask[idx].sum(1) > 1   # agreement counted where there was a choice
         acc = ((logits.argmax(1) == act[idx]) & choice).float().sum() / choice.float().sum().clamp(min=1)
-        return F.cross_entropy(logits, act[idx]), acc
+        return F.cross_entropy(logits, act[idx]) + args.vf_coef * vloss, acc
 
     for ep in range(args.epochs):
         perm = tr[torch.randperm(len(tr))]
