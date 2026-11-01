@@ -9,7 +9,7 @@ import os
 import shlex
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+sys.path[:0] = [os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "/src/rl"]
 import modal_app as m  # noqa: E402
 
 app = m.app
