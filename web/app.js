@@ -725,6 +725,7 @@ async function gameScreen(code) {
   // A draft that was running before a reload is still running on the server.
   G.words = store.get(`charter.words.${code}`) || "";
   U.words.value = G.words;
+  G.wordsRestored = !!G.words;
   if (G.token) checkDraft();
   if (params.has("replay")) { startReplay(true); return; }
   poll();
@@ -1158,6 +1159,8 @@ function renderMenu() {
 // ---------------------------------------------------------------- the dock
 function openDock(d) {
   G.dock = d;
+  // A document opened while a law's outcome is on screen is still open when that moment ends.
+  if (G.moment) G.moment.prior = d;
   G.menu = false; renderMenu();
   renderDock(); renderRail(); renderPrompt(); renderLedge(); updateInsets();
   if (d.t === "draft" && !touch()) setTimeout(() => G.ui.words.focus(), 60);
@@ -1516,9 +1519,13 @@ function trackDecisions(v) {
   G.seenDecisions = list.length;
   const d = fresh[fresh.length - 1];
   if (d.outcome === "lapsed") { caption(`"${d.title}" lapsed without a majority.`); return false; }
+  // A player writing a rule keeps the desk. Taking it away would send the rest of their typing to the shortcuts.
+  if (writingRule()) { caption(`"${d.title}" ${d.outcome === "passed" ? "passed" : "did not pass"}.`); return false; }
   startMoment(d);
   return d.outcome === "passed";
 }
+/** Whether the player is at the drafting desk: typing in it, or waiting for a draft. */
+const writingRule = () => G.dock?.t === "draft" && (document.activeElement === G.ui.words || (G.draft && !G.draft.outcome));
 function trackProposals(prev, v) {
   const open = (v.proposals || []).map(p => p.id);
   if (G.seenProposals == null) { G.seenProposals = new Set(open); return; }
@@ -1526,7 +1533,7 @@ function trackProposals(prev, v) {
     if (G.seenProposals.has(p.id)) continue;
     G.seenProposals.add(p.id);
     if (p.kind === "law") for (const x of p.votes) G.stampsSeen.add(`${p.id}:${x.seat}`);
-    const busy = G.moment || G.dock?.t === "constitution" || (G.dock?.t === "draft" && (document.activeElement === G.ui.words || (G.draft && !G.draft.outcome)));
+    const busy = G.moment || G.dock?.t === "constitution" || writingRule();
     if (!busy && (p.kind === "law" || p.canSign)) { G.dock = { t: "vote", id: p.id }; }
     else caption(`${seat(p.by)?.name} proposed: ${p.kind === "deal" ? p.english : p.description?.text || `"${p.title}"`}`);
   }
@@ -1600,7 +1607,8 @@ function carryToMonument(d) {
       }, 320);
     });
   };
-  if (reduced() || !G.player) { finish(); return; }
+  // The sheet flies only while it shows the law. Another document stays where it is.
+  if (reduced() || !G.player || G.dock?.t !== "moment") { finish(); return; }
   // Where the square is: the first tile is the middle of the board.
   const t = G.view.board?.tiles?.[0];
   const to = t ? G.player.worldToScreen(t.x, 0.4, t.y) : { x: innerWidth / 2, y: innerHeight / 2 };
@@ -1954,8 +1962,14 @@ function buildDraftDesk() {
   U.words = h("textarea", { class: "words", "aria-label": "The rule you want", placeholder: "Write the rule you want, in your own words." });
   const grow = () => { U.words.style.height = "auto"; U.words.style.height = `${Math.min(U.words.scrollHeight + 2, 200)}px`; };
   U.growWords = grow;
-  U.words.addEventListener("input", () => { store.set(`charter.words.${G.code}`, U.words.value); grow(); renderDraft(); });
-  U.words.addEventListener("keydown", e => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); submitDraft(); } });
+  U.words.addEventListener("input", () => { G.wordsRestored = false; store.set(`charter.words.${G.code}`, U.words.value); grow(); renderDraft(); });
+  // Words kept from an earlier visit are all selected when the player comes back to them, so that new
+  // typing replaces them instead of landing in the middle. The first click or keystroke ends this. The
+  // browser places the caret after these events, so the selection waits a moment.
+  const pickUpOld = () => { if (G.wordsRestored) setTimeout(() => U.words.select()); };
+  U.words.addEventListener("focus", pickUpOld);
+  U.words.addEventListener("click", () => { pickUpOld(); G.wordsRestored = false; });
+  U.words.addEventListener("keydown", e => { G.wordsRestored = false; if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); submitDraft(); } });
   U.draftBtn = h("button", { class: "act gold", onclick: () => submitDraft() }, "Draft it");
   U.cancelBtn = h("button", { class: "act", onclick: () => cancelDraft() }, "Cancel");
   U.suggestBtn = h("button", { class: "link", onclick: () => askSuggestion() }, "Suggest a rule");
@@ -2031,7 +2045,7 @@ async function checkDraft() {
     const d = await api(`/api/games/${G.code}/draft`);
     if (d?.id != null && d.outcome !== "cancelled") {
       G.draft = d;
-      if (!G.ui.words.value && d.words) G.ui.words.value = d.words;
+      if (!G.ui.words.value && d.words) { G.ui.words.value = d.words; G.wordsRestored = true; }
       if (d.outcome) G.suggestPlaced = d.id;
       if (!d.outcome) pollDraft();
     }
