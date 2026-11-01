@@ -334,7 +334,7 @@ function updateInsets() {
   const dockOpen = !!G.dock;
   const dockW = dockOpen ? (innerWidth <= 860 ? 300 : 372) : 0;
   document.documentElement.style.setProperty("--dockw", `${dockW}px`);
-  const ledge = innerWidth <= 860 ? 84 : 96;
+  const ledge = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--ledge"));
   const lobby = G.view?.phase === "lobby";
   G.player.setInsets(lobby ? { l: Math.min(innerWidth * .46, 480), r: 16, t: 16, b: 16 } : { l: 0, r: 52 + dockW, t: 44, b: ledge + 8 });
 }
