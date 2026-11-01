@@ -302,6 +302,15 @@ def main(action: str = "test", run: str = "smoke", minutes: float = 10, max_doll
         total = guard(max_dollars, None, 4, 8, 1500)
         print(json.dumps(test.with_options(timeout=total).remote(quick), indent=1))
     elif action == "train":
+        # Record the exact commit and settings in every checkpoint's meta, so a kept checkpoint stays loadable.
+        try:
+            commit = subprocess.run(["git", "-C", ROOT, "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+        except Exception:  # noqa: BLE001
+            commit = ""
+        extra = json.loads(meta_extra) if meta_extra else {}
+        extra.setdefault("commit", commit)
+        extra.setdefault("train_args", train_args)
+        meta_extra = json.dumps(extra)
         # The whole job, build and start included, stops at `total`. Training gets all but 10 minutes of it.
         total = guard(max_dollars, GPU, 8, 16, int(minutes * 60) + 600)
         seconds = total - 600
