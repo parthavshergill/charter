@@ -125,7 +125,8 @@ def decode (T : Tables) (ep : Episode) (places : Array Move) (d : Decision) (a :
 /-- Every action on offer now, with its event, by asking the engine. Ending the turn needs no asking: the rules
 accept it on a seat's own turn, and theorem `endTurnNow_some` says that it cannot fail. Placements come from
 `places`, which `placeList` made by asking the engine about each. -/
-def legal (T : Tables) (ep : Episode) (places : Array Move) (s : State G) (d : Decision) : List (Nat × Event) :=
+def legal (T : Tables) (ep : Episode) (places : Array Move) (s : State G) (d : Decision)
+    (undo : Option (Res × Res) := Option.none) : List (Nat × Event) :=
   match d with
   | .none => []
   | .vote seat id _ =>
@@ -138,8 +139,10 @@ def legal (T : Tables) (ep : Episode) (places : Array Move) (s : State G) (d : D
     -- but that gives up a free opening piece, and policies kept doing it.
     if s.phase == .setup then (if rows.isEmpty then end_ else []) ++ rows else
     let names := ep.rowRes.toList
+    -- `undo` is the trade that would reverse this seat's last bank trade of this turn: never worth making, since the
+    -- bank takes its rate both ways, so it is not offered (the engine would accept it).
     let trades := names.flatMap fun g => names.filterMap fun h =>
-      if g == h then Option.none else some (Move.bankTrade g h)
+      if g == h || undo == some (g, h) then Option.none else some (Move.bankTrade g h)
     let declares := if T.declares then names.flatMap fun r => declareLevels.toList.map (Move.declare r) else []
     let others := (trades ++ declares).filterMap fun m =>
       if isLegal s seat m then (encodeMove ep places m).map (·, .move seat m) else Option.none

@@ -258,6 +258,8 @@ structure Settings where
   /-- Offer declarations in every game, also where no law reads them (the engine accepts them there and they change
   nothing). Off by default. On, a policy trained on such games still learns what its declaration outputs do. -/
   declareAlways : Bool := false
+  /-- Do not offer a bank trade that reverses the seat's last bank trade of the same turn. On by default. -/
+  blockUndoTrades : Bool := true
   deriving Inhabited
 
 /-! ## One game's rows -/

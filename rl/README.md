@@ -131,7 +131,8 @@ actions, at most 8 resources, 60 spots, 84 links, 24 tiles, 16 laws) refused lar
 `distinct_opps`, `declare_always`, `stale_wait`, `shaping_relative`, `shaping_gamma`. The Lean configuration also takes `record` (keep the game's events for a saved log;
 eval only).
 
-- **Waiting rows** (`stale_wait`, off by default). By default a waiting agent's observation is all zeros. PufferLib
+- **Waiting rows** (`stale_wait`, **on by default** in `charter.ini` since `HARNESS-READY` after `dd1b711`; it was
+  off before, and checkpoint metas record which). With `stale_wait = 0` a waiting agent's observation is all zeros. PufferLib
   still runs it through the network on every tick, so its recurrent state moves on those ticks, and with zero input
   MinGRU pulls the state halfway to 0.5 each time; the critic also sees one constant on every waiting row. With
   `stale_wait = 1`, an agent that has decided in this game keeps its last observation while it waits (only the mask
@@ -145,8 +146,14 @@ eval only).
 - **Eval and the server run the recurrent state as training did.** `Player.wait` runs one forward pass on the
   waiting observation (zeros, or the last one under `stale_wait`) for every decision of another caller seat;
   `rl/eval` does it by default (`--wait-steps 0` turns it off). `rl/RUN_A_POLICY.md` says what a server must do.
+- **Bank trades:** the mask does not offer a bank trade that reverses the seat's last bank trade of the same turn
+  (`block_undo_trades`, on by default; the bank takes its rate both ways, so it only loses goods).
 - **Setup:** the mask does not offer end turn in a setup turn while a placement is legal (the engine allows it, and
   policies gave up free opening pieces that way).
+
+**Warning:** with `declare_always = 1` and `stale_wait = 0`, `attention2` found self-play learning to fill its turns
+with free declarations (217 to 383 a game) and stop building: a `REWARD-HACK` through the critic's blind waiting rows.
+Use it only with `stale_wait = 1`, and count declarations in the saved games.
 
 `declare_always = 1` offers declarations in every game. Island and Not Catan have no law that reads one, so by
 default declarations are never legal there, their outputs are never trained, and on held-out games that do read them

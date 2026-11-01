@@ -17,7 +17,7 @@ def report (bad : IO.Ref Nat) (ok : Bool) (what : String) : IO Unit := do
 def maskLine (c : MaskCount) : String :=
   s!"decisions={c.decisions} actions={c.actions} offered={c.offered} offered_refused={c.offeredRefused} " ++
   s!"missing={c.missing} declare_not_offered={c.declareNotOffered} move_while_voting={c.moveWhileVoting} " ++
-  s!"placements={c.placements} place_overflow={c.placeOverflow} end_in_setup={c.endInSetup}" ++
+  s!"placements={c.placements} place_overflow={c.placeOverflow} end_in_setup={c.endInSetup} undo_trade={c.undoTrade}" ++
   (if c.firstError == "" then "" else s!" first_error=\"{c.firstError}\"")
 
 def main (args : List String) : IO UInt32 := do

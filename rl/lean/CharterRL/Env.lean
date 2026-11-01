@@ -58,6 +58,8 @@ structure Env where
   /-- The decision's free spots, and the spots its seat reaches: `freeMap` and `reachMap`, worked out once. -/
   free : Array Bool := #[]
   reach : Array Bool := #[]
+  /-- The last bank trade a caller made: the turn (`turnsTaken`), the seat, what it gave and what it got. -/
+  lastTrade : Option (Nat × Nat × Res × Res) := Option.none
   /-- The last `step` was refused. -/
   refused : Bool := false
   /-- Each seat's pips when setup ended. -/
@@ -363,6 +365,14 @@ def Env.start (T : Tables) (settings : Settings) (lineup : Array SeatPlan) (seed
       pointsSeen := Array.replicate seats 0, rewards := seatZeros, shareVotes }
   return (Env.settle e e.fuel).reckon
 
+/-- The bank trade that would reverse the deciding seat's last bank trade of this turn, if `blockUndoTrades`. -/
+def Env.undo (e : Env) : Option (Res × Res) :=
+  if !e.settings.blockUndoTrades then Option.none else
+  match e.decision, e.lastTrade with
+  | .turn seat, some (turn, q, g, h) =>
+    if q == seat && turn == e.play.state.turnsTaken then some (h, g) else Option.none
+  | _, _ => Option.none
+
 /-- Apply an action for the seat that must decide. An action not on offer, or one the engine refuses, changes nothing
 and sets `refused`. -/
 def Env.step (e : Env) (action : Nat) : Env :=
@@ -370,14 +380,22 @@ def Env.step (e : Env) (action : Nat) : Env :=
   match decode e.T e.ep e.places e.decision action with
   | Option.none => bad
   | some ev =>
+    let undoes := match ev, e.undo with
+      | .move _ (.bankTrade g h), some u => u == (g, h)
+      | _, _ => false
+    if undoes == true then bad else
     match Engine.step e.G e.play.state ev with
     | .error _ => bad
     | .ok s' =>
       let table := if e.play.state.phase == .setup then e.setupTable else e.playTable
+      let lastTrade := match ev with
+        | .move q (.bankTrade g h) => some (e.play.state.turnsTaken, q, g, h)
+        | _ => e.lastTrade
       let e' := ({ e with
         play := e.play.commit {} table ev s'
         refused := false
-        decisions := e.decisions + 1 } : Env).note ev
+        decisions := e.decisions + 1
+        lastTrade } : Env).note ev
       (Env.settle e' e'.fuel).reckon
 
 /-- The numbers for the seat that must decide. -/
@@ -385,7 +403,7 @@ def Env.observation (e : Env) : FloatArray :=
   observe e.T e.ep e.ctx e.settings e.base e.play.state e.decision e.places e.free e.reach e.preview
 
 /-- The actions on offer. -/
-def Env.legalActions (e : Env) : List (Nat × Event) := legal e.T e.ep e.places e.play.state e.decision
+def Env.legalActions (e : Env) : List (Nat × Event) := legal e.T e.ep e.places e.play.state e.decision e.undo
 
 def Env.mask (e : Env) : ByteArray := maskOf e.legalActions
 
@@ -478,7 +496,7 @@ private def readBool (j : Json) (k : String) (dflt : Bool) : Except String Bool 
 def readSettings (j : Json) : Except String Settings := do
   let known := ["game", "seats", "lineup", "seed", "law_every", "vote_mode", "move_rows", "preview", "random_map",
     "slot_order", "reward_win", "reward_standing", "shaping_points", "record", "declare_always", "shaping_relative",
-    "shaping_gamma"]
+    "shaping_gamma", "block_undo_trades"]
   match j.getObj? with
   | .error _ => throw "a configuration must be an object"
   | .ok kvs =>
@@ -514,7 +532,8 @@ def readSettings (j : Json) : Except String Settings := do
       record := ← readBool j "record" d.record
       declareAlways := ← readBool j "declare_always" d.declareAlways
       shapingRelative := ← readFloat j "shaping_relative" d.shapingRelative
-      shapingGamma := ← readFloat j "shaping_gamma" d.shapingGamma }
+      shapingGamma := ← readFloat j "shaping_gamma" d.shapingGamma
+      blockUndoTrades := ← readBool j "block_undo_trades" d.blockUndoTrades }
 
 /-- One seat of a lineup: `caller`, a strategy's name, or `first+then` for one thing in setup and another after. -/
 def readSeat (text : String) : Except String SeatPlan := do

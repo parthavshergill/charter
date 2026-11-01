@@ -198,7 +198,14 @@ def train(run: str, train_args: str = "", seconds: int = 600, move_rows: bool = 
                 "layout": layout["version"], "obs_size": obs, "act_size": layout["act_size"] + 1,
                 "hidden": hidden, "layers": layers,
                 "settings": {"vote_mode": "bot", "move_rows": move_rows}}
-        # Env switches that change what a policy sees go into the meta, so eval plays it the same way.
+        # Env switches that change what a policy sees go into the meta, so eval plays it the same way: the defaults
+        # of charter.ini's [env], then the ones train_args sets.
+        import configparser
+        ini = configparser.ConfigParser()
+        ini.read(f"{SRC}/puffer/charter.ini")
+        for key in ("declare_always", "stale_wait"):
+            if ini.has_option("env", key):
+                meta["settings"][key] = bool(int(float(ini.get("env", key))))
         for tok in train_args.split():
             for key in ("vote_mode", "slot_order", "declare_always", "stale_wait", "shaping_points",
                         "shaping_relative", "bot_share", "bot_policy", "seats"):
