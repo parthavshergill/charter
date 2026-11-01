@@ -726,24 +726,14 @@ def monuments():
         m.box(.02 + dx, .228, -.008 + dz, .012, .003, .012, TAR)
     m.box(-.022, .173, .012, .012, .003, .012, RED)
     write("mon_roll", m, stand=".cylinder 0.07 0.25")
-    # A new piece: a ship in a bottle.
+    # A new piece: a gilded model ship on a stand.
     m = M()
     base(m)
-    hull(m.at(0, .095, 0, 0, .34), .31, .082, .036, col=DARK, trim=WOOD2, n=4)
+    m.post(0, .02, 0, .012, .05, DARK, n=4)
+    hull(m.at(0, .1, 0, 0, .5), .31, .082, .036, col=GOLD, trim=GOLD2, n=4)
     m.at()
-    m.post(.01, .1, 0, .004, .1, TAR, n=3)
-    m.sheet(square_sail(.01, .13, .19, .045, .035, .012, BONE), 2, 1)
-    glass = C(0x8FE5D0)
-    n = 8
-    for i in range(n):
-        a, b = 2 * pi * i / n, 2 * pi * (i + 1) / n
-        for x0, r0, x1, r1 in ((-.16, .068, .1, .068), (.1, .068, .15, .03), (.15, .03, .2, .026)):
-            q = [(x0, .095 + r0 * cos(a), r0 * sin(a)), (x0, .095 + r0 * cos(b), r0 * sin(b)), (x1, .095 + r1 * cos(b), r1 * sin(b)), (x1, .095 + r1 * cos(a), r1 * sin(a))]
-            if sin((a + b) / 2) > -.2 and cos((a + b) / 2) < .55:
-                continue  # Open on the viewer's side, so the ship shows through. The player has no glass.
-            m.poly(q, glass, (0, .095, 0), two=True)
-    m.box(-.1, .022, 0, .018, .01, .1, DARK)
-    m.box(.09, .022, 0, .018, .01, .1, DARK)
+    m.post(.015, .11, 0, .005, .17, DARK, n=3)
+    m.sheet(square_sail(.015, .14, .265, .07, .05, .018, BONE), 3, 2)
     write("mon_piece", m, stand=".box 0.3 0.15 0.14")
     # A repeal, or any other change to a rule: a broken mast with a torn flag.
     m = M()

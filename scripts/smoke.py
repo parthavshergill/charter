@@ -284,6 +284,16 @@ def slime_pack(srv):
     return code
 
 
+def pirate_pack(srv):
+    """The Pirate Republic: its mesh files are served, and bots play it to the end. The Navy burns a wharf."""
+    d = next(x for x in srv.get("/api/defs") if x["id"] == "pirate-republic")
+    check("hat" in d["look"]["icons"], "the hat has its own mark")
+    code, v = bots_only(srv, 4, "pirate-republic", "wharf")
+    check(v["round"] <= 10 and len(v["laws"]) >= 4, "the pack ends by round 10 with its laws in force")
+    check(any("lost a wharf" in (l if isinstance(l, str) else l.get("text", "")) for l in v["chronicle"]), "the Navy burns a wharf at the end of round 5")
+    SCENES.append((srv.raw(f"/api/games/{code}/scene"), [], ["Law 0"]))
+
+
 def claude_with_no_key(srv):
     """With no key a Claude seat still plays: it falls back to safe legal actions, and the game ends.
     This makes no network call."""
@@ -699,6 +709,7 @@ def main():
         belt = second_game(srv)
         pack = extension_pack(srv)
         slime_pack(srv)
+        pirate_pack(srv)
         claude_table = claude_with_no_key(srv)
         talk_and_replay(srv, code, token, v)
         a_roll_law_fires(srv)

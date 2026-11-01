@@ -240,7 +240,7 @@ def surround : List Cmd :=
     let a := 2.399963 * i.toFloat
     let r := 5.9 + 6.0 * rnd 71 i
     (m glint (r * Float.cos a) 0.012 (r * Float.sin a) 0xFFFFFF (0.8 + 1.2 * rnd 72 i) a).at 0 0 0
-  let islets := [(-8.2, 3.4, 1.6), (-9.4, -1.8, 1.1), (8.6, 4.2, 1.2), (-6.4, 5.7, 0.9), (9.8, -0.8, 0.8)].flatMap fun (u, v, k) =>
+  let islets := [(-8.4, 0.2, 1.6), (-8.0, -4.2, 1.1), (8.8, -3.6, 1.0), (-7.2, 3.1, 0.8), (3.2, 5.8, 0.8)].flatMap fun (u, v, k) =>
     let (x, z) := seaAt u v
     [(m islet x 0.012 z 0xFFFFFF k).at 0 0 0, (m palm x (0.012 + 0.12 * k) z 0xFFFFFF (1.5 * k) 0.7).at 0 0 0,
      (m palm (x + 0.2 * k) (0.012 + 0.08 * k) (z - 0.15 * k) 0xFFFFFF (1.2 * k) 2.1).at 0 0 0]
