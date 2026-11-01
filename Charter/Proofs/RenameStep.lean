@@ -176,11 +176,36 @@ theorem isDecidingVote_rename (s : State G) (p : OpenProposal) (seat : Seat) (ye
     isDecidingVote (σ.state s) (σ.openProposal p) (σ.to seat) yes = isDecidingVote s p seat yes := by
   simp only [isDecidingVote, withVote_rename, yesCount_rename, state_turnOrder, List.length_map]
 
+theorem decreeEntries_rename (s : State G) (L : Law) :
+    (σ.state s).decreeEntries L = (s.decreeEntries L).map σ.entry := by
+  unfold State.decreeEntries
+  rw [← settle_rename]
+  congr 1
+  exact σ.law_plan s .now L
+
+theorem decreeOrders_rename (s : State G) (L : Law) :
+    (σ.state s).decreeOrders L = (s.decreeOrders L).map σ.order := by
+  unfold State.decreeOrders
+  simp only [List.map_flatMap]
+  congr 1
+  funext c
+  exact σ.planOrdersAll_rename s (c.bodyFor .now) Trigger.now.env
+
+theorem withLaw_rename (s : State G) (id : Nat) (L : Law) :
+    (σ.state s).withLaw id L = σ.state (s.withLaw id L) := by
+  unfold State.withLaw
+  rw [decreeEntries_rename, afterPosting_rename, decreeOrders_rename]
+  simp only [state_rules, state_pieces, applyOrders_rename, state_laws]
+  rfl
+
 theorem decideLaw_rename (s : State G) (id : Nat) (L : Law) :
     decideLaw (σ.state s) id L = σ.state (decideLaw s id L) := by
   unfold decideLaw
   simp only [lawProblems_rename, state_openProposals, state_laws, filter_proposals]
-  split <;> rfl
+  split
+  · simp only [withLaw_rename, decreeEntries_rename, state_journal, ← List.map_append]
+    rfl
+  · rfl
 
 theorem voteBody_rename (s : State G) (seat id : Nat) (yes : Bool) :
     voteBody (σ.state s) (σ.to seat) id yes = (voteBody s seat id yes).map σ.state := by

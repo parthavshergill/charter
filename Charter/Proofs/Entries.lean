@@ -1,5 +1,6 @@
 import Charter.Proofs.Books
 import Charter.Proofs.PieceMoves
+import Charter.Proofs.Outflow
 
 /-!
 # Every entry the engine writes uses real accounts
@@ -72,6 +73,7 @@ def TriggerOk (T : List Seat) : Trigger → Prop
   | .build a _ => a ∈ T
   | .roundEnd => True
   | .roll a _ => a ∈ T
+  | .now => True
 
 theorem trigger_env_ok {T : List Seat} {t : Trigger} (h : TriggerOk T t) : EnvOk T t.env := by
   cases t <;> simp_all [EnvOk, Trigger.env, TriggerOk]
@@ -402,6 +404,21 @@ theorem turnPieces_ok {s : State G} (hp : PiecesOk s) (roll : Nat) :
       exact this
     · exact h0
   · exact h0
+
+/-! ## What a law's `now` clauses do -/
+
+theorem decreeEntries_ok (s : State G) (L : Law) : ∀ x ∈ s.decreeEntries L, EntryOk s.turnOrder x := by
+  intro x hx
+  obtain ⟨e, he, h1, h2, _⟩ := mem_settle hx
+  have := lawPlan_ok s (t := .now) trivial L e he
+  exact ⟨h1 ▸ this.1, h2 ▸ this.2⟩
+
+theorem decreeOrders_ok (s : State G) (L : Law) :
+    ∀ o ∈ s.decreeOrders L, ∀ q, o.dst = some q → q ∈ s.turnOrder := by
+  intro o ho
+  simp only [State.decreeOrders, List.mem_flatMap] at ho
+  obtain ⟨_, _, ho⟩ := ho
+  exact planOrdersAll_ok s _ _ (trigger_env_ok (t := .now) trivial) o ho
 
 theorem turnEntries_ok {s : State G} (hp : PiecesOk s) (hd : DealsOk s) (roll : Nat) :
     ∀ x ∈ turnEntries s roll, EntryOk s.turnOrder x := by

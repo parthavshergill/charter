@@ -22,6 +22,7 @@ clause := (on-harvest effect...)     ; runs once for each harvest payment
         | (on-build KIND effect...)  ; runs when anyone builds KIND
         | (on-round-end effect...)   ; runs once at the end of each round
         | (on-roll effect...)        ; runs once on every roll of the dice, after the bank has paid the harvest
+        | (now effect...)            ; runs once, the moment the law passes. A law of only these does not stay in force
         | (set-cost KIND (bundle (RESOURCE n)...))  ; this is now the whole cost. An empty bundle means free
         | (set-points KIND n)        ; each KIND is now worth n points, also those already built
         | (set-bank-rate n)          ; the bank now trades n of one resource for 1 of another

@@ -92,6 +92,8 @@ inductive Clause where
   | onRoundEnd (body : List Effect)
   /-- Runs on every roll of the dice, including a roll that pays nobody. -/
   | onRoll (body : List Effect)
+  /-- Runs once, the moment the law passes. A law of only these does not join the laws in force. -/
+  | now (body : List Effect)
   | setCost (k : PieceKind) (b : Bundle)
   | setPoints (k : PieceKind) (n : Nat)
   | setBankRate (n : Nat)
@@ -108,5 +110,13 @@ structure Law where
   title : String
   clauses : List Clause
   deriving Repr
+
+/-- This clause runs once when its law passes. -/
+def Clause.isNow : Clause → Bool
+  | .now _ => true
+  | _ => false
+
+/-- Every clause of this law runs once when it passes, so it takes no place among the laws in force. -/
+def Law.isDecree (L : Law) : Bool := L.clauses.all Clause.isNow
 
 end Charter

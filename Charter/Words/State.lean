@@ -187,9 +187,10 @@ def Law.repeals (L : Law) : List Nat :=
     | .repeal n => some n
     | _ => none
 
-/-- The laws in force after law `id` passes: repeals take effect, and it joins the list. -/
+/-- The laws in force after law `id` passes: repeals take effect, and it joins the list, unless it is a law
+of only `now` clauses. -/
 def enact (laws : List (Nat × Law)) (id : Nat) (L : Law) : List (Nat × Law) :=
-  (laws.filter fun x => !L.repeals.contains x.1) ++ [(id, L)]
+  (laws.filter fun x => !L.repeals.contains x.1) ++ if L.isDecree then [] else [(id, L)]
 
 /-- The laws in force after these laws pass in order, with ids counting up from `id`. -/
 def enactAll : List (Nat × Law) → Nat → List Law → List (Nat × Law)
@@ -225,10 +226,6 @@ def tokenPointsOf (s : State G) (p : Seat) : Nat :=
 
 /-- A seat's points: what it has built, and what it holds that counts. -/
 def pointsOf (s : State G) (p : Seat) : Nat := s.builtPointsOf p + s.tokenPointsOf p
-
-/-- `s` with this law enacted. Used to say what a vote's preview means. -/
-def withLaw (s : State G) (id : Nat) (L : Law) : State G :=
-  { s with laws := enact s.laws id L }
 
 /-- `s` with entries posted to its books. Used to say what a later entry could see. -/
 def afterPosting (s : State G) (es : List Entry) : State G :=

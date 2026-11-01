@@ -68,7 +68,8 @@ theorem II_one_law_for_all (G : GameDef) (hG : G.Valid) (s : State G) (hs : Reac
 /-- **III. Only the majority changes the rules.**
 * The laws in force change only by a yes vote on an open law, from a seat in the game that had not
   voted. That vote gives the law more than half of all seats. The change is exactly that law: its
-  repeals take effect, and it joins the list.
+  repeals take effect, and it joins the list, unless all of its clauses act once when it passes. What
+  those clauses do happens at that vote, and every other event leaves them out.
 * In the actions phase, such a vote is accepted and enacts the law, if the seat is under its action
   limit and the law passes `lawProblems`.
 * On an open proposal, no seat votes or signs twice. Every seat there is in the game.
@@ -125,9 +126,11 @@ theorem IV_promises_are_paid_up_front (G : GameDef) (hG : G.Valid) (s : State G)
   or under a law in force.
 
 What you own leaves you only for a stated reason, and this covers pieces too:
-* A piece leaves its owner only for that seat's own upgrade, or by a law in force at a turn change. A law
-  can do this only at a round's end or on a roll.
-* A turn change leaves exactly the pieces `turnPieces` says. No other event but placing a piece changes any.
+* A piece leaves its owner only for that seat's own upgrade, by a law in force at a turn change, or by a
+  law's `now` clause at the vote that passes it. A law can do this only at a round's end, on a roll or at
+  that vote.
+* A turn change leaves exactly the pieces `turnPieces` says, and the vote that passes a law leaves exactly
+  what its `now` clauses say. No other event but placing a piece changes any.
 * A seat that has a piece always keeps one. -/
 theorem V_your_money_is_yours (G : GameDef) (hG : G.Valid) (s s' : State G) (e : Event)
     (hs : Reachable G s) (h : Engine.step G s e = .ok s') :

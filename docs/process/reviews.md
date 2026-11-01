@@ -265,6 +265,20 @@ One statement gave way. `the_winner_earned_it` said that built points alone at t
 
 The preview and the chronicle say what a seat would lose or lost. The 3D board draws each piece from its owner, so a seized piece changes colour where it stands.
 
+## Decrees
+
+A new trigger, `now`, runs once, the moment a law passes.
+
+| Question | Answer |
+|---|---|
+| Who is the actor? | Nobody. `lawProblems` refuses a `now` clause that names or reads `actor`, so a decree cannot reward the deciding voter. |
+| Does it take a slot? | Not if every clause is `now`. `enact` leaves such a law out of the laws in force. The chronicle records it, and it gets no permanent monument. A law that mixes the two fires its `now` part once, and the rest stays. |
+| What does it read? | The state at the passing vote, before the vote's own count. `decreeEntries` and `decreeOrders` plan from there. |
+| Is a preview exact? | Yes. `withLaw` now does what the decree does. `PreviewIsExact` used to assume `s₁.laws = enact s.laws id L`. That no longer names a passing vote, because a decree leaves the list as it was. It now assumes `LawPasses`, which is the same for every older law. The screen shows the decree as its own case: "The moment this passes". |
+| Can a founding law be a decree? | No. There is no vote for it to fire at, so `lawProblems` refuses it in setup. |
+
+Statements changed. `AskedForByLaw` has a third case, a law's `now` clause at the vote that passes it. `every_other_event_is_exact` said a vote writes nothing unless it ends the game. It now says `VoteWritesExactly`: exactly the decree if the vote passes a law, nothing otherwise, and then the refunds if the game ends. `PiecesKept` and `PieceLeavesOnlyFor` each gain the same case. III's list of what passing a law does now names this.
+
 ## How the checks work
 
 - **Axiom audit:** `make audit` fails if any theorem in a `Charter` module rests on an axiom other than `propext`, `Classical.choice` and `Quot.sound`. So a `sorry` fails it. It also replays the proofs through `leanchecker`, and scans for banned constructs.

@@ -260,8 +260,8 @@ def SeatOut (s s' : State G) (e : Event) (x : Entry) (i : Seat) : Prop :=
        x ∈ lawEntries (s.afterPosting (s.costEntries b k)) (.build b k)) ∨
      (EndsTurn s e ∧
        (x ∈ s.roundEndLawEntries ∨
-        x ∈ rollEntries s.afterRoundEnd
-          (rollAt G s.seed s.rollsMade)))))
+        x ∈ rollEntries s.afterRoundEnd (rollAt G s.seed s.rollsMade))) ∨
+     (∃ L, LawPasses s e L ∧ x ∈ s.decreeEntries L)))
 
 /-- Everything commandment V says about one entry. -/
 def VConj (s s' : State G) (e : Event) (x : Entry) : Prop :=
@@ -327,7 +327,7 @@ theorem vconj_turnLaw {s s' : State G} {e : Event} {x : Entry} (hf : LawForm x) 
       x ∈ rollEntries s.afterRoundEnd (rollAt G s.seed s.rollsMade)) :
     VConj s s' e x :=
   vconj_plain hf.2.1 hf.2.2 (by rw [hf.1]; simp) (by rw [hf.1]; simp)
-    (fun _ _ => Or.inr (Or.inr (Or.inr ⟨hf.1, Or.inr ⟨hend, hx⟩⟩)))
+    (fun _ _ => Or.inr (Or.inr (Or.inr ⟨hf.1, Or.inr (Or.inl ⟨hend, hx⟩)⟩)))
 
 /-- Every entry of a turn change is allowed. -/
 theorem vconj_turn {s : State G} {e : Event} (hend : EndsTurn s e)
@@ -352,7 +352,7 @@ theorem vconj_turn {s : State G} {e : Event} (hend : EndsTurn s e)
           cases this
         · exact hb
       · exact hb
-    exact Or.inr (Or.inr (Or.inr ⟨hlaw.1, Or.inr ⟨hend, Or.inr hx⟩⟩))
+    exact Or.inr (Or.inr (Or.inr ⟨hlaw.1, Or.inr (Or.inl ⟨hend, Or.inr hx⟩)⟩))
 
 /-- The entries of a bundle go between the two accounts given. -/
 theorem mem_bundleEntries {a b : Account} {bd : Bundle} {r : Reason} {x : Entry}
@@ -443,9 +443,14 @@ theorem body_vconj {s s1 s' : State G} {e : Event} (hb : bodyOf s e = .ok s1)
     · exact ⟨[], by simp [addProposal], by simp⟩
     · exact ⟨[], by simp [addProposal], by simp⟩
   | vote seat i y =>
-    obtain ⟨_, _, _, _, _, _, ⟨_, rfl⟩ | ⟨_, rfl⟩⟩ := voteBody_ok hb
-    · exact ⟨[], by simp [(decideLaw_fields s i _).2.1], by simp⟩
-    · exact ⟨[], by simp, by simp⟩
+    have hv : voteBody s seat i y = .ok s1 := hb
+    rcases vote_view hv with ⟨L, hp, _, hs1⟩ | ⟨_, _, hj, _⟩
+    · refine ⟨s.decreeEntries L, by rw [hs1], ?_⟩
+      intro x hx
+      have hf : LawForm x := settle_form (fun z hz => lawPlan_form s .now L z hz) x hx
+      exact vconj_plain hf.2.1 hf.2.2 (by rw [hf.1]; simp) (by rw [hf.1]; simp)
+        (fun _ _ => Or.inr (Or.inr (Or.inr ⟨hf.1, Or.inr (Or.inr ⟨L, hp, hx⟩)⟩)))
+    · exact ⟨[], by simp [hj], by simp⟩
   | sign seat i =>
     obtain ⟨_, p, d, hp, hd, _, _, ⟨hall, hst⟩ | ⟨_, rfl⟩⟩ := signBody_ok hb
     · obtain ⟨_, hprob, _, _, hs1⟩ := startDeal_ok hst

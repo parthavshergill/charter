@@ -18,9 +18,27 @@ theorem step_turn_pieces {s s' : State G} {e : Event} (hend : EndsTurn s e)
   obtain ⟨_, _, rfl⟩ := endTurnNow_ok (step_endTurnNow hend h)
   simp only [startNextTurn_pieces]
 
+theorem body_final_pieces {s1 s' : State G} {e : Event} (hb : finish (countAction s1 (seatOf e)) e = .ok s') :
+    s'.pieces = s1.pieces := by
+  rcases finish_cases hb with rfl | ⟨w, hw⟩
+  · rfl
+  · obtain ⟨_, _, rfl⟩ := endGame_ok hw
+    rfl
+
 theorem pieces_kept {s s' : State G} {e : Event} (h : Engine.step G s e = .ok s') :
-    PiecesKept s s' e :=
-  ⟨fun hend => step_turn_pieces hend h, fun hnot hne => (step_is_exact h).2.2.2.2.2.2.2.2.2.1 hnot hne⟩
+    PiecesKept s s' e := by
+  refine ⟨fun hend => step_turn_pieces hend h, fun L hp => ?_,
+    fun hnot hne hnl => (step_is_exact h).2.2.2.2.2.2.2.2.2.1 hnot hne hnl⟩
+  have hp' := hp
+  obtain ⟨seat, id, p, rfl, _⟩ := hp
+  obtain ⟨_, s1, hb, hf⟩ := step_act h (by simp [EndsTurn])
+  have hv : voteBody s seat id true = .ok s1 := hb
+  rcases vote_view hv with ⟨L', hq, hu, hs1⟩ | ⟨hno, _⟩
+  · have hL : L = L' := hu L hp'
+    subst hL
+    rw [body_final_pieces hf, hs1]
+    rfl
+  · exact absurd hp' (hno L)
 
 /-- A place move's pieces, in either phase. -/
 theorem place_pieces {s s1 : State G} {p : Seat} {k : PieceKind} {loc : Loc}
@@ -55,13 +73,6 @@ theorem placed_keeps {s : State G} {p : Seat} {k : PieceKind} {loc : Loc} {x : P
     | link => exact absurd hx hkept
     | spot => exact absurd hx hkept
     | attach j => exact absurd hx hkept
-
-theorem body_final_pieces {s1 s' : State G} {e : Event} (hb : finish (countAction s1 (seatOf e)) e = .ok s') :
-    s'.pieces = s1.pieces := by
-  rcases finish_cases hb with rfl | ⟨w, hw⟩
-  · rfl
-  · obtain ⟨_, _, rfl⟩ := endGame_ok hw
-    rfl
 
 /-! What a turn change's orders ask for comes from a clause of a law in force that can move a piece. -/
 
@@ -155,7 +166,7 @@ theorem piece_leaves_only_for {s s' : State G} {e : Event} (h : Engine.step G s 
   intro x hx hgone
   rcases step_view h with ⟨hend, _⟩ | ⟨hnot, _, s1, hb, hf⟩
   · rw [step_turn_pieces hend h] at hgone
-    exact Or.inr ⟨hend, turnPieces_gone hx hgone⟩
+    exact Or.inr (Or.inl ⟨hend, turnPieces_gone hx hgone⟩)
   · rw [body_final_pieces hf] at hgone
     cases e with
     | move p m =>
@@ -166,24 +177,42 @@ theorem piece_leaves_only_for {s s' : State G} {e : Event} (h : Engine.step G s 
         have ho := placed_keeps hx hgone
         exact Or.inl ⟨k, loc, by rw [ho]⟩
       | _ =>
-        have := body_pieces (s1 := s1) (by simp) hb
+        have := body_pieces (s1 := s1) (by simp) (fun L hl => by obtain ⟨_, _, _, he, _⟩ := hl; cases he) hb
         rw [this] at hgone
         exact absurd hx hgone
     | forceEndTurn => cases hb
     | propose a b =>
-      have := body_pieces (s1 := s1) (by simp) hb
+      have := body_pieces (s1 := s1) (by simp) (fun L hl => by obtain ⟨_, _, _, he, _⟩ := hl; cases he) hb
       rw [this] at hgone
       exact absurd hx hgone
     | vote a b c =>
-      have := body_pieces (s1 := s1) (by simp) hb
-      rw [this] at hgone
-      exact absurd hx hgone
+      have hv : voteBody s a b c = .ok s1 := hb
+      rcases vote_view hv with ⟨L, hp, hu, hs1⟩ | ⟨_, hk, _⟩
+      · have hmoved : L.clauses.any Clause.movesPieces = true := by
+          rw [hs1] at hgone
+          have hg : x ∉ applyOrders s.rules (s.decreeOrders L) s.pieces := hgone
+          obtain ⟨o, ho, _⟩ := applyOrders_gone hx hg
+          simp only [State.decreeOrders, List.mem_flatMap] at ho
+          obtain ⟨c, hc, ho⟩ := ho
+          refine List.any_eq_true.mpr ⟨c, hc, ?_⟩
+          rcases bodyFor_effects c .now with he | he
+          · rw [he] at ho
+            simp [Effect.planOrdersAll] at ho
+          · rw [he] at ho
+            have := planOrdersAll_kind (s := s) c.effects _ o ho
+            simp only [Clause.movesPieces, Bool.not_eq_true', List.isEmpty_eq_false_iff]
+            intro hnil
+            rw [hnil] at this
+            cases this
+        exact Or.inr (Or.inr ⟨L, hp, hmoved⟩)
+      · rw [hk] at hgone
+        exact absurd hx hgone
     | sign a b =>
-      have := body_pieces (s1 := s1) (by simp) hb
+      have := body_pieces (s1 := s1) (by simp) (fun L hl => by obtain ⟨_, _, _, he, _⟩ := hl; cases he) hb
       rw [this] at hgone
       exact absurd hx hgone
     | exit a b =>
-      have := body_pieces (s1 := s1) (by simp) hb
+      have := body_pieces (s1 := s1) (by simp) (fun L hl => by obtain ⟨_, _, _, he, _⟩ := hl; cases he) hb
       rw [this] at hgone
       exact absurd hx hgone
 
@@ -221,20 +250,24 @@ theorem seats_keep_a_piece {s s' : State G} {e : Event} (h : Engine.step G s e =
         · have := placed_keeps hx hin
           exact ⟨⟨p, k, loc⟩, by simp [State.placedPieces], by rw [← ho, this]⟩
       | _ =>
-        rw [body_pieces (s1 := s1) (by simp) hb]
+        rw [body_pieces (s1 := s1) (by simp) (fun L hl => by obtain ⟨_, _, _, he, _⟩ := hl; cases he) hb]
         exact hq
     | forceEndTurn => cases hb
     | propose a b =>
-      rw [body_pieces (s1 := s1) (by simp) hb]
+      rw [body_pieces (s1 := s1) (by simp) (fun L hl => by obtain ⟨_, _, _, he, _⟩ := hl; cases he) hb]
       exact hq
     | vote a b c =>
-      rw [body_pieces (s1 := s1) (by simp) hb]
-      exact hq
+      have hv : voteBody s a b c = .ok s1 := hb
+      rcases vote_view hv with ⟨L, _, _, hs1⟩ | ⟨_, hk, _⟩
+      · rw [hs1]
+        exact applyOrders_keeps hq
+      · rw [hk]
+        exact hq
     | sign a b =>
-      rw [body_pieces (s1 := s1) (by simp) hb]
+      rw [body_pieces (s1 := s1) (by simp) (fun L hl => by obtain ⟨_, _, _, he, _⟩ := hl; cases he) hb]
       exact hq
     | exit a b =>
-      rw [body_pieces (s1 := s1) (by simp) hb]
+      rw [body_pieces (s1 := s1) (by simp) (fun L hl => by obtain ⟨_, _, _, he, _⟩ := hl; cases he) hb]
       exact hq
 
 end Charter.Proofs

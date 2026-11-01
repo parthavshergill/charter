@@ -26,6 +26,7 @@ def trigger : Trigger → Trigger
   | .build a k => .build (σ.to a) k
   | .roundEnd => .roundEnd
   | .roll a n => .roll (σ.to a) n
+  | .now => .now
 
 theorem party_account (E : LawEnv) (p : Party) :
     p.account (σ.env E) = (p.account E).map σ.account := by

@@ -38,6 +38,12 @@ def EndsTurn {G : GameDef} (s : State G) : Event → Prop
 def newEntries {G : GameDef} (s s' : State G) : List Entry :=
   s'.journal.drop s.journal.length
 
+/-- This event is the vote that passes this law: a yes on an open law that gives it more than half of all
+seats, and the law still passes `lawProblems`. -/
+def LawPasses {G : GameDef} (s : State G) (e : Event) (L : Law) : Prop :=
+  ∃ seat id p, e = .vote seat id true ∧ s.openProposal? id = some p ∧ p.body = .law L ∧
+    (p.withVote seat true).hasMajority s.turnOrder.length ∧ lawProblems G s L = []
+
 /-! ## I. Nothing from nothing -/
 
 /-- The books are exactly what the journal's entries, posted in order, give from the start. -/
@@ -51,7 +57,7 @@ def JournalOnlyGrows (s s' : State G) : Prop := s.journal <+: s'.journal
 
 /-- If a step changes the laws in force, the event is a yes vote on an open law, from a seat in the
 game that had not voted. That vote gave the law more than half of all seats, and the laws changed by
-exactly that law. -/
+exactly that law. `enact` says that a law of only `now` clauses does not join them. -/
 def LawsChangeOnlyByMajority (s s' : State G) : Prop :=
   ∀ e, Engine.step G s e = .ok s' → s'.laws ≠ s.laws →
     ∃ seat id p L,
@@ -151,6 +157,13 @@ def NoEntriesUnlessEnded (s s' : State G) : Prop :=
   (s'.phase = .ended → newEntries s s' = s.deals.flatMap s.refundEntries) ∧
   (s'.phase ≠ .ended → newEntries s s' = [])
 
+/-- A vote writes exactly what passing a law says, and nothing if it passes none. If the game ends, the
+refunds come after. -/
+def VoteWritesExactly {G : GameDef} (s s' : State G) (e : Event) : Prop :=
+  ∃ es, (∀ L, LawPasses s e L → es = s.decreeEntries L) ∧ ((∀ L, ¬ LawPasses s e L) → es = []) ∧
+    (s'.phase = .ended → newEntries s s' = es ++ s.deals.flatMap (s.afterPosting es).refundEntries) ∧
+    (s'.phase ≠ .ended → newEntries s s' = es)
+
 /-- An accepted event that does not end the turn adds 1 to its sender's action count and leaves every
 other seat's count alone. A turn end resets every count to 0. -/
 def ActionsAreCountedExactly (s s' : State G) (e : Event) : Prop :=
@@ -245,15 +258,16 @@ abbrev PaysInOwnTrade (s : State G) (e : Event) (x : Entry) (i : Seat) : Prop :=
      (∃ p id o, e = .move p (.accept id) ∧ s.offers.find? (·.id == id) = some o ∧
        (i = o.src ∨ i = p) ∧ x ∈ offerEntries o p))
 
-/-- A law in force asks for this entry: as a reaction to a build, at a round's end, as a reaction to
-the dice payout, or as a reaction to the roll itself. -/
+/-- A law asks for this entry: a law in force reacting to a build, at a round's end, to the dice payout or
+to the roll itself, or a law's `now` clause at the vote that passes it. -/
 abbrev AskedForByLaw (s : State G) (e : Event) (x : Entry) : Prop :=
   x.reason = .lawEffect ∧
     ((∃ b k loc, e = .move b (.place k loc) ∧
        x ∈ lawEntries (s.afterPosting (s.costEntries b k)) (.build b k)) ∨
      (EndsTurn s e ∧
        (x ∈ s.roundEndLawEntries ∨
-        x ∈ rollEntries s.afterRoundEnd (rollAt G s.seed s.rollsMade))))
+        x ∈ rollEntries s.afterRoundEnd (rollAt G s.seed s.rollsMade))) ∨
+     (∃ L, LawPasses s e L ∧ x ∈ s.decreeEntries L))
 
 /-- Money leaves a seat's own account only for that seat's build, trade or deposit, or for what a law in
 force says. -/
@@ -280,18 +294,20 @@ def MoneyLeavesBankOnlyFor (s : State G) (e : Event) (x : Entry) : Prop :=
   (x.src = .bank ∨ x.src = .treasury) →
     IsDicePayout s e x ∨ IsBankTradeAtPrice s e x ∨ AskedForByLaw s e x
 
-/-- What a step does to the pieces. A turn change leaves exactly what the laws in force say. Any other event
-except placing a piece changes none. -/
+/-- What a step does to the pieces. A turn change leaves exactly what the laws in force say. The vote that
+passes a law leaves exactly what its `now` clauses say. Any other event except placing a piece changes none. -/
 def PiecesKept {G : GameDef} (s s' : State G) (e : Event) : Prop :=
   (EndsTurn s e → s'.pieces = s.turnPieces (rollAt G s.seed s.rollsMade)) ∧
-  (¬ EndsTurn s e → (∀ p k loc, e ≠ .move p (.place k loc)) → s'.pieces = s.pieces)
+  (∀ L, LawPasses s e L → s'.pieces = applyOrders s.rules (s.decreeOrders L) s.pieces) ∧
+  (¬ EndsTurn s e → (∀ p k loc, e ≠ .move p (.place k loc)) → (∀ L, ¬ LawPasses s e L) → s'.pieces = s.pieces)
 
-/-- What you own leaves you only for a stated reason: your own upgrade, or a law in force that asked for it
-at a turn change. -/
+/-- What you own leaves you only for a stated reason: your own upgrade, a law in force that asked for it at a
+turn change, or a law's `now` clause at the vote that passes it. -/
 def PieceLeavesOnlyFor {G : GameDef} (s s' : State G) (e : Event) : Prop :=
   ∀ x ∈ s.pieces, x ∉ s'.pieces →
     (∃ k loc, e = .move x.owner (.place k loc)) ∨
-    (EndsTurn s e ∧ ∃ L ∈ s.laws, L.2.clauses.any Clause.movesPieces = true)
+    (EndsTurn s e ∧ ∃ L ∈ s.laws, L.2.clauses.any Clause.movesPieces = true) ∨
+    (∃ L, LawPasses s e L ∧ L.clauses.any Clause.movesPieces = true)
 
 /-- A seat that has a piece still has one after any step. A seat with no pieces could never build again. -/
 def SeatsKeepAPiece (s s' : State G) : Prop :=
@@ -440,11 +456,11 @@ def ReplayGivesTheGame (G : GameDef) : Prop :=
   ∀ s, Reachable G s ↔ ∃ seats serverSeed nonces events,
     minSeats ≤ seats ∧ seats ≤ maxSeats ∧ Engine.replay G seats serverSeed nonces events = .ok s
 
-/-- If a vote enacts a law and the turn then ends, the entries are the ones `predictNextTurn` gives
-for that roll. This is about the function, not the screen. -/
+/-- If a vote passes a law and the turn then ends, the entries are the ones `predictNextTurn` gives
+for that roll, from the state with the law passed. This is about the function, not the screen. -/
 def PreviewIsExact (G : GameDef) : Prop :=
   ∀ (s s₁ s₂ : State G) seat id L roll e,
-    Reachable G s → Engine.step G s (.vote seat id true) = .ok s₁ → s₁.laws = enact s.laws id L →
+    Reachable G s → Engine.step G s (.vote seat id true) = .ok s₁ → LawPasses s (.vote seat id true) L →
     EndsTurn s₁ e → Engine.step G s₁ e = .ok s₂ → s₂.lastRoll = some roll →
     newEntries s₁ s₂ = Engine.predictNextTurn G (s.withLaw id L) roll
 

@@ -48,8 +48,8 @@ a seat. Only the tests check their entries in full.
 
 An exit and a proposal make no entries. An offer or a cancelled offer makes none either, unless a seat
 is at the target and the game ends, which makes only refunds. A signature makes no entries, unless it is the last, which makes exactly the deal's deposits.
-A vote makes no entries, unless it ends the game, which makes only refunds. Accepting needs an offer
-that exists. A seat can end a turn only when it is the current seat. Only placing a piece and a turn change change the
+A vote makes exactly what `VoteWritesExactly` says. Accepting needs an offer
+that exists. A seat can end a turn only when it is the current seat. Only placing a piece, a turn change and passing a law change the
 pieces, and commandment V says how. Only ending a turn moves the turn or the dice.
 
 A declaration changes one number and adds to the sender's action count and the count of events. It
@@ -68,10 +68,11 @@ theorem every_other_event_is_exact (G : GameDef) (hG : G.Valid) (s s' : State G)
       ((∀ j ∈ d.signers, j ∈ p.signed ∨ j = seat) →
         newEntries s s' = depositEntries s.dealsStarted d) ∧
       ((¬ ∀ j ∈ d.signers, j ∈ p.signed ∨ j = seat) → newEntries s s' = [])) ∧
-    (∀ seat id yes, e = .vote seat id yes → NoEntriesUnlessEnded s s') ∧
+    (∀ seat id yes, e = .vote seat id yes → VoteWritesExactly s s' e) ∧
     (∀ p id, e = .move p (.accept id) → ∃ o, s.offers.find? (·.id == id) = some o) ∧
     (∀ p, e = .move p .endTurn → EndsTurn s e) ∧
-    (¬ EndsTurn s e → (∀ p k loc, e ≠ .move p (.place k loc)) → s'.pieces = s.pieces) ∧
+    (¬ EndsTurn s e → (∀ p k loc, e ≠ .move p (.place k loc)) → (∀ L, ¬ LawPasses s e L) →
+      s'.pieces = s.pieces) ∧
     (¬ EndsTurn s e →
       s'.turnsTaken = s.turnsTaken ∧ s'.turnIndex = s.turnIndex ∧ s'.round = s.round ∧
       s'.rollsMade = s.rollsMade) ∧

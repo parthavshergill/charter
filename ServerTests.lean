@@ -343,6 +343,8 @@ def roundTrips (text : String) : Bool :=
 #guard (Rules.parseProposal "(law \"x\" (set-worth gold 1))").toOption.isNone
 #guard roundTrips "(law \"Cut down\" (on-round-end (for-each-player (= (points each) (most-over true (points each))) (move-piece each bank settlement))))"
 #guard roundTrips "(law \"Seize\" (on-roll (if (= rolled 7) (move-piece each actor road))))"
+#guard roundTrips "(law \"One gift\" (now (for-each-player true (transfer bank each grain 2))))"
+#guard roundTrips "(law \"Gift and rule\" (now (for-each-player true (transfer bank each grain 2))) (set-bank-rate 3))"
 -- A number below a division stays the fixed kind, so an old law reads as it did.
 #guard (match Rules.parseProposal "(law \"x\" (on-round-end (transfer bank treasury wool (/ 7 2))))" with
   | .ok (.law { clauses := [.onRoundEnd [.transfer _ _ _ (.div (.lit 7) 2)]], .. }) => true

@@ -83,9 +83,13 @@ theorem body_bank {s s1 : State G} {e : Event} (hb : bodyOf s e = .ok s1) :
     · exact ⟨[], by simp [addProposal], by simp⟩
     · exact ⟨[], by simp [addProposal], by simp⟩
   | vote seat i y =>
-    obtain ⟨_, _, _, _, _, _, ⟨_, rfl⟩ | ⟨_, rfl⟩⟩ := voteBody_ok hb
-    · exact ⟨[], by simp [(decideLaw_fields s i _).2.1], by simp⟩
-    · exact ⟨[], by simp, by simp⟩
+    have hv : voteBody s seat i y = .ok s1 := hb
+    rcases vote_view hv with ⟨L, hp, _, hs1⟩ | ⟨_, _, hj, _⟩
+    · refine ⟨s.decreeEntries L, by rw [hs1], ?_⟩
+      intro x hx
+      have hf : LawForm x := settle_form (fun z hz => lawPlan_form s .now L z hz) x hx
+      exact fun _ => Or.inr (Or.inr ⟨hf.1, Or.inr (Or.inr ⟨L, hp, hx⟩)⟩)
+    · exact ⟨[], by simp [hj], by simp⟩
   | sign seat i =>
     obtain ⟨_, _, _, _, _, _, _, ⟨_, hst⟩ | ⟨_, rfl⟩⟩ := signBody_ok hb
     · obtain ⟨_, _, _, _, rfl⟩ := startDeal_ok hst
@@ -109,7 +113,7 @@ theorem step_bank {s s' : State G} {e : Event} (h : Engine.step G s e = .ok s') 
     · rcases mem_roundEndEntries hx with h3 | h3 | ⟨d, _, h3⟩
       · obtain ⟨_, d, _, p, _, h4, _⟩ := duePayments_form h3
         exact bank_of_deposit h4
-      · exact fun _ => Or.inr (Or.inr ⟨(lawEntries_form _ _ x h3).1, Or.inr ⟨hend, Or.inl h3⟩⟩)
+      · exact fun _ => Or.inr (Or.inr ⟨(lawEntries_form _ _ x h3).1, Or.inr (Or.inl ⟨hend, Or.inl h3⟩)⟩)
       · obtain ⟨_, j, _, h4, _⟩ := refundEntries_form h3
         exact bank_of_deposit h4
     · rcases rollEntries_cases hx with h3 | h3
@@ -117,8 +121,8 @@ theorem step_bank {s s' : State G} {e : Event} (h : Engine.step G s e = .ok s') 
         · rw [baseHarvest_atRoll] at h4
           exact fun _ => Or.inl ⟨(baseHarvest_form h4).2.1, hend,
             List.mem_append_left _ h4⟩
-        · exact fun _ => Or.inr (Or.inr ⟨h4.1, Or.inr ⟨hend, Or.inr hx⟩⟩)
-      · exact fun _ => Or.inr (Or.inr ⟨h3.1, Or.inr ⟨hend, Or.inr hx⟩⟩)
+        · exact fun _ => Or.inr (Or.inr ⟨h4.1, Or.inr (Or.inl ⟨hend, Or.inr hx⟩)⟩)
+      · exact fun _ => Or.inr (Or.inr ⟨h3.1, Or.inr (Or.inl ⟨hend, Or.inr hx⟩)⟩)
   · obtain ⟨es, hj, hes⟩ := body_bank hb
     rcases finish_cases hf with rfl | ⟨w, hw⟩
     · have : newEntries s (countAction s1 (seatOf e)) = es := newEntries_of hj
@@ -186,6 +190,7 @@ theorem laws_change_valid {s s' : State G} {e : Event} (h : Engine.step G s e = 
       rw [hl1, hs1]
       unfold decideLaw
       simp only [hx, ↓reduceIte]
+      rfl
     · exfalso
       apply hsame
       have hf : (lawProblems G s L').isEmpty = false := by simpa using hx
@@ -204,7 +209,8 @@ structure PlannedInv (s : State G) : Prop where
 
 theorem readsTotal_enact (laws : List (Nat × Law)) (id : Nat) (L : Law) (n : Nat) :
     readsTotal (enact laws id L) n = readsTotal (enact laws 0 L) n := by
-  simp [enact, readsTotal]
+  simp only [enact, readsTotal, List.map_append, List.sum_append]
+  split <;> simp
 
 theorem lawProblems_reads {s : State G} {L : Law} (h : lawProblems G s L = []) :
     readsTotal (enact s.laws 0 L) s.turnOrder.length ≤ maxReadsTotal := by
@@ -214,7 +220,8 @@ theorem lawProblems_reads {s : State G} {L : Law} (h : lawProblems G s L = []) :
 
 theorem plannedTotal_enact (laws : List (Nat × Law)) (id : Nat) (L : Law) (n : Nat) :
     plannedTotal (enact laws id L) n = plannedTotal (enact laws 0 L) n := by
-  simp [enact, plannedTotal]
+  simp only [enact, plannedTotal, List.map_append, List.sum_append]
+  split <;> simp
 
 theorem lawProblems_planned {s : State G} {L : Law} (h : lawProblems G s L = []) :
     L.plannedEntries s.turnOrder.length ≤ maxPlannedEntries ∧

@@ -31,12 +31,17 @@ theorem lawProblems_nil {s : State G} {L : Law} (h : lawProblems G s L = []) :
 
 theorem enact_length (laws : List (Nat × Law)) (id : Nat) (L : Law) :
     (enact laws id L).length = (enact laws 0 L).length := by
-  simp [enact]
+  simp only [enact, List.length_append]
+  split <;> rfl
 
 theorem mem_enact {laws : List (Nat × Law)} {id : Nat} {L : Law} {x : Nat × Law}
     (h : x ∈ enact laws id L) : x ∈ laws ∨ x = (id, L) := by
-  simp only [enact, List.mem_append, List.mem_filter, List.mem_singleton] at h
-  exact h.imp (·.1) (fun x => x)
+  simp only [enact, List.mem_append, List.mem_filter] at h
+  rcases h with h | h
+  · exact Or.inl h.1
+  · split at h
+    · cases h
+    · exact Or.inr (by simpa using h)
 
 /-- Changing proposals without changing who made them keeps each seat's count. -/
 theorem filter_by_map_length (L : List OpenProposal) (f : OpenProposal → OpenProposal)
@@ -128,11 +133,12 @@ theorem Limits.body {s s1 : State G} {e : Event} (hl : Limits s) (h : bodyOf s e
       · rename_i hpb
         have hnil := lawProblems_nil (by simpa using hpb)
         refine ⟨?_, ?_, hf, hl.4⟩
-        · simp only
+        · show (enact s.laws _ _).length ≤ _
           rw [enact_length]
           exact hnil.2
         · intro x hx
-          rcases mem_enact hx with hx | rfl
+          have hx' : x ∈ enact s.laws i L := hx
+          rcases mem_enact hx' with hx | rfl
           · exact hl.2 x hx
           · exact hnil.1
       · exact ⟨hl.1, hl.2, hf, hl.4⟩

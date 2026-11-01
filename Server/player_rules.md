@@ -34,7 +34,7 @@ Sections marked `<table_talk>`, `<private_messages>`, `<recent_events>`, and the
 ## Reading a law
 Each law on your screen comes with its rule source, such as `(law "Toll" (on-build road (transfer actor treasury brick 1)))`. The source is the law, and it is the only text that binds. A law's title means nothing. Some laws also have a description, which is someone's words about the source and can be wrong. If they differ, the source counts.
 
-- `(on-build KIND ...)` runs when anyone builds KIND. `(on-harvest ...)` runs for each payment the dice make to a player. `(on-round-end ...)` runs once at the end of each round. `(on-roll ...)` runs once on every roll of the dice, after the bank has paid.
+- `(on-build KIND ...)` runs when anyone builds KIND. `(on-harvest ...)` runs for each payment the dice make to a player. `(on-round-end ...)` runs once at the end of each round. `(on-roll ...)` runs once on every roll of the dice, after the bank has paid. `(now ...)` runs once, the moment the law passes, and nobody is the actor. A law of only `now` clauses does not stay in force.
 - `(transfer A B R n)` means A pays B n of resource R.
 - `(move-piece A B KIND)` takes A's newest KIND. To `bank`, it is destroyed. To a player, it is seized. What sits on it goes with it. Roads stay where they are. A law can do this only at a round's end or on a roll. A player always keeps their last piece. A player at their limit for that kind cannot receive it, so it is destroyed.
 - `actor` is the builder, the player the dice just paid, or the player whose turn the roll starts. `each` is one player inside `(for-each-player test ...)`, which runs for every player who passes the test. `treasury` and `bank` are shared accounts.

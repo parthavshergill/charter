@@ -425,16 +425,15 @@ theorem no_roll_entries {s s' : State G} {e : Event} (h : Engine.step G s e = .o
 
 theorem vote_fields {s s1 : State G} {seat id : Nat} {yes : Bool}
     (hb : voteBody s seat id yes = .ok s1) :
-    s1.books = s.books ∧ s1.pieces = s.pieces ∧ s1.deals = s.deals ∧
-    s1.builtThisRound = s.builtThisRound := by
+    s1.deals = s.deals ∧ s1.builtThisRound = s.builtThisRound := by
   obtain ⟨_, _, L, _, _, _, ⟨_, rfl⟩ | ⟨_, rfl⟩⟩ := voteBody_ok hb
   · unfold decideLaw
     simp only
-    split <;> exact ⟨rfl, rfl, rfl, rfl⟩
-  · exact ⟨rfl, rfl, rfl, rfl⟩
+    split <;> exact ⟨rfl, rfl⟩
+  · exact ⟨rfl, rfl⟩
 
 theorem preview_exact {s s1 s2 : State G} {seat id : Nat} {L : Law} {roll : Nat} {e : Event}
-    (h1 : Engine.step G s (.vote seat id true) = .ok s1) (hl : s1.laws = enact s.laws id L)
+    (h1 : Engine.step G s (.vote seat id true) = .ok s1) (hp : LawPasses s (.vote seat id true) L)
     (hend : EndsTurn s1 e) (h2 : Engine.step G s1 e = .ok s2) (hr : s2.lastRoll = some roll) :
     newEntries s1 s2 = Engine.predictNextTurn G (s.withLaw id L) roll := by
   have hne1 := step_not_ended h2
@@ -445,13 +444,16 @@ theorem preview_exact {s s1 s2 : State G} {seat id : Nat} {L : Law} {roll : Nat}
     · obtain ⟨_, _, h3⟩ := endGame_ok hw
       exact absurd (by rw [h3]) hne1
   have hb' : voteBody s seat id true = .ok sb := hb
-  obtain ⟨f1, f2, f3, f4⟩ := vote_fields hb'
+  obtain ⟨f3, f4⟩ := vote_fields hb'
   have fr := bodyOf_frame hb
   have hagree : TurnAgree s1 (s.withLaw id L) := by
-    rw [hs1] at hl ⊢
-    exact ⟨⟨fr.turnOrder, f1, f2, hl, fr.round, by
-      have hd := bodyOf_declared hb (by simp)
-      exact hd⟩, fr.phase, fr.turnIndex, fr.turnsTaken, f3, f4⟩
+    rw [hs1]
+    rcases vote_view hb' with ⟨L', hp', hu, hs⟩ | ⟨hno, _⟩
+    · have hL : L = L' := hu L hp
+      subst hL
+      exact ⟨⟨fr.turnOrder, by rw [hs]; rfl, by rw [hs]; rfl, by rw [hs]; rfl, fr.round, by
+        rw [hs]; rfl⟩, fr.phase, fr.turnIndex, fr.turnsTaken, f3, f4⟩
+    · exact absurd hp (hno L)
   have hroll : turnEntries s1 (rollAt G s1.seed s1.rollsMade) = turnEntries s1 roll := by
     cases hrs : (nextStage s1).rolls with
     | false => rw [turnEntries_no_roll hrs, turnEntries_no_roll hrs]

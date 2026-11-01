@@ -41,7 +41,7 @@ end
 
 /-- The effects inside a clause. -/
 def Clause.effects : Clause → List Effect
-  | .onHarvest b | .onBuild _ b | .onRoundEnd b | .onRoll b => b
+  | .onHarvest b | .onBuild _ b | .onRoundEnd b | .onRoll b | .now b => b
   | _ => []
 
 /-- How many nodes a clause has. -/
@@ -65,6 +65,7 @@ def clauseProblems {G : GameDef} (s : State G) (L : Law) : Clause → List Strin
   | .onHarvest _ => []
   | .onRoundEnd _ => []
   | .onRoll _ => []
+  | .now _ => if s.phase == .setup then ["a founding law cannot act once"] else []
   | .onBuild k _ => if s.knownKind L k then [] else [s!"there is no piece named {k}"]
   | .setCost k b =>
       (if s.knownKind L k then [] else [s!"there is no piece named {k}"]) ++
@@ -204,6 +205,36 @@ mutual
     | e :: es => e.kindsMoved ++ Effect.kindsMovedAll es
 end
 
+mutual
+  /-- This number reads the acting player. -/
+  def Expr.usesActor : Expr → Bool
+    | .holding p _ | .points p | .count p _ | .declared p _ => p == .actor
+    | .add a b | .sub a b | .mul a b | .min a b | .max a b | .divBy a b => a.usesActor || b.usesActor
+    | .div a _ => a.usesActor
+    | .totalOver c a | .mostOver c a | .leastOver c a => c.usesActor || a.usesActor
+    | _ => false
+
+  /-- This test reads the acting player. -/
+  def Cond.usesActor : Cond → Bool
+    | .lt a b | .le a b | .eq a b => a.usesActor || b.usesActor
+    | .and a b | .or a b => a.usesActor || b.usesActor
+    | .not c => c.usesActor
+    | _ => false
+end
+
+mutual
+  /-- This effect names or reads the acting player. -/
+  def Effect.usesActor : Effect → Bool
+    | .transfer src dst _ amount => src == .actor || dst == .actor || amount.usesActor
+    | .movePiece src dst _ => src == .actor || dst == .actor
+    | .forEach c body | .when c body => c.usesActor || Effect.usesActorAll body
+
+  /-- One of these effects names or reads the acting player. -/
+  def Effect.usesActorAll : List Effect → Bool
+    | [] => false
+    | e :: es => e.usesActor || Effect.usesActorAll es
+end
+
 /-- This clause can move a piece. -/
 def Clause.movesPieces (c : Clause) : Bool := !(Effect.kindsMovedAll c.effects).isEmpty
 
@@ -228,6 +259,9 @@ def Clause.noEffect (G : GameDef) (R final : Rules) (c : Clause) : List String :
   match c with
   | .onHarvest b | .onRoundEnd b | .onRoll b =>
       if Effect.plannedAll 2 b == 0 then ["this rule has no effects"] else []
+  | .now b =>
+      (if Effect.plannedAll 2 b == 0 then ["this rule has no effects"] else []) ++
+      (if Effect.usesActorAll b then ["a rule that acts once has no acting player, so it cannot reward one"] else [])
   | .onBuild k b =>
       (if Effect.plannedAll 2 b == 0 then ["this rule has no effects"] else []) ++
       (if (final.piece? k).isSome then [] else [s!"no piece named {k} will exist"])

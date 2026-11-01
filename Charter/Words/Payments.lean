@@ -90,6 +90,20 @@ def turnPieces (s : State G) (roll : Nat) : List Piece :=
     | none => x.pieces
   else x.pieces
 
+/-- What a law's `now` clauses pay, planned from this moment. -/
+def decreeEntries (s : State G) (L : Law) : List Entry := settle s (Law.plan s .now L)
+
+/-- The pieces a law's `now` clauses ask to move, planned from this moment. -/
+def decreeOrders (s : State G) (L : Law) : List PieceOrder :=
+  L.clauses.flatMap fun c => Effect.planOrdersAll s (c.bodyFor .now) Trigger.now.env
+
+/-- `s` with this law passed: what its `now` clauses do has been done, and it is in force unless it is only
+`now` clauses. Used by the engine, and to say what a vote's preview means. -/
+def withLaw (s : State G) (id : Nat) (L : Law) : State G :=
+  { s.afterPosting (s.decreeEntries L) with
+    laws := enact s.laws id L
+    pieces := applyOrders s.rules (s.decreeOrders L) s.pieces }
+
 end State
 
 /-! ## Trades and fees -/

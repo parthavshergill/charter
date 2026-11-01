@@ -18,6 +18,8 @@ inductive Trigger where
   | roundEnd
   /-- The dice showed `total`. `actor` is the seat whose turn the roll starts. -/
   | roll (actor : Seat) (total : Nat)
+  /-- A law just passed. Nobody is the actor. -/
+  | now
   deriving Repr, DecidableEq
 
 /-- Who and what a law can see while it runs. -/
@@ -149,6 +151,7 @@ def Clause.bodyFor : Clause → Trigger → List Effect
   | .onBuild k b, .build _ k' => if k == k' then b else []
   | .onRoundEnd b, .roundEnd => b
   | .onRoll b, .roll .. => b
+  | .now b, .now => b
   | _, _ => []
 
 /-- Who and what a law can see when it reacts to this trigger. -/
@@ -157,6 +160,7 @@ def Trigger.env : Trigger → LawEnv
   | .build a _ => { actor := some a }
   | .roundEnd => {}
   | .roll a n => { actor := some a, rolled := some n }
+  | .now => {}
 
 /-- The transfers one law asks for on this trigger, in clause order. -/
 def Law.plan {G : GameDef} (s : State G) (t : Trigger) (L : Law) : List Entry :=

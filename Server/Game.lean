@@ -221,6 +221,13 @@ def isSpotKind (G : GameDef) (k : String) : Bool := ((spotPiece G).map (·.name)
 def firstOnIsland (g : Game) (s : State G) (k : String) : String :=
   if !isLinkKind G k && (s.pieces.filter (·.kind == k)).isEmpty then s!", the first on {g.spec.layout.word}" else ""
 
+/-- This vote closes a law that passes `lawProblems`, so it passed. A law of only `now` clauses does not join
+the laws in force, so the list of laws cannot say this. -/
+def passedAtVote (s : State G) (id : Nat) : Bool :=
+  match s.openProposal? id with
+  | some { body := .law L, .. } => (lawProblems G s L).isEmpty
+  | _ => false
+
 /-- The sentence for what the actor did: its kind, its text, and whether it is worth telling. -/
 def actionText (g : Game) (s s' : State G) : Event → String × String × Bool
   | .move p (.place k _) =>
@@ -263,6 +270,7 @@ def actionText (g : Game) (s s' : State G) : Event → String × String × Bool
       | _ => "a law"
     let base := s!"{g.nameOf p} voted {word} on {name}."
     if s'.laws.map (·.1) != s.laws.map (·.1) then ("law", s!"{base} The law passed.", true)
+    else if (s'.openProposal? id).isNone && passedAtVote s id then ("law", s!"{base} The law passed and acted once. It does not stay in force.", true)
     else if (s'.openProposal? id).isNone then ("law", s!"{base} The law can no longer pass, so it failed.", true)
     else ("law", base, false)
   | .sign p id =>
@@ -339,7 +347,7 @@ def sentences (g : Game) (s s' : State G) (e : Event) : List (Option Nat × Stri
   let beforeRoll := moneyLines.map fun (k, t, m) => ((none : Option Nat), k, t, m)
   -- A law can take a piece at a turn change. Tell it, or the board would change with no word.
   let pieceLines : List (Option Nat × String × String × Bool) :=
-    if s'.turnsTaken == s.turnsTaken then [] else
+    if (match e with | .move _ (.place ..) => true | _ => false) then [] else
     s.turnOrder.flatMap fun p =>
       (s.pieces.filter (·.owner == p)).filterMap fun x =>
         if s'.pieces.contains x then none else
@@ -360,10 +368,10 @@ def closedLaws (g : Game) (s s' : State G) (e : Event) : List Decision :=
       let votes := match e with
         | .vote seat id yes => if id == p.id then p.votes ++ [(seat, yes)] else p.votes
         | _ => p.votes
-      let passed := s'.laws.any (·.1 == p.id)
       let isVote := match e with
         | .vote _ id _ => id == p.id
         | _ => false
+      let passed := s'.laws.any (·.1 == p.id) || (isVote && (lawProblems G s L).isEmpty && L.isDecree)
       let outcome := if passed then "passed" else if isVote then "failed" else "lapsed"
       some { id := p.id, by_ := p.by_, law := L, votes, outcome, round := s.round, event := g.events }
 
@@ -380,8 +388,9 @@ def nextTabled (g : Game) (s s' : State G) (e : Event) : Array Tabled :=
       | .vote _ id _ | .sign _ id => id == t.id
       | _ => false
     let outcome := match t.body with
-      | .law _ =>
-        if s'.laws.any (·.1 == t.id) then "passed" else if isThis then "failed" else "lapsed"
+      | .law L =>
+        if s'.laws.any (·.1 == t.id) || (isThis && L.isDecree && (lawProblems G s L).isEmpty) then "passed"
+        else if isThis then "failed" else "lapsed"
       | .deal _ => if isThis && s'.dealsStarted != s.dealsStarted then "started" else "lapsed"
     { t with outcome }
 

@@ -48,16 +48,59 @@ theorem checkWin_of_nil {s : State G} (h : seatsAtTarget s = []) : checkWin s = 
 
 /-! ## What bodies leave alone -/
 
-theorem decideLaw_fields (s : State G) (id : Nat) (L : Law) :
-    (decideLaw s id L).pieces = s.pieces ∧ (decideLaw s id L).journal = s.journal ∧
-    (decideLaw s id L).books = s.books ∧ (decideLaw s id L).deals = s.deals := by
+theorem decideLaw_deals (s : State G) (id : Nat) (L : Law) : (decideLaw s id L).deals = s.deals := by
   unfold decideLaw
   simp only
-  split <;> exact ⟨rfl, rfl, rfl, rfl⟩
+  split <;> rfl
+
+/-- A vote's body: it passes one law, and does what that law's `now` clauses say, or it moves nothing. -/
+theorem vote_view {s s1 : State G} {seat id : Nat} {yes : Bool} (hb : voteBody s seat id yes = .ok s1) :
+    (∃ L, LawPasses s (.vote seat id yes) L ∧ (∀ L', LawPasses s (.vote seat id yes) L' → L' = L) ∧
+      s1 = { s.withLaw id L with
+        openProposals := s.openProposals.filter (·.id != id)
+        journal := s.journal ++ s.decreeEntries L }) ∨
+    ((∀ L', ¬ LawPasses s (.vote seat id yes) L') ∧ s1.pieces = s.pieces ∧ s1.journal = s.journal ∧
+      s1.books = s.books) := by
+  obtain ⟨_, p, L, hp, hbody, _, hc⟩ := voteBody_ok hb
+  have huniq : ∀ L', LawPasses s (.vote seat id yes) L' → L' = L := by
+    rintro L' ⟨seat', id', p', he, hp', hb', _, _⟩
+    injection he with h1 h2 _
+    subst h1 h2
+    rw [hp] at hp'
+    injection hp' with hp'
+    subst hp'
+    rw [hbody] at hb'
+    injection hb' with hb'
+    exact hb'.symm
+  rcases hc with ⟨hd, rfl⟩ | ⟨hd, rfl⟩
+  · simp only [isDecidingVote, Bool.and_eq_true, decide_eq_true_eq] at hd
+    obtain ⟨hy, hm⟩ := hd
+    subst hy
+    unfold decideLaw
+    simp only
+    split
+    · rename_i hx
+      exact Or.inl ⟨L, ⟨seat, id, p, rfl, hp, hbody, hm, List.isEmpty_iff.mp hx⟩, huniq, rfl⟩
+    · rename_i hx
+      refine Or.inr ⟨fun L' hl => ?_, rfl, rfl, rfl⟩
+      have heq := huniq L' hl
+      subst heq
+      obtain ⟨_, _, _, _, _, _, _, hprob⟩ := hl
+      rw [hprob] at hx
+      exact hx rfl
+  · refine Or.inr ⟨fun L' hl => ?_, rfl, rfl, rfl⟩
+    obtain ⟨seat', id', p', he, hp', _, hm, _⟩ := hl
+    injection he with h1 h2 h3
+    subst h1 h2 h3
+    rw [hp] at hp'
+    injection hp' with hp'
+    subst hp'
+    simp only [isDecidingVote, Bool.true_and, decide_eq_false_iff_not] at hd
+    exact hd hm
 
 /-- Only a place move changes the pieces. -/
 theorem body_pieces {s s1 : State G} {e : Event} (hne : ∀ p k loc, e ≠ .move p (.place k loc))
-    (h : bodyOf s e = .ok s1) : s1.pieces = s.pieces := by
+    (hl : ∀ L, ¬ LawPasses s e L) (h : bodyOf s e = .ok s1) : s1.pieces = s.pieces := by
   cases e with
   | forceEndTurn => cases h
   | move p m =>
@@ -83,9 +126,10 @@ theorem body_pieces {s s1 : State G} {e : Event} (hne : ∀ p k loc, e ≠ .move
   | propose seat b =>
     obtain ⟨_, _, ⟨_, _, _, rfl⟩ | ⟨_, _, _, _, rfl⟩⟩ := proposeBody_ok h <;> rfl
   | vote seat i y =>
-    obtain ⟨_, _, _, _, _, _, ⟨_, rfl⟩ | ⟨_, rfl⟩⟩ := voteBody_ok h
-    · exact (decideLaw_fields _ _ _).1
-    · rfl
+    have hv : voteBody s seat i y = .ok s1 := h
+    rcases vote_view hv with ⟨L, hp, _⟩ | ⟨_, hk, _⟩
+    · exact absurd hp (hl L)
+    · exact hk
   | sign seat i =>
     obtain ⟨_, _, _, _, _, _, _, ⟨_, h⟩ | ⟨_, rfl⟩⟩ := signBody_ok h
     · obtain ⟨_, _, _, _, rfl⟩ := startDeal_ok h
@@ -283,10 +327,11 @@ theorem step_is_exact {s s' : State G} {e : Event}
       ((∀ j ∈ d.signers, j ∈ p.signed ∨ j = seat) →
         newEntries s s' = depositEntries s.dealsStarted d) ∧
       ((¬ ∀ j ∈ d.signers, j ∈ p.signed ∨ j = seat) → newEntries s s' = [])) ∧
-    (∀ seat id yes, e = .vote seat id yes → NoEntriesUnlessEnded s s') ∧
+    (∀ seat id yes, e = .vote seat id yes → VoteWritesExactly s s' e) ∧
     (∀ p id, e = .move p (.accept id) → ∃ o, s.offers.find? (·.id == id) = some o) ∧
     (∀ p, e = .move p .endTurn → EndsTurn s e) ∧
-    (¬ EndsTurn s e → (∀ p k loc, e ≠ .move p (.place k loc)) → s'.pieces = s.pieces) ∧
+    (¬ EndsTurn s e → (∀ p k loc, e ≠ .move p (.place k loc)) → (∀ L, ¬ LawPasses s e L) →
+      s'.pieces = s.pieces) ∧
     (¬ EndsTurn s e →
       s'.turnsTaken = s.turnsTaken ∧ s'.turnIndex = s.turnIndex ∧ s'.round = s.round ∧
       s'.rollsMade = s.rollsMade) := by
@@ -347,13 +392,31 @@ theorem step_is_exact {s s' : State G} {e : Event}
     obtain ⟨_, s1, hb, hf⟩ := step_act h (by simp [EndsTurn])
     have hf' : checkWin (countAction s1 seat) = .ok s' := hf
     have f := bodyOf_frame hb
-    have hfields : s1.journal = s.journal ∧ s1.books = s.books ∧ s1.deals = s.deals := by
-      have hb' : voteBody s seat id yes = .ok s1 := hb
+    have hb' : voteBody s seat id yes = .ok s1 := hb
+    have hd : s1.deals = s.deals := by
       obtain ⟨_, _, _, _, _, _, ⟨_, rfl⟩ | ⟨_, rfl⟩⟩ := voteBody_ok hb'
-      · exact (decideLaw_fields _ _ _).2
-      · exact ⟨rfl, rfl, rfl⟩
-    obtain ⟨hj, hbk, hd⟩ := hfields
-    exact (move_no_entries he hf' f.phase hj hd hbk).1
+      · exact decideLaw_deals _ _ _
+      · rfl
+    have finish : ∀ es : List Entry, s1.journal = s.journal ++ es → s1.books = (s.afterPosting es).books →
+        (s'.phase = .ended → newEntries s s' = es ++ s.deals.flatMap (s.afterPosting es).refundEntries) ∧
+        (s'.phase ≠ .ended → newEntries s s' = es) := by
+      intro es hj hbk
+      rcases checkWin_ok hf' with ⟨rfl, _⟩ | ⟨w, hw⟩
+      · refine ⟨fun hend => ?_, fun _ => newEntries_of hj⟩
+        have : s.phase = .ended := f.phase.symm.trans hend
+        exact absurd this he
+      · obtain ⟨_, _, rfl⟩ := endGame_ok hw
+        refine ⟨fun _ => ?_, fun hne => absurd rfl hne⟩
+        apply newEntries_of
+        have hfun : (countAction s1 seat).refundEntries = (s.afterPosting es).refundEntries :=
+          funext (refundEntries_congr hbk)
+        change s1.journal ++ s1.deals.flatMap (countAction s1 seat).refundEntries = _
+        rw [hj, hd, hfun, List.append_assoc]
+    rcases vote_view hb' with ⟨L, hp, hu, hs1⟩ | ⟨hno, _, hj, hbk⟩
+    · obtain ⟨h1, h2⟩ := finish (s.decreeEntries L) (by rw [hs1]) (by rw [hs1]; rfl)
+      exact ⟨s.decreeEntries L, fun L' hl => by rw [hu L' hl], fun hn => absurd hp (hn L), h1, h2⟩
+    · obtain ⟨h1, h2⟩ := finish [] (by simp [hj]) (by rw [hbk]; simp [State.afterPosting, Books.postAll])
+      exact ⟨[], fun L' hl => absurd hl (hno L'), fun _ => rfl, h1, h2⟩
   · -- an accepted offer
     rintro p id rfl
     obtain ⟨_, s1, hb, _⟩ := step_act h (by simp [EndsTurn])
@@ -366,10 +429,10 @@ theorem step_is_exact {s s' : State G} {e : Event}
     · exact h1
     · cases hb
   · -- the pieces
-    intro hnot hne
+    intro hnot hne hnl
     rcases step_view h with ⟨hend, _⟩ | ⟨_, _, s1, hb, hf⟩
     · exact absurd hend hnot
-    · have hp := body_pieces hne hb
+    · have hp := body_pieces hne hnl hb
       rcases finish_cases hf with rfl | ⟨w, hw⟩
       · exact hp
       · obtain ⟨_, _, rfl⟩ := endGame_ok hw

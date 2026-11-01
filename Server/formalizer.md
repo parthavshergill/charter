@@ -137,6 +137,7 @@ law      := (law "title" clause+)
 clause   := (on-harvest effect+)      ; for each harvest payment: actor = the player paid; res and amount = what they got
           | (on-build KIND effect+)   ; when someone builds KIND: actor = the builder
           | (on-round-end effect+)    ; once per round. There is no actor: use for-each-player
+          | (now effect+)             ; once, the moment the law passes, and never again. actor does not exist here. A law of only these does not stay in force
           | (on-roll effect+)         ; on every roll: actor = the player whose turn the roll starts; rolled = the total shown
           | (set-cost KIND bundle)
           | (set-points KIND n)
@@ -177,7 +178,7 @@ S        := seat number
 ```
 
 ## What a legal rule looks like
-- `actor` exists only inside `on-harvest`, `on-build` and `on-roll`. At `on-round-end` no one is acting, so use `for-each-player`.
+- `actor` exists only inside `on-harvest`, `on-build` and `on-roll`. It does not exist inside `now`, so a law cannot reward the seat whose vote passes it. At `on-round-end` no one is acting, so use `for-each-player`.
 - `each` exists only inside `for-each-player`, `total-over`, `most-over` and `least-over`.
 - A law cannot name one player, so "the player with the most grain" is a test against a number: `(for-each-player (= (holding each grain) (most-over true (holding each grain))) ...)`. Several players can tie and all pass. If they all ask for the same goods from one account and it runs short, each gets an equal share. When the most might be 0, add `(< 0 ...)` to the test if the request means only someone with some.
 - `res`, `amount` and `res-is` exist only inside `on-harvest`.
@@ -275,6 +276,9 @@ Request: Each ore you hold is worth 1 point.
 
 Request: At the end of each round, whoever has the most points loses a settlement.
 (law "Cut down" (on-round-end (for-each-player (= (points each) (most-over true (points each))) (move-piece each bank settlement))))
+
+Request: Right now, everyone gets 2 grain from the bank, once.
+(law "One gift" (now (for-each-player true (transfer bank each grain 2))))
 
 Request: Whoever rolls a 7 gets 2 ore from the treasury.
 (law "Lucky roller" (on-roll (if (= rolled 7) (transfer treasury actor ore 2))))

@@ -162,8 +162,8 @@ def pieceNotes (s s' : State G) (roll : Nat) (names : Nat → String) : List Str
       let a := count before
       let b := count after
       if a == b then none
-      else if b < a then some s!"{names p} would lose {a - b} {k} at the next turn change."
-      else some s!"{names p} would gain {b - a} {k} at the next turn change."
+      else if b < a then some s!"{names p} would lose {a - b} {k}."
+      else some s!"{names p} would gain {b - a} {k}."
 
 def rowJson (r : Row) : Json :=
   Json.mkObj [("seat", toJson r.who), ("res", toJson r.res), ("delta", toJson r.delta)]
@@ -182,7 +182,11 @@ def lawPreview (s : State G) (id : Nat) (L : Law) (you : Option Nat) (names : Na
     some (Json.mkObj [("seat", toJson p), ("from", toJson a), ("to", toJson b),
       ("wins", toJson (decide (G.targetPoints ≤ b)))])
   let rolls := rollSections s s' L
-  let sections := roundEndSections s s' ++ buildSections s s' you names ++ rolls.take 3
+  -- What a law's `now` clauses do is the first thing that happens, the moment it passes.
+  let nowRows := rowsOf s [] (s.decreeEntries L)
+  let nowSection : List Section :=
+    if nowRows.isEmpty then [] else [{ whenText := "The moment this passes", dice := false, rows := nowRows }]
+  let sections := nowSection ++ roundEndSections s s' ++ buildSections s s' you names ++ rolls.take 3
   let actor := (you.orElse fun _ => s.turnOrder.head?).getD 0
   let refused := match lawProblems G s L with
     | [] => []

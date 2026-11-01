@@ -45,11 +45,12 @@ def proposeBody (s : State G) (seat : Seat) (body : Proposal) : Except String (S
 def isDecidingVote (s : State G) (p : OpenProposal) (seat : Seat) (yes : Bool) : Bool :=
   yes && decide ((p.withVote seat true).yesCount * 2 > s.turnOrder.length)
 
-/-- The deciding vote: the law leaves the open list and passes if it is still valid. -/
+/-- The deciding vote: the law leaves the open list and passes if it is still valid. What its `now` clauses
+do happens here, planned from this moment. -/
 def decideLaw (s : State G) (id : Nat) (L : Law) : State G :=
   let closed := s.openProposals.filter (·.id != id)
   if (lawProblems G s L).isEmpty then
-    { s with openProposals := closed, laws := enact s.laws id L }
+    { s.withLaw id L with openProposals := closed, journal := s.journal ++ s.decreeEntries L }
   else
     { s with openProposals := closed }
 

@@ -93,9 +93,9 @@ theorem V_your_money_is_yours (G : GameDef) (_hG : G.Valid) (s s' : State G) (e 
         ((∃ b k loc, e = .move b (.place k loc) ∧
            x ∈ lawEntries (s.afterPosting (s.costEntries b k)) (.build b k)) ∨
          (EndsTurn s e ∧
-           (x ∈ s.roundEndLawEntries ∨
-            x ∈ rollEntries s.afterRoundEnd
-              (rollAt G s.seed s.rollsMade)))))) ∧
+       (x ∈ s.roundEndLawEntries ∨
+        x ∈ rollEntries s.afterRoundEnd (rollAt G s.seed s.rollsMade))) ∨
+     (∃ L, LawPasses s e L ∧ x ∈ s.decreeEntries L)))) ∧
     MoneyLeavesBankOnlyFor s e x) ∧
     PiecesKept s s' e ∧
     PieceLeavesOnlyFor s s' e ∧
@@ -203,10 +203,11 @@ theorem every_other_event_is_exact (G : GameDef) (_hG : G.Valid) (s s' : State G
       ((∀ j ∈ d.signers, j ∈ p.signed ∨ j = seat) →
         newEntries s s' = depositEntries s.dealsStarted d) ∧
       ((¬ ∀ j ∈ d.signers, j ∈ p.signed ∨ j = seat) → newEntries s s' = [])) ∧
-    (∀ seat id yes, e = .vote seat id yes → NoEntriesUnlessEnded s s') ∧
+    (∀ seat id yes, e = .vote seat id yes → VoteWritesExactly s s' e) ∧
     (∀ p id, e = .move p (.accept id) → ∃ o, s.offers.find? (·.id == id) = some o) ∧
     (∀ p, e = .move p .endTurn → EndsTurn s e) ∧
-    (¬ EndsTurn s e → (∀ p k loc, e ≠ .move p (.place k loc)) → s'.pieces = s.pieces) ∧
+    (¬ EndsTurn s e → (∀ p k loc, e ≠ .move p (.place k loc)) → (∀ L, ¬ LawPasses s e L) →
+      s'.pieces = s.pieces) ∧
     (¬ EndsTurn s e →
       s'.turnsTaken = s.turnsTaken ∧ s'.turnIndex = s.turnIndex ∧ s'.round = s.round ∧
       s'.rollsMade = s.rollsMade) ∧
@@ -231,7 +232,7 @@ theorem X_what_you_vote_on_is_what_runs (G : GameDef) (_hG : G.Valid) :
     (∀ s, Reachable G s ↔ ∃ seats serverSeed nonces events,
       minSeats ≤ seats ∧ seats ≤ maxSeats ∧ Engine.replay G seats serverSeed nonces events = .ok s) ∧
     (∀ (s s₁ s₂ : State G) seat id L roll e,
-      Reachable G s → Engine.step G s (.vote seat id true) = .ok s₁ → s₁.laws = enact s.laws id L →
+      Reachable G s → Engine.step G s (.vote seat id true) = .ok s₁ → LawPasses s (.vote seat id true) L →
       EndsTurn s₁ e → Engine.step G s₁ e = .ok s₂ → s₂.lastRoll = some roll →
       newEntries s₁ s₂ = Engine.predictNextTurn G (s.withLaw id L) roll) ∧
     (∀ (s s' : State G) e,

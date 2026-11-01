@@ -21,6 +21,7 @@ These show that the promises are not empty:
 * A resource can be worth points, and a seat that reaches the target at a turn change wins at the next
   move or vote.
 * A law can take a seat's newest piece, at a round's end or on a roll, and never its last.
+* A decree fires once, the moment its law passes, and it names no actor.
 * The promises reject bad steps. Each `..._is_rejected` theorem shows a named part of a commandment
   saying no to a forged step. Next to most is an `example` of the honest step, which it allows.
 
@@ -484,11 +485,12 @@ theorem forged_seven_payment_is_rejected :
   · cases hr
   · cases hr
   · cases hf
-  · rcases h1 with ⟨_, _, _, he, _⟩ | ⟨_, h2⟩
+  · rcases h1 with ⟨_, _, _, he, _⟩ | ⟨_, h2⟩ | ⟨_, ⟨_, _, _, he, _⟩, _⟩
     · cases he
     · rcases h2 with h2 | h2
       · exact hRound h2
       · exact hEnd h2
+    · cases he
 
 /-- On a 7, the bank pays the timber to seat 0, but the law pays the seat whose turn starts, which is
 seat 1. V rejects this. -/
@@ -502,15 +504,16 @@ theorem wrong_actor_is_rejected :
   rcases h (Or.inl rfl) with ⟨hr, _⟩ | ⟨hr, _⟩ | ⟨_, h1⟩
   · cases hr
   · cases hr
-  · rcases h1 with ⟨_, _, _, he, _⟩ | ⟨_, h2⟩
+  · rcases h1 with ⟨_, _, _, he, _⟩ | ⟨_, h2⟩ | ⟨_, ⟨_, _, _, he, _⟩, _⟩
     · cases he
     · rcases h2 with h2 | h2
       · exact hRound h2
       · exact hEnd h2
+    · cases he
 
 /-- The honest entry is allowed: the bank pays seat 1, whose turn the roll starts. -/
 example : MoneyLeavesBankOnlyFor sevenGame .forceEndTurn ⟨.bank, .player 1, "timber", 1, .lawEffect⟩ :=
-  fun _ => Or.inr (Or.inr ⟨rfl, Or.inr ⟨trivial, Or.inr (by decide +kernel)⟩⟩)
+  fun _ => Or.inr (Or.inr ⟨rfl, Or.inr (Or.inl ⟨trivial, Or.inr (by decide +kernel)⟩)⟩)
 
 /-- With no law that reacts to a roll, a roll is the harvest alone, read from the round it starts. So a
 saved game with no such law replays as it always did: no old law could read the round. -/
@@ -1052,9 +1055,11 @@ theorem a_piece_vanishing_with_no_law_is_rejected :
       ({ initialState tinySettlers 2 42 [2] with pieces := [⟨0, "settlement", .spot 0⟩] } : State tinySettlers)
       (initialState tinySettlers 2 42 [2]) .forceEndTurn := by
   intro h
-  rcases h ⟨0, "settlement", .spot 0⟩ (by simp) (by simp [initialState]) with ⟨_, _, he⟩ | ⟨_, L, hL, _⟩
+  rcases h ⟨0, "settlement", .spot 0⟩ (by simp) (by simp [initialState]) with ⟨_, _, he⟩ | ⟨_, L, hL, _⟩ | _
   · cases he
   · cases hL
+  · obtain ⟨_, ⟨_, _, _, he, _⟩, _⟩ := ‹∃ L, LawPasses _ _ L ∧ _›
+    cases he
 
 /-- A law that names a build or a harvest is refused, so commandment VII stays as it is. -/
 theorem moving_a_piece_on_a_build_is_rejected :
@@ -1110,6 +1115,55 @@ theorem a_law_really_takes_a_piece :
       exact ⟨s, s', ((X_what_you_vote_on_is_what_runs roadGame roadGame_valid).1 s).mpr
         ⟨2, 42, [2], _, by decide, by decide, hr⟩, hs, h1,
         (fun hm => by rw [List.contains_iff_mem.mpr hm] at h2; cases h2), h3⟩
+
+/-! ## Decrees: a clause that fires once
+
+A `now` clause runs once, the moment its law passes. Nobody is the actor. A law of only such clauses does not
+join the laws in force and takes no slot. -/
+
+/-- The bank gives every seat 2 grain, once. -/
+def giftOnce : Law :=
+  { title := "One gift", clauses := [.now [.forEach .yes [.transfer .bank .each (.lit "grain") (.lit 2)]]] }
+
+/-- A law with a `now` part and a part that stays: every seat gets 2 grain now, and a road costs 1 brick. -/
+def giftAndRule : Law :=
+  { giftOnce with clauses := giftOnce.clauses ++ [.setCost "road" [("brick", 1)]] }
+
+def decreeEvents (L : Law) : List Event :=
+  List.replicate 4 .forceEndTurn ++ [.propose 0 (.law L), .vote 0 0 true]
+
+/-- The deciding vote moves the money, in a real game, and writes exactly the decree. -/
+theorem a_decree_moves_money :
+    ∃ s s', Reachable tinySettlers s ∧ Engine.step tinySettlers s (.vote 1 0 true) = .ok s' ∧
+      newEntries s s' = [⟨.bank, .player 0, "grain", 2, .lawEffect⟩, ⟨.bank, .player 1, "grain", 2, .lawEffect⟩] :=
+  real_step (seats := 2) (serverSeed := 42) (nonces := [25283273]) (events := decreeEvents giftOnce)
+    tinySettlers_valid (by decide) (by decide) (by decide +kernel)
+
+/-- A vote that pays only the seat that cast it is rejected. -/
+theorem a_decree_that_rewards_the_voter_is_rejected :
+    stepEntries tinySettlers 2 42 [25283273] (decreeEvents giftOnce) (.vote 1 0 true) ≠
+      some [⟨.bank, .player 1, "grain", 4, .lawEffect⟩] := by decide +kernel
+
+/-- The law takes no slot among the laws in force. A law with a part that stays does. -/
+example : ((after2 tinySettlers 25283273 (decreeEvents giftOnce ++ [.vote 1 0 true])).map (·.laws.length)) = some 0 := by
+  decide +kernel
+example : ((after2 tinySettlers 25283273 (decreeEvents giftAndRule ++ [.vote 1 0 true])).map (·.laws.length)) = some 1 := by
+  decide +kernel
+
+/-- It fires once. The law in force does nothing at later turn changes. -/
+example : stepEntries tinySettlers 2 42 [25283273] (decreeEvents giftAndRule ++ [.vote 1 0 true]) (.move 0 .endTurn) =
+    some [] := by decide +kernel
+
+/-- A decree cannot name the deciding voter. -/
+theorem a_decree_naming_the_actor_is_rejected :
+    "a rule that acts once has no acting player, so it cannot reward one" ∈
+      lawProblems tinySettlers (initialState tinySettlers 2 42 [2])
+        { title := "x", clauses := [.now [.when (.lt (.lit 0) (.points .actor)) [.transfer .bank .treasury (.lit "grain") (.lit 1)]]] } := by
+  decide +kernel
+
+/-- A founding law cannot be a decree. -/
+theorem a_founding_decree_is_invalid :
+    ¬ ({ tinySettlers with foundingLaws := [giftOnce] } : GameDef).Valid := by decide +kernel
 
 /-- The conditions the theorems assume can be met: this new game is reachable. -/
 example : Reachable tinySettlers (initialState tinySettlers 2 42 [25283273]) :=

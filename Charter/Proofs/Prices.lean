@@ -53,6 +53,7 @@ theorem clause_price {R : Rules} {c : Clause} (hR : RulesPriceOk G R) (hc : Clau
   | onBuild _ _ => exact hR
   | onRoundEnd _ => exact hR
   | onRoll _ => exact hR
+  | now _ => exact hR
   | setBankRate _ => exact hR
   | setWorth _ _ => exact hR
   | repeal _ => exact hR
@@ -99,6 +100,7 @@ theorem lawProblems_price {s : State G} {L : Law} (h : lawProblems G s L = []) :
   | onBuild _ _ => trivial
   | onRoundEnd _ => trivial
   | onRoll _ => trivial
+  | now _ => trivial
   | setPoints _ _ => trivial
   | setBankRate _ => trivial
   | setWorth _ _ => trivial
@@ -124,6 +126,7 @@ theorem LawPrices.step {s s' : State G} {e : Event} (hp : LawPrices G s)
           rw [hs1]
           unfold decideLaw
           simp [hx]
+          rfl
         · exfalso
           apply hsame
           rw [hl1, hs1]

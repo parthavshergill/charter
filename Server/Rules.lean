@@ -141,6 +141,7 @@ def parseClause (rs : List Res) : SExp → P Clause
       return .onBuild (← parseKind k) (← parseEffects1 rs "on-build" body)
   | .list (.atom "on-round-end" :: body) => .onRoundEnd <$> parseEffects1 rs "on-round-end" body
   | .list (.atom "on-roll" :: body) => .onRoll <$> parseEffects1 rs "on-roll" body
+  | .list (.atom "now" :: body) => .now <$> parseEffects1 rs "now" body
   | .list [.atom "set-cost", k, b] => return .setCost (← parseKind k) (← parseBundle rs b)
   | .list [.atom "set-points", k, n] => return .setPoints (← parseKind k) (← parseNat n)
   | .list [.atom "set-bank-rate", n] => return .setBankRate (← parseNat n)
@@ -265,6 +266,7 @@ def clauseS : Clause → SExp
   | .onBuild k b => .list (.atom "on-build" :: .atom k :: effectsS b)
   | .onRoundEnd b => .list (.atom "on-round-end" :: effectsS b)
   | .onRoll b => .list (.atom "on-roll" :: effectsS b)
+  | .now b => .list (.atom "now" :: effectsS b)
   | .setCost k b => .list [.atom "set-cost", .atom k, bundleS b]
   | .setPoints k n => .list [.atom "set-points", .atom k, natS n]
   | .setBankRate n => .list [.atom "set-bank-rate", natS n]

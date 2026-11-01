@@ -152,11 +152,16 @@ theorem body_ok {s s1 : State G} {e : Event} (hP : PiecesOk s) (hO : OffersOk s)
     · exact ⟨Posted.refl rfl rfl, hP, hO, hD⟩
     · exact ⟨Posted.refl rfl rfl, hP, hO, hD⟩
   | vote seat i y =>
-    obtain ⟨_, _, _, _, _, _, ⟨_, rfl⟩ | ⟨_, rfl⟩⟩ := voteBody_ok h
+    obtain ⟨_, _, L0, _, _, _, ⟨_, rfl⟩ | ⟨_, rfl⟩⟩ := voteBody_ok h
     · unfold decideLaw
       simp only
       split
-      · exact ⟨Posted.refl rfl rfl, hP, hO, hD⟩
+      · obtain ⟨b, hb⟩ := settle_posts s (Law.plan s .now L0)
+        have hbk : (s.afterPosting (s.decreeEntries L0)).books = b := afterPosting_books hb
+        refine ⟨⟨s.decreeEntries L0, rfl, ?_, decreeEntries_ok s L0⟩, applyOrders_owner hP (decreeOrders_ok s L0), hO, hD⟩
+        show s.books.postAll (s.decreeEntries L0) = some (s.afterPosting (s.decreeEntries L0)).books
+        rw [hbk]
+        exact hb
       · exact ⟨Posted.refl rfl rfl, hP, hO, hD⟩
     · exact ⟨Posted.refl rfl rfl, hP, hO, hD⟩
   | sign seat i =>
