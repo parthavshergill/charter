@@ -91,7 +91,7 @@ export const TIERS = [
 ];
 const TIER_KEY = 'charter.tier';
 const PACE_FRAMES = 40;     // how many frames one judgement of the pace takes
-const PACE_SLOW_MS = 38;    // slower than about 26 frames a second, step down a tier
+const PACE_SLOW_MS = 35;    // slower than about 28 frames a second, step down a tier
 const PACE_HOPELESS_MS = 90; // this slow on the lowest tier, say so: the page can use the 2D board
 const isTouchDevice = () => typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
 function storedTier() { try { const n = parseInt(localStorage.getItem(TIER_KEY)); return n >= 0 && n < TIERS.length ? n : null; } catch { return null; } }

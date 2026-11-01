@@ -582,7 +582,8 @@ svg.seal { position: absolute; left: 50%; top: 100%; width: 52px; height: 52px; 
   .signline, .joinline .input { min-height: 44px; }
   .dock .x { top: 0; right: 0; width: 44px; height: 44px; }
   .dock h2, .lawshead { padding-right: var(--s6); }
-  .bankrow button, .pickrow button { width: 44px; height: 44px; }
+  .bankrow { flex-wrap: wrap; }
+  .bankrow button, .pickrow button { flex: none; width: 44px; height: 44px; }
   .pickrow .lbl { width: 100%; }
   .pickrow .num, .selectline .num, .selectline select, .declaresheet .drow input, .talkinput select, .talkinput .input { min-height: 44px; font-size: 16px; }
   .declaresheet .drow { grid-template-columns: 24px 1fr 64px auto; }
