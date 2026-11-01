@@ -30,16 +30,19 @@ def rows(obs, tables, w_in, t):
     return torch.relu(x @ w_in[t].T)
 
 
-def pointer_logits(obs, tables, w_in, h, ptr, kind_t, spot_t, link_t, act_spot, act_link, act_size):
-    """The pointer decoder's added scores, as a (B, act_size) tensor that is zero outside spot and link actions.
+def pointer_logits(obs, tables, w_in, h, ptr, kind_t, spot_t, link_t, act_spot, act_link, act_size,
+                   res_t=None, act_bank=None, E=None):
+    """The pointer decoder's added scores, as a (B, act_size) tensor that is zero outside spot, link (and bank)
+    actions. `ptr` has 2E rows, or 4E with the bank part (pass res_t and act_bank, and E).
 
     q = h @ ptr.T, split into q_spot and q_link (E each).
     logit(spot v, kind k) = sum_e q_spot[e] * r_spot[v][e] * r_kind[1 + k][e]    at act_spot + k * spots + v
     logit(link j)         = sum_e q_link[e] * r_link[j][e] * r_kind[0][e]        at act_link + j
+    logit(bank i -> j)    = q_give . r_res[i] + q_get . r_res[j]                  at act_bank + i * res + j
     """
-    E = ptr.shape[0] // 2
+    E = E or ptr.shape[0] // 2
     q = h @ ptr.T
-    qs, ql = q[:, :E], q[:, E:]
+    qs, ql = q[:, :E], q[:, E:2 * E]
     rk = rows(obs, tables, w_in, kind_t)            # (B, 1 + kinds, E)
     rs = rows(obs, tables, w_in, spot_t)            # (B, spots, E)
     rl = rows(obs, tables, w_in, link_t)            # (B, links, E)
@@ -50,4 +53,10 @@ def pointer_logits(obs, tables, w_in, h, ptr, kind_t, spot_t, link_t, act_spot, 
     out = out.index_put((torch.arange(B)[:, None], act_spot + torch.arange(spot[0].numel())[None, :]),
                         spot.reshape(B, -1))
     out = out.index_put((torch.arange(B)[:, None], act_link + torch.arange(link.shape[1])[None, :]), link)
+    if ptr.shape[0] == 4 * E:
+        rr = rows(obs, tables, w_in, res_t)                       # (B, res, E)
+        give = (rr * q[:, None, 2 * E:3 * E]).sum(2)              # (B, res)
+        get = (rr * q[:, None, 3 * E:]).sum(2)
+        bank = (give[:, :, None] + get[:, None, :]).reshape(B, -1)
+        out = out.index_put((torch.arange(B)[:, None], act_bank + torch.arange(bank.shape[1])[None, :]), bank)
     return out

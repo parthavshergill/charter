@@ -268,25 +268,38 @@ static void create_charter_entity_encoder(Encoder* enc) {
 //   logit(spot v, kind k) += sum_e q_spot[e] * r_spot[v][e] * r_kind[CE_LINK_KINDS + k][e]
 //   logit(link j)         += sum_e q_link[e] * r_link[j][e] * r_kind[0][e]
 //
+// With -DCE_POINTER_BANK as well, bank trades are scored from the two resources' own rows (rows are shuffled
+// each game, so a fixed output per row pair cannot know which resource it names):
+//
+//   logit(bank i -> j)    += sum_e q_give[e] * r_res[i][e] + sum_e q_get[e] * r_res[j][e]       (A is 4E x H)
+//
 // Action numbers follow rl/lean/CharterRL/Actions.lean: spot = CE_ACT_SPOT + k * spots + v,
-// link = CE_ACT_LINK + j (one link kind). The decoder's gradient on r goes back into the encoder through
+// link = CE_ACT_LINK + j (one link kind), bank = CE_ACT_BANK + i * resources + j. The decoder's gradient on r goes back into the encoder through
 // ext_grad. rl/entity/entity_torch.py `pointer_logits` is the reference.
 #ifdef CE_POINTER
 static constexpr int CE_NSPOT = CE_ROWS[CE_SPOT_TABLE];
 static constexpr int CE_NLINK = CE_ROWS[CE_LINK_TABLE];
 static_assert(CE_LINK_KINDS == 1, "the pointer decoder handles one link kind");
+static constexpr int CE_NRES = CE_ROWS[CE_RES_TABLE];
+#ifdef CE_POINTER_BANK
+static constexpr int CE_PQ = 4;      // query blocks: spot, link, bank give, bank get
+static constexpr int CE_NBANK = CE_NRES * CE_NRES;
+#else
+static constexpr int CE_PQ = 2;
+static constexpr int CE_NBANK = 0;
+#endif
 static_assert(CE_ROWS[CE_KIND_TABLE] == CE_LINK_KINDS + CE_SPOT_KINDS, "kinds table: link kinds, then spot kinds");
 
 struct CharterPointerWeights {
     DecoderWeights base;  // first, so code that reads DecoderWeights (pufferl.cu reads .continuous) still works
-    Prec ptr;             // A: (2E, H), rows 0..E-1 for spots, E..2E-1 for links
+    Prec ptr;             // A: (CE_PQ * E, H): spots, links, then (CE_POINTER_BANK) bank give and bank get
 };
 
 struct CharterPointerActivations {
     DecoderActivations base;
     CharterEntityActivations* enc;
-    Prec q;        // (B, 2E)
-    Prec grad_q;   // (B, 2E), training only
+    Prec q;        // (B, CE_PQ * E)
+    Prec grad_q;   // (B, CE_PQ * E), training only
     Prec ptr_wgrad, grad_in2;
 };
 
@@ -300,10 +313,10 @@ __device__ __forceinline__ float ce_r(const precision_t* ent_h, int B, int t, in
 __global__ void cp_forward_kernel(precision_t* __restrict__ out, const precision_t* __restrict__ q,
         const precision_t* __restrict__ ent_h, int B, int od1) {
     int64_t idx = (int64_t)blockIdx.x * blockDim.x + threadIdx.x;
-    const int per = CE_NSPOT * CE_SPOT_KINDS + CE_NLINK;
+    const int per = CE_NSPOT * CE_SPOT_KINDS + CE_NLINK + CE_NBANK;
     if (idx >= (int64_t)B * per) return;
     int b = idx / per, i = idx - (int64_t)b * per;
-    const precision_t* qb = q + (int64_t)b * 2 * CE_E;
+    const precision_t* qb = q + (int64_t)b * CE_PQ * CE_E;
     float sum = 0.0f;
     int act;
     if (i < CE_NSPOT * CE_SPOT_KINDS) {
@@ -312,12 +325,19 @@ __global__ void cp_forward_kernel(precision_t* __restrict__ out, const precision
             sum += to_float(qb[e]) * ce_r(ent_h, B, CE_SPOT_TABLE, b, v, e)
                  * ce_r(ent_h, B, CE_KIND_TABLE, b, CE_LINK_KINDS + k, e);
         act = CE_ACT_SPOT + k * CE_NSPOT + v;
-    } else {
+    } else if (i < CE_NSPOT * CE_SPOT_KINDS + CE_NLINK) {
         int j = i - CE_NSPOT * CE_SPOT_KINDS;
         for (int e = 0; e < CE_E; e++)
             sum += to_float(qb[CE_E + e]) * ce_r(ent_h, B, CE_LINK_TABLE, b, j, e)
                  * ce_r(ent_h, B, CE_KIND_TABLE, b, 0, e);
         act = CE_ACT_LINK + j;
+    } else {
+        int m = i - CE_NSPOT * CE_SPOT_KINDS - CE_NLINK;
+        int gi = m / CE_NRES, gj = m - gi * CE_NRES;
+        for (int e = 0; e < CE_E; e++)
+            sum += to_float(qb[2 * CE_E + e]) * ce_r(ent_h, B, CE_RES_TABLE, b, gi, e)
+                 + to_float(qb[3 * CE_E + e]) * ce_r(ent_h, B, CE_RES_TABLE, b, gj, e);
+        act = CE_ACT_BANK + m;
     }
     int64_t o = (int64_t)b * od1 + act;
     out[o] = from_float(to_float(out[o]) + sum);
@@ -332,8 +352,10 @@ __global__ void cp_backward_kernel(precision_t* __restrict__ grad_q, precision_t
     if (idx >= B * CE_E) return;
     int b = idx / CE_E, e = idx - b * CE_E;
     const precision_t* g = G + (int64_t)b * od1;
-    float qs = to_float(q[(int64_t)b * 2 * CE_E + e]);
-    float ql = to_float(q[(int64_t)b * 2 * CE_E + CE_E + e]);
+    const precision_t* qb = q + (int64_t)b * CE_PQ * CE_E;
+    precision_t* gq = grad_q + (int64_t)b * CE_PQ * CE_E;
+    float qs = to_float(qb[e]);
+    float ql = to_float(qb[CE_E + e]);
     auto ext = [&](int t, int r) -> precision_t& {
         return ext_grad[((int64_t)ce_rowstart_dev[t] * B + (int64_t)b * ce_rows_dev[t] + r) * CE_E + e];
     };
@@ -367,8 +389,25 @@ __global__ void cp_backward_kernel(precision_t* __restrict__ grad_q, precision_t
 #if CE_SEEDED_ERROR == 4
     dqs *= 1.5f;  // seeded error: a wrong gradient on A
 #endif
-    grad_q[(int64_t)b * 2 * CE_E + e] = from_float(dqs);
-    grad_q[(int64_t)b * 2 * CE_E + CE_E + e] = from_float(dql);
+    gq[e] = from_float(dqs);
+    gq[CE_E + e] = from_float(dql);
+#ifdef CE_POINTER_BANK
+    // logit(i, j) += qg . r_i + qt . r_j: each resource row gets the gradient of both roles.
+    float qg = to_float(qb[2 * CE_E + e]), qt = to_float(qb[3 * CE_E + e]), dqg = 0.0f, dqt = 0.0f;
+    float rr[CE_NRES], dr[CE_NRES];
+    for (int i = 0; i < CE_NRES; i++) { rr[i] = ce_r(ent_h, B, CE_RES_TABLE, b, i, e); dr[i] = 0.0f; }
+    for (int i = 0; i < CE_NRES; i++)
+        for (int j = 0; j < CE_NRES; j++) {
+            float gv = to_float(g[CE_ACT_BANK + i * CE_NRES + j]);
+            dqg += gv * rr[i];
+            dqt += gv * rr[j];
+            dr[i] += gv * qg;
+            dr[j] += gv * qt;
+        }
+    for (int i = 0; i < CE_NRES; i++) ext(CE_RES_TABLE, i) = from_float(dr[i]);
+    gq[2 * CE_E + e] = from_float(dqg);
+    gq[3 * CE_E + e] = from_float(dqt);
+#endif
 }
 
 static Prec cp_forward(void* w, void* activations, Prec input, cudaStream_t stream) {
@@ -376,10 +415,10 @@ static Prec cp_forward(void* w, void* activations, Prec input, cudaStream_t stre
     CharterPointerActivations* a = (CharterPointerActivations*)activations;
     Prec out = decoder_forward(&cw->base, &a->base, input, stream);
     int B = input.shape[0];
-    Prec q = {.data = a->q.data, .shape = {B, 2 * CE_E}};
+    Prec q = {.data = a->q.data, .shape = {B, CE_PQ * CE_E}};
     puf_mm(&input, &cw->ptr, &q, stream);
     int od1 = cw->base.output_dim + 1;
-    int per = CE_NSPOT * CE_SPOT_KINDS + CE_NLINK;
+    int per = CE_NSPOT * CE_SPOT_KINDS + CE_NLINK + CE_NBANK;
     cp_forward_kernel<<<grid_size(B * per), BLOCK_SIZE, 0, stream>>>(out.data, q.data, a->enc->ent_h.data, B, od1);
     return out;
 }
@@ -411,7 +450,7 @@ static void cp_init_weights(void* w, ulong* seed, cudaStream_t stream) {
 static void cp_reg_params(void* w, Allocator* alloc) {
     CharterPointerWeights* cw = (CharterPointerWeights*)w;
     decoder_reg_params(&cw->base, alloc);
-    cw->ptr = {.shape = {2 * CE_E, cw->base.hidden_dim}};
+    cw->ptr = {.shape = {CE_PQ * CE_E, cw->base.hidden_dim}};
     alloc_register(alloc, &cw->ptr);
 }
 
@@ -421,10 +460,10 @@ static void cp_reg_train(void* w, void* activations, Allocator* acts, Allocator*
     assert(!cw->base.continuous && ce_last_acts && ce_last_acts->ext_grad.shape[0] == B_TT);
     decoder_reg_train(&cw->base, &a->base, acts, grads, B_TT);
     a->enc = ce_last_acts;
-    a->q = {.shape = {B_TT, 2 * CE_E}};
-    a->grad_q = {.shape = {B_TT, 2 * CE_E}};
+    a->q = {.shape = {B_TT, CE_PQ * CE_E}};
+    a->grad_q = {.shape = {B_TT, CE_PQ * CE_E}};
     a->grad_in2 = {.shape = {B_TT, cw->base.hidden_dim}};
-    a->ptr_wgrad = {.shape = {2 * CE_E, cw->base.hidden_dim}};
+    a->ptr_wgrad = {.shape = {CE_PQ * CE_E, cw->base.hidden_dim}};
     alloc_register(acts, &a->q);
     alloc_register(acts, &a->grad_q);
     alloc_register(acts, &a->grad_in2);
@@ -437,7 +476,7 @@ static void cp_reg_rollout(void* w, void* activations, Allocator* alloc, int B) 
     assert(ce_last_acts);
     decoder_reg_rollout(&cw->base, &a->base, alloc, B);
     a->enc = ce_last_acts;
-    a->q = {.shape = {B, 2 * CE_E}};
+    a->q = {.shape = {B, CE_PQ * CE_E}};
     alloc_register(alloc, &a->q);
 }
 

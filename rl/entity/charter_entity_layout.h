@@ -16,4 +16,6 @@
 #define CE_ACT_SPOT 215
 #define CE_ACT_LINK 131
 #define CE_SPOT_KINDS 8
+#define CE_RES_TABLE 2
+#define CE_ACT_BANK 3
 #define CE_LINK_KINDS 1

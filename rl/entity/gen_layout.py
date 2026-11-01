@@ -44,6 +44,8 @@ def header(layout):
         f"#define CE_ACT_SPOT {layout['actions']['spot']}",
         f"#define CE_ACT_LINK {layout['actions']['link']}",
         f"#define CE_SPOT_KINDS {layout['limits']['spot_kinds']}",
+        f"#define CE_RES_TABLE {names.index('resources')}",
+        f"#define CE_ACT_BANK {layout['actions']['bank']}",
         f"#define CE_LINK_KINDS {layout['limits']['link_kinds']}",
         "",
     ])

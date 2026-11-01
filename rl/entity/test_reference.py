@@ -9,6 +9,7 @@ of those builds must fail the same comparison.
 The pointer decoder (-DCE_POINTER) is checked the same way, on top of the encoder: logits and value, and
 every weight gradient (encoder, decoder, pointer block), against entity_torch.pointer_logits. Its seeded
 errors: the decoder's gradient on the encoder rows dropped (3), and a wrong gradient on the pointer block (4).
+Both pointer builds are checked: spots and links only, and with bank trades (-DCE_POINTER_BANK).
 
 Usage: python test_reference.py <pufferlib dir> <layout.json> <work dir>
 Needs nvcc and a GPU. Prints one JSON line per build and exits 1 on failure.
@@ -30,10 +31,11 @@ BATCH, HIDDEN = 37, 128
 TOL = {"float": 1e-4, "bf16": 5e-2}
 
 
-def build(puffer, work, seeded, precision, pointer=False):
+def build(puffer, work, seeded, precision, pointer=0):
     raylib = next(puffer.glob("raylib-*/include"))
-    so = work / f"entity_test_{precision}_{seeded}{'_ptr' if pointer else ''}.so"
-    flags = (["-DPRECISION_FLOAT"] if precision == "float" else []) + (["-DCE_POINTER"] if pointer else [])
+    so = work / f"entity_test_{precision}_{seeded}_ptr{pointer}.so"
+    flags = ((["-DPRECISION_FLOAT"] if precision == "float" else []) + (["-DCE_POINTER"] if pointer else [])
+             + (["-DCE_POINTER_BANK"] if pointer == 2 else []))
     cmd = ["nvcc", "-shared", "-o", str(so), str(HERE / "test_entity_cuda.cu"),
            *flags, f"-DCE_SEEDED_ERROR={seeded}",
            "-I", str(puffer / "src"), "-I", str(puffer / "vendor"), "-I", str(raylib), "-I", str(work), "-I", str(HERE),
@@ -155,7 +157,8 @@ def run_pointer(lib, ts, layout, rng, precision):
     base = h @ tw[T + 1].T
     logits = base[:, :act] + pointer_logits(o, tables_, tw[:T], h, tw[T + 2], names.index("kinds"),
                                             names.index("spots"), names.index("links"),
-                                            layout["actions"]["spot"], layout["actions"]["link"], act)
+                                            layout["actions"]["spot"], layout["actions"]["link"], act,
+                                            names.index("resources"), layout["actions"]["bank"], tw[0].shape[0])
     ref = torch.cat([logits, base[:, act:]], 1)
     (logits * torch.tensor(up_l, dtype=torch.float64)).sum().add(
         (base[:, act] * torch.tensor(up_v, dtype=torch.float64)).sum()).backward()
@@ -175,8 +178,9 @@ def main():
     ts = tables(layout)
     ok = True
     only_pointer = "--pointer" in sys.argv
-    cases = [] if only_pointer else [(p, s, False) for p, s in (("float", 0), ("float", 1), ("float", 2), ("bf16", 0))]
-    cases += [("float", 0, True), ("float", 3, True), ("float", 4, True), ("bf16", 0, True)]
+    cases = [] if only_pointer else [(p, s, 0) for p, s in (("float", 0), ("float", 1), ("float", 2), ("bf16", 0))]
+    for ptr_kind in (1, 2):   # 1: spots and links; 2: also bank trades (-DCE_POINTER_BANK)
+        cases += [("float", 0, ptr_kind), ("float", 3, ptr_kind), ("float", 4, ptr_kind), ("bf16", 0, ptr_kind)]
     for precision, seeded, pointer in cases:
         lib = build(puffer, work, seeded, precision, pointer)
         rng = np.random.default_rng(seeded + 7)

@@ -54,13 +54,16 @@ def collect(games, out, seed=7):
 
 class EntityPolicy(torch.nn.Module):
     def __init__(self, E, hidden, pointer):
+        """pointer: 0 none, 1 spots and links, 2 also bank trades."""
         super().__init__()
         self.w_in = torch.nn.ParameterList([torch.nn.Parameter(torch.randn(E, w) * (2 / w) ** 0.5)
                                             for _, _, _, w in TABLES])
         self.w_out = torch.nn.Parameter(torch.randn(hidden, len(TABLES) * E) * (len(TABLES) * E) ** -0.5)
         self.gru = MinGRU(hidden)
         self.decoder = torch.nn.Parameter(torch.randn(ACTS + 1, hidden) * hidden ** -0.5)
-        self.ptr = torch.nn.Parameter(torch.randn(2 * E, hidden) * 0.1 * hidden ** -0.5) if pointer else None
+        self.ptr = (torch.nn.Parameter(torch.randn((4 if pointer == 2 else 2) * E, hidden) * 0.1 * hidden ** -0.5)
+                    if pointer else None)
+        self.E = E
 
     def forward(self, obs):
         ts = [(o, r, w) for _, o, r, w in TABLES]
@@ -71,7 +74,8 @@ class EntityPolicy(torch.nn.Module):
         if self.ptr is not None:
             logits = logits + pointer_logits(obs, ts, list(self.w_in), x, self.ptr, NAMES.index("kinds"),
                                               NAMES.index("spots"), NAMES.index("links"),
-                                              LAYOUT["actions"]["spot"], LAYOUT["actions"]["link"], ACTS)
+                                              LAYOUT["actions"]["spot"], LAYOUT["actions"]["link"], ACTS,
+                                              NAMES.index("resources"), LAYOUT["actions"]["bank"], self.E)
         return logits, y[:, ACTS]
 
     def blocks(self):
@@ -91,7 +95,8 @@ def main():
     ap.add_argument("data")
     ap.add_argument("--collect", type=int, default=0, help="play this many games first and write DATA")
     ap.add_argument("--out", required=True)
-    ap.add_argument("--pointer", action="store_true")
+    ap.add_argument("--pointer", action="store_true", help="spots and links")
+    ap.add_argument("--pointer-bank", action="store_true", help="spots, links and bank trades")
     ap.add_argument("--entity-dim", type=int, default=32)
     ap.add_argument("--hidden", type=int, default=128)
     ap.add_argument("--epochs", type=int, default=6)
@@ -108,7 +113,8 @@ def main():
     held = torch.tensor(z["game"] % 10 == 0)
     tr, te = (~held).nonzero().squeeze(1), held.nonzero().squeeze(1)
     torch.manual_seed(0)
-    pol = EntityPolicy(args.entity_dim, args.hidden, args.pointer)
+    pointer = 2 if args.pointer_bank else int(args.pointer)
+    pol = EntityPolicy(args.entity_dim, args.hidden, pointer)
     opt = torch.optim.Adam(pol.parameters(), lr=args.lr)
 
     def loss_acc(idx):
@@ -132,9 +138,9 @@ def main():
               f"was a choice {100 * a:.1f}%", flush=True)
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
     save_puffer(pol, args.out)
-    meta = {"name": "bc-hand-entity" + ("-pointer" if args.pointer else ""), "format": "puffer-entity",
+    meta = {"name": "bc-hand-entity" + ["", "-pointer", "-pointer-bank"][pointer], "format": "puffer-entity",
             "encoder": "entity", "obs_size": LAYOUT["base_size"], "act_size": ACTS, "hidden": args.hidden,
-            "layers": 1, "entity_dim": args.entity_dim, "pointer": int(args.pointer),
+            "layers": 1, "entity_dim": args.entity_dim, "pointer": pointer,
             "settings": {"vote_mode": "bot", "move_rows": False}, "agreement_with_hand": round(a, 4)}
     json.dump(meta, open(args.out + ".json", "w"))
     print(f"wrote {args.out}")
