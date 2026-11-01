@@ -218,7 +218,7 @@ def extension_pack(srv):
     limited, a counter stays off the screen, and bots play it to the end. Returns a table to check after
     a restart."""
     defs = {d["id"]: d for d in srv.get("/api/defs")}
-    check(list(defs) == ["island", "not-catan", "slime-parliament", "ai-bubble", "strike-the-earth", "pirate-republic"], "the lobby lists the base game first, then the packs")
+    check(list(defs) == ["island", "not-catan", "slime-parliament", "ai-bubble", "strike-the-earth", "pirate-republic", "the-pit"], "the lobby lists the base game first, then the packs")
     check(all(d["name"] and d["blurb"] for d in defs.values()), "each pack has a name and a sentence")
     check(defs["not-catan"]["minSeats"] == 3 and defs["not-catan"]["maxSeats"] == 4, "a pack says how many seats it supports")
     for n in (2, 5):
@@ -336,6 +336,18 @@ def pirate_pack(srv):
     code, v = bots_only(srv, 4, "pirate-republic", "wharf")
     check(v["round"] <= 10 and len(v["laws"]) >= 4, "the pack ends by round 10 with its laws in force")
     check(any("lost a wharf" in (l if isinstance(l, str) else l.get("text", "")) for l in v["chronicle"]), "the Navy burns a wharf at the end of round 5")
+    SCENES.append((srv.raw(f"/api/games/{code}/scene"), [], ["Law 0"]))
+
+
+def pit_pack(srv):
+    """The Pit: bots play it to the end with no deals and no bids. The spot market still pays them, and
+    no membership is sold, since no bot bids."""
+    d = next(x for x in srv.get("/api/defs") if x["id"] == "the-pit")
+    check("membership" in d["look"]["icons"] and "gold" in d["look"]["icons"], "the pack draws gold and memberships")
+    code, v = bots_only(srv, 4, "the-pit", "farm")
+    check({"wheat", "gold", "membership"} <= set(v["resources"]), "wheat, gold and memberships are on the screen")
+    check(v["round"] <= 10 and len(v["laws"]) >= 2, "the pack ends by round 10 with its laws in force")
+    check(v["treasury"].get("membership", 0) == 10, "with no bids, every membership is still on the secretary's desk")
     SCENES.append((srv.raw(f"/api/games/{code}/scene"), [], ["Law 0"]))
 
 
@@ -981,6 +993,7 @@ def main():
         bubble_pack(srv)
         strike_pack(srv)
         pirate_pack(srv)
+        pit_pack(srv)
         claude_table = claude_with_no_key(srv)
         talk_and_replay(srv, code, token, v)
         a_roll_law_fires(srv)

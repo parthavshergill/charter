@@ -78,6 +78,15 @@ def lawsFor (spec : GameSpec) : List String :=
     , "(law \"Roller's gift\" (on-roll (transfer bank actor rum 1)))"
     , "(law \"Sack on a 7\" (on-roll (for-each-player (and (= rolled 7) (< (points actor) (points each))) (move-piece each actor wharf))))"
     , "(law \"Lighthouses\" (new-piece lighthouse (bundle (powder 2) (timber 2)) (points 2) (attach wharf) (yield 1) (limit 2)))" ]
+  else if spec.id == pitSpec.id then
+    [ "(law \"Half on an elevator\" (on-build elevator (transfer actor treasury gold (/ (holding actor gold) 2))))"
+    , "(law \"Rail toll\" (on-build rail (transfer actor treasury iron 1)))"
+    , "(law \"Gold levy\" (on-round-end (for-each-player true (transfer each treasury gold (/ (holding each gold) 2)))))"
+    , "(law \"Tithe\" (on-harvest (transfer actor treasury res (/ amount 2))))"
+    , "(law \"Cheap rails\" (set-cost rail (bundle (lumber 1))))"
+    , "(law \"Bid tax\" (on-round-end (for-each-player (< 0 (declared each gold)) (transfer each treasury gold 1))))"
+    , "(law \"Panic on a 12\" (on-roll (for-each-player (= rolled 12) (transfer each bank wheat (holding each wheat)))))"
+    , "(law \"Mills\" (new-piece mill (bundle (lumber 2) (gold 2)) (points 2) (attach farm) (yield 1) (limit 2)))" ]
   else
     [ "(law \"Half on a city\" (on-build city (transfer actor treasury grain (/ (holding actor grain) 2))))"
     , "(law \"Half on a road\" (on-build road (transfer actor treasury timber (/ (holding actor timber) 2))))"

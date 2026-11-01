@@ -20,6 +20,9 @@ import Charter.Games.StrikeTheEarthTests
 import Charter.Games.PirateRepublic
 import Charter.Games.PirateRepublicTests
 import Charter.Games.PirateRepublicWords
+import Charter.Games.ThePit
+import Charter.Games.ThePitWords
+import Charter.Games.ThePitTests
 import Charter.Games.Witnesses
 import Charter.Proofs.IslandWitness
 import Charter.Scene.OfState
