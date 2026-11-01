@@ -242,11 +242,17 @@ def _train(run, train_args="", seconds=600, move_rows=False, patch=True, encoder
         json.dump(attempts, open(f"{out}/attempts.json", "w"), indent=1)
         vol.commit()
 
+    # Env settings that eval must repeat, read from the train args (rl/eval takes them from the meta).
+    settings = {"vote_mode": "bot", "move_rows": move_rows}
+    for tok in train_args.split():
+        if tok.startswith("--env.declare_always="):
+            settings["declare_always"] = tok.split("=")[1] not in ("0", "false")
+
     def meta_for(c):
         meta = {"name": f"{run}/{os.path.basename(c)}", "format": f"puffer-{encoder}", "encoder": encoder,
                 "layout": layout["version"], "obs_size": obs, "act_size": layout["act_size"] + 1, "hidden": hidden, "layers": layers,
                 "steps": base_steps + int(os.path.basename(c)[:-4]),
-                "settings": {"vote_mode": "bot", "move_rows": move_rows}, "train_args": train_args}
+                "settings": settings, "train_args": train_args}
         meta.update(json.loads(meta_extra) if meta_extra else {})
         return meta
 
@@ -310,8 +316,12 @@ def bc_attention(out: str, games: int = 400, args: str = ""):
     """Collect `hand`'s decisions (rl/imitation/collect.py) and clone them into the attention policy."""
     os.makedirs(out, exist_ok=True)
     data = f"{out}/hand.npz"
+    collect = "--seats 2-6"
+    if "--declare-always" in args:   # for collect.py, not bc_attention.py
+        args = args.replace("--declare-always", "")
+        collect += " --declare-always"
     if not os.path.exists(data):
-        sh(f"cd {SRC}/.. && python3 rl/imitation/collect.py --games {games} --seats 2-6 --out {data}")
+        sh(f"cd {SRC}/.. && python3 rl/imitation/collect.py --games {games} {collect} --out {data}")
     sh("pip install -q torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu 2>&1 | tail -1")
     code, text = sh(f"cd {SRC}/.. && python3 rl/arch/attention/bc_attention.py {data} --out {out}/bc.bin {args}")
     vol.commit()
