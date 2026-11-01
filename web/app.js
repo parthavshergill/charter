@@ -232,7 +232,7 @@ async function lobby() {
   const packList = h("div", { class: "packs" }, h("span", { class: "smallcaps lbl", "aria-hidden": "true" }, "World"), worldButton);
   const packNote = h("p", { class: "packnote" });
   // The chosen game's line and empty board. The base game is first, so the sheet starts with its line.
-  const tagline = h("p", { class: "sub" }, "Settle an island. Rewrite its rules. The constitution holds.");
+  const tagline = h("p", { class: "sub" }, "Settle an island. Rewrite its rules.");
   let stagePlayer = null, stageWanted = null, stageDrawn = null;
   const scenes = new Map();
   /** A world's scene with its mesh files loaded, so that it draws at once and with no stand-ins. Nothing shows
