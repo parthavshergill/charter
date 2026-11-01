@@ -133,7 +133,9 @@ def rollSections (s s' : State G) (L : Law) : List Section :=
     else acc ++ [([r], what)]) []
   let weight (g : List Nat × (List Row × List PieceRow)) : Nat := (g.1.map (Scene.chanceOf G)).sum
   let sorted := (grouped.toArray.qsort fun a b => weight a > weight b).toList
-  sorted.map fun (rs, (rows, pieces)) => { whenText := rollWords (Scene.rollsOf G) rs, dice := true, rows, pieces }
+  -- These rows are the difference the law makes, and not payments. The words say so.
+  sorted.map fun (rs, (rows, pieces)) =>
+    { whenText := s!"{rollWords (Scene.rollsOf G) rs}, compared with today", dice := true, rows, pieces }
 
 def buildSections (s s' : State G) (you : Option Nat) (names : Nat → String) : List Section :=
   match you, s.turnOrder.head? with
@@ -161,6 +163,13 @@ def unpaidBuildNotes (s s' : State G) (actor : Nat) : List String :=
     if (buildRows s s' actor d.name).isEmpty then none else
     some s!"It also acts on {Charter.Text.article d.name}, which this seat cannot pay for today, so there are no figures for that yet."
 
+/-- A law that waits on the round or the dice can show nothing now and still act later. -/
+def waitingNote (L : Law) : List String :=
+  let reads := (if Rules.lawReadsWord L "round" then ["the round"] else []) ++
+    (if Rules.lawReadsWord L "rolled" then ["the dice"] else [])
+  if reads.isEmpty then [] else
+  [s!"This law reads {Charter.Text.andList reads}, so it may act later than this shows. Read its source."]
+
 def ruleNotes (s s' : State G) : List String :=
   let bank := if s'.rules.bankRate != s.rules.bankRate then
       [s!"Today the bank takes {s.rules.bankRate} for 1."] else []
@@ -186,6 +195,22 @@ def sectionJson (x : Section) : Json :=
     ("rows", Json.arr (x.rows.map rowJson).toArray),
     ("pieces", Json.arr (x.pieces.map pieceRowJson).toArray)]
 
+/-- What a law's `now` clauses do, the moment it passes. It is the first thing that happens. -/
+def nowSection (s s' : State G) (L : Law) : List Section :=
+  let rows := rowsOf s [] (s.decreeEntries L)
+  let pieces := pieceRowsOf s [] [] s.pieces s'.pieces
+  if rows.isEmpty && pieces.isEmpty then [] else
+  [{ whenText := "The moment this passes", dice := false, rows, pieces }]
+
+/-- This law's figures change when seats declare other numbers. A law in force that reads declarations
+may have nothing to do with this law's figures, so this tries it: each seat declares a different large
+number, and the figures are compared. -/
+def figuresMoveWithDeclared (s : State G) (id : Nat) (L : Law) (you : Option Nat) (names : Nat → String) : Bool :=
+  let figures (x : State G) : String :=
+    let x' := x.withLaw id L
+    (Json.arr ((nowSection x x' L ++ roundEndSections x x' ++ buildSections x x' you names ++ rollSections x x' L).map sectionJson).toArray).compress
+  figures s != figures { s with declared := fun p _ => maxDeclared - p }
+
 /-- The preview of a law for one viewer, as the screen shows it. -/
 def lawPreview (s : State G) (id : Nat) (L : Law) (you : Option Nat) (names : Nat → String) : Json :=
   let s' := s.withLaw id L
@@ -202,30 +227,27 @@ def lawPreview (s : State G) (id : Nat) (L : Law) (you : Option Nat) (names : Na
       ("wins", toJson (winner == some p))])
   let ends := L.clauses.any Clause.isEndGame
   let rolls := if ends then [] else rollSections s s' L
-  -- What a law's `now` clauses do is the first thing that happens, the moment it passes.
-  let nowRows := rowsOf s [] (s.decreeEntries L)
-  let nowPieces := pieceRowsOf s [] [] s.pieces s'.pieces
-  let nowSection : List Section :=
-    if nowRows.isEmpty && nowPieces.isEmpty then [] else
-    [{ whenText := "The moment this passes", dice := false, rows := nowRows, pieces := nowPieces }]
   -- A law that ends the game does nothing after it passes.
-  let sections := if ends then nowSection else
-    nowSection ++ roundEndSections s s' ++ buildSections s s' you names ++ rolls.take 3
+  let sections := if ends then nowSection s s' L else
+    nowSection s s' L ++ roundEndSections s s' ++ buildSections s s' you names ++ rolls.take 3
   let actor := (you.orElse fun _ => s.turnOrder.head?).getD 0
   let refused := match lawProblems G s L with
     | [] => []
     | ps => [s!"As things stand, this law would not take effect: {", ".intercalate ps}."]
-  -- Declarations can change until the round ends, so figures that read them hold only if they stay.
-  let readsDeclared := Rules.lawReadsDeclared L || s.laws.any (Rules.lawReadsDeclared ·.2)
-  let declared := if readsDeclared then
+  -- Declarations can change until the round ends, so figures that depend on them hold only if they stay.
+  let dependsOnDeclared := Rules.lawReadsDeclared L ||
+    (s.laws.any (Rules.lawReadsDeclared ·.2) && figuresMoveWithDeclared s id L you names)
+  let declared := if dependsOnDeclared then
       ["These figures hold if declarations stay as they are. A seat can change its own on its turn."]
     else []
   let ending := match ends, final, winner with
     | true, some x, some w =>
       let who := if you == some w then "You" else names w
-      toJson s!"This ends the game the moment it passes. {who} would win with {x.pointsOf w} points."
+      let tied := (x.turnOrder.filter (x.pointsOf · == x.pointsOf w)).length > 1
+      let tie := if tied then " A tie goes to the seat earlier in turn order." else ""
+      toJson s!"This ends the game the moment it passes. {who} would win with {x.pointsOf w} points.{tie}"
     | _, _, _ => Json.null
-  let notes := refused ++ declared ++ ruleNotes s s' ++ unpaidBuildNotes s s' actor
+  let notes := refused ++ waitingNote L ++ declared ++ ruleNotes s s' ++ unpaidBuildNotes s s' actor
   Json.mkObj
     [ ("sections", Json.arr (sections.map sectionJson).toArray)
     , ("moreRolls", toJson (rolls.length - min rolls.length 3))

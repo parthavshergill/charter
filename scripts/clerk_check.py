@@ -540,9 +540,42 @@ def check_descriptions(srv, data, port, api_port):
     return Server(port, data, api_port)
 
 
+def stated_limits():
+    """The limits the clerk and the seats read must be the limits the rules enforce."""
+    with open(os.path.join(ROOT, "Charter", "Words", "Game.lean")) as f:
+        limit = {k: int(v) for k, v in re.findall(r"def (\w+) : Nat := (\d+)", f.read())}
+    with open(PROMPT) as f:
+        clerk = f.read()
+    with open(os.path.join(ROOT, "Server", "player_rules.md")) as f:
+        seat = f.read()
+    stated = [
+        (clerk, r"A law has at most (\d+) parts", limit["maxLawSize"]),
+        (clerk, r"A law can plan at most (\d+) payments", limit["maxPlannedEntries"]),
+        (clerk, r"all the laws in force together at most (\d+)", limit["maxPlannedTotal"]),
+        (clerk, r"At most (\d+) laws are in force", limit["maxLawsInForce"]),
+        (clerk, r"at most (\d+) kinds of piece", limit["maxPieceKinds"]),
+        (clerk, r"at (\d+) seats, one `for-each-player`", limit["maxSeats"]),
+        (clerk, r"can hold at most (\d+) of them", limit["maxPlannedEntries"] // limit["maxSeats"]),
+        (seat, r"A law can plan at most (\d+) payments", limit["maxPlannedEntries"]),
+        (seat, r"all the laws in force together at most (\d+)", limit["maxPlannedTotal"]),
+        (seat, r"At most (\d+) laws can be in force", limit["maxLawsInForce"]),
+    ]
+    for text, pattern, want in stated:
+        found = re.findall(pattern, text)
+        check(found and all(int(n) == want for n in found), f"the text says {want} where it matches: {pattern}")
+    words = {2: "two"}
+    check(f"each seat can have {words[limit['maxOpenPerSeat']]} proposals open" in seat, "the seat's rules state the open-proposal limit")
+    # A number in a limit sentence that nothing above looked at is a limit nobody is checking.
+    known = {limit[k] for k in ("maxLawSize", "maxPlannedEntries", "maxPlannedTotal", "maxLawsInForce", "maxPieceKinds")}
+    for text in (clerk, seat):
+        for n in re.findall(r"[Aa]t most (\d+) (?:laws|payments|parts|kinds)", text):
+            check(int(n) in known, f"at most {n} is a limit in Game.lean")
+
+
 def main():
     if not os.path.exists(BIN):
         raise SystemExit("run make install first")
+    stated_limits()
     api = http.server.ThreadingHTTPServer(("127.0.0.1", 0), StandIn)
     threading.Thread(target=api.serve_forever, daemon=True).start()
     api_port = api.server_address[1]

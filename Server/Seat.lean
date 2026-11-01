@@ -272,7 +272,12 @@ def legalBlock (sit : Situation) : String :=
   let declares := if readsDeclared && s.phase == .actions && s.isTurnOf sit.seat then
       [s!"- declare: set your public number for a resource, from 0 to {maxDeclared}"] else []
   let lines := places ++ bank ++ accepts ++ cancels ++ declares ++ ending
-  if lines.isEmpty then "nothing on the board" else "\n".intercalate lines
+  let board := if lines.isEmpty then "nothing on the board" else "\n".intercalate lines
+  -- These two take words and goods, so they are never on the list above. Seats took that to mean they had lost them.
+  let always := if s.phase == .actions && s.isTurnOf sit.seat then
+      "draft and offer are always available on your turn, even when this list is short"
+    else "draft is always available, even when this list is short, and offer is available on your turn"
+  s!"{board}\n- {always}"
 
 /-- The game as it is now. All of it is public. -/
 def gameBlock (sit : Situation) (book : Describe.Book) : String :=
