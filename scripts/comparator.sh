@@ -11,7 +11,8 @@
 #   python3 scripts/comparator_challenge.py write
 #   bash scripts/comparator.sh
 #
-# The image and the volume make the next run faster. To remove them:
+# The first run needs about 5 GB free. It leaves a small image, and a volume that holds Lean and the build
+# results, so the next run is faster. To remove them:
 #   docker volume rm charter-comparator && docker rmi charter-comparator
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -19,8 +20,7 @@ cd "$(dirname "$0")/.."
 python3 scripts/comparator_challenge.py check
 bash scripts/statement_lock.sh check
 
-docker build --quiet --tag charter-comparator --build-arg "TOOLCHAIN=$(cat lean-toolchain)" \
-  - < scripts/comparator.Dockerfile
+docker build --quiet --tag charter-comparator - < scripts/comparator.Dockerfile
 docker volume create charter-comparator > /dev/null
 
 echo "Checking commit $(git rev-parse --short HEAD). Uncommitted files: $(git status --porcelain | wc -l | tr -d ' ')."
@@ -40,6 +40,8 @@ tar -xf - --warning=no-unknown-keyword
 # The fork has a lakefile.lean, so Lake creates this empty directory when it loads the project. The
 # sandbox can write only to the root .lake, so the directory must be there first.
 mkdir -p forks/leansqlite/.lake
+test -x /work/elan/bin/elan || elan-init -y --no-modify-path --default-toolchain none
+elan toolchain install "$(cat lean-toolchain)"
 # The real binaries, not the elan wrappers: the sandbox removes what the wrappers need.
 export PATH="$(lean --print-prefix)/bin:$PATH"
 lake --version
