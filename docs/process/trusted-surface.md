@@ -6,7 +6,7 @@ To print the list for yourself:
 
     lake env lean --run scripts/spec_surface.lean --list
 
-The script stops at `Charter.Engine`. The engine is the code the theorems are about, so a reader does not need to trust its body. It also leaves out what Lean generates, such as structure fields and match helpers. For a pair of functions defined together, such as `Effect.plan` and `Effect.planAll`, it lists only the second, because Lean compiles the first into it.
+The script stops at `Charter.Engine`. The engine is the code the theorems are about, so the script does not list its body. It also leaves out what Lean generates, such as structure fields and match helpers. For a pair of functions defined together, such as `Effect.plan` and `Effect.planAll`, it lists only the second, because Lean compiles the first into it.
 
 ## Size
 
