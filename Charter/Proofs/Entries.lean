@@ -158,14 +158,24 @@ theorem rollEntries_ok {s : State G} (hp : PiecesOk s) (roll : Nat) :
   intro x hx
   simp only [rollEntries, List.mem_append] at hx
   cases hx with
-  | inl hx => exact harvestEntries_ok hp roll x hx
+  | inl hx =>
+    have := harvestEntries_ok (s := s.atRoll) (by
+      intro y hy
+      rw [atRoll_pieces] at hy
+      rw [atRoll_turnOrder]
+      exact hp y hy) roll x hx
+    rwa [atRoll_turnOrder] at this
   | inr hx =>
     cases hn : s.nextRoller with
     | none => simp [hn] at hx
     | some a =>
       simp only [hn] at hx
-      exact lawEntries_ok (s.afterPosting (harvestEntries s roll)) (t := .roll a roll)
-        (nextRoller_mem hn) x hx
+      have hm : a ∈ s.atRoll.turnOrder := by
+        rw [atRoll_turnOrder]
+        exact nextRoller_mem hn
+      have := lawEntries_ok (s.atRoll.afterPosting (harvestEntries s.atRoll roll)) (t := .roll a roll)
+        hm x hx
+      simpa only [State.afterPosting, atRoll_turnOrder] using this
 
 /-! ## Deals -/
 

@@ -232,9 +232,14 @@ theorem nextRoller_rename (s : State G) : (σ.state s).nextRoller = s.nextRoller
   rw [nextStage_rename]
   cases nextStage s <;> simp [state_turnOrder]
 
+theorem atRoll_rename (s : State G) : (σ.state s).atRoll = σ.state s.atRoll := by
+  unfold State.atRoll
+  rw [nextStage_rename]
+  split <;> rfl
+
 theorem rollEntries_rename (s : State G) (roll : Nat) :
     rollEntries (σ.state s) roll = (rollEntries s roll).map σ.entry := by
-  simp only [rollEntries, harvestEntries_rename, afterPosting_rename, nextRoller_rename,
+  simp only [rollEntries, atRoll_rename, harvestEntries_rename, afterPosting_rename, nextRoller_rename,
     List.map_append]
   congr 1
   cases s.nextRoller with

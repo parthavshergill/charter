@@ -320,6 +320,25 @@ def manyTransfers (n : Nat) : String :=
   let one := "(transfer bank each grain 1)"
   s!"(law \"x\" (on-round-end (for-each-player true {" ".intercalate (List.replicate n one)})))"
 
+-- Measures, division by a computed number and the round read and print back the same.
+def roundTrips (text : String) : Bool :=
+  match Rules.parseProposal text with
+  | .ok p => Rules.printProposal p == text
+  | .error _ => false
+
+#guard roundTrips "(law \"Grain prize\" (on-round-end (for-each-player (= (holding each grain) (most-over true (holding each grain))) (transfer treasury each wool 2))))"
+#guard roundTrips "(law \"Floor\" (on-round-end (for-each-player (= (holding each grain) (least-over (< 0 (holding each grain)) (holding each grain))) (transfer treasury each wool 2))))"
+#guard roundTrips "(law \"Total\" (on-round-end (transfer bank treasury wool (total-over true (holding each wool)))))"
+#guard roundTrips "(law \"Tax\" (on-round-end (for-each-player true (transfer each treasury wool (/ (* (holding each wool) (holding treasury ore)) 100)))))"
+#guard roundTrips "(law \"Share\" (on-round-end (for-each-player true (transfer each treasury wool (/ (holding each wool) (holding treasury ore))))))"
+#guard roundTrips "(law \"Late\" (on-roll (transfer bank treasury wool round)))"
+-- A number below a division stays the fixed kind, so an old law reads as it did.
+#guard (match Rules.parseProposal "(law \"x\" (on-round-end (transfer bank treasury wool (/ 7 2))))" with
+  | .ok (.law { clauses := [.onRoundEnd [.transfer _ _ _ (.div (.lit 7) 2)]], .. }) => true
+  | _ => false)
+-- A measure cannot name a seat either.
+#guard (Rules.parseProposal "(law \"x\" (on-round-end (transfer bank treasury wool (most-over true (holding 2 wool)))))").toOption.isNone
+
 -- The limit on planned payments counts one payment per seat per transfer.
 #guard problems table6 (manyTransfers 21) == []
 #guard refusedFor table6 (manyTransfers 22) "too many payments"

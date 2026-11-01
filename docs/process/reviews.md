@@ -180,6 +180,21 @@ A new limit, `maxReadsTotal` of 8192, caps how many numbers and tests all the la
 
 Measured on the worst turn at the new limits, on the laptop that builds the game: a turn change took 27 ms, the moves a seat can make took 22 ms, and a preview of a law that reacts to harvests took 284 ms. A law that reacts only to a build or a round's end needs no dice, so its preview takes far less, unless the current turn closes the round. A preview runs once per open law and per seat, each time the game changes. The deployed container has a quarter of a CPU, so expect those figures to be several times larger there. This was not measured there.
 
+## Measures
+
+Markets and elections need a law to compare seats. A law still has no way to name a seat, so a measure gives a number and never a seat. `total-over` adds a number up over every seat that passes a test, and `most-over` and `least-over` give the highest and lowest. A law then compares each seat with that value, so a tie simply means that several seats match. Two more numbers came with them: division by a computed number, and the current round.
+
+| Question | Answer |
+|---|---|
+| Does commandment II still hold in the same words? | Yes. Its statement did not change. `measured_rename` shows that a measure gives the same values, in the same order, in a renamed game. Inside a measure, `each` is bound to each seat in turn order, which is renamed too. |
+| Is there new state? | No. A measure reads what is already there. |
+| Could nested measures stall a turn? | No. `maxReadsTotal` counts a measure's contents once per seat, so five levels are refused. `nested_measures_over_the_cap_are_rejected` shows this. The payment caps did not need to change, because a measure asks for no payment. |
+| Is a preview still exact? | Yes. A preview calls the same functions, and `PreviewIsExact` needed only the fact that a vote does not change the round. |
+| What does dividing by zero do? | A computed zero gives 0, as in Lean. A law that writes a literal 0 below a division is refused, as it was before. |
+| Why keep the fixed `div`? | Removing it would have meant editing Not Catan's laws. The text `(/ a 2)` still reads as the fixed kind, and `(/ a b)` reads as the computed kind, so a player sees one word. |
+| What is the round on a roll that starts a new round? | The new round. A roll comes after the round's end and belongs to the next turn. The statements still name `rollEntries`, which reads `State.atRoll`. `IsDicePayout` did not change, because the bank's payments do not read the round. `the_round_moves_money` plays this. |
+| Does a saved game replay the same? | Yes, if it has no new words. `no_roll_law_means_harvest_alone` now reads the harvest from `atRoll`, but no old law can read the round. The parser only gained new words. |
+
 ## How the checks work
 
 - **Axiom audit:** `make audit` fails if any theorem in a `Charter` module rests on an axiom other than `propext`, `Classical.choice` and `Quot.sound`. So a `sorry` fails it. It also replays the proofs through `leanchecker`, and scans for banned constructs.

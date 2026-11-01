@@ -2519,6 +2519,48 @@ def spaceLawOpen : List Event := spaceSetup ++ [endT 0, endT 1, endT 2, .propose
   s.laws.map (·.1) == [1]
 #guard traceFailures tinySpace 3 7 (spaceLawOpen ++ [.vote 0 1 false, .vote 1 1 true, .vote 2 1 true]) == []
 
+/-! ### Measures -/
+
+-- Inside a measure, `each` is the seat being measured, and a surrounding `each` comes back after it.
+def richGame : State tinySettlers :=
+  { testStart tinySettlers 3 42 with
+    phase := .actions
+    round := 4
+    books := fun a r => match a, r with
+      | .player 0, "grain" => 5 | .player 1, "grain" => 9 | .player 2, "grain" => 9
+      | .treasury, "timber" => 4 | _, _ => 0 }
+
+def held0 : Expr := .holding .each (.lit "grain")
+def evalRich (e : Expr) : Nat := e.eval richGame {}
+#guard evalRich (.totalOver .yes held0) == 23
+#guard evalRich (.mostOver .yes held0) == 9
+#guard evalRich (.leastOver .yes held0) == 5
+#guard evalRich (.totalOver (.lt (.lit 5) held0) (.lit 1)) == 2
+#guard evalRich (.leastOver (.lt (.lit 5) held0) held0) == 9
+#guard evalRich (.mostOver (.lt (.lit 100) held0) held0) == 0
+#guard evalRich (.leastOver (.lt (.lit 100) held0) held0) == 0
+#guard evalRich (.totalOver (.lt (.lit 100) held0) held0) == 0
+#guard evalRich .round == 4
+#guard evalRich (.divBy (.lit 23) (.holding .treasury (.lit "timber"))) == 5
+#guard evalRich (.divBy (.lit 23) (.holding .treasury (.lit "grain"))) == 0
+-- A measure inside a `forEach`: each seat is compared with the most, and a tie passes both.
+#guard Effect.planAll richGame [.forEach (.eq held0 (.mostOver .yes held0))
+    [.transfer .bank .each (.lit "timber") (.lit 1)]] {} ==
+  [⟨.bank, .player 1, "timber", 1, .lawEffect⟩, ⟨.bank, .player 2, "timber", 1, .lawEffect⟩]
+-- Size counts what is inside a measure, and the payment caps count what the law around it plans.
+#guard (Expr.totalOver (.lt (.lit 1) (.lit 2)) (.add (.lit 1) (.lit 2))).size == 7
+#guard (Expr.divBy (.lit 1) (.lit 2)).size == 3
+#guard (Expr.totalOver .yes (.lit 2)).reads 6 == 13
+#guard (Expr.totalOver .yes (.totalOver .yes (.lit 2))).reads 6 == 85
+#guard (Cond.lt (.lit 1) (.totalOver .yes (.lit 2))).reads 6 == 15
+-- A literal zero below a division is refused. A zero that the law computes gives 0.
+#guard lawRejected [.onHarvest [payTreasury (.divBy (.lit 4) (.lit 0))]]
+#guard lawRejected [.onHarvest [payTreasury (.totalOver .yes (.div (.lit 4) 0))]]
+#guard lawRejected [.onHarvest [.when (.lt (.mostOver (.lt (.lit 1) (.div (.lit 4) 0)) (.lit 1)) (.lit 1)) [payTreasury (.lit 1)]]]
+#guard lawAccepted [.onHarvest [payTreasury (.divBy (.lit 4) (.holding .treasury (.lit "grain")))]]
+#guard lawAccepted [.onHarvest [payTreasury (.mostOver .yes (.points .each))]]
+#guard lawAccepted [.onRoll [payTreasury .round]]
+
 /-! ### The total limit on planned payments -/
 
 /-- `count` laws in force, each of one `forEach` with `transfers` transfers. -/

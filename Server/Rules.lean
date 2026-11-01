@@ -61,31 +61,39 @@ def parseBundle (rs : List Res) : SExp → P Bundle
       | x => fail "expected (RESOURCE n)" x
   | x => fail "expected (bundle (RESOURCE n)...)" x
 
-def parseExpr (rs : List Res) : SExp → P Expr
-  | .num i => if 0 ≤ i then .ok (.lit i.toNat) else .error "negative number"
-  | .atom "amount" => .ok .harvestedAmount
-  | .atom "rolled" => .ok .rolled
-  | .list [.atom "holding", p, r] => return .holding (← parseParty p) (← parseResRef rs r)
-  | .list [.atom "points", p] => return .points (← parseParty p)
-  | .list [.atom "count", p, k] => return .count (← parseParty p) (← parseKind k)
-  | .list [.atom "+", a, b] => return .add (← parseExpr rs a) (← parseExpr rs b)
-  | .list [.atom "-", a, b] => return .sub (← parseExpr rs a) (← parseExpr rs b)
-  | .list [.atom "*", a, b] => return .mul (← parseExpr rs a) (← parseExpr rs b)
-  | .list [.atom "/", a, n] => return .div (← parseExpr rs a) (← parseNat n)
-  | .list [.atom "min", a, b] => return .min (← parseExpr rs a) (← parseExpr rs b)
-  | .list [.atom "max", a, b] => return .max (← parseExpr rs a) (← parseExpr rs b)
-  | x => fail "bad number" x
+mutual
+  def parseExpr (rs : List Res) : SExp → P Expr
+    | .num i => if 0 ≤ i then .ok (.lit i.toNat) else .error "negative number"
+    | .atom "amount" => .ok .harvestedAmount
+    | .atom "rolled" => .ok .rolled
+    | .atom "round" => .ok .round
+    | .list [.atom "holding", p, r] => return .holding (← parseParty p) (← parseResRef rs r)
+    | .list [.atom "points", p] => return .points (← parseParty p)
+    | .list [.atom "count", p, k] => return .count (← parseParty p) (← parseKind k)
+    | .list [.atom "+", a, b] => return .add (← parseExpr rs a) (← parseExpr rs b)
+    | .list [.atom "-", a, b] => return .sub (← parseExpr rs a) (← parseExpr rs b)
+    | .list [.atom "*", a, b] => return .mul (← parseExpr rs a) (← parseExpr rs b)
+    -- A fixed number divides as it always did. Anything else is computed when the law runs.
+    | .list [.atom "/", a, .num n] => return .div (← parseExpr rs a) (← parseNat (.num n))
+    | .list [.atom "/", a, b] => return .divBy (← parseExpr rs a) (← parseExpr rs b)
+    | .list [.atom "min", a, b] => return .min (← parseExpr rs a) (← parseExpr rs b)
+    | .list [.atom "max", a, b] => return .max (← parseExpr rs a) (← parseExpr rs b)
+    | .list [.atom "total-over", c, a] => return .totalOver (← parseCond rs c) (← parseExpr rs a)
+    | .list [.atom "most-over", c, a] => return .mostOver (← parseCond rs c) (← parseExpr rs a)
+    | .list [.atom "least-over", c, a] => return .leastOver (← parseCond rs c) (← parseExpr rs a)
+    | x => fail "bad number" x
 
-def parseCond (rs : List Res) : SExp → P Cond
-  | .atom "true" => .ok .yes
-  | .list [.atom "<", a, b] => return .lt (← parseExpr rs a) (← parseExpr rs b)
-  | .list [.atom "<=", a, b] => return .le (← parseExpr rs a) (← parseExpr rs b)
-  | .list [.atom "=", a, b] => return .eq (← parseExpr rs a) (← parseExpr rs b)
-  | .list [.atom "and", a, b] => return .and (← parseCond rs a) (← parseCond rs b)
-  | .list [.atom "or", a, b] => return .or (← parseCond rs a) (← parseCond rs b)
-  | .list [.atom "not", c] => return .not (← parseCond rs c)
-  | .list [.atom "res-is", r] => return .harvestedIs (← parseRes rs r)
-  | x => fail "bad condition" x
+  def parseCond (rs : List Res) : SExp → P Cond
+    | .atom "true" => .ok .yes
+    | .list [.atom "<", a, b] => return .lt (← parseExpr rs a) (← parseExpr rs b)
+    | .list [.atom "<=", a, b] => return .le (← parseExpr rs a) (← parseExpr rs b)
+    | .list [.atom "=", a, b] => return .eq (← parseExpr rs a) (← parseExpr rs b)
+    | .list [.atom "and", a, b] => return .and (← parseCond rs a) (← parseCond rs b)
+    | .list [.atom "or", a, b] => return .or (← parseCond rs a) (← parseCond rs b)
+    | .list [.atom "not", c] => return .not (← parseCond rs c)
+    | .list [.atom "res-is", r] => return .harvestedIs (← parseRes rs r)
+    | x => fail "bad condition" x
+end
 
 /-- A plain transfer. -/
 def parseTransfer (rs : List Res) : SExp → P Effect
@@ -196,29 +204,36 @@ def partyS : Party → SExp
 def bundleS (b : Bundle) : SExp :=
   .list (.atom "bundle" :: b.map fun x => .list [.atom x.1, natS x.2])
 
-def exprS : Expr → SExp
-  | .lit n => natS n
-  | .harvestedAmount => .atom "amount"
-  | .rolled => .atom "rolled"
-  | .holding p r => .list [.atom "holding", partyS p, resRefS r]
-  | .points p => .list [.atom "points", partyS p]
-  | .count p k => .list [.atom "count", partyS p, .atom k]
-  | .add a b => .list [.atom "+", exprS a, exprS b]
-  | .sub a b => .list [.atom "-", exprS a, exprS b]
-  | .mul a b => .list [.atom "*", exprS a, exprS b]
-  | .div a n => .list [.atom "/", exprS a, natS n]
-  | .min a b => .list [.atom "min", exprS a, exprS b]
-  | .max a b => .list [.atom "max", exprS a, exprS b]
+mutual
+  def exprS : Expr → SExp
+    | .lit n => natS n
+    | .harvestedAmount => .atom "amount"
+    | .rolled => .atom "rolled"
+    | .round => .atom "round"
+    | .holding p r => .list [.atom "holding", partyS p, resRefS r]
+    | .points p => .list [.atom "points", partyS p]
+    | .count p k => .list [.atom "count", partyS p, .atom k]
+    | .add a b => .list [.atom "+", exprS a, exprS b]
+    | .sub a b => .list [.atom "-", exprS a, exprS b]
+    | .mul a b => .list [.atom "*", exprS a, exprS b]
+    | .div a n => .list [.atom "/", exprS a, natS n]
+    | .divBy a b => .list [.atom "/", exprS a, exprS b]
+    | .min a b => .list [.atom "min", exprS a, exprS b]
+    | .max a b => .list [.atom "max", exprS a, exprS b]
+    | .totalOver c a => .list [.atom "total-over", condS c, exprS a]
+    | .mostOver c a => .list [.atom "most-over", condS c, exprS a]
+    | .leastOver c a => .list [.atom "least-over", condS c, exprS a]
 
-def condS : Cond → SExp
-  | .yes => .atom "true"
-  | .lt a b => .list [.atom "<", exprS a, exprS b]
-  | .le a b => .list [.atom "<=", exprS a, exprS b]
-  | .eq a b => .list [.atom "=", exprS a, exprS b]
-  | .and a b => .list [.atom "and", condS a, condS b]
-  | .or a b => .list [.atom "or", condS a, condS b]
-  | .not c => .list [.atom "not", condS c]
-  | .harvestedIs r => .list [.atom "res-is", .atom r]
+  def condS : Cond → SExp
+    | .yes => .atom "true"
+    | .lt a b => .list [.atom "<", exprS a, exprS b]
+    | .le a b => .list [.atom "<=", exprS a, exprS b]
+    | .eq a b => .list [.atom "=", exprS a, exprS b]
+    | .and a b => .list [.atom "and", condS a, condS b]
+    | .or a b => .list [.atom "or", condS a, condS b]
+    | .not c => .list [.atom "not", condS c]
+    | .harvestedIs r => .list [.atom "res-is", .atom r]
+end
 
 mutual
   def effectS : Effect → SExp

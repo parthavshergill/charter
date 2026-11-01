@@ -45,34 +45,49 @@ def Party.seat (env : LawEnv) : Party → Option Seat
   | .each => env.each
   | _ => none
 
-/-- The value of a number in this state. -/
-def Expr.eval {G : GameDef} (s : State G) (env : LawEnv) : Expr → Nat
-  | .lit n => n
-  | .harvestedAmount => (env.harvested.map (·.2)).getD 0
-  | .rolled => env.rolled.getD 0
-  | .holding p r =>
-      match p.account env, r.get env with
-      | some a, some x => s.balance a x
-      | _, _ => 0
-  | .points p => ((p.seat env).map s.pointsOf).getD 0
-  | .count p k => ((p.seat env).map fun x => s.countOf x k).getD 0
-  | .add a b => a.eval s env + b.eval s env
-  | .sub a b => a.eval s env - b.eval s env
-  | .mul a b => a.eval s env * b.eval s env
-  | .div a n => a.eval s env / n
-  | .min a b => Nat.min (a.eval s env) (b.eval s env)
-  | .max a b => Nat.max (a.eval s env) (b.eval s env)
+/-- The values of a number over every seat that passes a test, in turn order. `test` and `value` see each
+seat as `each`. -/
+def measured {G : GameDef} (s : State G) (env : LawEnv) (test : LawEnv → Bool) (value : LawEnv → Nat) :
+    List Nat :=
+  s.turnOrder.filterMap fun p =>
+    let here := { env with each := some p }
+    if test here then some (value here) else none
 
-/-- The value of a test in this state. -/
-def Cond.eval {G : GameDef} (s : State G) (env : LawEnv) : Cond → Bool
-  | .yes => true
-  | .lt a b => decide (a.eval s env < b.eval s env)
-  | .le a b => decide (a.eval s env ≤ b.eval s env)
-  | .eq a b => a.eval s env == b.eval s env
-  | .and a b => a.eval s env && b.eval s env
-  | .or a b => a.eval s env || b.eval s env
-  | .not c => !c.eval s env
-  | .harvestedIs r => (env.harvested.map (·.1)) == some r
+mutual
+  /-- The value of a number in this state. -/
+  def Expr.eval {G : GameDef} (s : State G) (env : LawEnv) : Expr → Nat
+    | .lit n => n
+    | .harvestedAmount => (env.harvested.map (·.2)).getD 0
+    | .rolled => env.rolled.getD 0
+    | .holding p r =>
+        match p.account env, r.get env with
+        | some a, some x => s.balance a x
+        | _, _ => 0
+    | .points p => ((p.seat env).map s.pointsOf).getD 0
+    | .count p k => ((p.seat env).map fun x => s.countOf x k).getD 0
+    | .add a b => a.eval s env + b.eval s env
+    | .sub a b => a.eval s env - b.eval s env
+    | .mul a b => a.eval s env * b.eval s env
+    | .div a n => a.eval s env / n
+    | .divBy a b => a.eval s env / b.eval s env
+    | .min a b => Nat.min (a.eval s env) (b.eval s env)
+    | .max a b => Nat.max (a.eval s env) (b.eval s env)
+    | .round => s.round
+    | .totalOver c a => (measured s env (fun e => c.eval s e) (fun e => a.eval s e)).sum
+    | .mostOver c a => ((measured s env (fun e => c.eval s e) (fun e => a.eval s e)).max?).getD 0
+    | .leastOver c a => ((measured s env (fun e => c.eval s e) (fun e => a.eval s e)).min?).getD 0
+
+  /-- The value of a test in this state. -/
+  def Cond.eval {G : GameDef} (s : State G) (env : LawEnv) : Cond → Bool
+    | .yes => true
+    | .lt a b => decide (a.eval s env < b.eval s env)
+    | .le a b => decide (a.eval s env ≤ b.eval s env)
+    | .eq a b => a.eval s env == b.eval s env
+    | .and a b => a.eval s env && b.eval s env
+    | .or a b => a.eval s env || b.eval s env
+    | .not c => !c.eval s env
+    | .harvestedIs r => (env.harvested.map (·.1)) == some r
+end
 
 mutual
   /-- The transfers an effect asks for, before any shortfall is settled. -/
@@ -147,13 +162,20 @@ def State.nextRoller {G : GameDef} (s : State G) : Option Seat :=
   | .sameRound i => s.turnOrder[i]?
   | _ => none
 
+/-- What a roll reads. If the roll starts a new round, the round has already changed. -/
+def State.atRoll {G : GameDef} (s : State G) : State G :=
+  match nextStage s with
+  | .newRound => { s with round := s.round + 1 }
+  | _ => s
+
 /-- The whole of a roll: the harvest, then every law reacting to the roll itself, all planned from
-the moment after the harvest posted. If no law reacts to a roll, this is the harvest alone. -/
+the moment after the harvest posted. If no law reacts to a roll, this is the harvest alone. A roll that
+starts a new round reads that new round. -/
 def rollEntries {G : GameDef} (s : State G) (roll : Nat) : List Entry :=
-  let harvest := harvestEntries s roll
+  let harvest := harvestEntries s.atRoll roll
   harvest ++
     match s.nextRoller with
-    | some a => lawEntries (s.afterPosting harvest) (.roll a roll)
+    | some a => lawEntries (s.atRoll.afterPosting harvest) (.roll a roll)
     | none => []
 
 end Charter

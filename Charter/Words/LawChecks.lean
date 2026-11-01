@@ -9,18 +9,21 @@ A law must pass these checks when it is proposed, and again at the vote that dec
 
 namespace Charter
 
-/-- How many nodes a number has. -/
-def Expr.size : Expr → Nat
-  | .add a b | .sub a b | .mul a b | .min a b | .max a b => a.size + b.size + 1
-  | .div a _ => a.size + 1
-  | _ => 1
+mutual
+  /-- How many nodes a number has. -/
+  def Expr.size : Expr → Nat
+    | .add a b | .sub a b | .mul a b | .min a b | .max a b | .divBy a b => a.size + b.size + 1
+    | .div a _ => a.size + 1
+    | .totalOver c a | .mostOver c a | .leastOver c a => c.size + a.size + 1
+    | _ => 1
 
-/-- How many nodes a condition has. -/
-def Cond.size : Cond → Nat
-  | .lt a b | .le a b | .eq a b => a.size + b.size + 1
-  | .and a b | .or a b => a.size + b.size + 1
-  | .not c => c.size + 1
-  | _ => 1
+  /-- How many nodes a condition has. -/
+  def Cond.size : Cond → Nat
+    | .lt a b | .le a b | .eq a b => a.size + b.size + 1
+    | .and a b | .or a b => a.size + b.size + 1
+    | .not c => c.size + 1
+    | _ => 1
+end
 
 mutual
   /-- How many nodes an effect has, counting its numbers and conditions. -/
@@ -99,12 +102,30 @@ def plannedTotal (laws : List (Nat × Law)) (seats : Nat) : Nat :=
   (laws.map fun x => x.2.plannedEntries seats).sum
 
 mutual
+  /-- How many numbers and tests this number reads when it runs. A measure reads what is inside it once
+  per seat. -/
+  def Expr.reads (seats : Nat) : Expr → Nat
+    | .add a b | .sub a b | .mul a b | .min a b | .max a b | .divBy a b =>
+        a.reads seats + b.reads seats + 1
+    | .div a _ => a.reads seats + 1
+    | .totalOver c a | .mostOver c a | .leastOver c a => seats * (c.reads seats + a.reads seats) + 1
+    | _ => 1
+
+  /-- How many numbers and tests this test reads when it runs. -/
+  def Cond.reads (seats : Nat) : Cond → Nat
+    | .lt a b | .le a b | .eq a b => a.reads seats + b.reads seats + 1
+    | .and a b | .or a b => a.reads seats + b.reads seats + 1
+    | .not c => c.reads seats + 1
+    | _ => 1
+end
+
+mutual
   /-- How many numbers and tests an effect reads when it runs, when every condition is true. A
   `forEach` reads what is inside it once per seat. -/
   def Effect.reads (seats : Nat) : Effect → Nat
-    | .transfer _ _ _ amount => amount.size + 1
-    | .forEach c body => seats * (c.size + Effect.readsAll seats body) + 1
-    | .when c body => c.size + Effect.readsAll seats body + 1
+    | .transfer _ _ _ amount => amount.reads seats + 1
+    | .forEach c body => seats * (c.reads seats + Effect.readsAll seats body) + 1
+    | .when c body => c.reads seats + Effect.readsAll seats body + 1
 
   /-- How many numbers and tests a list of effects reads. -/
   def Effect.readsAll (seats : Nat) : List Effect → Nat
@@ -120,18 +141,23 @@ def Law.reads (L : Law) (seats : Nat) : Nat :=
 def readsTotal (laws : List (Nat × Law)) (seats : Nat) : Nat :=
   (laws.map fun x => x.2.reads seats).sum
 
-/-- This number divides by zero somewhere. -/
-def Expr.dividesByZero : Expr → Bool
-  | .add a b | .sub a b | .mul a b | .min a b | .max a b => a.dividesByZero || b.dividesByZero
-  | .div a n => n == 0 || a.dividesByZero
-  | _ => false
+mutual
+  /-- This number divides by zero somewhere, in its own words. A computed number that turns out to be
+  zero is not caught here: dividing by it gives 0. -/
+  def Expr.dividesByZero : Expr → Bool
+    | .add a b | .sub a b | .mul a b | .min a b | .max a b => a.dividesByZero || b.dividesByZero
+    | .div a n => n == 0 || a.dividesByZero
+    | .divBy a b => b == .lit 0 || a.dividesByZero || b.dividesByZero
+    | .totalOver c a | .mostOver c a | .leastOver c a => c.dividesByZero || a.dividesByZero
+    | _ => false
 
-/-- This condition divides by zero somewhere. -/
-def Cond.dividesByZero : Cond → Bool
-  | .lt a b | .le a b | .eq a b => a.dividesByZero || b.dividesByZero
-  | .and a b | .or a b => a.dividesByZero || b.dividesByZero
-  | .not c => c.dividesByZero
-  | _ => false
+  /-- This condition divides by zero somewhere, in its own words. -/
+  def Cond.dividesByZero : Cond → Bool
+    | .lt a b | .le a b | .eq a b => a.dividesByZero || b.dividesByZero
+    | .and a b | .or a b => a.dividesByZero || b.dividesByZero
+    | .not c => c.dividesByZero
+    | _ => false
+end
 
 mutual
   /-- Why an effect is wrong where it runs. `env` says who and what exists there. A transfer that

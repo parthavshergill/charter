@@ -27,35 +27,50 @@ inductive ResRef where
   | harvested
   deriving Repr, DecidableEq
 
-/-- A number a law can compute. `sub` stops at zero and `div` rounds down. -/
-inductive Expr where
-  | lit (n : Nat)
-  /-- The amount the dice just paid. -/
-  | harvestedAmount
-  /-- The total the dice just showed. It is 0 outside a roll. -/
-  | rolled
-  | holding (p : Party) (r : ResRef)
-  | points (p : Party)
-  | count (p : Party) (k : PieceKind)
-  | add (a b : Expr)
-  | sub (a b : Expr)
-  | mul (a b : Expr)
-  | div (a : Expr) (n : Nat)
-  | min (a b : Expr)
-  | max (a b : Expr)
-  deriving Repr, DecidableEq
+mutual
+  /-- A number a law can compute. `sub` stops at zero and `div` rounds down. -/
+  inductive Expr where
+    | lit (n : Nat)
+    /-- The amount the dice just paid. -/
+    | harvestedAmount
+    /-- The total the dice just showed. It is 0 outside a roll. -/
+    | rolled
+    | holding (p : Party) (r : ResRef)
+    | points (p : Party)
+    | count (p : Party) (k : PieceKind)
+    | add (a b : Expr)
+    | sub (a b : Expr)
+    | mul (a b : Expr)
+    /-- Divides by a fixed number. -/
+    | div (a : Expr) (n : Nat)
+    /-- Divides by a computed number. Dividing by zero gives 0. -/
+    | divBy (a b : Expr)
+    | min (a b : Expr)
+    | max (a b : Expr)
+    /-- The current round. -/
+    | round
+    /-- The sum of `a` over every seat that passes `c`. Inside, `each` means the seat being measured. -/
+    | totalOver (c : Cond) (a : Expr)
+    /-- The most of `a` over every seat that passes `c`, or 0 if none does. This is a number, not a seat.
+    Inside, `each` means the seat being measured. -/
+    | mostOver (c : Cond) (a : Expr)
+    /-- The least of `a` over every seat that passes `c`, or 0 if none does. This is a number, not a seat.
+    Inside, `each` means the seat being measured. -/
+    | leastOver (c : Cond) (a : Expr)
+    deriving Repr, DecidableEq
 
-/-- A true-or-false test a law can make. -/
-inductive Cond where
-  | yes
-  | lt (a b : Expr)
-  | le (a b : Expr)
-  | eq (a b : Expr)
-  | and (a b : Cond)
-  | or (a b : Cond)
-  | not (c : Cond)
-  | harvestedIs (r : Res)
-  deriving Repr, DecidableEq
+  /-- A true-or-false test a law can make. -/
+  inductive Cond where
+    | yes
+    | lt (a b : Expr)
+    | le (a b : Expr)
+    | eq (a b : Expr)
+    | and (a b : Cond)
+    | or (a b : Cond)
+    | not (c : Cond)
+    | harvestedIs (r : Res)
+    deriving Repr, DecidableEq
+end
 
 /-- What a law can do: move resources, for each seat that passes a test, or if a test passes. -/
 inductive Effect where

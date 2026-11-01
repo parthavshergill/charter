@@ -278,7 +278,7 @@ def actorOf : Event → Option Nat
 what `rollEntries` holds after the harvest. -/
 def rollLawPart (s : State G) (roll : Nat) : List Entry :=
   let x := s.afterPosting s.entriesBeforeRoll
-  (rollEntries x roll).drop (harvestEntries x roll).length
+  (rollEntries x roll).drop (harvestEntries x.atRoll roll).length
 
 /-- What the laws did on a roll, as one line: "By law, on a 7, Ada paid the bank 2 brick and 1 ore. Mara
 paid the bank 1 ore." A roll law can touch every seat at once, so the screen tells it in one caption. -/

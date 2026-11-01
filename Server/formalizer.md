@@ -155,9 +155,13 @@ RES      := RESOURCE | res
 KIND     := a piece name listed under "Pieces", or a NAME this same law defines
 PLACEMENT:= link | spot | (upgrade KIND) | (attach KIND)
             ; link: on a side of a hex. spot: on a free corner. upgrade: replaces your KIND. attach: on your KIND, which stays.
-expr     := n | amount | rolled | (holding PARTY RES) | (points PARTY) | (count PARTY KIND)
-          | (+ e e) | (- e e) | (* e e) | (/ e n) | (min e e) | (max e e)
-          ; - stops at 0, and / rounds down. PARTY is FROM, TO.
+expr     := n | amount | rolled | round | (holding PARTY RES) | (points PARTY) | (count PARTY KIND)
+          | (+ e e) | (- e e) | (* e e) | (/ e e) | (min e e) | (max e e)
+          | (total-over cond e) | (most-over cond e) | (least-over cond e)
+          ; - stops at 0. / rounds down, and dividing by a number that turns out to be 0 gives 0. PARTY is FROM, TO.
+          ; round is the current round. total-over adds e up for every player who passes cond.
+          ; most-over and least-over are the highest and lowest e among them, or 0 if nobody passes.
+          ; Inside these three, each means the player being measured.
 cond     := true | (< e e) | (<= e e) | (= e e) | (and c c) | (or c c) | (not c) | (res-is RESOURCE)
 bundle   := (bundle (RESOURCE n)*)
 
@@ -172,7 +176,8 @@ S        := seat number
 
 ## What a legal rule looks like
 - `actor` exists only inside `on-harvest`, `on-build` and `on-roll`. At `on-round-end` no one is acting, so use `for-each-player`.
-- `each` exists only inside `for-each-player`.
+- `each` exists only inside `for-each-player`, `total-over`, `most-over` and `least-over`.
+- A law cannot name one player, so "the player with the most grain" is a test against a number: `(for-each-player (= (holding each grain) (most-over true (holding each grain))) ...)`. Several players can tie and all pass. If they all ask for the same goods from one account and it runs short, each gets an equal share. When the most might be 0, add `(< 0 ...)` to the test if the request means only someone with some.
 - `res`, `amount` and `res-is` exist only inside `on-harvest`.
 - `rolled` means something only inside `on-roll`. Anywhere else it is 0.
 - An `on-roll` clause runs on every roll, so a rule about one number must test it: `(= rolled 7)`, or `(or (= rolled 2) (= rolled 12))`. Use `for-each-player` with that test in its condition, or `if` around transfers that name no `each`.
@@ -247,6 +252,18 @@ Request: On a 12, the bank pays everyone 1 wool.
 
 Request: On a 7, a seat holding more than 7 resources in total pays half of each resource to the bank.
 (law "Seven penalty" (on-roll (for-each-player (and (= rolled 7) (< 7 (+ (holding each grain) (+ (holding each timber) (+ (holding each ore) (+ (holding each wool) (holding each brick))))))) (transfer each bank grain (/ (holding each grain) 2)) (transfer each bank timber (/ (holding each timber) 2)) (transfer each bank ore (/ (holding each ore) 2)) (transfer each bank wool (/ (holding each wool) 2)) (transfer each bank brick (/ (holding each brick) 2)))))
+
+Request: Each seat pays tax equal to its wool times the treasury's ore divided by 100.
+(law "Wool tax" (on-round-end (for-each-player true (transfer each treasury wool (/ (* (holding each wool) (holding treasury ore)) 100)))))
+
+Request: At the end of each round, whoever holds the most grain gets 2 wool from the treasury.
+(law "Grain prize" (on-round-end (for-each-player (and (< 0 (holding each grain)) (= (holding each grain) (most-over true (holding each grain)))) (transfer treasury each wool 2))))
+
+Request: Whoever has less wool than average gets 1 wool from the bank each round.
+(law "Wool floor" (on-round-end (for-each-player (< (* (holding each wool) (total-over true 1)) (total-over true (holding each wool))) (transfer bank each wool 1))))
+
+Request: From round 10 on, each seat pays 1 grain to the treasury each round.
+(law "Late tax" (on-round-end (for-each-player (<= 10 round) (transfer each treasury grain 1))))
 
 Request: Whoever rolls a 7 gets 2 ore from the treasury.
 (law "Lucky roller" (on-roll (if (= rolled 7) (transfer treasury actor ore 2))))

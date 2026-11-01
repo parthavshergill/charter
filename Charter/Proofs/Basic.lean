@@ -13,6 +13,31 @@ open Charter Charter.Engine
 
 variable {G : GameDef}
 
+/-! ## What a roll reads -/
+
+/-- What a roll reads differs from the state only in the round. -/
+theorem atRoll_eq (s : State G) : ∃ n, s.atRoll = { s with round := n } := by
+  unfold State.atRoll
+  split
+  · exact ⟨_, rfl⟩
+  · exact ⟨s.round, rfl⟩
+
+theorem atRoll_turnOrder (s : State G) : s.atRoll.turnOrder = s.turnOrder := by
+  obtain ⟨_, h⟩ := atRoll_eq s; rw [h]
+
+theorem atRoll_pieces (s : State G) : s.atRoll.pieces = s.pieces := by
+  obtain ⟨_, h⟩ := atRoll_eq s; rw [h]
+
+theorem atRoll_books (s : State G) : s.atRoll.books = s.books := by
+  obtain ⟨_, h⟩ := atRoll_eq s; rw [h]
+
+theorem atRoll_laws (s : State G) : s.atRoll.laws = s.laws := by
+  obtain ⟨_, h⟩ := atRoll_eq s; rw [h]
+
+/-- The bank's payments do not read the round. -/
+theorem baseHarvest_atRoll (s : State G) (roll : Nat) : baseHarvest s.atRoll roll = baseHarvest s roll := by
+  obtain ⟨_, h⟩ := atRoll_eq s; rw [h]; rfl
+
 /-- A valid game passes the checks on its own parts. -/
 theorem valid_shape (hG : G.Valid) : G.shapeChecks = true := by
   simp only [GameDef.Valid, GameDef.checks, Bool.and_eq_true] at hG

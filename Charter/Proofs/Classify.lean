@@ -120,7 +120,7 @@ theorem harvestEntries_form {s : State G} {roll : Nat} {x : Entry}
 
 /-- A roll is the harvest, then what laws do in reaction to the roll. -/
 theorem rollEntries_cases {s : State G} {roll : Nat} {x : Entry}
-    (hx : x ∈ rollEntries s roll) : x ∈ harvestEntries s roll ∨ LawForm x := by
+    (hx : x ∈ rollEntries s roll) : x ∈ harvestEntries s.atRoll roll ∨ LawForm x := by
   simp only [rollEntries, List.mem_append] at hx
   refine hx.imp id (fun hx => ?_)
   cases hn : s.nextRoller with
