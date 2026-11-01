@@ -101,6 +101,29 @@ A game can now start with laws already in force. Such a law could have skipped t
 
 `a_founded_game_exists` plays a complete game with a founding law. `tooManyPayments_invalid` shows that a game is rejected if its founding law is within the limit at 2 seats but over it at 6.
 
+## Laws that react to the roll
+
+A 7 paid nobody, so no law could react to it. A new clause, `onRoll`, now runs on every roll. A new number, `rolled`, is the total shown. Each statement that named `harvestEntries` for a law's payment now names `rollEntries`: the harvest, then the laws that react to the roll, planned from the moment after the harvest posted.
+
+| Question | Answer |
+|---|---|
+| Does a saved game replay the same? | Yes, if it has no `onRoll` law. `no_roll_law_means_harvest_alone` proves that a roll is then the harvest alone. The parser only gained new words. |
+| Can a law pay itself as "the dice"? | No. `IsDicePayout` still names `harvestEntries`. A roll law's entries have the reason `lawEffect`, so `AskedForByLaw` is the only way they pass. |
+| Who is the actor? | The seat whose turn the roll starts. `RollPaysExactly` now also says `s.nextRoller = s'.currentSeat`, so the definition cannot name the wrong seat. |
+| Does the actor always exist? | In a game that goes on, yes. A roll starts an action turn, and commandment IX says that an action turn has a current seat. |
+| Can a law change a roll? | No. `rollAt`, `dieAt` and commandment VIII did not change. A law reads the total and nothing more. |
+| What does `rolled` mean outside a roll? | 0, as `harvestedAmount` is. `lawProblems` accepts it, as it accepts `harvestedAmount`. The read-back says "0 (no dice are rolled here)". A number is not a transfer's named party or resource, so no check looks inside it. |
+| Do the payment caps count it? | Yes, both of them. `Clause.effects` lists the clause. `roll_law_over_the_cap_is_rejected` and `roll_laws_over_the_total_cap_are_rejected` show this. |
+| Do the hypotheses hold on a 7? | Yes. `a_seven_moves_money` plays a real game whose first roll is a 7. It pays nobody from the map, and the founding law still moves money. |
+
+The first run in a browser found three weak points, and they are fixed.
+
+| Finding | Change |
+|---|---|
+| A roll law's payments were minor lines, so the chronicle hid them by default and no caption told them | One line for each roll, which the chronicle and the caption both show |
+| The read-back wrote a double comma for three amounts that round down | Amounts that all round down share the words "each rounded down" |
+| A sum of holdings read as "7 is less than their grain plus their wool" | It reads as "more than 7 grain and wool in total" |
+
 ## How the checks work
 
 - **Axiom audit:** `make audit` fails if any theorem in a `Charter` module rests on an axiom other than `propext`, `Classical.choice` and `Quot.sound`. So a `sorry` fails it. It also replays the proofs through `leanchecker`, and scans for banned constructs.
