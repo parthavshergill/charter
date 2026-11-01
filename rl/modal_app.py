@@ -181,6 +181,9 @@ def train_many(jobs: list, seconds: int = 600, encoder: str = "flat", meta_extra
     if code != 0:
         return {"build": code, "tail": text[-2000:]}
     with ThreadPoolExecutor(len(jobs)) as pool:
+        # CUDA graphs fail to instantiate when several trainers share a GPU (cudaGraphInstantiate asserts), so
+        # they are off for every run here. The GPU is not the limit, so this costs little.
+        jobs = [[r, a if "--base.cudagraphs" in a else a + " --base.cudagraphs=-1"] for r, a in jobs]
         futs = [pool.submit(_train, r, a, seconds, False, True, encoder, meta_extra, resume, True) for r, a in jobs]
         return {r: f.result() for (r, _), f in zip(jobs, futs)}
 
