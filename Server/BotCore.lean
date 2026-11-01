@@ -408,6 +408,21 @@ def declareMove (ctx : Ctx G) (s : State G) (p : Nat) : Option Move :=
 
 /-! ## Choosing a move -/
 
+/-- The pieces that this seat's kept points can pay for: attached pieces it can still add, whose cost
+includes goods worth points, and that are worth more points than those goods. With `keepPoints` 0 there
+are none. -/
+def pointBuys (ctx : Ctx G) (s : State G) (p : Nat) : List PieceDef :=
+  if ctx.weights.keepPoints == 0 then [] else
+  let R := s.rules
+  R.pieces.filter fun d =>
+    match d.placement with
+    | .attach k =>
+      let spent := bundleWorth R d.cost
+      decide (0 < spent) && decide (spent < d.points) && decide (s.countOf p d.name < d.limit) &&
+        let done_ := spotsOfKind s p d.name
+        (spotsOfKind s p k).any fun v => !done_.contains v
+    | _ => false
+
 /-- A bank trade toward paying `cost`, if trades can cover all of it. `ok` says which moves can happen. The
 seat gives none of a good that `keep` picks. -/
 def tradeToward (s : State G) (p : Nat) (cost : Bundle) (ok : Move → Bool)
@@ -488,7 +503,8 @@ def buildOrder (W : Weights) : List (Int × Nat) :=
   (kinds.toArray.qsort fun a b => a.1 > b.1 || (a.1 == b.1 && a.2 < b.2)).toList
 
 /-- The move on a bot's turn: builds in the order of the weights (upgrade, settle, law-made piece, road),
-then an offer if the weights allow one, then a bank trade, then a declaration, then end. -/
+then an offer if the weights allow one, then a bank trade (first toward a piece that its kept points pay
+for), then a declaration, then end. -/
 def actionMove (ctx : Ctx G) (s : State G) (p : Nat) : Move := Id.run do
   let W := ctx.weights
   let spotOf (m : Move) : Int := match m with
@@ -525,6 +541,8 @@ def actionMove (ctx : Ctx G) (s : State G) (p : Nat) : Move := Id.run do
     let trade (d : PieceDef) :=
       let cost := s.costOf d.name
       tradeToward s p cost (isLegal s p) (keeps ctx R cost (piecePoints s d.name) R.bankRate)
+    for d in pointBuys ctx s p do
+      if let some m := trade d then return m
     if let some (d, old) := upgradePiece G then
       if s.countOf p old > 0 && (s.rules.piece? d.name).isSome then
         if let some m := trade d then return m

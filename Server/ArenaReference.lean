@@ -110,7 +110,8 @@ def placementOf (s : State G) : Move → Option Placement
   | .place k _ => (s.rules.piece? k).map (·.placement)
   | _ => none
 
-/-- The move on a bot's turn: upgrade, settle, law-made piece, road, trade, declare, end. -/
+/-- The move on a bot's turn: upgrade, settle, law-made piece, road, trade (first toward an attached piece
+worth more points than the goods worth points in its cost), declare, end. -/
 def actionMove (s : State G) (p : Nat) (legal : List Move) : Move := Id.run do
   let places (test : Placement → Bool) : List Move :=
     legal.filter fun m => match placementOf s m with
@@ -128,6 +129,14 @@ def actionMove (s : State G) (p : Nat) (legal : List Move) : Move := Id.run do
       | .place _ (.link l) => some (m, roadValue s l)
       | _ => none
     if let some (m, _) := bestBy roads (·.2) then return m
+  for d in s.rules.pieces do
+    if let .attach k := d.placement then
+      let spent := goodsWorth s d.cost
+      let mine (kind : PieceKind) (v : Nat) : Bool :=
+        s.pieces.any fun x => x.owner == p && x.kind == kind && x.loc == .spot v
+      let host := (List.range G.map.spotCount).any fun v => mine k v && !mine d.name v
+      if spent > 0 && d.points > spent && s.countOf p d.name < d.limit && host then
+        if let some m := tradeToward s p d.name legal then return m
   if let some (d, old) := upgradePiece G then
     if s.countOf p old > 0 && (s.rules.piece? d.name).isSome then
       if let some m := tradeToward s p d.name legal then return m
