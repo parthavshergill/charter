@@ -5,6 +5,7 @@ import Charter.Games.SlimeParliamentWords
 import Charter.Games.AIBubbleWords
 import Charter.Games.StrikeTheEarthWords
 import Charter.Games.PirateRepublicWords
+import Charter.Games.HillAndChillWords
 import Charter.Scene.OfState
 import Charter.Scene.LookCheck
 import Server.GameFacts
@@ -152,10 +153,25 @@ def strikeSpec : GameSpec :=
     foundingWords := Games.StrikeTheEarth.foundingWords
     guide := "You lead a dwarf clan under a doomed mountain. Stone, ore, fungus and ember are the goods. In setup you place a hall and a tunnel for free, twice, so place both each time: ending a setup turn early gives up the rest, and a new hall must touch your own tunnel. A farm, gate, shaft or epitaph stands on a hall, and not on a workshop. Renown is the score: each is worth 1 point while you hold it, and most pieces are worth 0 points. So a hall or workshop that falls costs you no points, and a law may even pay you for it. An epitaph is the only piece with points. It costs 2 renown and 1 danger, and no hex pays danger, so you buy it from the bank. The bank also sells renown at its rate. Danger is the danger in the treasury. It is shared, it only rises unless a law lowers it, and the founding laws read it. A law cannot name who proposed it or who voted for it, but a law can pay whoever passes a test, so a reckless law can carry its own reward. Any seat can propose a law that ends the game: (law \"The fort falls\" (end-game)). If a majority passes it, the game ends at once and the most points wins." }
 
+def hillSpec : GameSpec :=
+  { id := "hill-and-chill"
+    name := "Hill and Chill"
+    blurb := "Friends on a hill try to go out to dinner. It only happens if enough of them commit, and flaking pays."
+    G := Games.HillAndChill.game
+    valid := Games.HillAndChill.game_valid
+    layout :=
+      { tiles := Games.HillAndChill.tiles, spots := Games.HillAndChill.spots, edges := Games.HillAndChill.edges
+        links := Games.HillAndChill.links, theme := Games.HillAndChill.theme, word := "the hill" }
+    minSeats := 3
+    maxSeats := 5
+    meshFolder := "packs/hill-and-chill/meshes"
+    foundingWords := Games.HillAndChill.foundingWords
+    guide := "You live with friends in a house on a hill, and every round you all try to go out to dinner. Gas, cash, boba and takeout are the goods. A chat costs gas and boba. A booth costs takeout, boba and cash. A potluck replaces a booth and costs 2 takeout and 2 cash. Lore and clout are the score: each is worth 1 point while you hold it. Everyone holds one down card, which is only there so you can declare it. To commit to dinner, use declare on your turn with res down and n 1. If you hold no gas, someone gives you a ride and you pay no gas. Not declaring is saying you could be down. At each round's end: everyone who is not down gets 1 clout, whatever happens. If more than half the table is down, dinner happens: each seat that is down pays 1 gas, and they share 3 lore for each seat that was needed, rounded down. At a table of four, 3 are needed: three diners get 3 lore each, and four get 2 each, so one more guest costs the others. If not, each seat that is down still pays 1 gas, and 1 cash as a no-show fee that goes to the treasury. Declarations are public and clear each round, and seats declare in turn order, so later seats see who has already committed. Building a potluck gives every seat 1 lore. The treasury holds the lore and the clout, so the bank does not sell them. Any law can change this: for example a law can repeal the clout, or refund the no-show fees from the treasury. The first to 20 points wins, or the most points after round 8." }
+
 instance : Inhabited GameSpec := ⟨islandSpec⟩
 
 /-- Every game this server can run. The first is the default. -/
-def gameSpecs : List GameSpec := [islandSpec, notCatanSpec, slimeSpec, bubbleSpec, strikeSpec, pirateSpec]
+def gameSpecs : List GameSpec := [islandSpec, notCatanSpec, slimeSpec, bubbleSpec, strikeSpec, pirateSpec, hillSpec]
 
 /-- The game with this id. A log entry with no id is from before there was a choice: it is the Island. -/
 def specOf? (id : Option String) : Option GameSpec :=

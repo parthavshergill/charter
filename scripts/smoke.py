@@ -218,7 +218,7 @@ def extension_pack(srv):
     limited, a counter stays off the screen, and bots play it to the end. Returns a table to check after
     a restart."""
     defs = {d["id"]: d for d in srv.get("/api/defs")}
-    check(list(defs) == ["island", "not-catan", "slime-parliament", "ai-bubble", "strike-the-earth", "pirate-republic"], "the lobby lists the base game first, then the packs")
+    check(list(defs) == ["island", "not-catan", "slime-parliament", "ai-bubble", "strike-the-earth", "pirate-republic", "hill-and-chill"], "the lobby lists the base game first, then the packs")
     check(all(d["name"] and d["blurb"] for d in defs.values()), "each pack has a name and a sentence")
     check(defs["not-catan"]["minSeats"] == 3 and defs["not-catan"]["maxSeats"] == 4, "a pack says how many seats it supports")
     for n in (2, 5):
@@ -337,6 +337,19 @@ def pirate_pack(srv):
     check(v["round"] <= 10 and len(v["laws"]) >= 4, "the pack ends by round 10 with its laws in force")
     check(any("lost a wharf" in (l if isinstance(l, str) else l.get("text", "")) for l in v["chronicle"]), "the Navy burns a wharf at the end of round 5")
     SCENES.append((srv.raw(f"/api/games/{code}/scene"), [], ["Law 0"]))
+
+
+def hill_pack(srv):
+    """Hill and Chill: bots never say they are down, so nobody eats, and everyone collects clout."""
+    d = next(x for x in srv.get("/api/defs") if x["id"] == "hill-and-chill")
+    check({"down", "lore", "clout"} <= set(d["look"]["icons"]), "the pack draws down, lore and clout")
+    for n in (3, 4):
+        code, v = bots_only(srv, n, "hill-and-chill", "booth")
+        check({"down", "lore", "clout"} <= set(v["resources"]), "down, lore and clout are on the screen")
+        check(len(v["laws"]) >= 3 and v["round"] <= 8, "the founding laws stand, and the game ends by round 8")
+        check({w["res"] for w in v["worth"]} == {"lore", "clout"}, "lore and clout are each worth a point")
+        check(sum("paid" in t and "1 clout" in t for t in (l if isinstance(l, str) else l.get("text", "") for l in v["chronicle"])) >= v["round"] - 1, "a seat that is never down collects clout")
+        SCENES.append((srv.raw(f"/api/games/{code}/scene"), [], ["Law 0"]))
 
 
 def claude_with_no_key(srv):
@@ -981,6 +994,7 @@ def main():
         bubble_pack(srv)
         strike_pack(srv)
         pirate_pack(srv)
+        hill_pack(srv)
         claude_table = claude_with_no_key(srv)
         talk_and_replay(srv, code, token, v)
         a_roll_law_fires(srv)
