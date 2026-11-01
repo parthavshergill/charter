@@ -197,7 +197,7 @@ def extension_pack(srv):
     limited, a counter stays off the screen, and bots play it to the end. Returns a table to check after
     a restart."""
     defs = {d["id"]: d for d in srv.get("/api/defs")}
-    check(list(defs) == ["island", "belt", "not-catan", "slime-parliament"], "the lobby lists the base game first, then the packs")
+    check(list(defs) == ["island", "belt", "not-catan", "slime-parliament", "strike-the-earth"], "the lobby lists the base game first, then the packs")
     check(all(d["name"] and d["blurb"] for d in defs.values()), "each pack has a name and a sentence")
     check(defs["not-catan"]["minSeats"] == 3 and defs["not-catan"]["maxSeats"] == 4, "a pack says how many seats it supports")
     for n in (2, 5):
@@ -282,6 +282,18 @@ def slime_pack(srv):
         check(len(v["laws"]) >= 4, "the founding laws stand")
         SCENES.append((srv.raw(f"/api/games/{code}/scene"), [], ["Law 0"]))
     return code
+
+
+def strike_pack(srv):
+    """A second reskin, with goods no hex pays. Its laws stand, its score is renown, and bots play it to the end."""
+    d = next(x for x in srv.get("/api/defs") if x["id"] == "strike-the-earth")
+    check("renown" in d["look"]["icons"] and "danger" in d["look"]["icons"], "the pack draws its score and its danger")
+    for n in (2, 4):
+        code, v = bots_only(srv, n, "strike-the-earth", "hall")
+        check(v["game"]["id"] == "strike-the-earth" and "renown" in v["resources"] and "danger" in v["resources"], "renown and danger are on the screen")
+        check(len(v["laws"]) >= 4 and v["worth"] == [{"res": "renown", "points": 1}], "the founding laws stand, and renown is worth a point")
+        check(v["treasury"]["danger"] >= v["round"] - 1, "the danger rose with the rounds")
+        SCENES.append((srv.raw(f"/api/games/{code}/scene"), [], ["Law 0"]))
 
 
 def claude_with_no_key(srv):
@@ -699,6 +711,7 @@ def main():
         belt = second_game(srv)
         pack = extension_pack(srv)
         slime_pack(srv)
+        strike_pack(srv)
         claude_table = claude_with_no_key(srv)
         talk_and_replay(srv, code, token, v)
         a_roll_law_fires(srv)

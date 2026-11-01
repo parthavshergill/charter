@@ -67,7 +67,14 @@ def casts : List (String × List (String × String)) :=
       , ("Stemonitis", "a thin chocolate-tube mould who speaks only in points of order and remembers every slight")
       , ("Little Arcyria", "a young pink mould who is very new to politics and much too keen on it")
       , ("Old Lycogala", "a wolf's-milk slime who whispers, chuckles, and hints at long-buried scandal")
-      , ("Trichia", "a glittering mould who is vain about her spores and will trade anything for a compliment") ]) ]
+      , ("Trichia", "a glittering mould who is vain about her spores and will trade anything for a compliment") ])
+  , ("strike-the-earth",
+      [ ("Durgna Cold-Anvil", "a clan matriarch who counts every ingot and has buried three husbands in the walls")
+      , ("Ottar Slagbeard", "a huge smith who shouts, weeps at songs and cannot pass a bad idea without shaking its hand")
+      , ("Hilde Nine-Lamps", "a soft-spoken lamp-keeper who has read the old accounts of every fort that fell")
+      , ("Bram Undermine", "a cheerful sapper who judges all things by how well they would collapse")
+      , ("Sigrun Ashdelve", "a young shaft captain who talks like the saga is already being written about her")
+      , ("Old Korbo", "a mushroom farmer who has seen it all flood twice and says so") ]) ]
 
 /-- One seat's persona. -/
 structure Persona where

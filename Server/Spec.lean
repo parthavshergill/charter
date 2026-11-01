@@ -3,6 +3,7 @@ import Charter.Games.Belt
 import Charter.Games.NotCatan
 import Charter.Games.NotCatanWords
 import Charter.Games.SlimeParliamentWords
+import Charter.Games.StrikeTheEarthWords
 import Charter.Scene.OfState
 import Charter.Scene.Belt
 import Charter.Scene.LookCheck
@@ -116,10 +117,25 @@ def slimeSpec : GameSpec :=
     foundingWords := Games.SlimeParliament.foundingWords
     guide := "You are a slime mould on a damp log. Oatmeal, dew, rot and pollen are the goods. A tendril costs oatmeal and dew. A node costs oatmeal, dew and rot. A swelling replaces a node. A puffball attaches to a node, costs pollen and oatmeal, and gives every seat pollen. The founding laws say more." }
 
+def strikeSpec : GameSpec :=
+  { id := "strike-the-earth"
+    name := "Strike the Earth"
+    blurb := "Rival dwarf clans dig under one doomed mountain. Disaster pays in renown, and a majority can let the fort fall."
+    G := Games.StrikeTheEarth.game
+    valid := Games.StrikeTheEarth.game_valid
+    layout :=
+      { tiles := Games.StrikeTheEarth.tiles, spots := Games.StrikeTheEarth.spots, edges := Games.StrikeTheEarth.edges
+        links := Games.StrikeTheEarth.links, theme := Games.StrikeTheEarth.theme, word := "the mountain" }
+    minSeats := 2
+    maxSeats := 4
+    meshFolder := "packs/strike-the-earth/meshes"
+    foundingWords := Games.StrikeTheEarth.foundingWords
+    guide := "You lead a dwarf clan under a doomed mountain. Stone, ore, fungus and ember are the goods. Renown is the score: each is worth 1 point while you hold it, and most pieces are worth 0 points. So a hall or workshop that falls costs you no points, and a law may even pay you for it. An epitaph is the only piece with points. It costs 2 renown and 1 danger, and no hex pays danger, so you buy it from the bank. The bank also sells renown at its rate. Danger is the danger in the treasury. It is shared, it only rises unless a law lowers it, and the founding laws read it. A law cannot name who proposed it or who voted for it, but a law can pay whoever passes a test, so a reckless law can carry its own reward. Any seat can propose a law that ends the game: (law \"The fort falls\" (end-game)). If a majority passes it, the game ends at once and the most points wins." }
+
 instance : Inhabited GameSpec := ⟨islandSpec⟩
 
 /-- Every game this server can run. The first is the default. -/
-def gameSpecs : List GameSpec := [islandSpec, beltSpec, notCatanSpec, slimeSpec]
+def gameSpecs : List GameSpec := [islandSpec, beltSpec, notCatanSpec, slimeSpec, strikeSpec]
 
 /-- The game with this id. A log entry with no id is from before there was a choice: it is the Island. -/
 def specOf? (id : Option String) : Option GameSpec :=
