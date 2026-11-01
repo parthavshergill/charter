@@ -79,6 +79,9 @@ mutual
     | .min a b, E => by simp only [Expr.eval, expr_eval s a, expr_eval s b]
     | .max a b, E => by simp only [Expr.eval, expr_eval s a, expr_eval s b]
     | .round, _ => rfl
+    | .declared p r, E => by
+      simp only [Expr.eval, party_seat, resRef_get]
+      cases p.seat E <;> cases r.get E <;> simp [state_declared]
     | .totalOver c a, E => by
       simp only [Expr.eval]
       rw [measured_rename σ s E (fun e => c.eval (σ.state s) e) (fun e => c.eval s e)

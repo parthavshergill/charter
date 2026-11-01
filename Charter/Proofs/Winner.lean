@@ -149,11 +149,8 @@ theorem WinnerInv.startNextTurn {s : State G} (hw : WinnerInv G s) (ht : TurnInv
     have hwin : (Engine.startNextTurn s roll).winner = bestSeat s s.turnOrder := by
       unfold Engine.startNextTurn
       rw [hs]
-    have hround : (Engine.startNextTurn s roll).round = s.round := by
-      unfold Engine.startNextTurn
-      rw [hs]
-    have hagree : Agree (Engine.startNextTurn s roll) s :=
-      ⟨hT, startNextTurn_books _ _, startNextTurn_pieces _ _, startNextTurn_laws _ _, hround⟩
+    have hpts : ∀ q, (Engine.startNextTurn s roll).pointsOf q = s.pointsOf q :=
+      pointsOf_congr (startNextTurn_pieces _ _) (startNextTurn_laws _ _)
     cases hbest : bestSeat s s.turnOrder with
     | none => exact absurd (bestSeat_none hbest) hn
     | some w =>
@@ -166,7 +163,7 @@ theorem WinnerInv.startNextTurn {s : State G} (hw : WinnerInv G s) (ht : TurnInv
       refine ⟨hphase, by rw [hT]; exact hwm, ?_, Or.inr ?_⟩
       · intro p hp2
         rw [hT] at hp2
-        rw [hagree.pointsOf, hagree.pointsOf]
+        rw [hpts, hpts]
         exact hmax p hp2
       · rw [hT, hK]
         obtain ⟨a1, a2, _, a4⟩ := ht.actions hp

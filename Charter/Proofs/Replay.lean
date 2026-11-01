@@ -22,6 +22,7 @@ structure Agree (s t : State G) : Prop where
   pieces : s.pieces = t.pieces
   laws : s.laws = t.laws
   round : s.round = t.round
+  declared : s.declared = t.declared
 
 theorem Agree.pointsOf {s t : State G} (h : Agree s t) (q : Seat) : s.pointsOf q = t.pointsOf q :=
   pointsOf_congr h.pieces h.laws q
@@ -60,6 +61,7 @@ mutual
     | .min a b, env => by simp only [Expr.eval, expr_congr h a, expr_congr h b]
     | .max a b, env => by simp only [Expr.eval, expr_congr h a, expr_congr h b]
     | .round, _ => by simp only [Expr.eval, h.round]
+    | .declared p r, env => by simp only [Expr.eval, h.declared]
     | .totalOver c a, env => by
       simp only [Expr.eval, measured_congr h, cond_congr h c, expr_congr h a]
     | .mostOver c a, env => by
@@ -115,7 +117,7 @@ theorem lawEntries_congr {s t : State G} (h : Agree s t) (tr : Trigger) :
 
 theorem Agree.afterPosting {s t : State G} (h : Agree s t) (es : List Entry) :
     Agree (s.afterPosting es) (t.afterPosting es) :=
-  ⟨h.turnOrder, by simp only [State.afterPosting, h.books], h.pieces, h.laws, h.round⟩
+  ⟨h.turnOrder, by simp only [State.afterPosting, h.books], h.pieces, h.laws, h.round, h.declared⟩
 
 theorem baseHarvest_congr {s t : State G} (h : Agree s t) (roll : Nat) :
     baseHarvest s roll = baseHarvest t roll := by
@@ -163,7 +165,7 @@ theorem TurnAgree.nextRoller {s t : State G} (h : TurnAgree s t) : s.nextRoller 
 theorem TurnAgree.atRoll {s t : State G} (h : TurnAgree s t) : Agree s.atRoll t.atRoll := by
   simp only [State.atRoll, h.nextStage]
   split
-  · exact ⟨h.turnOrder, h.books, h.pieces, h.laws, by simp only [h.round]⟩
+  · exact ⟨h.turnOrder, h.books, h.pieces, h.laws, by simp only [h.round], rfl⟩
   · exact h.toAgree
 
 /-- The whole of a roll is the same in two states that agree on what a turn change reads. -/
@@ -395,7 +397,9 @@ theorem preview_exact {s s1 s2 : State G} {seat id : Nat} {L : Law} {roll : Nat}
   have fr := bodyOf_frame hb
   have hagree : TurnAgree s1 (s.withLaw id L) := by
     rw [hs1] at hl ⊢
-    exact ⟨⟨fr.turnOrder, f1, f2, hl, fr.round⟩, fr.phase, fr.turnIndex, fr.turnsTaken, f3, f4⟩
+    exact ⟨⟨fr.turnOrder, f1, f2, hl, fr.round, by
+      have hd := bodyOf_declared hb (by simp)
+      exact hd⟩, fr.phase, fr.turnIndex, fr.turnsTaken, f3, f4⟩
   have hroll : turnEntries s1 (rollAt G s1.seed s1.rollsMade) = turnEntries s1 roll := by
     cases hrs : (nextStage s1).rolls with
     | false => rw [turnEntries_no_roll hrs, turnEntries_no_roll hrs]

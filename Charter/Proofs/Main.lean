@@ -206,8 +206,16 @@ theorem every_other_event_is_exact (G : GameDef) (_hG : G.Valid) (s s' : State G
     ((∀ p k loc, e ≠ .move p (.place k loc)) → s'.pieces = s.pieces) ∧
     (¬ EndsTurn s e →
       s'.turnsTaken = s.turnsTaken ∧ s'.turnIndex = s.turnIndex ∧ s'.round = s.round ∧
-      s'.rollsMade = s.rollsMade) :=
-  step_is_exact hs.noPending h
+      s'.rollsMade = s.rollsMade) ∧
+    (∀ p r n, e = .move p (.declare r n) →
+      s' = { s with
+        declared := fun q x => if q = p ∧ x = r then n else s.declared q x
+        actionsThisTurn := fun q => if q = p then s.actionsThisTurn q + 1 else s.actionsThisTurn q
+        eventsApplied := s.eventsApplied + 1 }) ∧
+    DeclarationsKept s s' e := by
+  obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11⟩ := step_is_exact hs.noPending h
+  exact ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11,
+    fun _ _ _ he => declare_is_exact hs.noPending (he ▸ h), declarations_kept hs.noPending h⟩
 
 /-- Every reachable state has the properties the other proofs rely on. -/
 theorem _root_.Charter.Reachable.inv {G : GameDef} (hG : G.Valid) {s : State G} (hs : Reachable G s) :

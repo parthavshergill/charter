@@ -143,6 +143,9 @@ theorem body_ok {s s1 : State G} {e : Event} (hP : PiecesOk s) (hO : OffersOk s)
     | cancel i =>
       obtain ⟨_, _, rfl⟩ := cancelBody_ok h
       exact ⟨Posted.refl rfl rfl, hP, fun x hx => hO x (List.mem_filter.mp hx).1, hD⟩
+    | declare r n =>
+      obtain ⟨_, _, rfl⟩ := declareBody_ok h
+      exact ⟨Posted.refl rfl rfl, hP, hO, hD⟩
   | propose seat b =>
     simp only [seatOf] at hs
     obtain ⟨_, _, ⟨_, _, _, b, hb, rfl⟩ | ⟨_, _, _, _, rfl⟩⟩ := proposeBody_ok h

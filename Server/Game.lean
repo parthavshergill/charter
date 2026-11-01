@@ -143,6 +143,7 @@ def moveJson : Move → Json
       Json.mkObj [("t", "offer"), ("to", toJson to), ("give", bundleJson give), ("get", bundleJson get)]
   | .accept id => Json.mkObj [("t", "accept"), ("id", toJson id)]
   | .cancel id => Json.mkObj [("t", "cancel"), ("id", toJson id)]
+  | .declare r n => Json.mkObj [("t", "declare"), ("res", r), ("n", toJson n)]
   | .endTurn => Json.mkObj [("t", "endTurn")]
 
 def moveOfJson (j : Json) : Except String Move := do
@@ -159,6 +160,7 @@ def moveOfJson (j : Json) : Except String Move := do
     pure (.offer to (← bundleOfJson (← j.getObjVal? "give")) (← bundleOfJson (← j.getObjVal? "get")))
   | "accept" => pure (.accept (← j.getObjValAs? Nat "id"))
   | "cancel" => pure (.cancel (← j.getObjValAs? Nat "id"))
+  | "declare" => pure (.declare (← j.getObjValAs? String "res") (← j.getObjValAs? Nat "n"))
   | "endTurn" => pure .endTurn
   | t => throw s!"unknown move {t}"
 
@@ -246,6 +248,7 @@ def actionText (g : Game) (s s' : State G) : Event → String × String × Bool
       ("trade", s!"{g.nameOf p} accepted {g.nameOf o.src}'s offer: {Text.bundleText o.give} for {Text.bundleText o.get}.", true)
     | none => ("trade", s!"{g.nameOf p} accepted an offer.", true)
   | .move p (.cancel _) => ("trade", s!"{g.nameOf p} took back an offer.", false)
+  | .move p (.declare r n) => ("trade", s!"{g.nameOf p} declared {n} {r}.", true)
   | .move p .endTurn => ("turn", s!"{g.nameOf p} ended their turn.", false)
   | .forceEndTurn =>
     match s.currentSeat with

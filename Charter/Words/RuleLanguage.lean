@@ -49,6 +49,9 @@ mutual
     | max (a b : Expr)
     /-- The current round. -/
     | round
+    /-- The number this seat has declared for this resource this round. It is 0 for the treasury, the
+    bank and anyone not in play here. -/
+    | declared (p : Party) (r : ResRef)
     /-- The sum of `a` over every seat that passes `c`. Inside, `each` means the seat being measured. -/
     | totalOver (c : Cond) (a : Expr)
     /-- The most of `a` over every seat that passes `c`, or 0 if none does. This is a number, not a seat.

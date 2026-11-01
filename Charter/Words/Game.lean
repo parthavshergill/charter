@@ -49,8 +49,10 @@ def maxPlannedTotal : Nat := 256
 /-- The most numbers and tests all the laws in force can read together on one trigger. A harvest runs
 every law once per payment, so most of a harvest's time goes here. `Law.reads` counts them. -/
 def maxReadsTotal : Nat := 8192
+/-- The largest number a seat can declare. -/
+def maxDeclared : Nat := maxStock
 /-- How many events one seat can send per turn. Every event except ending a turn counts: places,
-trades, offers, accepts, cancels, proposals, votes, signatures and exits. -/
+trades, offers, accepts, cancels, declarations, proposals, votes, signatures and exits. -/
 def maxActionsPerTurn : Nat := 20
 /-- The most open proposals one seat can have. -/
 def maxOpenPerSeat : Nat := 2

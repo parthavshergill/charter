@@ -276,6 +276,7 @@ def roundBase (s : State G) : State G :=
   { turnBase s with
     round := s.round + 1
     builtThisRound := []
+    declared := fun _ _ => 0
     deals := s.deals.filter fun d => decide (s.round < d.lastRound) }
 
 theorem roundBase_rename (s : State G) : roundBase (σ.state s) = σ.state (roundBase s) := by
@@ -359,6 +360,9 @@ theorem step_rename (s : State G) (e : Event) :
         show actThenCheckWin (σ.state s) (σ.to p) (moveBody (σ.state s) (σ.to p) (σ.move _)) = _
         rw [moveBody_rename, actThenCheckWin_rename]
       | cancel id =>
+        show actThenCheckWin (σ.state s) (σ.to p) (moveBody (σ.state s) (σ.to p) (σ.move _)) = _
+        rw [moveBody_rename, actThenCheckWin_rename]
+      | declare r n =>
         show actThenCheckWin (σ.state s) (σ.to p) (moveBody (σ.state s) (σ.to p) (σ.move _)) = _
         rw [moveBody_rename, actThenCheckWin_rename]
 

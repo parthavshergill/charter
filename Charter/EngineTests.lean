@@ -2561,6 +2561,44 @@ def evalRich (e : Expr) : Nat := e.eval richGame {}
 #guard lawAccepted [.onHarvest [payTreasury (.mostOver .yes (.points .each))]]
 #guard lawAccepted [.onRoll [payTreasury .round]]
 
+/-! ### Declarations -/
+
+def declareSetup : List Event := settlersRound2
+
+-- On your own turn, for a real resource, within the limit. No entries, and it counts as an action.
+#guard after (settlers2 declareSetup) fun s => s.currentSeat == some 0 && s.phase == .actions
+#guard accepts (settlers2 declareSetup) (.move 0 (.declare "grain" 5))
+#guard accepts (settlers2 declareSetup) (.move 0 (.declare "grain" maxDeclared))
+#guard rejects (settlers2 declareSetup) (.move 0 (.declare "grain" (maxDeclared + 1)))
+#guard rejects (settlers2 declareSetup) (.move 0 (.declare "gold" 5))
+#guard rejects (settlers2 declareSetup) (.move 1 (.declare "grain" 5))
+#guard rejects (settlers2 declareSetup) (.move 7 (.declare "grain" 5))
+#guard after (settlers2 (declareSetup ++ [.move 0 (.declare "grain" 5)])) fun s =>
+  s.declared 0 "grain" == 5 && s.declared 0 "timber" == 0 && s.declared 1 "grain" == 0 &&
+  s.actionsThisTurn 0 == 1
+-- A later declaration replaces the first, and 0 clears it.
+#guard after (settlers2 (declareSetup ++ [.move 0 (.declare "grain" 5), .move 0 (.declare "grain" 2)])) fun s =>
+  s.declared 0 "grain" == 2
+#guard after (settlers2 (declareSetup ++ [.move 0 (.declare "grain" 5), .move 0 (.declare "grain" 0)])) fun s =>
+  s.declared 0 "grain" == 0
+-- It stays through the round, and clears when the round ends.
+#guard after (settlers2 (declareSetup ++ [.move 0 (.declare "grain" 5), endT 0])) fun s =>
+  s.declared 0 "grain" == 5
+#guard after (settlers2 (declareSetup ++ [.move 0 (.declare "grain" 5), endT 0, endT 1])) fun s =>
+  s.declared 0 "grain" == 0
+-- The claims hold on a game with declarations.
+#guard traceFailures tinySettlers 2 42 (declareSetup ++ [.move 0 (.declare "grain" 5), .move 0 (.declare "timber" 1), endT 0, .forceEndTurn]) == []
+-- At the action limit, a seat cannot declare.
+#guard rejects (settlers2 (declareSetup ++ List.replicate maxActionsPerTurn (.move 0 (.declare "grain" 5)))) (.move 0 (.declare "grain" 5))
+-- The treasury and the bank have no number, and neither does a missing seat.
+#guard (Expr.declared .treasury (.lit "grain")).eval richGame {} == 0
+#guard (Expr.declared .each (.lit "grain")).eval richGame {} == 0
+#guard (Expr.declared .each (.lit "grain")).eval
+  ({ richGame with declared := fun _ _ => 3 } : State tinySettlers) { each := some 1 } == 3
+-- `legalMoves` does not list declarations, as it does not list offers.
+#guard after (settlers2 declareSetup) fun s =>
+  (legalMoves tinySettlers s 0).all fun | .declare .. => false | _ => true
+
 /-! ### The total limit on planned payments -/
 
 /-- `count` laws in force, each of one `forEach` with `transfers` transfers. -/

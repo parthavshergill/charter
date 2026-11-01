@@ -155,10 +155,11 @@ RES      := RESOURCE | res
 KIND     := a piece name listed under "Pieces", or a NAME this same law defines
 PLACEMENT:= link | spot | (upgrade KIND) | (attach KIND)
             ; link: on a side of a hex. spot: on a free corner. upgrade: replaces your KIND. attach: on your KIND, which stays.
-expr     := n | amount | rolled | round | (holding PARTY RES) | (points PARTY) | (count PARTY KIND)
+expr     := n | amount | rolled | round | (holding PARTY RES) | (points PARTY) | (count PARTY KIND) | (declared PARTY RES)
           | (+ e e) | (- e e) | (* e e) | (/ e e) | (min e e) | (max e e)
           | (total-over cond e) | (most-over cond e) | (least-over cond e)
           ; - stops at 0. / rounds down, and dividing by a number that turns out to be 0 gives 0. PARTY is FROM, TO.
+          ; declared is the number a player has declared for a resource this round, or 0. Each player sets their own on their turn, and all clear when the round ends.
           ; round is the current round. total-over adds e up for every player who passes cond.
           ; most-over and least-over are the highest and lowest e among them, or 0 if nobody passes.
           ; Inside these three, each means the player being measured.
@@ -264,6 +265,9 @@ Request: Whoever has less wool than average gets 1 wool from the bank each round
 
 Request: From round 10 on, each seat pays 1 grain to the treasury each round.
 (law "Late tax" (on-round-end (for-each-player (<= 10 round) (transfer each treasury grain 1))))
+
+Request: At the end of each round, the seat that declared the most grain pays that amount of wool to the treasury and gets all the treasury's grain.
+(law "Grain auction" (on-round-end (for-each-player (and (< 0 (declared each grain)) (= (declared each grain) (most-over true (declared each grain)))) (transfer each treasury wool (declared each grain)) (transfer treasury each grain (holding treasury grain)))))
 
 Request: Whoever rolls a 7 gets 2 ore from the treasury.
 (law "Lucky roller" (on-roll (if (= rolled 7) (transfer treasury actor ore 2))))

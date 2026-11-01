@@ -332,6 +332,13 @@ def roundTrips (text : String) : Bool :=
 #guard roundTrips "(law \"Tax\" (on-round-end (for-each-player true (transfer each treasury wool (/ (* (holding each wool) (holding treasury ore)) 100)))))"
 #guard roundTrips "(law \"Share\" (on-round-end (for-each-player true (transfer each treasury wool (/ (holding each wool) (holding treasury ore))))))"
 #guard roundTrips "(law \"Late\" (on-roll (transfer bank treasury wool round)))"
+#guard roundTrips "(law \"Auction\" (on-round-end (for-each-player (and (< 0 (declared each grain)) (= (declared each grain) (most-over true (declared each grain)))) (transfer each treasury wool (declared each grain)) (transfer treasury each grain (holding treasury grain)))))"
+#guard (match Rules.parseProposal "(law \"x\" (on-round-end (transfer bank treasury wool (declared each grain))))" with
+  | .ok (.law L) => Rules.lawReadsDeclared L
+  | _ => false)
+#guard (match Rules.parseProposal "(law \"(declared each grain)\" (on-round-end (transfer bank treasury wool 1)))" with
+  | .ok (.law L) => !Rules.lawReadsDeclared L
+  | _ => false)
 -- A number below a division stays the fixed kind, so an old law reads as it did.
 #guard (match Rules.parseProposal "(law \"x\" (on-round-end (transfer bank treasury wool (/ 7 2))))" with
   | .ok (.law { clauses := [.onRoundEnd [.transfer _ _ _ (.div (.lit 7) 2)]], .. }) => true

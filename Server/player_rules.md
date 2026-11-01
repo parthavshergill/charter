@@ -16,6 +16,7 @@ Each action names itself in its `action` field:
 - `bank_trade`: trade with the bank. Give `give` and `get`, each a resource.
 - `offer`: on your turn, offer a trade to one seat, or to anyone with `to` null. `give` is what you give and `get` is what you ask for. An open offer goes away at the end of your turn.
 - `accept`: accept an offer by its `id`. `cancel`: take back your own offer by its `id`.
+- `declare`: on your turn, set your public number for a resource. Give `res` and `n`. Everyone can see it, it moves nothing, and it counts as an action. It clears when the round ends. Only laws read it, so ignore it unless a law does.
 - `vote`: vote on a law by its `id`, with `yes` true or false. A vote is final.
 - `sign`: sign a deal by its `id`.
 - `exit`: give notice on a running deal, by its `deal_id`.
@@ -39,6 +40,7 @@ Each law on your screen comes with its rule source, such as `(law "Toll" (on-bui
 - `(if test ...)` does what is inside it when the test holds, and otherwise nothing. `(< a b)` means a is less than b. `(<= a b)` means a is at most b.
 - `(holding P R)`, `(points P)` and `(count P KIND)` read what a player has. `res` and `amount` are the resource and size of the payment that set off `on-harvest`.
 - `rolled` is the total the dice just showed. `round` is the current round.
+- `(declared P R)` is the number P has declared for R this round, or 0. A law's preview uses the numbers declared so far, and they can change until the round ends.
 - `(total-over test n)` adds up n for every player who passes the test. `(most-over test n)` and `(least-over test n)` are the highest and lowest n among them, or 0 if nobody passes. Inside them, `each` is the player being measured. They give a number, not a player, so a tie means several players match.
 - `(- a b)` stops at 0, and `(/ a b)` rounds down. Dividing by a number that turns out to be 0 gives 0. A payment from an account to itself does not happen.
 - No account goes below zero. An account that owes more than it holds pays each payment in proportion, rounded down, so a payment can shrink to nothing.

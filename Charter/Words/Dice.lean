@@ -48,6 +48,7 @@ def initialState (G : GameDef) (seats : Nat) (serverSeed : UInt64) (nonces : Lis
   nextOfferId := 0
   builtThisRound := []
   actionsThisTurn := fun _ => 0
+  declared := fun _ _ => 0
   eventsApplied := 0
   winner := none
 

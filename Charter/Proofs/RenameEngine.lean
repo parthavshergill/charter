@@ -24,7 +24,7 @@ theorem state_fields_eq {x y : State G}
     (h16 : x.deals = y.deals) (h17 : x.dealsStarted = y.dealsStarted) (h18 : x.offers = y.offers)
     (h19 : x.nextOfferId = y.nextOfferId) (h20 : x.builtThisRound = y.builtThisRound)
     (h21 : x.actionsThisTurn = y.actionsThisTurn) (h22 : x.eventsApplied = y.eventsApplied)
-    (h23 : x.winner = y.winner) : x = y := by
+    (h23 : x.winner = y.winner) (h24 : x.declared = y.declared) : x = y := by
   cases x; cases y; simp_all
 
 /-- Prove two states equal field by field, and close the fields that hold by computation. -/
@@ -265,6 +265,25 @@ theorem cancelBody_rename (s : State G) (p : Seat) (id : Nat) :
       exact σ.filter_offers s id
     · rfl
 
+theorem declareBody_rename (s : State G) (p : Seat) (r : Res) (n : Nat) :
+    declareBody (σ.state s) (σ.to p) r n = (declareBody s p r n).map σ.state := by
+  unfold declareBody
+  simp only [state_phase, isTurnOf_rename]
+  split
+  · rfl
+  · split
+    · rfl
+    · split
+      · rfl
+      · simp only [map_ok, Except.ok.injEq]
+        state_ext
+        funext q x
+        by_cases hq : q = σ.to p
+        · subst hq
+          simp [state, σ.back_to]
+        · have : σ.back q ≠ p := fun h => hq (by rw [← h, σ.to_back])
+          simp [state, hq, this]
+
 theorem moveBody_rename (s : State G) (p : Seat) (m : Move) :
     moveBody (σ.state s) (σ.to p) (σ.move m) = (moveBody s p m).map σ.state := by
   cases m with
@@ -273,6 +292,7 @@ theorem moveBody_rename (s : State G) (p : Seat) (m : Move) :
   | offer to give get => exact σ.offerBody_rename s p to give get
   | accept id => exact σ.acceptBody_rename s p id
   | cancel id => exact σ.cancelBody_rename s p id
+  | declare r n => exact σ.declareBody_rename s p r n
   | endTurn => rfl
 
 end Charter.Renaming

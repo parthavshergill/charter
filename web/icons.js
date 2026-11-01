@@ -39,6 +39,7 @@ const UI = {
   book: `<path d="M4 4.500c3-1 5.8-.8 8 1 2.2-1.8 5-2 8-1v15c-3-1-5.8-.8-8 1-2.2-1.8-5-2-8-1z" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M12 5.500v15" stroke="currentColor" stroke-width="1.7"/>`,
   scroll: `<path d="M7 3.500h11a2 2 0 0 1 2 2V7h-3.500M7 3.500a2 2 0 0 0-2 2V18a2.5 2.5 0 0 1-2.5 0M7 3.500a2 2 0 0 1 2 2v13.500a2.5 2.5 0 0 1-2.5 2H16a2.5 2.5 0 0 0 2-2.500V7" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M11.5 9h4M11.5 12.500h4M11.5 16h3" stroke="currentColor" stroke-width="1.5"/>`,
   dots: `<circle cx="5" cy="12" r="1.9" fill="currentColor"/><circle cx="12" cy="12" r="1.9" fill="currentColor"/><circle cx="19" cy="12" r="1.9" fill="currentColor"/>`,
+  declare: `<path d="M5 4h14v12H10l-5 4z" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 7v6m-3-3h6" stroke="currentColor" stroke-width="1.8"/>`,
   trade: `<path d="M3.5 8h14m-4.5-4.500L17.5 8 13 12.500M20.5 16h-14m4.5-4.500L6.5 16l4.5 4.5" fill="none" stroke="currentColor" stroke-width="1.9"/>`,
   close: `<path d="m6 6 12 12M18 6 6 18" stroke="currentColor" stroke-width="2"/>`,
   talk: `<path d="M3.500 5h17v11h-9l-4.500 4v-4H3.500z" fill="none" stroke="currentColor" stroke-width="1.700"/><path d="M7.500 9h9M7.500 12.500h6" stroke="currentColor" stroke-width="1.500"/>`,

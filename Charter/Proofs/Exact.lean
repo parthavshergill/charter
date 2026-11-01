@@ -86,6 +86,9 @@ theorem body_pieces {s s1 : State G} {e : Event} (hne : ∀ p k loc, e ≠ .move
     | cancel i =>
       obtain ⟨_, _, rfl⟩ := cancelBody_ok h
       rfl
+    | declare r n =>
+      obtain ⟨_, _, rfl⟩ := declareBody_ok h
+      rfl
   | propose seat b =>
     obtain ⟨_, _, ⟨_, _, _, _, _, rfl⟩ | ⟨_, _, _, _, rfl⟩⟩ := proposeBody_ok h <;> rfl
   | vote seat i y =>
@@ -128,6 +131,9 @@ theorem body_laws {s s1 : State G} {e : Event} (hne : ∀ a b c, e ≠ .vote a b
       rfl
     | cancel i =>
       obtain ⟨_, _, rfl⟩ := cancelBody_ok h
+      rfl
+    | declare r n =>
+      obtain ⟨_, _, rfl⟩ := declareBody_ok h
       rfl
   | propose seat b =>
     obtain ⟨_, _, ⟨_, _, _, _, _, rfl⟩ | ⟨_, _, _, _, rfl⟩⟩ := proposeBody_ok h <;> rfl
@@ -203,6 +209,105 @@ theorem refundEntries_congr {s s' : State G} (hb : s'.books = s.books) (d : Acti
 theorem all_contains_iff (signers signed : List Seat) (seat : Seat) :
     signers.all (signed ++ [seat]).contains = true ↔ ∀ j ∈ signers, j ∈ signed ∨ j = seat := by
   simp [List.all_eq_true]
+
+
+/-! ## Declarations -/
+
+theorem nextStage_of_last {s : State G} (hl : s.isLastTurn = true) :
+    nextStage s = .newRound ∨ nextStage s = .gameOver := by
+  have hp : s.phase = .actions := by
+    simp only [State.isLastTurn, Bool.and_eq_true, beq_iff_eq] at hl
+    exact hl.1
+  unfold nextStage
+  rw [hp]
+  simp only [hl, ↓reduceIte]
+  split
+  · exact Or.inr rfl
+  · exact Or.inl rfl
+
+theorem startNextTurn_declared_last (s : State G) (roll : Nat) (hl : s.isLastTurn = true) :
+    ∀ q x, (startNextTurn s roll).declared q x = 0 := by
+  intro q x
+  unfold startNextTurn
+  rcases nextStage_of_last hl with h | h <;> (rw [h]; try rfl)
+
+theorem startNextTurn_declared_not_last (s : State G) (roll : Nat) (hne : s.phase ≠ .ended)
+    (hl : ¬ s.isLastTurn = true) : (startNextTurn s roll).declared = s.declared := by
+  have hstage : nextStage s ≠ .newRound ∧ nextStage s ≠ .gameOver := by
+    unfold nextStage
+    cases hp : s.phase with
+    | ended => exact absurd hp hne
+    | actions =>
+      simp only [hl]
+      exact ⟨by simp, by simp⟩
+    | setup =>
+      simp only [setupStage]
+      split
+      · exact ⟨by simp, by simp⟩
+      · split <;> exact ⟨by simp, by simp⟩
+  unfold startNextTurn
+  split
+  · rfl
+  · rfl
+  · rfl
+  · rename_i he; exact absurd he hstage.1
+  · rename_i he; exact absurd he hstage.2
+
+theorem step_endTurnNow {s s' : State G} {e : Event} (hend : EndsTurn s e)
+    (h : Engine.step G s e = .ok s') : endTurnNow s = .ok s' := by
+  rcases step_view h with ⟨_, h2⟩ | ⟨hn, _⟩
+  · exact h2
+  · exact absurd hend hn
+
+/-- `DeclarationsKept`, in terms of `NoPending`. -/
+theorem declarations_kept {s s' : State G} {e : Event} (hn : NoPending s)
+    (h : Engine.step G s e = .ok s') : DeclarationsKept s s' e := by
+  have he := step_not_ended h
+  refine ⟨?_, ?_, ?_⟩
+  · rintro p r n rfl
+    obtain ⟨_, s1, hb, hf⟩ := step_act h (by simp [EndsTurn])
+    have hf' : checkWin (countAction s1 p) = .ok s' := hf
+    obtain ⟨⟨h1, h2⟩, ⟨h3, h4⟩, hs1⟩ := declareBody_ok hb
+    have hx := move_no_win (s := s) hn he (by subst hs1; rfl) (by subst hs1; rfl)
+      (by subst hs1; rfl) hf'
+    subst hx
+    subst hs1
+    refine ⟨h1, ?_, h3, h4, fun _ _ => rfl⟩
+    simpa [State.isTurnOf] using h2
+  · intro hend hl q x
+    obtain ⟨_, _, rfl⟩ := endTurnNow_ok (step_endTurnNow hend h)
+    refine startNextTurn_declared_last _ _ ?_ q x
+    exact hl
+  · intro hne hnot
+    by_cases hend : EndsTurn s e
+    · have hl : ¬ s.isLastTurn = true := fun hl => hnot ⟨hend, hl⟩
+      obtain ⟨_, _, rfl⟩ := endTurnNow_ok (step_endTurnNow hend h)
+      refine startNextTurn_declared_not_last _ _ ?_ ?_
+      · exact he
+      · exact hl
+    · obtain ⟨_, s1, hb, hf⟩ := step_act h hend
+      have h1 := bodyOf_declared hb hne
+      rcases finish_cases hf with rfl | ⟨w, hw⟩
+      · exact h1
+      · obtain ⟨_, _, rfl⟩ := endGame_ok hw
+        exact h1
+
+/-- A declaration changes exactly one number, and counts one action and one event. -/
+theorem declare_is_exact {s s' : State G} {p : Seat} {r : Res} {n : Nat} (hn : NoPending s)
+    (h : Engine.step G s (.move p (.declare r n)) = .ok s') :
+    s' = { s with
+      declared := fun q x => if q = p ∧ x = r then n else s.declared q x
+      actionsThisTurn := fun q => if q = p then s.actionsThisTurn q + 1 else s.actionsThisTurn q
+      eventsApplied := s.eventsApplied + 1 } := by
+  have he := step_not_ended h
+  obtain ⟨_, s1, hb, hf⟩ := step_act h (by simp [EndsTurn])
+  have hf' : checkWin (countAction s1 p) = .ok s' := hf
+  obtain ⟨_, _, hs1⟩ := declareBody_ok hb
+  have hx := move_no_win (s := s) hn he (by subst hs1; rfl) (by subst hs1; rfl)
+    (by subst hs1; rfl) hf'
+  subst hx
+  subst hs1
+  rfl
 
 /-- `every_other_event_is_exact`, in terms of `NoPending`. -/
 theorem step_is_exact {s s' : State G} {e : Event} (hn : NoPending s)

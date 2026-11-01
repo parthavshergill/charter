@@ -47,6 +47,7 @@ Numbers:
 - `rolled` is the total the dice just showed. It is 0 outside `on-roll`. `on-roll` runs on every roll, also a 7 and a roll that pays nobody, so a test on `rolled` chooses the numbers. `(= rolled 7)` means the dice show 7. A law reads the roll and cannot change it.
 - `(- a b)` stops at 0. `(- (holding each grain) 7)` means the grain above 7, and it is 0 for a player with 7 or fewer.
 - `(/ a b)` rounds down. `(/ amount 2)` of a payment of 1 is 0, so nothing moves. `b` can be any number, and a number that turns out to be 0 gives 0.
+- `(declared P R)` is the number P has declared for R this round. Each player sets their own number on their turn, everyone can see it, and it clears when the round ends. It moves nothing by itself. Call it "declared", as in "the grain they declared".
 - `round` is the number of the current round. On a roll that starts a new round, it is already the new round.
 - `(total-over test n)` adds up n for every player who passes the test. `(most-over test n)` is the highest n among them, and `(least-over test n)` is the lowest. If nobody passes, each is 0. Inside these three, `each` is the player being measured.
 - These give a number, not a player. So `(= (holding each grain) (most-over true (holding each grain)))` means a player has as much grain as anyone, and several players can share it.
@@ -155,6 +156,15 @@ Each round, the treasury pays 2 wool to each player tied for the most grain, if 
       (transfer from each to treasury wool (/ (* (holding each wool) (holding treasury ore)) 100)))))
 </law>
 Each round, each player pays the treasury a tax in wool: their wool times the treasury's ore, divided by 100, rounded down.
+
+<law>
+(law ""
+  (on-round-end
+    (for-each-player (and (< 0 (declared each grain)) (= (declared each grain) (most-over true (declared each grain))))
+      (transfer from each to treasury wool (declared each grain))
+      (transfer from treasury to each grain (holding treasury grain)))))
+</law>
+Each round, the player who declared the most grain pays that much wool to the treasury and gets all the treasury's grain. Tied players each pay and share the grain.
 
 <law>
 (law ""

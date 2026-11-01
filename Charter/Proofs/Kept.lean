@@ -267,6 +267,9 @@ theorem move_open {s s1 : State G} {p : Seat} {m : Move} (hb : bodyOf s (.move p
   | cancel i =>
     obtain ⟨_, _, rfl⟩ := cancelBody_ok hb
     rfl
+  | declare r n =>
+    obtain ⟨_, _, rfl⟩ := declareBody_ok hb
+    rfl
 
 theorem body_kept {s s1 : State G} {e : Event} (hi : IdInv s) (hb : bodyOf s e = .ok s1) :
     BodyKept s s1 e := by
@@ -677,6 +680,9 @@ theorem offers_kept {s s' : State G} {e : Event} (h : Engine.step G s e = .ok s'
       | cancel i =>
         obtain ⟨_, _, rfl⟩ := cancelBody_ok hb
         exact Or.inl (List.mem_filter.mp ho1).1
+      | declare r n =>
+        obtain ⟨_, _, rfl⟩ := declareBody_ok hb
+        exact Or.inl ho1
     | propose seat b =>
       obtain ⟨_, _, ⟨_, _, _, _, _, rfl⟩ | ⟨_, _, _, _, rfl⟩⟩ := proposeBody_ok hb <;> exact Or.inl ho1
     | vote seat i y =>
@@ -725,6 +731,9 @@ theorem body_built {s s1 : State G} {e : Event} (hb : bodyOf s e = .ok s1)
       rfl
     | cancel i =>
       obtain ⟨_, _, rfl⟩ := cancelBody_ok hb
+      rfl
+    | declare r n =>
+      obtain ⟨_, _, rfl⟩ := declareBody_ok hb
       rfl
   | propose seat b =>
     obtain ⟨_, _, ⟨_, _, _, _, _, rfl⟩ | ⟨_, _, _, _, rfl⟩⟩ := proposeBody_ok hb <;> rfl

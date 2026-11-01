@@ -435,6 +435,9 @@ theorem body_vconj {s s1 s' : State G} {e : Event} (hb : bodyOf s e = .ok s1)
     | cancel i =>
       obtain ⟨_, _, rfl⟩ := cancelBody_ok hb
       exact ⟨[], by simp, by simp⟩
+    | declare r n =>
+      obtain ⟨_, _, rfl⟩ := declareBody_ok hb
+      exact ⟨[], by simp, by simp⟩
   | propose seat b =>
     obtain ⟨_, _, ⟨L, rfl, _, _, _, rfl⟩ | ⟨_, _, _, _, rfl⟩⟩ := proposeBody_ok hb
     · refine ⟨_, rfl, ?_⟩

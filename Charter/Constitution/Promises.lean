@@ -119,6 +119,17 @@ def AnySeatCanVote (s : State G) : Prop :=
 /-- Nobody joins or leaves a game: the seats and their order never change. -/
 def SeatsStayFixed (s s' : State G) : Prop := s'.turnOrder = s.turnOrder
 
+/-- A declared number changes only in two ways. A seat's own declaration, accepted on its own turn for a
+real resource and within the limit, changes that one number. The end of a round clears them all. So
+nobody can declare for another seat. -/
+def DeclarationsKept {G : GameDef} (s s' : State G) (e : Event) : Prop :=
+  (∀ p r n, e = .move p (.declare r n) →
+    s.phase = .actions ∧ s.currentSeat = some p ∧ G.isRes r = true ∧ n ≤ maxDeclared ∧
+    ∀ q x, s'.declared q x = if q = p ∧ x = r then n else s.declared q x) ∧
+  (EndsTurn s e → s.isLastTurn = true → ∀ q x, s'.declared q x = 0) ∧
+  ((∀ p r n, e ≠ .move p (.declare r n)) → ¬ (EndsTurn s e ∧ s.isLastTurn = true) →
+    s'.declared = s.declared)
+
 /-- The seat an event speaks for. The timer's event speaks for no seat. -/
 def senderOf : Event → Option Seat
   | .move p _ => some p

@@ -15,28 +15,28 @@ variable {G : GameDef}
 
 /-! ## What a roll reads -/
 
-/-- What a roll reads differs from the state only in the round. -/
-theorem atRoll_eq (s : State G) : ∃ n, s.atRoll = { s with round := n } := by
+/-- What a roll reads differs from the state only in the round and the declarations. -/
+theorem atRoll_eq (s : State G) : ∃ n d, s.atRoll = { s with round := n, declared := d } := by
   unfold State.atRoll
   split
-  · exact ⟨_, rfl⟩
-  · exact ⟨s.round, rfl⟩
+  · exact ⟨_, _, rfl⟩
+  · exact ⟨s.round, s.declared, rfl⟩
 
 theorem atRoll_turnOrder (s : State G) : s.atRoll.turnOrder = s.turnOrder := by
-  obtain ⟨_, h⟩ := atRoll_eq s; rw [h]
+  obtain ⟨_, _, h⟩ := atRoll_eq s; rw [h]
 
 theorem atRoll_pieces (s : State G) : s.atRoll.pieces = s.pieces := by
-  obtain ⟨_, h⟩ := atRoll_eq s; rw [h]
+  obtain ⟨_, _, h⟩ := atRoll_eq s; rw [h]
 
 theorem atRoll_books (s : State G) : s.atRoll.books = s.books := by
-  obtain ⟨_, h⟩ := atRoll_eq s; rw [h]
+  obtain ⟨_, _, h⟩ := atRoll_eq s; rw [h]
 
 theorem atRoll_laws (s : State G) : s.atRoll.laws = s.laws := by
-  obtain ⟨_, h⟩ := atRoll_eq s; rw [h]
+  obtain ⟨_, _, h⟩ := atRoll_eq s; rw [h]
 
 /-- The bank's payments do not read the round. -/
 theorem baseHarvest_atRoll (s : State G) (roll : Nat) : baseHarvest s.atRoll roll = baseHarvest s roll := by
-  obtain ⟨_, h⟩ := atRoll_eq s; rw [h]; rfl
+  obtain ⟨_, _, h⟩ := atRoll_eq s; rw [h]; rfl
 
 /-- A valid game passes the checks on its own parts. -/
 theorem valid_shape (hG : G.Valid) : G.shapeChecks = true := by
@@ -320,6 +320,22 @@ theorem acceptBody_ok {s s1 : State G} {p : Seat} {id : Nat} (h : acceptBody s p
       simp [h2]
   · cases h
 
+theorem declareBody_ok {s s1 : State G} {p : Seat} {r : Res} {n : Nat} (h : declareBody s p r n = .ok s1) :
+    (s.phase = .actions ∧ s.isTurnOf p = true) ∧ (G.isRes r = true ∧ n ≤ maxDeclared) ∧
+    s1 = { s with declared := fun q x => if q = p ∧ x = r then n else s.declared q x } := by
+  unfold declareBody at h
+  split at h
+  · cases h
+  rename_i h1
+  split at h
+  · cases h
+  rename_i h2
+  split at h
+  · cases h
+  rename_i h3
+  simp only [Bool.not_eq_true', Bool.not_eq_false, Bool.and_eq_true, beq_iff_eq] at h1 h2
+  exact ⟨h1, ⟨h2, by omega⟩, (Except.ok.inj h).symm⟩
+
 theorem cancelBody_ok {s s1 : State G} {p : Seat} {id : Nat} (h : cancelBody s p id = .ok s1) :
     s.phase = .actions ∧ s.offers.any (fun o => o.id == id && o.src == p) = true ∧
     s1 = { s with offers := s.offers.filter (·.id != id) } := by
@@ -483,6 +499,9 @@ theorem step_view {s s' : State G} {e : Event} (h : step G s e = .ok s') :
       obtain ⟨hc, s1, hb, hf⟩ := actThenCheckWin_ok h
       exact Or.inr ⟨fun x => x, hc, s1, hb, hf⟩
     | cancel i =>
+      obtain ⟨hc, s1, hb, hf⟩ := actThenCheckWin_ok h
+      exact Or.inr ⟨fun x => x, hc, s1, hb, hf⟩
+    | declare r n =>
       obtain ⟨hc, s1, hb, hf⟩ := actThenCheckWin_ok h
       exact Or.inr ⟨fun x => x, hc, s1, hb, hf⟩
   | propose seat b =>

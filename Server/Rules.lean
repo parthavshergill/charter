@@ -67,6 +67,7 @@ mutual
     | .atom "amount" => .ok .harvestedAmount
     | .atom "rolled" => .ok .rolled
     | .atom "round" => .ok .round
+    | .list [.atom "declared", p, r] => return .declared (← parseParty p) (← parseResRef rs r)
     | .list [.atom "holding", p, r] => return .holding (← parseParty p) (← parseResRef rs r)
     | .list [.atom "points", p] => return .points (← parseParty p)
     | .list [.atom "count", p, k] => return .count (← parseParty p) (← parseKind k)
@@ -210,6 +211,7 @@ mutual
     | .harvestedAmount => .atom "amount"
     | .rolled => .atom "rolled"
     | .round => .atom "round"
+    | .declared p r => .list [.atom "declared", partyS p, resRefS r]
     | .holding p r => .list [.atom "holding", partyS p, resRefS r]
     | .points p => .list [.atom "points", partyS p]
     | .count p k => .list [.atom "count", partyS p, .atom k]
@@ -287,6 +289,10 @@ def dealS (d : Deal) : SExp :=
 def printProposal : Proposal → String
   | .law l => (lawS l).render
   | .deal d => (dealS d).render
+
+/-- This law reads what seats have declared. -/
+def lawReadsDeclared (L : Law) : Bool :=
+  ((lawS { L with title := "" }).render.splitOn "(declared ").length > 1
 
 /-! ## Sample laws
 

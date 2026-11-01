@@ -195,6 +195,25 @@ Markets and elections need a law to compare seats. A law still has no way to nam
 | What is the round on a roll that starts a new round? | The new round. A roll comes after the round's end and belongs to the next turn. The statements still name `rollEntries`, which reads `State.atRoll`. `IsDicePayout` did not change, because the bank's payments do not read the round. `the_round_moves_money` plays this. |
 | Does a saved game replay the same? | Yes, if it has no new words. `no_roll_law_means_harvest_alone` now reads the harvest from `atRoll`, but no old law can read the round. The parser only gained new words. |
 
+## Declarations
+
+An auction or an election needs a seat to say a number that a law can read. The one sentence is: each seat has one public number per resource, which it can change on its turn and which clears when the round ends.
+
+| Question | Answer |
+|---|---|
+| Why a move? | A move inherits "on your own turn". It counts against the action limit, and `ActionsAreCountedExactly` and the rest cover it with no new words. |
+| What can a forged declaration do? | Nothing. `DeclarationsKept` says that a number changes only by that seat's own accepted declaration, or by clearing at a round's end. `a_forged_declaration_is_rejected` and `a_foreign_declaration_is_rejected` show both sides. |
+| What does a declaration change? | `every_other_event_is_exact` states the whole new state. One number, the sender's action count and the count of events change. Nothing else does, so it moves no resources and writes no entry. |
+| Does it read another seat's secret? | No. All numbers are public, and everyone's view has them. |
+| When does it clear? | After the round-end laws run, and before the roll that starts the next round. `State.atRoll` clears it for that roll, as it sets the new round. The turn change then clears it in the state. If the last round ends, it clears too. If a seat reaches the target during a round, the game ends and the numbers stay, and nothing reads them. |
+| Does commandment II hold? | Yes, in the same words. `declareBody_rename` is the new case. A declaration names no seat but its sender, and renaming carries the numbers with the seats. |
+| Is a preview still exact? | Yes, for the state it is given. Declarations can change after that. So when a law reads them, the screen says the figures hold if declarations stay as they are. |
+| How large can a number be? | `maxDeclared`, which is `maxStock`. A larger number could mean nothing, as no seat could hold that much. |
+| Does `legalMoves` list it? | No, as with offers. Its contents are free. The view has its own `can` field, from asking `Engine.step`. |
+| Does a saved game replay the same? | Yes. A game with no declarations has every number at 0, and no old law reads them. |
+
+`an_auction_settles` plays the worked auction, with a declared bid, the most, and a test that a bid can be paid. `an_auction_tie_is_shared` shows the tie: both seats pay, and each gets half. A bid above what a seat holds does not count in that law. A law need not say this. Without such a test, a seat that bids more than it holds pays what it has and still gets the goods, because a payment shrinks in proportion. The clerk's auction example has no such test, because the request does not ask for one.
+
 ## How the checks work
 
 - **Axiom audit:** `make audit` fails if any theorem in a `Charter` module rests on an axiom other than `propext`, `Classical.choice` and `Quot.sound`. So a `sorry` fails it. It also replays the proofs through `leanchecker`, and scans for banned constructs.

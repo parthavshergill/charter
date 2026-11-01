@@ -49,6 +49,9 @@ A vote makes no entries, unless it ends the game, which makes only refunds. Acce
 that exists. A seat can end a turn only when it is the current seat. Only placing a piece changes the
 pieces. Only ending a turn moves the turn or the dice.
 
+A declaration changes one number and adds to the sender's action count and the count of events. It
+changes nothing else. `DeclarationsKept` says how declared numbers can change in any step.
+
 Why it matters: it rules out hidden side effects in the events the commandments do not list. -/
 theorem every_other_event_is_exact (G : GameDef) (hG : G.Valid) (s s' : State G) (e : Event)
     (hs : Reachable G s) (h : Engine.step G s e = .ok s') :
@@ -70,7 +73,13 @@ theorem every_other_event_is_exact (G : GameDef) (hG : G.Valid) (s s' : State G)
     ((∀ p k loc, e ≠ .move p (.place k loc)) → s'.pieces = s.pieces) ∧
     (¬ EndsTurn s e →
       s'.turnsTaken = s.turnsTaken ∧ s'.turnIndex = s.turnIndex ∧ s'.round = s.round ∧
-      s'.rollsMade = s.rollsMade) :=
+      s'.rollsMade = s.rollsMade) ∧
+    (∀ p r n, e = .move p (.declare r n) →
+      s' = { s with
+        declared := fun q x => if q = p ∧ x = r then n else s.declared q x
+        actionsThisTurn := fun q => if q = p then s.actionsThisTurn q + 1 else s.actionsThisTurn q
+        eventsApplied := s.eventsApplied + 1 }) ∧
+    DeclarationsKept s s' e :=
   Proofs.every_other_event_is_exact G hG s s' e (hs.inv hG) h
 
 -- This proof does not need `hs`. The statement keeps it, so it matches the others.

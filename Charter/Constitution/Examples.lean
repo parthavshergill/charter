@@ -16,6 +16,8 @@ These show that the promises are not empty:
   over the payment limits are rejected.
 * Totals, the most, the least, division by a computed number and the round each move money in a real
   game, and a wrong amount is rejected.
+* A declaration changes what a law does. `an_auction_settles` is a worked auction, with a tie and a bid
+  nobody can pay.
 * The promises reject bad steps. Each `..._is_rejected` theorem shows a named part of a commandment
   saying no to a forged step. Next to most is an `example` of the honest step, which it allows.
 
@@ -734,6 +736,152 @@ theorem nested_measures_over_the_cap_are_rejected :
       lawProblems tinySettlers (sixSeatGame [])
         { title := "Deep", clauses := [.onRoundEnd [.transfer .bank .treasury (.lit "grain") (nestedMeasure 6)]] } := by
   decide +kernel
+
+/-! ## Declarations
+
+Each seat has one public number per resource, which it can change on its turn and which clears when the
+round ends. In these games, each roll pays the seat whose turn it starts in wool, and puts grain in the
+treasury. -/
+
+/-- A founding law: wool for the seat whose turn the roll starts, and 4 grain for the treasury. -/
+def auctionIncome : Law :=
+  { title := "Income"
+    clauses := [.onRoll [.transfer .bank .actor (.lit "wool") .rolled,
+      .transfer .bank .treasury (.lit "grain") (.lit 4)]] }
+
+/-- The bid of the seat being looked at. -/
+def bid : Expr := .declared .each (.lit "grain")
+
+/-- This seat holds enough wool to pay its bid. A bid it cannot pay does not count. -/
+def canPayBid : Cond := .le bid (.holding .each (.lit "wool"))
+
+/-- The worked auction, which uses a declaration, a test and the most. At a round's end, each seat with
+the highest bid it can pay pays its bid to the treasury and asks for all the treasury's grain. If two
+seats tie, both pay and they share the grain, as `settle` shrinks both requests alike. No seat's name
+plays a part. -/
+def auctionLaw : Law :=
+  { title := "Grain auction"
+    clauses := [.onRoundEnd [.forEach
+      (.and (.lt (.lit 0) bid) (.and canPayBid (.eq bid (.mostOver canPayBid bid))))
+      [ .transfer .each .treasury (.lit "wool") bid
+      , .transfer .treasury .each (.lit "grain") (.holding .treasury (.lit "grain")) ]]] }
+
+def auctionGame : GameDef :=
+  { tinySettlers with
+    name := "Auction"
+    resources := [⟨"grain", 200⟩, ⟨"timber", 24⟩, ⟨"brick", 24⟩, ⟨"wool", 200⟩]
+    diceCount := 2
+    diceSides := 6
+    foundingLaws := [auctionIncome, auctionLaw] }
+
+theorem auctionGame_valid : auctionGame.Valid := by decide +kernel
+
+/-- Setup is skipped. Rolls of 10 and 5 pay seats 0 and 1, and the treasury has 8 grain. These are the
+events up to seat 1's turn, with seat 0 having bid `a`, and then seat 1 bidding `b`. -/
+def auctionEvents (a b : Nat) : List Event :=
+  List.replicate 4 .forceEndTurn ++
+    [.move 0 (.declare "grain" a), .move 0 .endTurn, .move 1 (.declare "grain" b)]
+
+/-- The auction really settles. Seat 0 bids 5 and seat 1 bids 3. Seat 0 pays 5 wool and gets 8 grain. The
+last entries are the next roll's income. So a declaration changes what a law does. -/
+theorem an_auction_settles :
+    ∃ s s', Reachable auctionGame s ∧ Engine.step auctionGame s .forceEndTurn = .ok s' ∧
+      newEntries s s' = [⟨.player 0, .treasury, "wool", 5, .lawEffect⟩,
+        ⟨.treasury, .player 0, "grain", 8, .lawEffect⟩,
+        ⟨.bank, .player 0, "wool", 3, .lawEffect⟩, ⟨.bank, .treasury, "grain", 4, .lawEffect⟩] :=
+  real_step (seats := 2) (serverSeed := 42) (nonces := [2]) (events := auctionEvents 5 3)
+    auctionGame_valid (by decide) (by decide) (by decide +kernel)
+
+/-- The loser getting the grain is rejected. -/
+theorem wrong_auction_winner_is_rejected :
+    stepEntries auctionGame 2 42 [2] (auctionEvents 5 3) .forceEndTurn ≠
+      some [⟨.player 1, .treasury, "wool", 3, .lawEffect⟩,
+        ⟨.treasury, .player 1, "grain", 8, .lawEffect⟩,
+        ⟨.bank, .player 0, "wool", 3, .lawEffect⟩, ⟨.bank, .treasury, "grain", 4, .lawEffect⟩] := by
+  decide +kernel
+
+/-- A tie is neutral. Both seats bid 5, both pay, and each gets half the treasury's grain. -/
+theorem an_auction_tie_is_shared :
+    ∃ s s', Reachable auctionGame s ∧ Engine.step auctionGame s .forceEndTurn = .ok s' ∧
+      newEntries s s' = [⟨.player 0, .treasury, "wool", 5, .lawEffect⟩,
+        ⟨.treasury, .player 0, "grain", 4, .lawEffect⟩,
+        ⟨.player 1, .treasury, "wool", 5, .lawEffect⟩,
+        ⟨.treasury, .player 1, "grain", 4, .lawEffect⟩,
+        ⟨.bank, .player 0, "wool", 3, .lawEffect⟩, ⟨.bank, .treasury, "grain", 4, .lawEffect⟩] :=
+  real_step (seats := 2) (serverSeed := 42) (nonces := [2]) (events := auctionEvents 5 5)
+    auctionGame_valid (by decide) (by decide) (by decide +kernel)
+
+/-- A bid the seat cannot pay does not count. Seat 1 bids 100 and holds 5 wool, so seat 0's bid of 5 wins. -/
+theorem a_bid_nobody_can_pay_does_not_count :
+    ∃ s s', Reachable auctionGame s ∧ Engine.step auctionGame s .forceEndTurn = .ok s' ∧
+      newEntries s s' = [⟨.player 0, .treasury, "wool", 5, .lawEffect⟩,
+        ⟨.treasury, .player 0, "grain", 8, .lawEffect⟩,
+        ⟨.bank, .player 0, "wool", 3, .lawEffect⟩, ⟨.bank, .treasury, "grain", 4, .lawEffect⟩] :=
+  real_step (seats := 2) (serverSeed := 42) (nonces := [2]) (events := auctionEvents 5 100)
+    auctionGame_valid (by decide) (by decide) (by decide +kernel)
+
+/-- With no declaration, the auction moves nothing. Only the next roll's income is written. -/
+example : stepEntries auctionGame 2 42 [2] (List.replicate 5 .forceEndTurn) .forceEndTurn =
+    some [⟨.bank, .player 0, "wool", 3, .lawEffect⟩, ⟨.bank, .treasury, "grain", 4, .lawEffect⟩] := by
+  decide +kernel
+
+/-- What this event does after these events: `none` if the engine rejects it. -/
+def declaredAfter (events : List Event) (q : Seat) (r : Res) : Option Nat :=
+  match Engine.replay auctionGame 2 42 [2] events with
+  | .ok s => some (s.declared q r)
+  | .error _ => none
+
+/-- A declaration writes no entries, and it changes that seat's number. -/
+example : stepEntries auctionGame 2 42 [2] (List.replicate 4 .forceEndTurn)
+    (.move 0 (.declare "grain" 5)) = some [] := by decide +kernel
+example : declaredAfter (auctionEvents 5 3) 0 "grain" = some 5 := by decide +kernel
+example : declaredAfter (auctionEvents 5 3) 1 "grain" = some 3 := by decide +kernel
+
+/-- Declarations clear when the round ends. They clear after the round's end laws have read them, and
+before the roll that starts the next round. -/
+example : declaredAfter (auctionEvents 5 3 ++ [.forceEndTurn]) 0 "grain" = some 0 := by decide +kernel
+example : declaredAfter (auctionEvents 5 3 ++ [.forceEndTurn]) 1 "grain" = some 0 := by decide +kernel
+
+/-- A roll that starts a new round reads the numbers as cleared. -/
+example : (Expr.declared .actor (.lit "grain")).eval
+    (({ initialState auctionGame 2 42 [2] with
+        phase := .actions, turnIndex := 1, declared := fun _ _ => 5 } : State auctionGame).atRoll)
+    { actor := some 0 } = 0 := by decide +kernel
+
+/-- A seat cannot declare out of turn, for an unknown resource, or over the limit. -/
+theorem a_foreign_declaration_is_rejected :
+    stepEntries auctionGame 2 42 [2] (List.replicate 4 .forceEndTurn) (.move 1 (.declare "grain" 5)) = none := by
+  decide +kernel
+
+theorem an_unknown_resource_is_rejected :
+    stepEntries auctionGame 2 42 [2] (List.replicate 4 .forceEndTurn) (.move 0 (.declare "gold" 5)) = none := by
+  decide +kernel
+
+theorem a_declaration_over_the_limit_is_rejected :
+    stepEntries auctionGame 2 42 [2] (List.replicate 4 .forceEndTurn)
+      (.move 0 (.declare "grain" (maxDeclared + 1))) = none := by
+  decide +kernel
+
+/-- A step that takes a declaration from seat 0 and also changes seat 1's number breaks `DeclarationsKept`:
+it forges a number in another seat's name. -/
+theorem a_forged_declaration_is_rejected :
+    ¬ DeclarationsKept (({ initialState auctionGame 2 42 [2] with phase := .actions }) : State auctionGame)
+      ({ initialState auctionGame 2 42 [2] with
+          phase := .actions, declared := fun q _ => if q = 1 then 9 else 0 })
+      (.move 0 (.declare "grain" 5)) := by
+  intro h
+  obtain ⟨_, _, _, _, hk⟩ := h.1 0 "grain" 5 rfl
+  have h9 : (9 : Nat) = 0 := hk 1 "grain"
+  exact absurd h9 (by decide)
+
+/-- A number that stays after a round's end breaks it too. -/
+theorem a_number_that_stays_is_rejected :
+    ¬ DeclarationsKept (({ initialState auctionGame 2 42 [2] with phase := .actions, turnIndex := 1 }) : State auctionGame)
+      ({ initialState auctionGame 2 42 [2] with declared := fun _ _ => 9 })
+      .forceEndTurn := by
+  intro h
+  have h9 : (9 : Nat) = 0 := h.2.1 trivial (by decide +kernel) 0 "grain"
+  exact absurd h9 (by decide)
 
 /-- The conditions the theorems assume can be met: this new game is reachable. -/
 example : Reachable tinySettlers (initialState tinySettlers 2 42 [25283273]) :=

@@ -62,6 +62,25 @@ def seatJson (g : Game) (s : Option (State g.spec.G)) (showPersona : Bool) (i : 
       , ("hand", handJson st (.player i))
       , ("pieces", Json.mkObj (st.rules.pieces.map fun d => (d.name, toJson (st.countOf i d.name)))) ])
 
+/-- What seats have declared. The screen stays quiet about this until a law in force or a proposal reads
+declarations. Then it shows everyone's numbers and a control on the seat's own turn. -/
+def declarationsJson (s : State G) (you : Option Nat) : Json :=
+  let reads (L : Law) : Bool := Rules.lawReadsDeclared L
+  let inUse := s.laws.any (reads ·.2) ||
+    s.openProposals.any fun p => match p.body with
+      | .law L => reads L
+      | .deal _ => false
+  let rows := s.turnOrder.flatMap fun p =>
+    (G.resources.map (·.name)).filterMap fun r =>
+      let n := s.declared p r
+      if n == 0 then none else
+      some (Json.mkObj [("seat", toJson p), ("res", r), ("n", toJson n)])
+  let can := match you, G.resources.head? with
+    | some y, some r => (Engine.step G { s with journal := [] } (.move y (.declare r.name 0))).toOption.isSome
+    | _, _ => false
+  Json.mkObj [("inUse", toJson inUse), ("can", toJson can), ("max", toJson maxDeclared),
+    ("rows", Json.arr rows.toArray)]
+
 def placementName : Placement → String
   | .link => "link"
   | .spot => "spot"
@@ -267,6 +286,7 @@ def view (g : Game) (code : String) (you : Option Nat) (drafting : List Nat) (bo
       , ("pieces", Json.arr (s.pieces.map pieceJson).toArray)
       , ("pieceDefs", Json.arr (s.rules.pieces.map (pieceDefJson s you legal)).toArray)
       , ("treasury", handJson s .treasury), ("bank", handJson s .bank)
+      , ("declarations", declarationsJson s you)
       , ("legalMoves", Json.arr (legal.map (moveEntry g.spec.layout s)).toArray)
       , ("proposals", Json.arr (s.openProposals.map (proposalJson g s book you)).toArray)
       , ("laws", Json.arr (s.laws.map (lawJson g book)).toArray)

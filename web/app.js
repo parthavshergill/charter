@@ -518,8 +518,23 @@ function renderHouses() {
         built.length ? h("div", { class: "row" }, built.map(([k, n]) => h("span", {}, plural(n, k)))) : null));
   }));
 }
+/** What every seat has declared this round, plainly. It shows only while a law reads declarations. */
+function renderDeclared() {
+  const v = G.view, U = G.ui, d = v.declarations;
+  const show = !!d?.inUse && v.phase === "actions";
+  U.declared.hidden = !show;
+  if (!show) return;
+  const bySeat = new Map();
+  for (const r of d.rows) { if (!bySeat.has(r.seat)) bySeat.set(r.seat, []); bySeat.get(r.seat).push(r); }
+  fill(U.declared, h("div", { class: "lbl" }, "Declared this round"),
+    d.rows.length ? [...bySeat.entries()].map(([s, rows]) => h("div", { class: "line" },
+      h("b", {}, s === v.you ? "You" : nameOf(s)),
+      rows.map(r => h("span", { class: "chg" }, String(r.n), " ", resIcon(r.res, "res small"), ` ${r.res}`))))
+      : h("div", { class: "line none" }, "Nobody yet."));
+}
 function renderHerald() {
   const v = G.view, U = G.ui;
+  renderDeclared();
   if (v.phase === "lobby") { fill(U.herald); return; }
   const last = U.herald.querySelector(".die");
   const die = v.lastRoll != null ? h("div", { class: "die" + (G.prevRoll !== v.rollsMade ? " hit" : ""), title: "The last roll" }, String(v.lastRoll)) : null;
@@ -550,6 +565,8 @@ function buildLedge() {
   const U = G.ui;
   U.hand = h("div", { class: "hand", role: "group", "aria-label": "Your hand" });
   U.tray = h("div", { class: "tray" });
+  U.declared = h("div", { class: "declared vellum", hidden: true });
+  document.getElementById("app").append(U.declared);
   U.endTurn = h("button", { class: "act endturn", onclick: () => endTurn() });
   fill(U.ledge, U.hand, U.tray, U.endTurn);
 }
@@ -597,6 +614,7 @@ function renderLedge() {
       void i;
     });
     tools.push(h("button", { class: "tool sep" + (G.dock?.t === "trade" ? " selected" : ""), title: "Trade with the bank or the table (T)", onclick: () => toggleDock({ t: "trade" }) }, uiIcon("trade"), h("span", { class: "nm" }, "Trade")));
+    if (v.declarations?.inUse) tools.push(h("button", { class: "tool" + (G.dock?.t === "declare" ? " selected" : ""), title: "Declare a public number. A law reads these.", onclick: () => toggleDock({ t: "declare" }) }, uiIcon("declare"), h("span", { class: "nm" }, "Declare")));
   }
   fill(U.tray, tools);
   U.tray.classList.toggle("many", tools.length > 5);
@@ -716,12 +734,36 @@ function renderDock() {
   if (d.t === "chronicle") { renderChronicle(); return; }
   if (d.t === "talk") { renderTalk(); return; }
   if (d.t === "end") { fill(U.sheet, proclamation(G.view)); return; }
+  if (d.t === "declare") {
+    if (!G.view.declarations?.can) { closeDock(); return; }
+    // Keep typing in the box alive across polls.
+    if (!U.sheet.contains(document.activeElement) || !U.sheet.querySelector(".declaresheet")) fill(U.sheet, declareDoc());
+    return;
+  }
   if (d.t === "trade") {
     if (G.view.turn !== G.view.you || G.view.phase !== "actions") { closeDock(); return; }
     // Keep typing in the amount boxes alive across polls.
     if (!U.sheet.contains(document.activeElement) || !U.sheet.querySelector(".tradesheet")) renderTrade();
     return;
   }
+}
+/** The control for one public number per good. Each change is one action. */
+function declareDoc() {
+  const v = G.view, d = v.declarations;
+  const mine = r => (d.rows.find(x => x.seat === v.you && x.res === r)?.n) || 0;
+  const row = r => {
+    const box = h("input", { type: "number", min: "0", max: String(d.max), value: String(mine(r)), "aria-label": `Number to declare for ${r}` });
+    const send = () => {
+      const n = Math.max(0, Math.min(d.max, Math.floor(Number(box.value) || 0)));
+      postMove({ t: "declare", res: r, n });
+    };
+    box.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); send(); } });
+    return h("div", { class: "drow" }, resIcon(r), h("span", { class: "nm" }, capital(r)), box, h("button", { class: "act", onclick: send }, "Declare"));
+  };
+  return h("div", { class: "declaresheet" },
+    h("h3", {}, "Declare a number"),
+    h("p", { class: "note-line" }, "Everyone can see it. It moves nothing by itself, and only laws read it. You can change it on your turn. It clears when the round ends."),
+    goodsInPlay(v).map(row));
 }
 function flashFocus() {
   if (G.dock?.focus == null) return;

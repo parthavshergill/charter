@@ -98,6 +98,9 @@ theorem Limits.body {s s1 : State G} {e : Event} (hl : Limits s) (h : bodyOf s e
     | cancel i =>
       obtain ⟨_, _, rfl⟩ := cancelBody_ok h
       exact ⟨hl.1, hl.2, hl.3, hl.4⟩
+    | declare r n =>
+      obtain ⟨_, _, rfl⟩ := declareBody_ok h
+      exact ⟨hl.1, hl.2, hl.3, hl.4⟩
   | propose seat b =>
     obtain ⟨_, hn, hc⟩ := proposeBody_ok h
     have hopen : ∀ (q : OpenProposal), q.by_ = seat → ∀ q0,

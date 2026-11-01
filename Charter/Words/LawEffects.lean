@@ -73,6 +73,10 @@ mutual
     | .min a b => Nat.min (a.eval s env) (b.eval s env)
     | .max a b => Nat.max (a.eval s env) (b.eval s env)
     | .round => s.round
+    | .declared p r =>
+        match p.seat env, r.get env with
+        | some q, some x => s.declared q x
+        | _, _ => 0
     | .totalOver c a => (measured s env (fun e => c.eval s e) (fun e => a.eval s e)).sum
     | .mostOver c a => ((measured s env (fun e => c.eval s e) (fun e => a.eval s e)).max?).getD 0
     | .leastOver c a => ((measured s env (fun e => c.eval s e) (fun e => a.eval s e)).min?).getD 0
@@ -162,10 +166,11 @@ def State.nextRoller {G : GameDef} (s : State G) : Option Seat :=
   | .sameRound i => s.turnOrder[i]?
   | _ => none
 
-/-- What a roll reads. If the roll starts a new round, the round has already changed. -/
+/-- What a roll reads. If the roll starts a new round, the round has already changed and the declarations
+have cleared. -/
 def State.atRoll {G : GameDef} (s : State G) : State G :=
   match nextStage s with
-  | .newRound => { s with round := s.round + 1 }
+  | .newRound => { s with round := s.round + 1, declared := fun _ _ => 0 }
   | _ => s
 
 /-- The whole of a roll: the harvest, then every law reacting to the roll itself, all planned from

@@ -57,6 +57,9 @@ theorem body_deals_cases {s s1 : State G} {e : Event} (h : bodyOf s e = .ok s1) 
     | cancel i =>
       obtain ⟨_, _, rfl⟩ := cancelBody_ok h
       exact ⟨rfl, rfl⟩
+    | declare r n =>
+      obtain ⟨_, _, rfl⟩ := declareBody_ok h
+      exact ⟨rfl, rfl⟩
   | propose seat b =>
     left
     obtain ⟨_, _, ⟨_, _, _, _, _, rfl⟩ | ⟨_, _, _, _, rfl⟩⟩ := proposeBody_ok h <;> exact ⟨rfl, rfl⟩
@@ -112,6 +115,9 @@ theorem body_open_cases {s s1 : State G} {e : Event} (h : bodyOf s e = .ok s1) :
       exact ⟨rfl, rfl⟩
     | cancel i =>
       obtain ⟨_, _, rfl⟩ := cancelBody_ok h
+      exact ⟨rfl, rfl⟩
+    | declare r n =>
+      obtain ⟨_, _, rfl⟩ := declareBody_ok h
       exact ⟨rfl, rfl⟩
   | propose seat b =>
     right; left

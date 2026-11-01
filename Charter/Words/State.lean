@@ -84,6 +84,8 @@ structure State (G : GameDef) where
   nextOfferId : Nat
   builtThisRound : List (Seat × PieceKind)
   actionsThisTurn : Seat → Nat
+  /-- Each seat's public number for each resource. It clears when the round ends. -/
+  declared : Seat → Res → Nat
   /-- Every event accepted so far. -/
   eventsApplied : Nat
   winner : Option Seat
@@ -97,6 +99,8 @@ inductive Move where
   | offer (to : Option Seat) (give get : Bundle)
   | accept (offerId : Nat)
   | cancel (offerId : Nat)
+  /-- On your own turn, set your public number for this resource. It moves nothing. -/
+  | declare (r : Res) (n : Nat)
   | endTurn
   deriving Repr, DecidableEq
 

@@ -50,12 +50,14 @@ def startNextTurn (s : State G) (roll : Nat) : State G :=
         { base with
           round := s.round + 1
           builtThisRound := []
+          declared := fun _ _ => 0
           deals := s.deals.filter fun d => decide (s.round < d.lastRound) }
         0 roll
   | .gameOver =>
       { base with
         phase := .ended
         winner := bestSeat s s.turnOrder
+        declared := fun _ _ => 0
         deals := []
         openProposals := [] }
 

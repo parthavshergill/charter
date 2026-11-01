@@ -160,6 +160,9 @@ theorem state_books : (σ.state s).books = σ.books s.books := rfl
 @[simp] theorem state_actionsThisTurn_to (p : Seat) :
     (σ.state s).actionsThisTurn (σ.to p) = s.actionsThisTurn p := by
   simp [state, σ.back_to]
+@[simp] theorem state_declared (p : Seat) (r : Res) :
+    (σ.state s).declared (σ.to p) r = s.declared p r := by
+  simp [state, σ.back_to]
 @[simp] theorem state_eventsApplied : (σ.state s).eventsApplied = s.eventsApplied := rfl
 @[simp] theorem state_winner : (σ.state s).winner = s.winner.map σ.to := rfl
 

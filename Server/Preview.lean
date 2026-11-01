@@ -2,6 +2,7 @@ import Lean.Data.Json
 import Charter.Engine
 import Charter.Scene.OfState
 import Server.Text
+import Server.Rules
 
 /-!
 # What a law would do at this table, right now
@@ -168,7 +169,12 @@ def lawPreview (s : State G) (id : Nat) (L : Law) (you : Option Nat) (names : Na
   let refused := match lawProblems G s L with
     | [] => []
     | ps => [s!"As things stand, this law would not take effect: {", ".intercalate ps}."]
-  let notes := refused ++ ruleNotes s s' ++ unpaidBuildNotes s s' actor
+  -- Declarations can change until the round ends, so figures that read them hold only if they stay.
+  let readsDeclared := Rules.lawReadsDeclared L || s.laws.any (Rules.lawReadsDeclared ·.2)
+  let declared := if readsDeclared then
+      ["These figures hold if declarations stay as they are. A seat can change its own on its turn."]
+    else []
+  let notes := refused ++ declared ++ ruleNotes s s' ++ unpaidBuildNotes s s' actor
   Json.mkObj
     [ ("sections", Json.arr (sections.map sectionJson).toArray)
     , ("moreRolls", toJson (rolls.length - min rolls.length 3))
