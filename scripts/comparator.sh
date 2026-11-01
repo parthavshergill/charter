@@ -40,6 +40,9 @@ tar -xf - --warning=no-unknown-keyword
 # The fork has a lakefile.lean, so Lake creates this empty directory when it loads the project. The
 # sandbox can write only to the root .lake, so the directory must be there first.
 mkdir -p forks/leansqlite/.lake
+# The Island needs HexGrid, so the sandbox builds it too. Its build results must go under the root .lake.
+mkdir -p .lake/hexgrid
+ln -s ../../.lake/hexgrid packages/lean-hexgrid/.lake
 test -x /work/elan/bin/elan || elan-init -y --no-modify-path --default-toolchain none
 elan toolchain install "$(cat lean-toolchain)"
 # The real binaries, not the elan wrappers: the sandbox removes what the wrappers need.
