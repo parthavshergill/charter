@@ -46,7 +46,8 @@ def lookJson (t : Scene.Theme) : Json :=
     , ("bodyFont", look.bodyFont), ("displayFont", look.displayFont)
     , ("icons", Json.mkObj (look.icons.map fun (k, ps) => (k, Json.arr (ps.map pathJson).toArray)))
     , ("marks", Json.mkObj (look.marks.map fun (k, v) => (k, Json.str v)))
-    , ("quietPieces", toJson look.quietPieces) ]
+    , ("quietPieces", toJson look.quietPieces)
+    , ("music", look.music) ]
 
 def boardJson (spec : GameSpec) : Json :=
   let L := spec.layout

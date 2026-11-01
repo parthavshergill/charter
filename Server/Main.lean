@@ -395,7 +395,7 @@ def checkRequiredFiles (root : System.FilePath) : IO Unit := do
     let good ← if !(← path.pathExists) then pure false
       else pure !(← IO.FS.readFile path).trimAscii.isEmpty
     if !good then missing := missing ++ [f]
-  for f in meshFiles do
+  for f in meshFiles ++ Scene.musicTracks.map (s!"web/audio/music/{·}.mp3") do
     if !(← (root / f).pathExists) then missing := missing ++ [f]
   if !missing.isEmpty then
     die s!"these files are missing or empty under {root}: {", ".intercalate missing}. Set CHARTER_ROOT to the folder that holds them."

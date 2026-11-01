@@ -38,6 +38,8 @@ structure Look where
   marks : List (String × String) := islandMarks
   /-- Pieces the end screen does not count, because there are many and they say little. -/
   quietPieces : List String := ["road"]
+  /-- The world's music, by the name of a file in `web/audio/music`. A pack with none gets the game's own theme. -/
+  music : String := "table"
   deriving Inhabited
 
 end Charter.Scene

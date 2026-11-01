@@ -307,6 +307,7 @@ def theme : Theme :=
       | _ => 0xD9BC82
     look :=
       { tagline := "Elect a captain. Break a promise. Depose the liar."
+        music := "pirate"
         bodyFont := "book"
         displayFont := "slab"
         tokens :=

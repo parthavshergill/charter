@@ -307,7 +307,7 @@ details.formal[open] summary::before { content: "− "; }
 .sigline .nm { font-size: 14px; }
 .stamp { margin-left: auto; padding: 0 8px; font-size: 14px; font-weight: 600; letter-spacing: .1em; border: 2px solid currentColor; transform: rotate(-4deg); }
 .stamp.yes { color: var(--good); } .stamp.no { color: var(--wax); }
-.stamp.fresh { animation: stampIn .28s cubic-bezier(.2,.9,.3,1.2); }
+.stamp.fresh { animation: stampIn .28s cubic-bezier(.2,.9,.3,1.2) backwards; }
 @keyframes stampIn { from { transform: scale(2.2) rotate(-14deg); opacity: 0; } 70% { transform: scale(.94) rotate(-3deg); opacity: 1; } }
 .tally { display: flex; align-items: center; justify-content: space-between; margin: var(--s2) 0; font-size: 14px; color: var(--ink-2); min-height: 22px; }
 .votebar { display: flex; gap: var(--s2); margin-top: var(--s2); }
@@ -401,6 +401,19 @@ svg.wax { width: 96px; height: 96px; filter: drop-shadow(0 3px 2px rgba(0,0,0,.3
 
 /* the table menu */
 .menu { position: fixed; right: calc(var(--rail) + var(--s2)); bottom: var(--s3); width: 260px; padding: var(--s4); z-index: 14; display: grid; gap: var(--s2); }
+/* The sound switches. An icon alone in the corner of the title page and the gathering, with words in the table's menu. */
+.soundswitches { display: flex; gap: 2px; }
+.soundswitch { position: relative; display: inline-flex; align-items: center; gap: var(--s2); min-width: 40px; height: 40px; padding: 0 var(--s2); justify-content: center; border-radius: 3px; color: inherit; transition: color .12s, background .12s, opacity .12s; }
+.soundswitch svg { flex: none; width: 22px; height: 22px; }
+.soundswitch.off { opacity: .55; }
+.soundswitch.off::after { content: ""; position: absolute; left: 9px; top: 19px; width: 24px; height: 2px; background: currentColor; transform: rotate(-45deg); }
+.soundcorner { position: fixed; top: calc(var(--s2) + env(safe-area-inset-top, 0px)); right: calc(var(--s2) + env(safe-area-inset-right, 0px)); z-index: 6; color: var(--pale); background: var(--drop); border-radius: 4px; }
+.soundcorner[hidden] { display: none; }
+@media (hover: hover) { .soundcorner .soundswitch:hover { background: var(--walnut-3); } .menu .soundswitch:hover { background: var(--vellum-2); } }
+.menu .soundswitches { display: grid; gap: 0; margin: 0 calc(var(--s2) * -1); }
+.menu .soundswitch { justify-content: flex-start; color: var(--ink-2); font-size: 15px; }
+.menu .soundswitch .fine { margin-left: auto; font: 12px var(--mono); word-break: normal; }
+.menu .soundswitch.off::after { left: 8px; }
 .menu .code { font: 20px var(--mono); letter-spacing: .1em; }
 .menu .fine { font: 12px/1.4 var(--mono); word-break: break-all; color: var(--ink-3); }
 

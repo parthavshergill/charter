@@ -6,6 +6,7 @@ import { renderBoard2D, SCALE } from "./board2d.js";
 import { resIcon, uiIcon, pieceIcon, shield, chargeOf, waxSeal } from "./icons.js";
 import { reduced, anim, morphKids, spawn, middleOf, thump } from "./feel.js";
 import { applyLook } from "./look.js";
+import { play, setMusic, isOn, toggle } from "./sound.js";
 import { CONSTITUTION } from "./constitution.js";
 
 const app = document.getElementById("app");
@@ -77,6 +78,25 @@ const tokenKey = code => `charter.token.${code}`;
 const costOf = (b, cls = "small") => h("span", { class: "cost" }, (b || []).map(x => h("span", {}, String(x.n), resIcon(x.res, `res ${cls}`))));
 const costText = b => (b || []).map(x => `${x.n} ${x.res}`).join(", ");
 const ROUND_WORDS = ["", "first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth", "eleventh", "twelfth", "thirteenth", "fourteenth", "fifteenth", "sixteenth", "seventeenth", "eighteenth", "nineteenth", "twentieth"];
+
+// ---------------------------------------------------------------- the sound switches
+/** The two switches. Each says what it is and whether it is on, to a pointer, a keyboard and a screen reader. */
+function soundSwitches(words) {
+  const one = (kind, icon, name) => {
+    const state = h("span", { class: "fine" });
+    const show = on => {
+      b.classList.toggle("off", !on);
+      b.setAttribute("aria-pressed", on ? "true" : "false");
+      b.title = `${name}: ${on ? "on" : "off"}`;
+      state.textContent = on ? "On" : "Off";
+    };
+    const b = h("button", { class: "soundswitch", "aria-label": name, onclick: () => show(toggle(kind)) }, uiIcon(icon), words ? [h("span", {}, name), state] : null);
+    show(isOn(kind));
+    return b;
+  };
+  return h("div", { class: "soundswitches", role: "group", "aria-label": "Sound" }, one("fx", "effects", "Sound effects"), one("music", "music", "Music"));
+}
+const soundCorner = () => h("div", { class: "soundcorner" }, soundSwitches(false));
 
 // ---------------------------------------------------------------- the 3D table
 async function loadPlayer(canvas) {
@@ -184,7 +204,7 @@ const constitutionDoc = (...after) => h("div", { class: "constitution" },
 async function lobby() {
   const stage = h("div", { class: "stage" }, h("canvas"), h("div", { class: "vignette" }));
   let seats = 4;
-  const name = h("input", { class: "signline", "aria-label": "Your name", value: store.get("charter.name") || "", autocomplete: "off", spellcheck: "false", autocapitalize: "words" });
+  const name = h("input", { class: "signline", "aria-label": "Your name", value: store.get("charter.name") || "", autocomplete: "off", spellcheck: "false", autocapitalize: "words", oninput: () => play("quill") });
   const joinCode = h("input", { class: "input", placeholder: "Code", "aria-label": "Table code", maxlength: 5, value: params.get("join") || "" });
   const err = h("div", { class: "errline", role: "status" });
   const seatButtons = [2, 3, 4].map(n =>
@@ -246,7 +266,7 @@ async function lobby() {
     worldName.textContent = d?.name || "";
     worldButton.setAttribute("aria-label", d ? `World: ${d.name}` : "World");
     packNote.textContent = d?.blurb || "";
-    if (d) { applyLook(d.look); tagline.textContent = d.look.tagline; showBackdrop(d); }
+    if (d) { applyLook(d.look); setMusic(d.look.music); tagline.textContent = d.look.tagline; showBackdrop(d); }
     for (const [id, row] of worldRows) {
       row.setAttribute("aria-selected", id === game ? "true" : "false");
       row.tabIndex = id === game ? 0 : -1;
@@ -328,6 +348,7 @@ async function lobby() {
   const openPicker = () => {
     if (turning || !worldRows.size) return;
     pickerOpen = true;
+    play("page");
     worldButton.setAttribute("aria-expanded", "true");
     placePicker();
     picker.classList.add("open");
@@ -382,6 +403,7 @@ async function lobby() {
   let turning = false;
   const turnTo = (side, focusTarget) => {
     if (turning) return;
+    play("page");
     const sheet = page.firstChild, away = side !== "form";
     const swap = () => {
       turning = false;
@@ -437,7 +459,7 @@ async function lobby() {
     h("div", { class: "joinline" }, joinCode, h("button", { class: "act", onclick: e => { closePicker(false); if (nameOk()) busyWhile(e.currentTarget, join(joinCode.value)); } }, "Join")),
     err, tables);
   const page = scrollSheet(form, promises);
-  app.replaceChildren(stage, page, picker);
+  app.replaceChildren(stage, page, picker, soundCorner());
   new ResizeObserver(() => { if (pickerOpen) placePicker(); }).observe(page);
   name.addEventListener("keydown", e => { if (e.key === "Enter") e.target.closest(".titlepage").querySelector(".act.gold").click(); });
   // The signature font loads before it is needed, so the first letter typed is already in ink.
@@ -484,6 +506,8 @@ const G = {
   replay: null,         // {at, total, playing, marks, timer}: watching a game from its log
 };
 const you = () => G.view?.you;
+/** Nobody at the table is this page's player: a spectator, or a replay. */
+const watchingTable = () => G.view?.you == null || !!G.replay;
 const seat = i => G.view?.seats?.find(s => s.seat === i);
 const nameOf = i => (i === you() ? "You" : seat(i)?.name ?? `Seat ${i}`);
 
@@ -498,11 +522,16 @@ async function post(path, body) {
   try { r = await api(`/api/games/${G.code}/${path}`, { token: G.token, ...body }); }
   catch { r = { ok: false, error: "The server cannot be reached." }; }
   tapped?.classList.remove("busy");
-  if (r && r.ok === false) say(r.error || "Refused.");
+  if (r && r.ok === false) { play("refuse"); say(r.error || "Refused."); }
   poke();
   return r;
 }
-const postMove = move => post("move", { move });
+const postMove = move => post("move", { move }).then(r => {
+  // What the server has just agreed to. A piece sounds when it lands, and cards when they arrive.
+  if (r?.ok && move.t === "bankTrade") play("bank");
+  else if (r?.ok && move.t === "accept") play("deal");
+  return r;
+});
 function poke() { G.version = -1; G.pollSeq++; clearTimeout(G.polling); G.polling = setTimeout(poll, 40); }
 
 /** Say something where the eye already is: the prompt line above the ledge. */
@@ -588,20 +617,24 @@ function onPick(id, cx, cy) {
   const v = G.view; if (!v) return;
   closeTip();
   if (id === 8999) { if (touch()) tipAt(tipFor(id), cx, cy); return; }
-  if (id >= 9000) { openDock({ t: "laws", focus: id }); return; }
+  if (id >= 9000) { play("page"); openDock({ t: "laws", focus: id }); return; }
   if (id >= 3000) { if (touch()) tipAt(tipFor(id), cx, cy); return; }
   let moves = (v.legalMoves || []).filter(m => m.pick === id);
   if (G.selected) moves = moves.filter(m => m.kind === G.selected);
   if (moves.length && !reduced()) ring({ x: cx, y: cy }, "small");
   if (moves.length === 1) { place(moves[0]); return; }
   if (moves.length > 1) showPickMenu(moves, cx, cy);
-  else if (touch()) tipAt(tipFor(id), cx, cy);
+  else {
+    if (G.selected) play("refuse");
+    if (touch()) tipAt(tipFor(id), cx, cy);
+  }
 }
 function place(m) {
   closePickMenu();
   // A second tap on the same place, before the first has been answered, is the same tap.
   if (G.placing === m.pick) return;
   G.placing = m.pick;
+  play("tap", { gain: 5 }); // the hand comes down at once. The piece lands when the server has said yes.
   postMove(m.move).then(r => {
     G.placing = null;
     if (r?.ok && G.selected) {
@@ -702,6 +735,7 @@ async function gameScreen(code) {
     dock: h("div", { class: "dock vellum", "aria-live": "polite" }),
     menu: h("div", { class: "menu vellum", hidden: true }),
     center: h("div"),
+    soundCorner: soundCorner(),
   };
   U.sheet = h("div", { class: "sheet", onscroll: () => { if (U.sheet.firstChild === U.constitution) G.constitutionTop = U.sheet.scrollTop; } });
   U.grab = h("div", { class: "grab", "aria-hidden": "true" });
@@ -710,7 +744,7 @@ async function gameScreen(code) {
   buildLedge();
   U.crown = h("div", { class: "crown" }, U.houses, h("div", { class: "heraldry" }, U.herald, U.caption));
   app.replaceChildren(h("div", { class: "stage" }, canvas, svg, h("div", { class: "vignette" })),
-    U.crown, U.slips, U.prompt, U.declared, U.ledge, U.replayBar, U.dock, U.rail, U.menu, U.pickmenu, U.tip, U.center);
+    U.crown, U.slips, U.prompt, U.declared, U.ledge, U.replayBar, U.dock, U.rail, U.menu, U.pickmenu, U.tip, U.center, U.soundCorner);
   bindTouch();
   followKeyboard();
   // A person who chose the 2D board, or whose device could not draw the 3D table, starts with it.
@@ -904,6 +938,7 @@ function showFoundingLaws(prev, v) {
 function renderAll() {
   if (!G.view) return;
   applyLook(G.view.look);
+  setMusic(G.view.look?.music);
   renderHouses(); renderHerald(); renderLedge(); renderPrompt(); renderSlips(); renderRail(); renderDock(); renderCenter();
   if (!showing3D() && (!G.use3d || G.showStandIn)) renderBoard2D(G.ui.svg, G.view, seatColor, onPick);
   updateInsets();
@@ -991,7 +1026,11 @@ function caption(text, sticky) {
 function buildLedge() {
   const U = G.ui;
   U.hand = h("div", { class: "hand", role: "group", "aria-label": "Your hand" });
-  U.tray = h("div", { class: "tray" });
+  U.tray = h("div", { class: "tray", onpointerdown: e => {
+    // A press on a piece that cannot be built. A browser may send it to the disabled button or to the row under it.
+    const off = [...U.tray.children].some(t => { const r = t.getBoundingClientRect(); return t.disabled && e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom; });
+    if (off) play("refuse");
+  } });
   U.endTurn = h("button", { class: "act endturn", onclick: () => endTurn() });
   fill(U.ledge, U.hand, U.tray, U.endTurn);
 }
@@ -1000,6 +1039,7 @@ function endTurn() {
   if (!end) return;
   if (G.ending) return;
   G.selected = null;
+  play("end-turn");
   if (G.dock?.t === "trade") closeDock();
   // Until the table has moved on, the button shows that it is on its way, and a second tap does nothing.
   G.ending = true;
@@ -1075,6 +1115,7 @@ function previewCost(name) {
 }
 function selectPiece(k) {
   G.selected = G.selected === k ? null : k;
+  play(G.selected ? "tool" : "tool-off");
   if (G.dock?.t === "trade") closeDock();
   closePickMenu();
   renderLedge(); renderPrompt(); refreshScene();
@@ -1151,6 +1192,7 @@ function renderMenu() {
       else store.set("charter.board2d", "1");
       applyMode(); renderMenu();
     } }, G.use3d ? "Use the 2D board" : "Use the 3D table"),
+    soundSwitches(true),
     h("details", { class: "formal" }, h("summary", {}, "Dice fingerprint"), h("div", { class: "fine" }, v.fingerprint)),
     h("a", { class: "link", href: "/" }, "Leave for the title page"));
 }
@@ -1163,6 +1205,7 @@ function openDock(d) {
   if (d.t === "draft" && !touch()) setTimeout(() => G.ui.words.focus(), 60);
 }
 function toggleDock(d) {
+  play("page");
   if (G.dock?.t === d.t && (d.id == null || G.dock.id === d.id)) closeDock(true); else openDock(d);
 }
 function closeDock(byHand) {
@@ -1310,19 +1353,32 @@ function sourceOf(text, description) {
     h("summary", {}, "Rule source"), h("pre", { class: "sexp" }, sourceLines(text)));
 }
 
+const STAMP_LANDS_MS = 190;  // when a stamp meets the page in stampIn, in app.css
+const STAMP_GAP_MS = 110;    // several votes that arrive together land one after another
+/** Each fresh stamp in a drawing of the signatures gets its sound, and the wait that matches it. */
+function stamper() {
+  let n = 0;
+  return yes => {
+    const wait = n++ * STAMP_GAP_MS;
+    play(yes ? "stamp-yes" : "stamp-no", { delay: wait + (reduced() ? 0 : STAMP_LANDS_MS) });
+    return { animationDelay: `${wait}ms` };
+  };
+}
+
 /** The charter at a vote: the description, consequences and source the proposer saw, then the signatures. */
 function voteDoc(p) {
   const v = G.view;
   const byYou = p.by === v.you;
   if (p.kind === "deal") return dealDoc(p);
   const votes = new Map(p.votes.map(x => [x.seat, x.yes]));
+  const stamped = stamper();
   const lines = v.seats.map(s => {
     const has = votes.has(s.seat);
     const key = `${p.id}:${s.seat}`;
     const fresh = has && !G.stampsSeen.has(key);
     if (has) G.stampsSeen.add(key);
     return h("div", { class: "sigline" }, shield(s.seat, seatColor(s.seat)), h("span", { class: "nm" }, nameOf(s.seat)),
-      has ? h("span", { class: "stamp " + (votes.get(s.seat) ? "yes" : "no") + (fresh && !reduced() ? " fresh" : "") }, votes.get(s.seat) ? "YES" : "NO") : null);
+      has ? h("span", { class: "stamp " + (votes.get(s.seat) ? "yes" : "no") + (fresh && !reduced() ? " fresh" : ""), style: fresh ? stamped(votes.get(s.seat)) : null }, votes.get(s.seat) ? "YES" : "NO") : null);
   });
   return h("div", {},
     h("div", { class: "smallcaps" }, `${byYou ? "Your rule" : `${seat(p.by)?.name}'s rule`} · ${p.title}`),
@@ -1412,6 +1468,7 @@ async function fetchTalk() {
   G.talk = r.lines; G.talkCount = r.count;
   if (first) G.talkSeen = G.replay ? 0 : r.lines.length;
   const fresh = r.lines.slice(before).filter(l => l.kind === "public" && l.by !== you());
+  if (fresh.length && !first) play("talk", { table: watchingTable() });
   if (fresh.length && G.dock?.t !== "talk" && !G.moment) caption(`${seat(fresh[fresh.length - 1].by)?.name}: ${fresh[fresh.length - 1].text}`);
   if (G.dock?.t === "talk") renderTalk();
   renderRail();
@@ -1515,7 +1572,7 @@ function trackDecisions(v) {
   const fresh = list.slice(G.seenDecisions);
   G.seenDecisions = list.length;
   const d = fresh[fresh.length - 1];
-  if (d.outcome === "lapsed") { caption(`"${d.title}" lapsed without a majority.`); return false; }
+  if (d.outcome === "lapsed") { play("law-fail", { gain: -8 }); caption(`"${d.title}" lapsed without a majority.`); return false; }
   startMoment(d);
   return d.outcome === "passed";
 }
@@ -1527,6 +1584,8 @@ function trackProposals(prev, v) {
     G.seenProposals.add(p.id);
     if (p.kind === "law") for (const x of p.votes) G.stampsSeen.add(`${p.id}:${x.seat}`);
     const busy = G.moment || G.dock?.t === "constitution" || (G.dock?.t === "draft" && (document.activeElement === G.ui.words || (G.draft && !G.draft.outcome)));
+    // A new document on the table. A vote that waits for you knocks, and the rest is only paper.
+    if (p.by !== v.you) { if (p.canVote || p.canSign) play("vote-call"); else play("page", { table: watchingTable() }); }
     if (!busy && (p.kind === "law" || p.canSign)) { G.dock = { t: "vote", id: p.id }; }
     else caption(`${seat(p.by)?.name} proposed: ${p.kind === "deal" ? p.english : p.description?.text || `"${p.title}"`}`);
   }
@@ -1537,6 +1596,8 @@ function trackProposals(prev, v) {
   }
 }
 const SEAL_FALL_MS = 240; // when the seal in .sealmark.fresh meets the page, in app.css
+const OUTCOME_LANDS_MS = 120; // when a failed law's line begins to slump, in .outcome.fresh in app.css
+const REPEAL_TEAR_MS = 420;   // how long the tear runs in the repeal sound, before its thud
 function startMoment(d) {
   // A new outcome replaces one still on screen.
   (G.momentTimers || []).forEach(clearTimeout);
@@ -1548,12 +1609,17 @@ function startMoment(d) {
   if (d.outcome === "passed") {
     G.holdScene = true;
     const seal = reduced() ? 200 : 900, carry = reduced() ? 400 : 2000;
+    // On the audio clock, to meet the seal. A repeal's tear starts early, so that its thud lands there.
+    const lands = seal + (reduced() ? 0 : SEAL_FALL_MS);
+    if (/\(repeal\b/.test(d.text || "")) play("repeal", { delay: Math.max(0, lands - REPEAL_TEAR_MS) });
+    else play("seal", { delay: lands });
     G.momentTimers = [
       setTimeout(() => { if (G.moment) G.moment.sealed = true; renderDock(); thump(G.ui.dock, 3, SEAL_FALL_MS); }, seal),
       // A decree leaves no monument, so nothing is carried to the square.
       setTimeout(() => { if (d.decree) { G.holdScene = false; endMoment(); refreshScene(); } else carryToMonument(d); }, carry)];
   } else {
     G.holdScene = false;
+    play("law-fail", { delay: reduced() ? 0 : OUTCOME_LANDS_MS });
     G.momentTimers = [setTimeout(() => endMoment(), reduced() ? 1500 : 2600)];
   }
 }
@@ -1564,11 +1630,12 @@ function momentDoc(m) {
   const landing = (m.sealed ? "sealed" : "open") !== m.told;
   m.told = m.sealed ? "sealed" : "open";
   const votes = new Map(d.votes.map(x => [x.seat, x.yes]));
+  const stamped = stamper();
   const lines = G.view.seats.map(s => {
     const has = votes.has(s.seat), key = `${d.id}:${s.seat}`, fresh = has && !G.stampsSeen.has(key);
     if (has) G.stampsSeen.add(key);
     return h("div", { class: "sigline" }, shield(s.seat, seatColor(s.seat)), h("span", { class: "nm" }, nameOf(s.seat)),
-      has ? h("span", { class: "stamp " + (votes.get(s.seat) ? "yes" : "no") + (fresh && !reduced() ? " fresh" : "") }, votes.get(s.seat) ? "YES" : "NO") : null);
+      has ? h("span", { class: "stamp " + (votes.get(s.seat) ? "yes" : "no") + (fresh && !reduced() ? " fresh" : ""), style: fresh ? stamped(votes.get(s.seat)) : null }, votes.get(s.seat) ? "YES" : "NO") : null);
   });
   const passed = d.outcome === "passed";
   const yes = d.votes.filter(x => x.yes).length, no = d.votes.length - yes;
@@ -1590,6 +1657,7 @@ function carryToMonument(d) {
     refreshScene().then(() => {
       // The monument drops in. The ring marks where it lands, once the camera has settled.
       setTimeout(() => {
+        if (G.view?.phase !== "ended") play("monument"); // the end of the game has its own sound by then
         const at = G.player?.screenOf?.(d.pick);
         if (at && !reduced()) {
           spawn(h("div", { class: "ripple law", style: { left: `${at.x}px`, top: `${at.y}px` } }), 950);
@@ -1653,6 +1721,7 @@ const cardOf = r => G.ui.ledge.hidden ? null : G.ui.hand.querySelector(`[data-ke
 const bannerOf = s => G.ui.houses.querySelector(`[data-key="${s}"]`);
 
 function animateChanges(prev, v) {
+  soundsOfChange(prev, v);
   if (!prev || prev.phase === "lobby" || !v.seats) return;
   const lines = (v.chronicle || []).slice((prev.chronicle || []).length);
   const byLaw = lines.filter(l => l.kind === "money" && l.text.startsWith("By law"));
@@ -1671,7 +1740,7 @@ function animateChanges(prev, v) {
   });
   const gained = changes.filter(c => c.seat === v.you && c.d > 0).reduce((a, c) => a + c.d, 0);
 
-  if (rolled) rollDie(!hit.length, gained >= MANY_CARDS);
+  if (rolled) rollDie(!hit.length, gained >= MANY_CARDS, v.turn === v.you);
   if (rolled && !reduced()) for (const t of hit) setTimeout(() => ring(boardPoint(t), "small"), DIE_MS);
   if (lawTold.length) lawFires(v, rolled ? DIE_MS : 0);
 
@@ -1721,7 +1790,7 @@ function animateChanges(prev, v) {
     const delay = rolled ? DIE_MS : 0, cloth = bannerOf(to.seat)?.querySelector(".cloth");
     const start = from ? middleOf(bannerOf(from.seat)) : boardPoint(squareOf(v));
     anim(cloth?.querySelector(`.worn[data-res="${CSS.escape(r)}"]`), [{ opacity: 0 }, { opacity: 0, offset: .97 }, { opacity: 1 }], { duration: delay + FLIGHT_MS, easing: "linear" });
-    if (cloth) flight(h("div", { class: "flight wornflight" }, resIcon(r)), start, middleOf(cloth), delay, () => thump(cloth, 10));
+    if (cloth) flight(h("div", { class: "flight wornflight" }, resIcon(r)), start, middleOf(cloth), delay, () => { thump(cloth, 10); bigSound("rare"); });
   }
 
   // Cards. Those that come from the table fly. A trade drops them in from above the hand.
@@ -1743,7 +1812,7 @@ function animateChanges(prev, v) {
       }
     }
   }
-  if (gained >= MANY_CARDS && !reduced()) setTimeout(() => thump(G.ui.hand, 4), wait + FLIGHT_MS);
+  if (gained >= MANY_CARDS && !reduced()) setTimeout(() => { thump(G.ui.hand, 4); play("payday"); }, wait + FLIGHT_MS);
 
   // Scores, then what is yours to do.
   for (const s of v.seats) {
@@ -1779,8 +1848,12 @@ function ring(at, kind = "") {
 }
 
 /** The die tumbles, and its number settles on the true one. A number no hex pays lands harder, as does a payday. */
-function rollDie(hard, payday) {
+function rollDie(hard, payday, mine) {
   const die = G.ui.herald.querySelector(".die");
+  // Your own roll, or someone else's, which matters less. A die with no motion just lands.
+  const land = hard ? "dice-hard" : "dice-land";
+  if (reduced() || !die) play(land, { table: !mine, gain: mine ? 0 : 3 });
+  else if (play("dice-rattle", { table: !mine, gain: mine ? 0 : 3 })) play(land, { delay: DIE_MS, gain: mine ? 0 : -9 });
   if (!die || reduced()) return;
   clearInterval(G.dieTimer);
   let flips = 0;
@@ -1803,6 +1876,7 @@ function rollDie(hard, payday) {
 
 /** A law just moved goods: its seal strikes the square, where the laws stand. */
 function lawFires(v, delay) {
+  if (!G.moment) play("law-fire", { delay: reduced() ? 0 : delay }); // a law just passing has its seal
   if (reduced() || !squareOf(v)) return;
   setTimeout(() => {
     const at = boardPoint(squareOf(v), 0.4);
@@ -1831,7 +1905,7 @@ const looseCard = r => h("div", { class: "flight card" }, resIcon(r));
  *  stands for the rest. Returns how many flew. Without motion, the hand has already changed. */
 function payCards(r, n, from, delay) {
   const card = cardOf(r);
-  if (reduced()) { markCard(card, `+${n}`, true); return 0; }
+  if (reduced()) { coinLands(); markCard(card, `+${n}`, true); return 0; }
   const start = from || { x: middleOf(card).x, y: card.getBoundingClientRect().top - 90 };
   const flying = Math.min(n, 4);
   G.inFlight[r] = (G.inFlight[r] || 0) + n;
@@ -1839,6 +1913,7 @@ function payCards(r, n, from, delay) {
   for (let i = 0; i < flying; i++) {
     flight(looseCard(r), start, middleOf(card), delay + i * CARD_GAP_MS, () => {
       const last = i === flying - 1;
+      coinLands();
       G.inFlight[r] = Math.max(0, (G.inFlight[r] || 0) - (last ? n - flying + 1 : 1));
       renderHand();
       anim(cardOf(r), [{ translate: "0 -7px", scale: 1.07 }, { translate: "0 2px", scale: .99, offset: .55 }, { translate: "0 0", scale: 1 }], { duration: 200 });
@@ -1850,6 +1925,7 @@ function payCards(r, n, from, delay) {
 /** Cards leave the hand: toward the piece they paid for, or just up and away. */
 function takeCards(r, n, toward) {
   const card = cardOf(r);
+  play("card-out");
   markCard(card, `−${n}`, false);
   if (reduced()) return;
   const from = card.getBoundingClientRect(), mid = middleOf(card);
@@ -1891,6 +1967,102 @@ function burst(at, n, reach, kind = "") {
     anim(spawn(h("div", { class: `shard ${kind}`, style: { left: `${at.x}px`, top: `${at.y}px` } }), 900),
       [{ translate: "0 0", scale: 1, opacity: 1 }, { translate: `${Math.cos(a) * far}px ${Math.sin(a) * far}px`, scale: .3, opacity: 0 }],
       { duration: 520 + Math.random() * 280, easing: "cubic-bezier(.1,.7,.3,1)", fill: "both" });
+  }
+}
+
+// ---------------------------------------------------------------- what the table sounds like
+const RUN_STEPS = [0, 2, 4, 7, 9, 12]; // a run of goods climbs a pentatonic scale
+const RUN_ENDS_MS = 450;               // this long after the last card, the next one starts a new run
+const RUN_LONGEST = 8;                 // a very big payout: the first few cards sound, and the rest land in silence
+let runStep = 0, runLast = 0;
+/** A card reaches your hand. Several in a row climb, like a small run. */
+function coinLands() {
+  const now = performance.now();
+  runStep = now - runLast > RUN_ENDS_MS ? 0 : runStep + 1;
+  runLast = now;
+  if (runStep < RUN_LONGEST) play("coin", { rate: 2 ** (RUN_STEPS[Math.min(runStep, RUN_STEPS.length - 1)] / 12) });
+}
+/** Someone watching gets the big moments too, but less of them. */
+const bigSound = (name, o = {}) => play(name, watchingTable() ? { ...o, gain: (o.gain || 0) - 6 } : o);
+
+/** What a view's change sounds like. Each kind of thing sounds once per change, however many there were, and a
+ *  sound waits for the motion that goes with it. A table of bots stays in the background: other seats' routine
+ *  sounds go through `table`. Scrubbing a replay, or opening a page, compares nothing, so it plays nothing. */
+function soundsOfChange(prev, v) {
+  if (!prev || !v.seats) return;
+  const others = { table: true };
+  if (prev.phase === "lobby") {
+    if (v.phase === "lobby") { if (v.filled > prev.filled) play("tool"); return; }
+    bigSound("begin");
+    if (v.turn === v.you) play("your-turn", { delay: 1300 });
+    return;
+  }
+  const lines = (v.chronicle || []).slice((prev.chronicle || []).length);
+  const lawMoved = lines.some(l => l.text.startsWith("By law"));
+  const rolled = v.rollsMade !== prev.rollsMade;
+  const afterDie = rolled && !reduced() ? DIE_MS : 0, landing = reduced() ? 0 : LAND_MS;
+
+  // Pieces. Yours each have their own weight. Another seat's few are one quiet knock.
+  const placed = new Set((prev.pieces || []).map(p => JSON.stringify(p)));
+  const taken = new Set((prev.pieces || []).filter(p => p.spot != null).map(p => p.spot));
+  const fresh = (v.pieces || []).filter(p => !placed.has(JSON.stringify(p)));
+  const pieceSound = p => p.spot == null ? "place-link" : taken.has(p.spot) ? "place-up" : "place-spot";
+  const heaviest = list => pieceSound(list.find(p => pieceSound(p) !== "place-link") || list[0]);
+  const mine = fresh.filter(p => p.owner === v.you), theirs = fresh.filter(p => p.owner !== v.you);
+  if (mine.length) play(heaviest(mine), { delay: landing });
+  if (theirs.length) play(heaviest(theirs), { ...others, delay: landing });
+
+  // What falls.
+  const standing = new Set((v.pieces || []).map(p => JSON.stringify(pieceAt(p, v))));
+  const fallen = lawMoved ? (prev.pieces || []).map(p => pieceAt(p, v)).filter(at => at && !standing.has(JSON.stringify(at))) : [];
+  const pile = t => Object.values(t || {}).reduce((a, n) => a + n, 0);
+  // A law that has just passed sets its seal first, and what it does follows.
+  const afterSeal = G.moment ? (reduced() ? 300 : 1400) : afterDie;
+  if (lawMoved && pile(prev.treasury) - pile(v.treasury) >= BIG_FALL) bigSound("crash", { delay: afterSeal });
+  else if (fallen.length >= 2) bigSound("rumble", { delay: afterSeal });
+  else if (fallen.length) play("fall", { delay: G.moment ? afterSeal : landing });
+
+  // Goods. Your own cards sound as they land, in payCards. Here is what happens at the other seats.
+  const changes = v.seats.flatMap(s => {
+    const was = prev.seats?.find(x => x.seat === s.seat);
+    return !was?.hand ? [] : v.resources.map(r => ({ seat: s.seat, r, d: (s.hand[r] || 0) - (was.hand[r] || 0) })).filter(c => c.d);
+  });
+  const rare = rareGoods(v);
+  const elsewhere = changes.filter(c => c.seat !== v.you && !rare.includes(c.r));
+  if ((rolled || lawMoved) && elsewhere.some(c => c.d > 0)) play("coin", { ...others, delay: afterDie + (reduced() ? 0 : FLIGHT_MS), gain: 3 });
+  else if (!rolled && !lawMoved && !fresh.length && elsewhere.length) play("card-out", others);
+  // With no motion nothing flies, so the moments it would have marked sound now.
+  if (reduced()) {
+    if (changes.filter(c => c.seat === v.you && c.d > 0).reduce((a, c) => a + c.d, 0) >= MANY_CARDS) play("payday");
+    if (rare.some(r => changes.some(c => c.r === r && c.d > 0))) bigSound("rare");
+  }
+
+  // Trades that reach you.
+  const seen = new Set((prev.offers || []).map(o => o.id)), open = new Set((v.offers || []).map(o => o.id));
+  if ((v.offers || []).some(o => !seen.has(o.id) && o.canAccept && o.from !== v.you)) play("offer-in");
+  if (changes.some(c => c.seat === v.you) && (prev.offers || []).some(o => o.from === v.you && !open.has(o.id))) play("deal");
+
+  // Scores: yours, and who leads.
+  const was = s => prev.seats?.find(x => x.seat === s.seat)?.points;
+  const myMove = v.seats.find(s => s.seat === v.you && was(s) != null && was(s) !== s.points);
+  const leader = seats => {
+    const top = Math.max(...seats.map(s => s.points));
+    const atTop = seats.filter(s => s.points === top);
+    return top > 0 && atTop.length === 1 ? atTop[0].seat : null;
+  };
+  const leadNow = leader(v.seats), leadWas = prev.seats ? leader(prev.seats) : null;
+  const newLead = v.phase === "actions" && leadNow != null && leadNow !== leadWas;
+  if (newLead && leadNow === v.you) bigSound("lead", { delay: afterSeal });
+  else if (myMove) play(myMove.points > was(myMove) ? "score-up" : "score-down", { delay: afterSeal });
+  if (newLead && leadNow !== v.you) { if (v.you != null && leadWas === v.you) play("lead-lost", { delay: afterSeal }); else play("score-up", { ...others, delay: afterSeal }); }
+
+  // It has become your turn. After a roll this waits for the die, so that the two stay apart.
+  if (v.turn === v.you && v.phase !== "ended" && prev.turn !== v.you) play("your-turn", { delay: afterDie ? afterDie + 40 : 0 });
+
+  // The end. A law's moment finishes first.
+  if (v.winner != null && prev.winner == null) {
+    const delay = G.moment ? 2400 : rolled ? DIE_MS + 240 : 240;
+    if (watchingTable()) play("end", { delay }); else play(v.winner === v.you ? "win" : "lose", { delay });
   }
 }
 
@@ -1954,7 +2126,7 @@ function buildDraftDesk() {
   U.words = h("textarea", { class: "words", "aria-label": "The rule you want", placeholder: "Write the rule you want, in your own words." });
   const grow = () => { U.words.style.height = "auto"; U.words.style.height = `${Math.min(U.words.scrollHeight + 2, 200)}px`; };
   U.growWords = grow;
-  U.words.addEventListener("input", () => { store.set(`charter.words.${G.code}`, U.words.value); grow(); renderDraft(); });
+  U.words.addEventListener("input", () => { play("quill"); store.set(`charter.words.${G.code}`, U.words.value); grow(); renderDraft(); });
   U.words.addEventListener("keydown", e => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); submitDraft(); } });
   U.draftBtn = h("button", { class: "act gold", onclick: () => submitDraft() }, "Draft it");
   U.cancelBtn = h("button", { class: "act", onclick: () => cancelDraft() }, "Cancel");
@@ -2019,6 +2191,11 @@ async function pollDraft() {
   if (gen !== G.draftGen) return;
   if (d?.id == null) { if (G.draft && !G.draft.outcome && !G.draft.optimistic) { G.draft = { outcome: "failed", reason: "The server lost this draft. Try again.", words: G.ui.words.value }; renderDraft(); } return; }
   const beat = G.draft && (d.text !== G.draft.text || d.thinking !== G.draft.thinking || d.stage !== G.draft.stage);
+  // The clerk's nib, faintly, while the words come in where you can see them.
+  if (d.text !== G.draft?.text && d.stage === "drafting" && G.dock?.t === "draft") play("quill", { gain: -4 });
+  // How the draft came out, once. A refusal has its own stamp, in renderDraft.
+  if (d.outcome === "ready" && !G.draft?.outcome) play("draft-ready");
+  else if (d.outcome === "failed" && !G.draft?.outcome) play("refuse");
   G.draft = d; G.draftBeat = beat;
   placeSuggestion(d);
   renderDraft(); renderRail();
@@ -2087,6 +2264,7 @@ function renderDraft() {
   }
   if (d.outcome === "refused") {
     const landing = G.refusedShown !== d.id;
+    if (landing) play("stamp-no", { delay: reduced() ? 0 : STAMP_LANDS_MS });
     G.refusedShown = d.id;
     fill(U.draftBody, h("div", { class: "refusal" }, h("div", { class: "stampword" + (landing ? " fresh" : "") }, "REFUSED"), h("p", {}, d.reason)));
     return;
@@ -2146,6 +2324,7 @@ async function proposeDraft(text) {
 // ---------------------------------------------------------------- the gathering and the end
 function renderCenter() {
   const v = G.view, U = G.ui;
+  U.soundCorner.hidden = v.phase !== "lobby"; // in play, the switches are in the rail's menu
   if (v.phase === "lobby") { fill(U.center, gathering(v)); return; }
   if (v.phase === "ended" && !G.endShown && !G.moment) { G.endShown = true; G.dock = { t: "end" }; renderDock(); renderRail(); updateInsets(); }
   fill(U.center);
@@ -2218,7 +2397,7 @@ function onKey(e) {
     if (p?.canVote) castVote(p.id, k === "y");
   } else if (/^[1-9]$/.test(k) && v.turn === v.you && v.phase === "actions") {
     const d = (v.pieceDefs || [])[Number(k) - 1];
-    if (d?.spots) selectPiece(d.name);
+    if (d?.spots) selectPiece(d.name); else if (d) play("refuse");
   }
 }
 

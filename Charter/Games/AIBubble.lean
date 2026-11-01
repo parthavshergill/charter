@@ -290,6 +290,7 @@ def theme : Theme :=
       | _ => 0x10161F
     look :=
       { tagline := "Raise on hype. Build on the grid. Get out before the crash."
+        music := "bubble"
         bodyFont := "humanist"
         displayFont := "typewriter"
         tokens :=

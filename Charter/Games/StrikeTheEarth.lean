@@ -312,6 +312,7 @@ def theme : Theme :=
       | _ => 0xA89F8C
     look :=
       { tagline := "Dig too deep. Vote for it. The song is all that stays."
+        music := "strike"
         bodyFont := "book"
         displayFont := "slab"
         tokens :=
