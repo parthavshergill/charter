@@ -12,6 +12,9 @@ import Charter.Games.NotCatan
 import Charter.Games.NotCatanTests
 import Charter.Games.SlimeParliament
 import Charter.Games.SlimeParliamentWords
+import Charter.Games.AIBubble
+import Charter.Games.AIBubbleWords
+import Charter.Games.AIBubbleTests
 import Charter.Scene.Belt
 import Charter.Games.Witnesses
 import Charter.Scene.OfState
