@@ -1,0 +1,24 @@
+diff --git a/src/ocean.cu b/src/ocean.cu
+index ec33deec..73309ad1 100644
+--- a/src/ocean.cu
++++ b/src/ocean.cu
+@@ -51,6 +51,10 @@ __device__ static const float OSRS_ITEM_OBS_TABLE_DEV
+ #ifdef PUFFER_CRAFTAX
+ #include "../ocean/craftax/craftax.cu"
+ #endif
++// Charter patch: the `attention` encoder, copied into ocean/charter/ by rl/arch/attention/puffer_build.sh.
++#ifdef CHARTER_ATTENTION
++#include "../ocean/charter/attention.cu"
++#endif
+ 
+ // Override encoder vtable when this env has a custom net. No-op otherwise.
+ static void create_custom_encoder(Encoder* enc) {
+@@ -72,6 +77,8 @@ static void create_custom_encoder(Encoder* enc) {
+ #endif
+ #elif defined(PUFFER_ASTEROIDS)
+     create_asteroids_encoder(enc);
++#elif defined(CHARTER_ATTENTION)
++    create_charter_attn_encoder(enc);
+ #elif defined(PUFFER_OSRS_COLOSSEUM)
+     create_osrs_entity_encoder<&OSRS_COLOSSEUM_ENTITY_DESCRIPTOR>(enc);
+ #elif defined(PUFFER_OSRS_INFERNO)
