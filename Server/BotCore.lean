@@ -360,10 +360,17 @@ def buildTargets (ctx : Ctx G) (s : State G) (p : Nat) : List Bundle :=
     else ((linkPiece G).map fun d => s.costOf d.name).toList
   up ++ rest
 
+/-- Noise on a spot's value at setup, fixed by the game's seed and the spot, up to the weight `setupJitter`.
+That weight is 0 unless a test sets it. It makes bots open differently from game to game. -/
+def setupNoise (ctx : Ctx G) (s : State G) (v : Nat) : Int :=
+  let most := ctx.weights.extraOr "setupJitter" 0
+  if most ≤ 0 then 0 else
+  ((scramble (s.seed + UInt64.ofNat v * 0x9E3779B97F4A7C15)).toNat % (most.toNat + 1) : Nat)
+
 /-- The setup move: the best spot, then the road toward the best site. `ok` says which moves can happen. -/
 def setupFrom (ctx : Ctx G) (s : State G) (moves : List Move) (ok : Move → Bool) : Move :=
   let spotMoves := moves.filterMap fun m => match m with
-    | .place _ (.spot v) => some (m, spotValue ctx v)
+    | .place _ (.spot v) => some (m, spotValue ctx v + setupNoise ctx s v)
     | _ => none
   match bestOk ok spotMoves with
   | some m => m
