@@ -224,6 +224,17 @@ def route (ctx : Ctx) (req : Req) : ContextAsync Resp := do
       if e.game.state.isNone then return ← respondErr "The game has not started."
       discard <| startDraft ctx code seat words
       respondJson (← draftView ctx e seat)
+    | "suggest", true =>
+      let body ← readBody req
+      let some e ← findEntry ctx code | respondErr s!"no game {code}" .notFound
+      let some seat := seatOf e (jStr body "token") | respondErr "bad or missing token" .unauthorized
+      match e.game.state with
+      | some s =>
+        if s.phase != .actions then
+          return ← respondErr "The clerk can suggest a rule only while the game is being played."
+      | none => return ← respondErr "The game has not started."
+      discard <| startSuggest ctx code seat
+      respondJson (← draftView ctx e seat)
     | "draft-cancel", true =>
       let body ← readBody req
       let some e ← findEntry ctx code | respondErr s!"no game {code}" .notFound

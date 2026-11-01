@@ -20,6 +20,8 @@ show them. The key is not stored, printed or sent to a browser.
 
 Each draft runs on its own thread and writes what really happens to a shared state, and the browser
 polls that state. Every stage on screen is tied to an event below.
+
+`Server/Suggest.lean` uses the same request, reply and checks when a player asks the clerk to suggest a rule.
 -/
 
 namespace CharterServer.Formalize
@@ -52,6 +54,12 @@ structure JobState where
   spentCacheRead : Nat := 0
   spentCacheWrite : Nat := 0
   spentOutput : Nat := 0
+  /-- For a suggestion: the words the clerk proposes, for the player's input box. -/
+  suggestedWords : Option String := none
+  /-- For a suggestion: the clerk's advice. It is Claude's prose, and no rule is built from it. -/
+  why : Option String := none
+  /-- For a suggestion: how many game events the table had when the clerk read it. -/
+  atEvent : Nat := 0
 
 structure Job where
   id : Nat
@@ -61,6 +69,8 @@ structure Job where
   state : IO.Ref JobState
   stop : IO.Ref (IO Unit)
   cancelled : IO.Ref Bool
+  /-- The player asked the clerk to suggest a rule, so `words` is empty. -/
+  suggest : Bool := false
 
 /-- The model and limits. Effort and output are bounded, because this runs on a player's click. -/
 structure Settings where
@@ -292,16 +302,16 @@ def runRequest (job : Job) (config : String) : IO Outcome := do
   return out
 
 /-- A plain message for a request that did not produce a reply. `none` means it worked. -/
-def failureOf (o : Outcome) : Option String :=
-  let hint := "Write the formal text yourself, or try again."
+def failureOf (o : Outcome) (suggesting : Bool := false) : Option String :=
+  let hint := if suggesting then "Try again, or write your own rule." else "Write the formal text yourself, or try again."
   if o.exitCode == 28 then some s!"No reply after {maxSeconds} seconds. {hint}"
   else if o.exitCode == 6 || o.exitCode == 7 then some s!"Could not reach Claude: no connection. {hint}"
-  else if o.exitCode == 127 then some "This server cannot run curl, so it cannot reach Claude. Write the formal text yourself."
+  else if o.exitCode == 127 then some (if suggesting then "This server cannot run curl, so it cannot reach Claude. Write your own rule." else "This server cannot run curl, so it cannot reach Claude. Write the formal text yourself.")
   else if o.exitCode != 0 then some s!"The connection to Claude failed (curl error {o.exitCode}). {hint}"
   else
     match o.http, o.apiErrorType with
     | some 401, _ | _, some "authentication_error" => some "The API key was refused. Check ANTHROPIC_API_KEY in .env."
-    | some 402, _ | _, some "billing_error" => some "The API account has a billing problem. Write the formal text yourself."
+    | some 402, _ | _, some "billing_error" => some (if suggesting then "The API account has a billing problem. Write your own rule." else "The API account has a billing problem. Write the formal text yourself.")
     | some 403, _ | _, some "permission_error" => some "This API key is not allowed to use this model."
     | some 404, _ | _, some "not_found_error" => some "This server's model name was not found. Check CHARTER_MODEL."
     | some 429, _ | _, some "rate_limit_error" =>
@@ -316,17 +326,24 @@ def failureOf (o : Outcome) : Option String :=
       else if o.apiErrorType.isSome then some s!"Claude's service had an error. {hint}"
       else
         match o.stopReason with
-        | some "refusal" => some "Claude declined to draft this. Rephrase it, or write the formal text yourself."
-        | some "max_tokens" => some "The draft ran past its length limit. Try a simpler rule."
+        | some "refusal" =>
+          some (if suggesting then s!"Claude declined to suggest a rule. {hint}"
+            else "Claude declined to draft this. Rephrase it, or write the formal text yourself.")
+        | some "max_tokens" =>
+          some (if suggesting then s!"The suggestion ran past its length limit. {hint}"
+            else "The draft ran past its length limit. Try a simpler rule.")
         | _ => none
     | none, _ => some s!"The connection closed without a reply. {hint}"
 
 /-! ## Reading the reply -/
 
-/-- A reply is a DIFFERENCE line and an expression, an expression, or a REFUSE line. -/
+/-- A reply is a DIFFERENCE line and an expression, an expression, or a REFUSE line. A suggestion has
+WORDS and WHY lines and an expression, or a REFUSE line. -/
 structure Reply where
   difference : Option String := none
   refuse : Option String := none
+  words : Option String := none
+  why : Option String := none
   formal : String := ""
 
 def parseReply (text : String) : Reply := Id.run do
@@ -338,6 +355,10 @@ def parseReply (text : String) : Reply := Id.run do
       r := { r with difference := some ((l.drop 11).toString.trimAscii.toString) }
     else if l.startsWith "REFUSE:" then
       r := { r with refuse := some ((l.drop 7).toString.trimAscii.toString) }
+    else if l.startsWith "WORDS:" then
+      r := { r with words := some ((l.drop 6).toString.trimAscii.toString) }
+    else if l.startsWith "WHY:" then
+      r := { r with why := some ((l.drop 4).toString.trimAscii.toString) }
     else if !l.startsWith "```" then rest := rest ++ [line]
   -- Any words before the expression are not part of it. The parser judges the rest.
   let formal := rest.dropWhile fun line => !line.trimAscii.toString.startsWith "("
@@ -373,25 +394,34 @@ def problemsText (ps : List String) : String := " ".intercalate (ps.map sentence
 
 /-! ## A draft from start to finish -/
 
+/-- Parse and check a formal text against the game as it is now. Each stage is reported as it happens. -/
+def checkFormal (job : Job) (current : IO (Option Game)) (text : String) : IO (Except String Unit) := do
+  touch job fun st => { st with stage := "parsing" }
+  let some g ← current | return .error "the game is gone"
+  match g.parse text with
+  | .error e => return .error e
+  | .ok _ =>
+    touch job fun st => { st with stage := "checking" }
+    match problemsOf g job.seat text with
+    | .error e => return .error e
+    | .ok [] =>
+      touch job fun st => { st with stage := "previewing" }
+      return .ok ()
+    | .ok ps => return .error (problemsText ps)
+
+/-- Add the latest request's tokens to what this draft has spent. -/
+def addSpent (job : Job) : IO Unit :=
+  job.state.modify fun st =>
+    { st with spentInput := st.spentInput + st.inputTokens, spentCacheRead := st.spentCacheRead + st.cacheReadTokens
+              spentCacheWrite := st.spentCacheWrite + st.cacheWriteTokens, spentOutput := st.spentOutput + st.outputTokens }
+
 /-- Run a draft on this thread. `current` reads the game as it is now, for each check. `notes` is
 the table's clerk log, and `Clerk.memoryBlock` takes only this seat's part of it. -/
 def run (job : Job) (cfg : Settings) (current : IO (Option Game)) (notes : List Clerk.Note) : IO Unit := do
   let isCancelled : IO Bool := job.cancelled.get
   let finish (f : Final) : IO Unit :=
     touch job fun st => { st with stage := "done", final := some f }
-  let check (text : String) : IO (Except String Unit) := do
-    touch job fun st => { st with stage := "parsing" }
-    let some g ← current | return .error "the game is gone"
-    match g.parse text with
-    | .error e => return .error e
-    | .ok _ =>
-      touch job fun st => { st with stage := "checking" }
-      match problemsOf g job.seat text with
-      | .error e => return .error e
-      | .ok [] =>
-        touch job fun st => { st with stage := "previewing" }
-        return .ok ()
-      | .ok ps => return .error (problemsText ps)
+  let check := checkFormal job current
   -- Formal text is checked directly. It does not need the model.
   if job.words.trimAscii.toString.startsWith "(" then
     match ← check job.words.trimAscii.toString with
@@ -413,9 +443,7 @@ def run (job : Job) (cfg : Settings) (current : IO (Option Game)) (notes : List 
                                   retryReason := retry.map (·.2) }
     let body := requestBody cfg system (userMessage g s job.seat memory job.words retry)
     let outcome ← runRequest job (curlConfig cfg key body)
-    job.state.modify fun st =>
-      { st with spentInput := st.spentInput + st.inputTokens, spentCacheRead := st.spentCacheRead + st.cacheReadTokens
-                spentCacheWrite := st.spentCacheWrite + st.cacheWriteTokens, spentOutput := st.spentOutput + st.outputTokens }
+    addSpent job
     if ← isCancelled then
       finish .cancelled
       return
