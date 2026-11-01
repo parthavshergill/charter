@@ -14,7 +14,9 @@ on branch `rl-harness`, layout version 2), brought across with only what one dec
 
 Removed: the table of moves (off in training), the environment's law library, rewards, opponents, random maps.
 The code that is kept is the harness's, line for line. `scripts/policy_obs_compare.sh` checks that it writes the
-same numbers as the harness on the same games. Nothing here reads `State.seed`.
+same numbers as the harness on the same games: on 470 decisions over every world they match, except the law-shape
+columns of AI Bubble's and Pirate Republic's founding laws, which `main` rewrote after `89a3a51` (`f78dddd`).
+Nothing here reads `State.seed`.
 -/
 
 namespace CharterServer.Policy
