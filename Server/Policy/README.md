@@ -41,7 +41,9 @@ and says why. `--gru-state` is needed when the meta has no `gru_state`; see belo
   - `turn`: it is set to 0.5 at the start of each of the seat's turns and goes on within the turn. In self-play
     training, the zero observations a seat gets while it waits drive its state to 0.5 (see `ADVICE` on PR #11).
   - `zero`: zero at every decision. This is behaviour cloning.
-  The converter reads it from the meta's `gru_state`, or from `--gru-state`, and refuses to guess.
+  The converter reads it from the meta's `gru_state`, or from `--gru-state`, and refuses to guess. Training with
+  `stale_wait` (entity2's CANDIDATE 3) steps a waiting seat's state on its own last observation; no rule here
+  copies that, and `carry` is what its eval used.
 - The driver keeps each table's memory in the server process and moves a seat's state on after its move goes
   through. After a restart, a seat's state starts again from zero.
 
