@@ -1575,7 +1575,8 @@ function animateChanges(prev, v) {
     const fallen = (prev.pieces || []).map(p => pieceAt(p, v)).filter(at => at && !standing.has(JSON.stringify(at)));
     if (fallen.length >= 2) {
       rumble(boardEl(), delay);
-      for (const at of fallen) setTimeout(() => burst(boardPoint(at), 8, 70), delay);
+      anim(boardEl(), [{ filter: "brightness(.45)" }, { filter: "brightness(1)" }], { duration: 700, delay, easing: "ease-in" });
+      for (const at of fallen) setTimeout(() => burst(boardPoint(at), 14, 110, "dust"), delay);
     }
     const pile = t => Object.values(t || {}).reduce((a, n) => a + n, 0);
     if (pile(prev.treasury) - pile(v.treasury) >= BIG_FALL) {
@@ -1757,11 +1758,11 @@ function rumble(el, delay = 0) {
   anim(el, [{ translate: "0 0" }, { translate: "-7px 5px" }, { translate: "6px -6px" }, { translate: "-5px -4px" }, { translate: "5px 5px" }, { translate: "-3px 3px" }, { translate: "0 0" }], { duration: 520, delay, easing: "linear" });
 }
 /** Bits fly out from a point. */
-function burst(at, n, reach) {
+function burst(at, n, reach, kind = "") {
   if (!at) return;
   for (let i = 0; i < n; i++) {
     const a = (i + Math.random() * .7) / n * Math.PI * 2, far = reach * (.55 + Math.random() * .45);
-    anim(spawn(h("div", { class: "shard", style: { left: `${at.x}px`, top: `${at.y}px` } }), 900),
+    anim(spawn(h("div", { class: `shard ${kind}`, style: { left: `${at.x}px`, top: `${at.y}px` } }), 900),
       [{ translate: "0 0", scale: 1, opacity: 1 }, { translate: `${Math.cos(a) * far}px ${Math.sin(a) * far}px`, scale: .3, opacity: 0 }],
       { duration: 520 + Math.random() * 280, easing: "cubic-bezier(.1,.7,.3,1)", fill: "both" });
   }
