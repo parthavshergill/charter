@@ -89,6 +89,7 @@ private def Env.syncLaws (e : Env) : Env :=
   if ids == e.lawsSeen then e else
   { e with
     lawsSeen := ids
+    passed := e.passed + (ids.filter (!e.lawsSeen.contains ·)).length
     base := writeLaws e.base e.G s.laws
     ep := e.ep.seat s.rules.pieces }
 
@@ -160,7 +161,8 @@ private def Env.castVote (e : Env) (seat id : Nat) (L : Law) : Option Env :=
     | .ok s' => some { e with play := e.play.commit {} e.playTable (.vote seat id false) s' }
     | .error _ => Option.none
 
-/-- Run until a caller must decide or the game ends. A law passing is counted here, by the law's id appearing. -/
+/-- Run until a caller must decide or the game ends. A law passing is counted in `syncLaws`, by a new id appearing
+among the laws in force. -/
 private def Env.settle (e : Env) : Nat → Env
   | 0 => { e with decision := .none }
   | fuel + 1 =>
@@ -257,12 +259,10 @@ def Env.step (e : Env) (action : Nat) : Env :=
     | .error _ => bad
     | .ok s' =>
       let table := if e.play.state.phase == .setup then e.setupTable else e.playTable
-      let lawsBefore := s'.laws.length != e.play.state.laws.length
       let e' := { e with
         play := e.play.commit {} table ev s'
         refused := false
-        decisions := e.decisions + 1
-        passed := if lawsBefore then e.passed + 1 else e.passed }
+        decisions := e.decisions + 1 }
       (Env.settle e' e'.fuel).reckon
 
 /-- The numbers for the seat that must decide. -/
