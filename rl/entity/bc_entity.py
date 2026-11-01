@@ -35,7 +35,7 @@ def collect(games, out, seed=7):
     for k in range(games):
         gid = ["island", "not-catan"][k % 2]
         g = Game({"game": gid, "lineup": ["caller"] * 4, "seed": seed * 100000 + k, "vote_mode": "bot",
-                  "random_map": 1, "slot_order": "shuffled"})
+                  "random_map": True, "slot_order": "shuffled"})
         while not g.over:
             m = g.mask()
             a = g.suggest("hand")
