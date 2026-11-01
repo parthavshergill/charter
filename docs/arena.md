@@ -13,6 +13,7 @@ break a rule. A bot that wins in the arena won under the real rules of that pack
 | `Server/Arena.lean` | The `charter-arena` program: input, threads, output and checks |
 | `Server/ArenaReference.lean` | A slow copy of the policy, only for checking the fast one |
 | `Evolved/Pool.lean` | The list of strategies the arena can seat |
+| `Server/GenericCheck.lean`, `Evolved/Generic.lean` | A build check that no strategy names a pack |
 
 ## Play some games
 
@@ -105,7 +106,8 @@ events in order, and the first one it accepts happens.
    ```
 
 2. Add it to `Evolved/Pool.lean`: `import Evolved.S17`, and `Evolved.S17.strategy` in the list.
-3. Run `lake build charter-arena`. Seat it with `"strategy": "s17"`.
+3. Run `lake build charter-arena`. Seat it with `"strategy": "s17"`. The build fails if the strategy names a pack,
+   or holds a string that is not on the approved list. See below.
 
 A strategy's own constants need no new field. Read one with `ctx.weights.extraOr "myWeight" 7`, where 7 is the
 default, and set it in `weights`. The file `Server/BotCore.lean` has the parts of the hand bot you can reuse, such as
@@ -116,6 +118,26 @@ timer's event. So a strategy cannot vote for a rival or end a rival's turn.
 
 The arena has no time limit. A strategy that compiles can still be very slow, so run a batch under a process
 timeout. `Engine.legalMoves` works, but it costs about 90 calls of `Engine.step` per decision.
+
+## The bot names no pack
+
+The hand bot reads everything from the state and the rules, so it plays any pack. `Server/BotCore.lean` imports
+no pack, and a build check enforces part of the rule. `#check_generic s` walks every constant that `s` reaches,
+through the types and bodies of definitions. It fails if the walk reaches a constant under `Charter.Games`,
+`gameSpecs`, `specOf?` or `GameSpec`. It also fails on a string in the bot's own code, in `Server/BotCore.lean`,
+`Server/GameFacts.lean` or `Evolved/`, that is not on `approvedStrings` in `Server/GenericCheck.lean`. That list
+holds the weights' names and the keys of the log's JSON. A strategy with weights of its own adds their names there.
+
+`Evolved/Generic.lean` runs the check on the hand bot, its weights and every strategy in the pool, and
+`lake build charter-arena` builds that file. It also shows the check failing on three bad strategies: one that
+names a good, one that uses a pack's definition, and one that reads the list of packs.
+
+The check has limits:
+
+- It catches names and direct references to packs. It does not catch a rule tuned to one pack's shape, such as
+  `if G.targetPoints == 18`. `#bot_numbers s` lists the numbers in the bot's own code, to review by eye.
+- It is a check at build time, not a proof. No theorem of the game depends on it, and it is not part of their
+  trusted surface.
 
 ## Why it is fast
 

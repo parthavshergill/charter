@@ -2,6 +2,7 @@ import Lean.Data.Json
 import Server.ArenaReference
 import Server.Spec
 import Evolved.Pool
+import Evolved.Generic
 
 /-!
 `charter-arena`: many headless games, fast, for measuring bots.
