@@ -6,3 +6,4 @@ results/
 .claude/
 contact-sheets/
 rl/build/
+__pycache__/
