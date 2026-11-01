@@ -1,5 +1,6 @@
 import Server.Game
 import Server.Bots
+import Server.Policy.Bot
 
 /-!
 # The player interface
@@ -70,8 +71,11 @@ structure Player where
 /-- A person answers through the web page. -/
 def human : Player := { kind := "human", choose := fun _ => pure .wait }
 
-/-- The rule-based bot of `Server/Bots.lean`. -/
-def botPolicy (sit : Situation) : List Json := Bots.candidatesFor sit.game [sit.seat]
+/-- The bot: the rule-based bot of `Server/Bots.lean`, or the trained policy of `Server/Policy/Bot.lean` when the
+server runs with `CHARTER_BOT=policy`. -/
+def botPolicy (sit : Situation) : List Json :=
+  if Policy.policyOn then Policy.candidates sit.game sit.seat
+  else Bots.candidatesFor sit.game [sit.seat]
 
 def bot : Player :=
   { kind := "bot"

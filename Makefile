@@ -5,6 +5,7 @@
 # make deploy-check checks budgets, pausing, waking and the copy to storage, against stand-ins. See docs/deploy.md.
 # make audit        checks every theorem's axioms, replays the proofs through leanchecker, and scans for banned constructs.
 # make measure      times the worst turn at the limits, or at others: make measure ARGS="--laws 32".
+# make policy-check checks the trained bot. CHARTER_BOT=policy makes bot seats play it: see Server/Policy/README.md.
 # make contact-sheet PACK=<id>  draws all of a pack's looks in one image, in contact-sheets/. See docs/process/reskins.md.
 # make sim          plays complete games with no browser. See below.
 # make spectate     opens a finished run in the browser, as a spectator.
@@ -31,7 +32,7 @@ GAME ?= island
 KINDS ?= claude
 MAX_MINUTES ?= 360
 
-.PHONY: install run smoke clerk-check deploy-check audit measure sim spectate contact-sheet
+.PHONY: install run smoke clerk-check deploy-check audit measure sim spectate contact-sheet policy-check
 
 install:
 	@command -v lake >/dev/null || { echo "lake not found: install elan from https://github.com/leanprover/elan"; exit 1; }
@@ -71,3 +72,16 @@ contact-sheet:
 
 audit:
 	bash scripts/audit.sh
+
+# make policy-check  checks the trained bot: the Lean network against NumPy, and a whole game on every world.
+# It uses Server/Policy/policy.chpw, or stand-in random weights when that file is missing. See Server/Policy/README.md.
+POLICY_WEIGHTS ?= Server/Policy/policy.chpw
+policy-check:
+	lake build charter-policy-check charter-policy-diff
+	@mkdir -p .lake/policy
+	@if [ -f $(POLICY_WEIGHTS) ]; then cp $(POLICY_WEIGHTS) .lake/policy/w.chpw; \
+	  else echo "no $(POLICY_WEIGHTS): using stand-in random weights"; python3 scripts/policy_diff.py make-synthetic .lake/policy/w.chpw; fi
+	python3 scripts/policy_diff.py make-obs .lake/policy/obs.txt 50
+	python3 scripts/policy_diff.py expect .lake/policy/w.chpw .lake/policy/obs.txt .lake/policy/expected.txt
+	.lake/build/bin/charter-policy-diff .lake/policy/w.chpw .lake/policy/obs.txt .lake/policy/expected.txt
+	.lake/build/bin/charter-policy-check .lake/policy/w.chpw

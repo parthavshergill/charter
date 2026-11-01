@@ -39,6 +39,14 @@ name = "charter-sim"
 root = "Server.Sim"
 
 [[lean_exe]]
+name = "charter-policy-check"
+root = "Server.Policy.PlayCheck"
+
+[[lean_exe]]
+name = "charter-policy-diff"
+root = "Server.Policy.DiffMain"
+
+[[lean_exe]]
 name = "charter-measure"
 root = "Server.Measure"
 
