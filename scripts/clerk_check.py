@@ -145,6 +145,7 @@ def check(ok, what):
 class Table:
     def __init__(self, srv, names=("Mara", "Ada")):
         self.srv = srv
+        self.names = names
         self.code = srv.req("/api/games", {"seats": len(names)})["code"]
         self.tokens = [srv.req(f"/api/games/{self.code}/join", {"name": n, "nonce": 7})["token"] for n in names]
         self.finish_setup()
@@ -201,6 +202,12 @@ class Table:
             for s in v["seats"]:
                 if s["hand"]["grain"] >= 1 and s["hand"]["wool"] >= 1:
                     return s["seat"]
+            # The seed is random, so the dice can run out the game's 24 rounds first. Then a new table tries again.
+            if v["phase"] == "ended":
+                if v["round"] < 24:
+                    raise SystemExit(f"FAILED: a game ended early, in round {v['round']}, with only turns ended")
+                self.__init__(self.srv, self.names)
+                continue
             self.turn()
         raise SystemExit("no seat came to hold grain and wool")
 
