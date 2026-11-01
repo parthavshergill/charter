@@ -343,7 +343,7 @@ def hill_pack(srv):
     """Hill and Chill: bots never say they are down, so nobody eats, and everyone collects clout."""
     d = next(x for x in srv.get("/api/defs") if x["id"] == "hill-and-chill")
     check({"down", "lore", "clout"} <= set(d["look"]["icons"]), "the pack draws down, lore and clout")
-    for n in (3, 4):
+    for n in (3, 4, 5):
         code, v = bots_only(srv, n, "hill-and-chill", "booth")
         check({"down", "lore", "clout"} <= set(v["resources"]), "down, lore and clout are on the screen")
         check(len(v["laws"]) >= 3 and v["round"] <= 8, "the founding laws stand, and the game ends by round 8")
