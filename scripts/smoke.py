@@ -23,6 +23,7 @@ class Server:
     def __init__(self, port, data, stderr=None, hold=0, turn_ms=None):
         env = dict(os.environ, PORT=str(port), CHARTER_ROOT=ROOT, CHARTER_LIST_GAMES="1", CHARTER_DATA=data, CHARTER_BOT_DELAY_MS="0", CHARTER_VOTE_HOLD_MS=str(hold),
                    ANTHROPIC_API_KEY="", CHARTER_ENV_FILE=os.path.join(data, "no-such-file"))
+        env.pop("CHARTER_COMMIT", None)
         if turn_ms is not None:
             env["CHARTER_TURN_MS"] = str(turn_ms)
         self.port = port
@@ -57,6 +58,21 @@ def check(ok, what):
     if not ok:
         raise SystemExit(f"FAILED: {what}")
     print(f"ok: {what}")
+
+
+def version_route(srv, code, token):
+    """`/api/version` names the build and counts the tables, and says nothing about any one table."""
+    with urllib.request.urlopen(f"http://127.0.0.1:{srv.port}/api/version", timeout=60) as r:
+        cache, body = r.headers["Cache-Control"], r.read().decode()
+    v = json.loads(body)
+    check(set(v) == {"commit", "webBuild", "uptimeMs", "restoreMs", "tables"}, "the version route has its fields and no others")
+    check(v["commit"] == "unknown", "with no CHARTER_COMMIT the commit is unknown")
+    check(f'/v/{v["webBuild"]}/' in srv.raw("/").decode(), "the version route names the web build the page uses")
+    check(isinstance(v["uptimeMs"], int) and v["uptimeMs"] >= 0, "the version route gives the uptime")
+    check(v["restoreMs"] is None, "with no mirror there is no restore time")
+    check(v["tables"] == len(srv.get("/api/games")) and v["tables"] >= 1, "the version route counts the tables")
+    check(code not in body and token not in body, "the version route has no table code or token")
+    check(cache == "no-store", "the version route is not stored")
 
 
 def buy_from_a_bot(srv, code, post, v, you, need):
@@ -762,6 +778,7 @@ def main():
         r = srv.post(f"/api/games/{code}/join", {"name": "Human", "nonce": 12345})
         check(r["ok"], "a player can join")
         token = r["token"]
+        version_route(srv, code, token)
         for _ in range(3):
             check(srv.post(f"/api/games/{code}/bot", {})["ok"], "a bot can join")
         v, did = play(srv, code, token)
