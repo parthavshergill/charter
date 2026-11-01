@@ -25,7 +25,7 @@ structure Layout where
 variable {G : GameDef}
 
 /-- A resource no piece and no law fee costs. Nobody wants it for itself, so it is a counter that laws
-read, such as Not Catan's alarm. It is not money, so it adds nothing to the treasury's pile. -/
+read, such as a flag a law keeps in the treasury. It is not money, so it adds nothing to the treasury's pile. -/
 def markRes (G : GameDef) (r : Res) : Bool :=
   !(G.pieces.any fun d => d.cost.any (·.1 == r)) && !(G.lawFee.any (·.1 == r))
 

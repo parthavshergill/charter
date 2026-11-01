@@ -382,11 +382,22 @@ section Games
 #guard goodsOf notCatanSpec.G == ["timber", "grain", "ore", "wool", "brick", "laurel"]
 #guard (paidRegions notCatanSpec.G).length == 18
 
+-- A resource nothing costs is a counter. It stays off the screen, and so does a region that pays it.
+def withCounter : GameDef :=
+  { islandSpec.G with
+    resources := islandSpec.G.resources ++ [⟨"flag", 5⟩]
+    map := { islandSpec.G.map with regions := islandSpec.G.map.regions ++ [⟨"flag", 7, [0]⟩] } }
+#guard markRes withCounter "flag" && !markRes withCounter "grain"
+#guard !(goodsOf withCounter).contains "flag" && (paidRegions withCounter).length == 18
+
 -- Founding laws can be read back from the formal text the screen shows, and their sentences name the laws' goods.
 #guard notCatanSpec.G.foundingLaws.all fun L =>
   match Rules.parseProposal (Rules.printProposal (.law L)) (notCatanSpec.G.resources.map (·.name)) with
   | .ok (.law L') => Rules.printProposal (.law L') == Rules.printProposal (.law L)
   | _ => false
+#guard notCatanSpec.G.foundingLaws.map (·.title) ==
+  [ "A 7 costs big hands half", "A new knight takes ore from each seat ahead"
+  , "The third knight or sixth road earns a wreath", "A harvest that empties the bank pays nobody" ]
 
 -- A law can use only the resources of its own game.
 #guard (Rules.parseProposal "(law \"x\" (set-cost city (bundle (ice 1))))").toOption.isNone
@@ -505,7 +516,7 @@ def lawOf (text : String) : Law :=
 
 /-! A pack's words. Every founding law has them, and they are for the law as it is now. -/
 
-#guard (packWords notCatanSpec).length == 7
+#guard (packWords notCatanSpec).length == 4
 #guard (packWords islandSpec).isEmpty
 #eval show IO Unit from do
   let problems := packProblems notCatanSpec
@@ -515,7 +526,7 @@ def lawOf (text : String) : Law :=
 def staleSpec : GameSpec :=
   { notCatanSpec with foundingWords := [(lawOf "(law \"\" (set-bank-rate 3))", "00000000", "Old words.")] }
 #guard (packWords staleSpec).isEmpty
-#guard match (withPack notCatanSpec {}).get? (lawKey Games.NotCatan.lawThief) with
+#guard match (withPack notCatanSpec {}).get? (lawKey Games.NotCatan.lawKnight) with
   | some (.pack "Not Catan" _) => true
   | _ => false
 #guard (json (withPack notCatanSpec {}) (lawOf "(law \"\" (set-bank-rate 3))")).compress == "{\"status\":\"none\"}"

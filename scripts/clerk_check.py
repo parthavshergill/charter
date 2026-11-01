@@ -514,7 +514,7 @@ def check_descriptions(srv, data, port, api_port):
         tokens = [srv3.req(f"/api/games/{pack}/join", {"name": n, "nonce": 7})["token"] for n in ("Ann", "Bob", "Cal")]
         v = srv3.get(f"/api/games/{pack}/view?token={tokens[0]}")
         founding = v["laws"]
-        check(len(founding) == 7 and all(l["description"]["status"] == "pack" and l["description"]["pack"] == "Not Catan" for l in founding), "each founding law has the pack's own words")
+        check(len(founding) == 4 and all(l["description"]["status"] == "pack" and l["description"]["pack"] == "Not Catan" for l in founding), "each founding law has the pack's own words")
         check(all(len(l["description"]["text"].split()) <= 45 for l in founding), "the pack's words are short")
         check(len(StandIn.describe_requests) == count, "and they make no call")
         for l in founding:
