@@ -45,3 +45,10 @@ root = "Server.Measure"
 [[lean_exe]]
 name = "charter-contact"
 root = "Server.ContactSheet"
+
+[[lean_lib]]
+name = "Evolved"
+
+[[lean_exe]]
+name = "charter-arena"
+root = "Server.Arena"
