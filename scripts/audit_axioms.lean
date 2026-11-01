@@ -5,9 +5,10 @@ open Lean
 # Which axioms the theorems rest on
 
 This does what `#print axioms` does, for every theorem in the project. It prints one line for each
-promise in the constitution's files. It checks every theorem in a `Charter` module, including the
-proofs and the tests. It exits with an error if anything they rest on is an axiom outside the allowed
-list.
+promise in the constitution's files, and one for each public theorem about the text of laws. It checks
+every theorem in a `Charter` module, including the proofs and the tests, and every theorem in
+`Server.RoundTrip`. It exits with an error if anything they rest on is an axiom outside the allowed list,
+or if `Rules.parse_of_print` is missing.
 
 Run it with `make audit`, or:
 
@@ -17,13 +18,19 @@ Run it with `make audit`, or:
 /-- The only axioms a theorem may use. `sorry` shows up as `sorryAx`, which is not on this list. -/
 def allowed : List Name := [``propext, ``Classical.choice, ``Quot.sound]
 
-/-- This theorem is one a reader of the constitution sees. -/
+/-- The module with the proof about the text of laws. -/
+def roundTrip : Name := `Server.RoundTrip
+
+/-- This module's theorems are checked. -/
+def isChecked (m : Name) : Bool := (`Charter).isPrefixOf m || m == roundTrip
+
+/-- This theorem is one a reader of the constitution sees, or a public one about the text of laws. -/
 def isShown (m n : Name) : Bool :=
   (m == `Charter.Constitution || m == `Charter.Constitution.Supporting ||
-    m == `Charter.Constitution.Examples || m == `Charter.Proofs.IslandWitness) &&
-  !n.isInternal &&
+    m == `Charter.Constitution.Examples || m == `Charter.Proofs.IslandWitness || m == roundTrip) &&
+  !n.isInternal && !isPrivateName n &&
   match n with
-  | .str _ s => !s.startsWith "eq_"
+  | .str _ s => !s.startsWith "eq_" && s != "induct" && s != "mutual_induct"
   | _ => true
 
 /-- The axioms each constant rests on, for each constant visited so far. -/
@@ -56,7 +63,10 @@ partial def axiomsOf (env : Environment) (c : Name) : StateM Seen NameSet := do
 unsafe def main : IO UInt32 := do
   initSearchPath (← findSysroot)
   enableInitializersExecution
-  let env ← importModules #[{ module := `Charter }] {} (loadExts := true)
+  let env ← importModules #[{ module := `Charter }, { module := roundTrip }] {} (loadExts := true)
+  unless env.contains `Charter.Rules.parse_of_print do
+    IO.eprintln "NOT FOUND: Charter.Rules.parse_of_print"
+    return 1
   let mut seen : Seen := {}
   let mut total := 0
   let mut shown : Array String := #[]
@@ -64,7 +74,7 @@ unsafe def main : IO UInt32 := do
     let .thmInfo _ := ci | continue
     let some idx := env.getModuleIdxFor? n | continue
     let m := env.header.moduleNames[idx.toNat]!
-    unless (`Charter).isPrefixOf m do continue
+    unless isChecked m do continue
     total := total + 1
     let (axioms, seen') := (axiomsOf env n).run seen
     seen := seen'
