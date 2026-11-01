@@ -47,6 +47,12 @@ def main (args : List String) : IO UInt32 := do
     report bad (e2.errors > 0) s!"mask {id} seeded error (last action dropped) caught: {maskLine e2}"
     let e3 := maskTest T policyVotes 4 2 (·.mask) 400 placesDropLast
     report bad (e3.errors > 0) s!"mask {id} seeded error (last placement has no row) caught: {maskLine e3}"
+  -- With declare_always, declarations are offered where no law reads them, and the engine takes each one offered.
+  for id in trainIds do
+    let some T := tablesOf? id | continue
+    let c := maskTest T { policyVotes with declareAlways := true } 4 1 (·.mask) 300
+    report bad (c.errors == 0 && c.declareNotOffered == 0 && c.offered > 0)
+      s!"mask {id} declare_always: {maskLine c}"
   -- The held-out games, more briefly, at every seat count they allow.
   for id in allIds.filter (!trainIds.contains ·) do
     let some T := tablesOf? id | continue

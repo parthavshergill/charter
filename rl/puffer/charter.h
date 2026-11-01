@@ -390,11 +390,11 @@ void puf_init(Env* env, Dict* kwargs) {
             snprintf(cfg, sizeof(cfg),
                 "{\"game\": \"%s\", \"lineup\": [%s], \"seed\": %u, "
                 "\"vote_mode\": \"%s\", \"slot_order\": \"%s\", \"move_rows\": %s, \"law_every\": %d, "
-                "\"random_map\": %s, \"preview\": %s, \"reward_win\": %g, \"reward_standing\": %g, \"shaping_points\": %g}",
+                "\"random_map\": %s, \"preview\": %s, \"reward_win\": %g, \"reward_standing\": %g, \"shaping_points\": %g, \"declare_always\": %s}",
                 id, lineup, env->rng, vote, slots, move_rows ? "true" : "false", (int)opt_num(kwargs, "law_every", 8),
                 opt_num(kwargs, "random_map", 1) ? "true" : "false", opt_num(kwargs, "preview", 1) ? "true" : "false",
                 opt_num(kwargs, "reward_win", 1.0), opt_num(kwargs, "reward_standing", 0.25),
-                opt_num(kwargs, "shaping_points", 0.0));
+                opt_num(kwargs, "shaping_points", 0.0), opt_num(kwargs, "declare_always", 0) ? "true" : "false");
             if (!charter_error(cfg, err, sizeof(err))) {
                 break;
             }

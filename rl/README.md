@@ -126,7 +126,14 @@ actions, at most 8 resources, 60 spots, 84 links, 24 tiles, 16 laws) refused lar
 
 `[env]` keys in `charter.ini`: `games` (comma-separated ids), `seats`, `vote_mode`, `slot_order`, `move_rows`, `law_every`,
 `random_map`, `preview`, `reward_win`, `reward_standing`, `shaping_points`, `bot_policy`, `bot_share`,
-`distinct_opps`. The Lean configuration also takes `record` (keep the game's events for a saved log; eval only).
+`distinct_opps`, `declare_always`. The Lean configuration also takes `record` (keep the game's events for a saved log;
+eval only).
+
+`declare_always = 1` offers declarations in every game. Island and Not Catan have no law that reads one, so by
+default declarations are never legal there, their outputs are never trained, and on held-out games that do read them
+(AI Bubble, Pirate Republic) policies have been seen to repeat one 125 to 199 times a game. With the switch on, the
+engine accepts them in training games too (they change nothing there and use one of the turn's 20 actions), so
+training sees what they do. Eval keeps the default unless the policy's meta says otherwise.
 
 Games: train on `island`, `not-catan`; hold out `slime-parliament`, `ai-bubble`, `strike-the-earth`,
 `pirate-republic`. Made-up games (`rl/lean/CharterRL/Gen.lean`) have ids `gen-limits-N`, `gen-tiny-N` and
