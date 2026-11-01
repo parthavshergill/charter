@@ -2277,7 +2277,7 @@ function gathering(v) {
         h("p", {}, "Plays the board and votes. Never talks or proposes rules.")) : null,
       open > 0 ? h("div", { class: "seatadd" },
         h("button", { class: "act", disabled: !!v.resting, onclick: () => post("claude", {}) }, "Add Claude"),
-        h("p", {}, v.resting ? "Claude is on strike for now. Sorry, that's on us. Bots can still play." : "Plays a character. Talks, bargains and writes laws. Slower.")) : null,
+        h("p", {}, v.resting ? "Claude is on strike for now. Sorry, that's on us. Bots can still play." : "Plays a character. Talks, bargains and writes laws.")) : null,
       v.you != null && v.filled >= v.minSeats && open > 0 ? h("button", { class: "act gold", onclick: () => post("start", {}) }, `Begin with ${v.filled}`) : null));
 }
 function proclamation(v) {
