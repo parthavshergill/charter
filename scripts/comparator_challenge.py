@@ -58,6 +58,10 @@ def read_source(rel: str):
     namespaces = re.findall(r"^namespace (\S+)$", text, re.M)
     if len(namespaces) != 1:
         raise SystemExit(f"{rel}: expected one namespace, found {namespaces}")
+    # A theorem in any other form would drop out of the challenge with no error.
+    other = re.search(r"^(?!theorem\s)[ \t]*(?:@\[[^\]\n]*\][ \t]*)*(?:(?:private|protected|public)[ \t]+)*(?:theorem|lemma)\s", text, re.M)
+    if other:
+        raise SystemExit(f"{rel}: this script reads only a plain `theorem` at the start of a line, not: {other.group(0).strip()}")
     theorems = []
     for m in re.finditer(r"^theorem\s+(\S+)", text, re.M):
         if m.group(1) in SKIP:
