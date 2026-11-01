@@ -16,10 +16,10 @@ namespace Charter.Games.Omerta
 
 /-- Each founding law, the start of its fingerprint, and what the pack says it does. -/
 def foundingWords : List (Law × String × String) :=
-  [ (lawTake, "0ff3d2f1",
-      "The family pays its own. At each round's end every racket pays the one who runs it 2 cash, and each cash is a point. Run a racket through a round's end and you also get 1 dirt: you have seen things. A rat who talks at that moment gets neither.")
+  [ (lawTake, "b4fd8bd1",
+      "The family pays its own. At each round's end every racket pays the one who runs it 2 cash, and each cash is a point. Run a racket through a round's end and you also get 1 dirt, if you hold none: you have seen things. Nobody holds more than 1. A rat who talks at that moment gets nothing.")
   , (lawHeat, "7c543276",
-      "The district attorney is watching. On every roll the reward on the desk grows by 1 cash for every 2 rackets running in the city. The bank never sells dirt.")
+      "The district attorney is watching. On every roll the reward on the desk grows by 1 cash for every 2 rackets running in the city. There are only 6 dirt in town, kept on the DA's desk, and the bank never sells it.")
   , (lawTalk, "3c5c7378",
       "Declare dirt on your turn and you have talked. At the next roll you take the whole reward. Talk last in a round and the DA pays at the round's end, and only half. You hand over all your dirt, the police close every racket you run, and every other seat that runs one loses its newest.") ]
 

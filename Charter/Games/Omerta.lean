@@ -96,15 +96,19 @@ def theRaid (pot : Expr) : List Effect :=
 def allRackets : Expr := .totalOver .yes (rackets .each)
 
 /-- **The take.** At each round's end each racket pays its owner 2 cash, and each seat that runs a racket
-gets 1 dirt. A seat that talks at that moment gets neither. Cash is worth a point. -/
+and holds no dirt gets 1 dirt. A seat that talks at that moment gets neither. Cash is worth a point. -/
 def lawTake : Law :=
   { title := "Each racket pays 2 cash a round, and a seat that runs one gets dirt"
     clauses :=
-      [ .onRoundEnd [.forEach (.and runsRacket (.not talksNow)) [pay .bank .each "cash" (.mul (rackets .each) (.lit 2)), pay .treasury .each "dirt" (.lit 1)]]
+      [ .onRoundEnd
+          [ .forEach (.and runsRacket (.not talksNow)) [pay .bank .each "cash" (.mul (rackets .each) (.lit 2))]
+          , .forEach (.and (.and runsRacket (.not talksNow)) (.eq (held .each "dirt") (.lit 0))) [pay .treasury .each "dirt" (.lit 1)] ]
       , .setWorth "cash" 1 ] }
 
 /-- **The heat.** On every roll the reward grows by 1 cash for every 2 rackets running in the city. Dirt is
-kept in the treasury, and every roll sweeps the bank's dirt there, so nobody can buy it from the bank. -/
+kept in the treasury, and every roll sweeps the bank's dirt there, so nobody can buy it from the bank.
+There are only 6 dirt in the game, so the treasury's heap is nearly all reward. A seat holds at most 1,
+so with 4 seats the treasury always has enough to hand out. -/
 def lawHeat : Law :=
   { title := "The more rackets run, the faster the reward grows"
     clauses := [.onRoll [pay .bank .treasury "cash" (.div allRackets 2), pay .bank .treasury "dirt" (held .bank "dirt")]] }
@@ -122,7 +126,7 @@ def foundingLaws : List Law := [lawTake, lawHeat, lawTalk]
 def game : GameDef where
   name := "Omertà"
   resources :=
-    [ ⟨"wine", 30⟩, ⟨"cement", 30⟩, ⟨"fish", 30⟩, ⟨"cash", 400⟩, ⟨"dirt", 40⟩ ]
+    [ ⟨"wine", 30⟩, ⟨"cement", 30⟩, ⟨"fish", 30⟩, ⟨"cash", 400⟩, ⟨"dirt", 6⟩ ]
   pieces :=
     [ { name := "street", cost := [("cement", 1), ("fish", 1)], points := 0
         placement := .link, yield := 0, limit := 12 }

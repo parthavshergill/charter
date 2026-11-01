@@ -85,19 +85,24 @@ def reward (s : St) : Nat := s.balance .treasury "cash"
 -- Seat 3 is last in the round, and sees what everyone did. If it talks, it is paid at the round's end,
 -- before the declarations clear, and it gets only half the reward: 10 of 20. The other half stays, and the
 -- next round's first roll adds 1 for the 3 rackets left. The others are paid for the rackets they ran
--- this round, and get their dirt. The talker gets neither.
+-- this round. They already hold dirt, so they get no more. The talker gets nothing.
 #guard match next (declaring (table 3) [(3, "dirt", 1)]) with
   | some s =>
     holds s 3 "cash" == 10 && rackets s 3 == 0 && holds s 3 "dirt" == 0 && reward s == 11 &&
-      [0, 1, 2].all (fun p => rackets s p == 1 && holds s p "cash" == 4 && holds s p "dirt" == 2)
+      [0, 1, 2].all (fun p => rackets s p == 1 && holds s p "cash" == 4 && holds s p "dirt" == 1)
   | none => false
 
 /-! ## The take -/
 
 -- Nobody talks. At the round's end each racket pays its owner 2 cash, and cash is worth a point:
--- two fronts, two rackets and four cash make 8. Each seat that runs a racket gets 1 dirt.
+-- two fronts, two rackets and four cash make 8. Everyone already holds dirt, and nobody holds more than 1.
 #guard match next (table 3) with
-  | some s => [0, 1, 2, 3].all (fun p => holds s p "cash" == 4 && rackets s p == 2 && holds s p "dirt" == 2) && s.pointsOf 0 == 8
+  | some s => [0, 1, 2, 3].all (fun p => holds s p "cash" == 4 && rackets s p == 2 && holds s p "dirt" == 1) && s.pointsOf 0 == 8
+  | none => false
+
+-- A seat that runs a racket and holds no dirt gets 1 at the round's end, from the treasury.
+#guard match next { table 3 with books := ((table 3).books.postAll [⟨.player 1, .treasury, "dirt", 1, .trade⟩]).getD (table 3).books } with
+  | some s => holds s 1 "dirt" == 1 && s.balance .treasury "dirt" == 2
   | none => false
 
 /-! ## The heat -/
@@ -105,7 +110,7 @@ def reward (s : St) : Nat := s.balance .treasury "cash"
 -- The first roll sweeps all the dirt from the bank to the treasury, so nobody can buy it from the bank.
 -- With no racket running, the reward does not grow.
 #guard match next { fresh with phase := .actions } with
-  | some s => s.balance .bank "dirt" == 0 && s.balance .treasury "dirt" == 40 && reward s == 0
+  | some s => s.balance .bank "dirt" == 0 && s.balance .treasury "dirt" == 6 && reward s == 0
   | none => false
 
 /-- A seat with a front and the goods for a racket, after the first roll. -/
