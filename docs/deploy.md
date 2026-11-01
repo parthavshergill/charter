@@ -24,6 +24,18 @@ The last command prints the address, `https://charter.<your-subdomain>.workers.d
 
 To play: open the address, found a table, and send friends the table code. No page lists the tables.
 
+## Trying a build first
+
+Cloudflare has no version URLs for Workers with containers, so the preview is a second Worker, `charter-preview`, with its own container and bucket. Its games stay apart, and its budgets are lower. It adds nothing to the fixed monthly price, and it costs usage only while awake.
+
+```
+npx wrangler r2 bucket create charter-logs-preview
+npx wrangler secret put ANTHROPIC_API_KEY --env preview
+npx wrangler deploy --env preview
+```
+
+It prints `https://charter-preview.<your-subdomain>.workers.dev`. To remove it, run `npx wrangler delete --env preview`.
+
 ## Settings
 
 These are under `vars` in `cloudflare/wrangler.jsonc`. Change a value and run `npx wrangler deploy`. A new container uses the new value.

@@ -35,6 +35,33 @@
     "CHARTER_GAMES_PER_DAY": "500",
     "CHARTER_GAMES_PER_IP_DAY": "100",
     "CHARTER_TABLE_AWAY_MS": "180000"
-  }
+  },
   // Secret, by name only: ANTHROPIC_API_KEY. Set it with `npx wrangler secret put ANTHROPIC_API_KEY`.
+  "env": {
+    // A separate Worker, container and bucket for trying a build. Cloudflare has no version URLs for
+    // Workers with containers. Deploy it with `--env preview`. Its secret is set separately.
+    "preview": {
+      "name": "charter-preview",
+      "containers": [
+        {
+          "class_name": "CharterServer",
+          "image": "../Dockerfile",
+          "image_build_context": "..",
+          "max_instances": 1,
+          "instance_type": "basic"
+        }
+      ],
+      "durable_objects": {
+        "bindings": [{ "name": "CHARTER", "class_name": "CharterServer" }]
+      },
+      "r2_buckets": [{ "binding": "MIRROR", "bucket_name": "charter-logs-preview" }],
+      "vars": {
+        "CHARTER_BUDGET_DAILY_USD": "50",
+        "CHARTER_BUDGET_PER_IP_USD": "25",
+        "CHARTER_GAMES_PER_DAY": "500",
+        "CHARTER_GAMES_PER_IP_DAY": "100",
+        "CHARTER_TABLE_AWAY_MS": "180000"
+      }
+    }
+  }
 }
