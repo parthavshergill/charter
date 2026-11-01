@@ -127,6 +127,20 @@ def table_code(game_id, opponent, phase, laws, k):
     return "".join(letters[b % len(letters)] for b in h[:6])
 
 
+def how_won(info, winner):
+    """How the game was won: `target` if the winner reached the target, `limit` if the round limit ended it, `law`
+    if a law ended it, `other` if none of these (for example a stuck game)."""
+    if winner < 0:
+        return "none"
+    if info[f"points{winner}"] >= info["target"]:
+        return "target"
+    if info["round"] >= info["round_limit"]:
+        return "limit"
+    if info["law_ends"]:
+        return "law"
+    return "other"
+
+
 def play_table(task):
     """Play one table of games: one subject, one game, one opponent, one phase, one law setting."""
     from charter import Game
@@ -134,6 +148,9 @@ def play_table(task):
     label, maker, _ = load_subject(spec)
     bot = spec if spec in BOTS else None
     wins, by_seat, points, rounds, refused, decisions, ended = 0, [0] * SEATS, 0.0, 0.0, 0, 0, 0
+    win_how = {"target": 0, "limit": 0, "law": 0, "other": 0}
+    games_how = {"target": 0, "limit": 0, "law": 0, "other": 0, "none": 0}
+    best_other = 0.0
     base = {"game": game_id, "lineup": ["caller"] * SEATS, "seed": 1, "vote_mode": vote_mode,
             "law_every": 8 if laws else 0}
     for key in ("slot_order", "move_rows", "random_map", "preview", "declare_always"):
@@ -171,13 +188,18 @@ def play_table(task):
         if k < logs:
             saved.append(save_game(g, log_dir, label, game_id, opponent, phase, laws, k, at, seed, lineup, info))
         ended += int(info["over"])
+        how = how_won(info, int(info["winner"]))
+        games_how[how] += 1
         if int(info["winner"]) == at:
             wins += 1
             by_seat[at] += 1
+            win_how[how] += 1
         points += info[f"points{at}"]
+        best_other += max(info[f"points{s}"] for s in range(SEATS) if s != at)
         rounds += info["round"]
     return {"subject": label, "game": game_id, "opponent": opponent, "phase": phase, "laws": laws, "games": n,
             "wins": wins, "wins_by_seat": by_seat, "points": points / n, "rounds": rounds / n,
+            "win_how": win_how, "games_how": games_how, "best_other": best_other / n,
             "refused": refused, "decisions": decisions, "ended": ended, "saved": saved}
 
 
@@ -398,8 +420,16 @@ def table_rows(results, games, phase, laws):
         lo, hi = wilson(w, n)
         seat = [sum(r["wins_by_seat"][s] for r in sel) / (n / SEATS) for s in range(SEATS)]
         pts = sum(r["points"] * r["games"] for r in sel) / n
-        rows.append(f"| {opp} | {n} | {pct(w / n)} | {pct(lo)} to {pct(hi)} | "
-                    + " / ".join(pct(x) for x in seat) + f" | {pts:.2f} |")
+        best = sum(r["best_other"] * r["games"] for r in sel) / n
+        tw = sum(r["win_how"]["target"] for r in sel)
+        tlo, thi = wilson(tw, n)
+        limit_w = sum(r["win_how"]["limit"] for r in sel)
+        other_w = w - tw - limit_w
+        share = (f"{pct(tw / w)} / {pct(limit_w / w)} / {pct(other_w / w)}" if w else "n/a")
+        limit_games = sum(r["games_how"]["limit"] for r in sel)
+        rows.append(f"| {opp} | {n} | {pct(w / n)} | {pct(lo)} to {pct(hi)} | {pct(tw / n)} ({pct(tlo)} to {pct(thi)}) | "
+                    f"{share} | {pct(limit_games / n)} | " + " / ".join(pct(x) for x in seat) +
+                    f" | {pts:.2f} | {best:.2f} |")
     return rows
 
 
@@ -415,10 +445,16 @@ def report(subject, meta_settings, results, seconds):
                 if not rows:
                     continue
                 out += [f"**{name}, {'with' if laws else 'without'} laws, phase `{phase}`**", "",
-                        "| opponents | games | win % | 95% interval | win % by seat 0/1/2/3 | points |",
-                        "|---|---|---|---|---|---|"] + rows + [""]
-    out += [f"Refused actions: {refused}. Games that did not end: {unended}.", ""]
-    out += ["**By game, whole game, with laws** (win %, 95% interval, points)", "",
+                        "| opponents | games | win % | 95% interval | target wins % (95%) | wins at target / at round "
+                        "limit / other | games ending at the limit % | win % by seat 0/1/2/3 | points | best opponent "
+                        "points |",
+                        "|---|---|---|---|---|---|---|---|---|---|"] + rows + [""]
+    out += [f"Refused actions: {refused}. Games that did not end: {unended}.", "",
+            "*Target wins* count only games the subject won by reaching the game's target points. A win at the round "
+            "limit goes to the leader on points (ties broken by the rules), often with a low score; *other* is a win "
+            "when a law ended the game. *Best opponent points* is the mean of the highest other seat's points.", ""]
+    out += ["**By game, whole game, with laws** (win %, 95% interval, target wins %, points against the best "
+            "opponent's points)", "",
             "| game | " + " | ".join(OPPONENTS) + " |", "|---|" + "---|" * len(OPPONENTS)]
     for g in TRAIN + HELD_OUT:
         cells = []
@@ -428,7 +464,9 @@ def report(subject, meta_settings, results, seconds):
             if n:
                 lo, hi = wilson(w, n)
                 pts = sum(r["points"] * r["games"] for r in sel) / n
-                cells.append(f"{pct(w / n)} ({pct(lo)} to {pct(hi)}), {pts:.1f}")
+                best = sum(r["best_other"] * r["games"] for r in sel) / n
+                tw = sum(r["win_how"]["target"] for r in sel)
+                cells.append(f"{pct(w / n)} ({pct(lo)} to {pct(hi)}), target {pct(tw / n)}, {pts:.1f} vs {best:.1f}")
             else:
                 cells.append("")
         out.append(f"| {g}{' (held out)' if g in HELD_OUT else ''} | " + " | ".join(cells) + " |")

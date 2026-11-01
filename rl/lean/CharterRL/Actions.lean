@@ -134,7 +134,9 @@ def legal (T : Tables) (ep : Episode) (places : Array Move) (s : State G) (d : D
   | .turn seat =>
     let end_ : List (Nat × Event) := if s.isTurnOf seat then [(actEnd, .move seat .endTurn)] else []
     let rows := ((places.toList.take maxPlaceRows).zipIdx).map fun (m, i) => (actPlace + i, Event.move seat m)
-    if s.phase == .setup then end_ ++ rows else
+    -- In setup, end turn is offered only when nothing can be placed: the engine allows ending a setup turn early,
+    -- but that gives up a free opening piece, and policies kept doing it.
+    if s.phase == .setup then (if rows.isEmpty then end_ else []) ++ rows else
     let names := ep.rowRes.toList
     let trades := names.flatMap fun g => names.filterMap fun h =>
       if g == h then Option.none else some (Move.bankTrade g h)

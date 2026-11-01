@@ -46,7 +46,7 @@ struct Log {
     float perf, score, policy_0_score, draw_rate;
     float episode_return, episode_length, win_seat0, win_seat1, win_seat2, win_seat3;
     float points, points_share, rounds, decisions, invalid_rate, laws_proposed, laws_passed;
-    float hist_score, hist_n, seats;
+    float hist_score, hist_n, seats, target_win;
     float n;
 };
 
@@ -150,7 +150,8 @@ static void add_rewards(Env* env) {
 static void finish(Env* env) {
     float info[32] = {0};
     charter_info(G(env), info, 32);
-    // info: over, winner, round, events, rejected, proposed, passed, decisions, offers, points0..5, opening0..5
+    // info: over, winner, round, events, rejected, proposed, passed, decisions, offers, points0..5, opening0..5,
+    // target, round_limit, law_ends
     int winner = (int)info[1];
     int me = env->seat_of[0];
     float won = winner == me ? 1.0f : 0.0f;
@@ -170,6 +171,7 @@ static void finish(Env* env) {
         *by_seat[me] += won;
     }
     l->seats += env->seats;
+    l->target_win += (won > 0 && info[9 + me] >= info[21]) ? 1.0f : 0.0f;
     l->points += info[9 + me];
     l->points_share += total > 0 ? info[9 + me] / total : 1.0f / env->seats;
     l->rounds += info[2];
@@ -433,4 +435,5 @@ void puf_log(Log* log, Dict* out) {
     dict_set(out, "hist_score", log->hist_score);
     dict_set(out, "hist_n", log->hist_n);
     dict_set(out, "seats", log->seats);
+    dict_set(out, "target_win", log->target_win);
 }

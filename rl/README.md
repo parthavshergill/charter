@@ -172,6 +172,12 @@ pieces, `hand` plays on) and `play` (`hand` places them, the subject plays on); 
 rates with 95% Wilson intervals, by seat, and points. Subjects: `random`, `hand`, `champion`, `champion-closed`, or a
 policy file with a JSON meta (see `rl/reference/policy.py`). A custom encoder adds its forward there.
 
+**Hollow wins.** Every table also gives *target wins %* (with its interval): games the subject won by reaching the
+game's target points. Wins at the round limit go to the leader on points, often with a low score. It also gives the
+split of the subject's wins (at the target, at the round limit, other: a law ended the game), the share of games that
+ended at the limit, and the mean points of the subject and of the best other seat. The trainer's log has
+`target_win` too. The reward is unchanged.
+
 **Can it play** (`--can-play 1`, the default): a separate check from how well it plays. The subject plays the
 made-up games (2 at the engine's limits, 3 tiny, 8 odd) at every seat count from 2 to 6, at every seat, against
 random players, and the report gives games that did not end, refused actions and errors, with PASS or FAIL. Eval

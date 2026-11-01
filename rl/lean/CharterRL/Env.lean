@@ -425,6 +425,7 @@ def Env.savedState (e : Env) : String :=
 def infoNames : List String :=
   [ "over", "winner", "round", "events", "rejected", "proposed", "passed", "decisions", "offers" ]
   ++ (List.range maxSeats).map (s!"points{·}") ++ (List.range maxSeats).map (s!"opening{·}")
+  ++ [ "target", "round_limit", "law_ends" ]
 
 def Env.info (e : Env) : FloatArray :=
   let s := e.play.state
@@ -436,7 +437,9 @@ def Env.info (e : Env) : FloatArray :=
     , Float.ofNat s.round, Float.ofNat e.play.events, Float.ofNat e.play.rejected
     , Float.ofNat e.proposed, Float.ofNat e.passed, Float.ofNat e.decisions
     , Float.ofNat (e.play.offersMade.foldl (· + ·) 0) ]
-  (first ++ seat s.pointsOf ++ seat (e.opening.getD · 0)).foldl FloatArray.push FloatArray.empty
+  let last : List Float :=
+    [ Float.ofNat e.G.targetPoints, Float.ofNat e.G.rounds, if s.lawEnds then 1 else 0 ]
+  (first ++ seat s.pointsOf ++ seat (e.opening.getD · 0) ++ last).foldl FloatArray.push FloatArray.empty
 
 /-! ## Reading a configuration -/
 
