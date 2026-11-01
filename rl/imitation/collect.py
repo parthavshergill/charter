@@ -22,11 +22,22 @@ def main():
     ap.add_argument("--games", type=int, default=400)
     ap.add_argument("--out", default="results/imitation/hand.npz")
     ap.add_argument("--seed", type=int, default=1)
+    ap.add_argument("--seats", default="4", help="seat count, or a range such as 2-6: game k cycles through it, "
+                    "within what the game allows")
+    ap.add_argument("--declare-always", action="store_true", help="offer declarations in every game (env declare_always)")
     args = ap.parse_args()
+    lo, hi = (int(x) for x in (args.seats.split("-") + [args.seats])[:2])
     obs, masks, acts, game_ids, seats, fallback = [], [], [], [], [], 0
     for k in range(args.games):
         gid = TRAIN[k % len(TRAIN)]
-        g = Game({"game": gid, "lineup": ["caller"] * 4, "seed": args.seed * 100000 + k, "vote_mode": "bot"})
+        cfg = {"game": gid, "lineup": ["caller"] * 4, "seed": args.seed * 100000 + k, "vote_mode": "bot"}
+        if args.declare_always:
+            cfg["declare_always"] = True
+        g = Game(cfg)
+        if (lo, hi) != (4, 4):
+            glo, ghi = g.seat_range
+            choices = [n for n in range(lo, hi + 1) if glo <= n <= ghi] or [4]
+            g.restart(["caller"] * choices[(k // len(TRAIN)) % len(choices)], args.seed * 100000 + k)
         while not g.over:
             m = g.mask()
             a = g.suggest("hand")

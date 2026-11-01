@@ -37,12 +37,12 @@ PUFFER = "/opt/pufferlib"
 REPO = "/repo"      # the Lean sources and the built library, baked into the image
 SRC = "/src/rl"     # the rest of rl/, added at start, so a Python change does not rebuild Lean
 VOL = "/vol"
-GPU = "T4"
+GPU = os.environ.get("CHARTER_RL_GPU", "T4")   # T4 by default; L4 or A10G when T4s are scarce
 CUDA = "12-9"
 CUDA_REPO = "https://developer.download.nvidia.com/compute/cuda/repos/debian12/x86_64"
 
 # Modal list prices, dollars per second. Kept high on purpose: they bound spend, they do not predict it.
-PRICE = {"T4": 0.000164, "cpu": 0.0000131, "gib": 0.00000222}
+PRICE = {"T4": 0.000164, "L4": 0.000222, "A10G": 0.000306, "cpu": 0.0000131, "gib": 0.00000222}
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -129,6 +129,8 @@ def build_puffer(move_rows=False, out="puffer", patch=True, encoder="flat"):
           else f"cd {PUFFER} && git checkout -q -- src"))
     lib = f"{REPO}/rl/build"
     extra = f"-L{lib} -lcharter_rl -Xlinker=-rpath -Xlinker={lib}" + (" -DCHARTER_MOVE_ROWS" if move_rows else "")
+    if os.environ.get("CHARTER_STALE_WAIT") == "1":  # waiting players keep their last observation (charter.h)
+        extra += " -DCHARTER_STALE_WAIT"
     if encoder != "flat":
         e = encoder_dir(encoder)
         if os.path.isdir(f"{e}/patches"):
@@ -166,25 +168,41 @@ def test(quick: bool = False):
 
 @app.function(gpu=GPU, cpu=8, memory=16384, timeout=4 * 3600, volumes={VOL: vol})
 def train(run: str, train_args: str = "", seconds: int = 600, move_rows: bool = False, patch: bool = True,
-          encoder: str = "flat", meta_extra: str = ""):
-    """Build the trainer and train for at most `seconds`. Writes /vol/<run>/: train.log, ckpt/, meta.json."""
+          encoder: str = "flat", meta_extra: str = "", resume: bool = False):
+    return _train(run, train_args, seconds, move_rows, patch, encoder, meta_extra, resume)
+
+
+@app.function(gpu=GPU, cpu=32, memory=49152, timeout=4 * 3600, volumes={VOL: vol})
+def train_many(jobs: list, seconds: int = 600, encoder: str = "flat", meta_extra: str = "", resume: bool = False):
+    """Several runs side by side on one GPU, built once. `jobs` is a list of [run, train_args]. The env is the
+    limit, not the GPU (one run uses about a quarter of a T4), so give each run its share of the CPUs with
+    `--vec.num_threads`."""
+    from concurrent.futures import ThreadPoolExecutor
+    vol.reload()
+    sh("ln -sf /usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1 /usr/lib/x86_64-linux-gnu/libnvidia-ml.so")
+    code, text = build_puffer(False, encoder=encoder)
+    if code != 0:
+        return {"build": code, "tail": text[-2000:]}
+    with ThreadPoolExecutor(len(jobs)) as pool:
+        # CUDA graphs fail to instantiate when several trainers share a GPU (cudaGraphInstantiate asserts), so
+        # they are off for every run here. The GPU is not the limit, so this costs little.
+        jobs = [[r, a if "--base.cudagraphs" in a else a + " --base.cudagraphs=-1"] for r, a in jobs]
+        futs = [pool.submit(_train, r, a, seconds, False, True, encoder, meta_extra, resume, True) for r, a in jobs]
+        return {r: f.result() for (r, _), f in zip(jobs, futs)}
+
+
+def _train(run, train_args="", seconds=600, move_rows=False, patch=True, encoder="flat", meta_extra="",
+           resume=False, built=False):
+    """Build the trainer and train for at most `seconds`. Writes /vol/<run>/: train.log, ckpt/, meta.json.
+
+    Every checkpoint gets its JSON meta within a minute of being written, so a run that dies can still be evaluated.
+    With `resume`, attempt k writes to ckpt/a<k>/ and its log to train.a<k>.log. It loads the newest checkpoint of the
+    last attempt as a warm start (patch 0002), and cuts `--train.total_timesteps` by the steps done so far. The
+    optimizer state and the learning-rate schedule start afresh, and the self-play pool restarts from that
+    checkpoint. A meta's `steps` counts steps over all attempts."""
     out = f"{VOL}/{run}"
     os.makedirs(out, exist_ok=True)
     t0 = time.time()
-    sh("ln -sf /usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1 /usr/lib/x86_64-linux-gnu/libnvidia-ml.so; "
-       "nvidia-smi --query-gpu=name,driver_version --format=csv,noheader")
-    code, text = build_puffer(move_rows, patch=patch, encoder=encoder)
-    if code != 0:
-        return {"build": code, "tail": text[-2000:]}
-    build_s = time.time() - t0
-    args = (f"train --headless --base.checkpoint_dir={out}/ckpt --base.log_dir={out}/logs "
-            + (" --env.move_rows=1" if move_rows else "") + f" {train_args}")
-    t1 = time.time()
-    code, _ = sh(f"cd {PUFFER} && timeout --kill-after=20 {seconds} ./puffer {args} 2>&1 | tr '\\r' '\\n' | "
-                 f"sed 's/\\x1b\\[[0-9;?]*[A-Za-z]//g' > {out}/train.log; echo exit ${{PIPESTATUS[0]}}")
-    train_s = time.time() - t1
-    _, tail = sh(f"grep -E 'bot_eval|ssert|Abort|rror|missing' {out}/train.log | head -20; tail -40 {out}/train.log")
-    ckpts = sorted(os.path.join(dp, f) for dp, _, fs in os.walk(f"{out}/ckpt") for f in fs if f.endswith(".bin"))
     hidden, layers = 128, 1
     for tok in train_args.split():
         if tok.startswith("--policy.hidden_size="):
@@ -193,13 +211,92 @@ def train(run: str, train_args: str = "", seconds: int = 600, move_rows: bool = 
             layers = int(tok.split("=")[1])
     layout = json.load(open(f"{SRC}/layout.json"))
     obs = layout["full_size"] if move_rows else layout["base_size"]
-    for c in ckpts[-1:] + ckpts[:1]:
+    base_steps, ckpt_dir, log = 0, f"{out}/ckpt", f"{out}/train.log"
+    if resume:
+        if not built:   # train_many reloads once, before its runs open files
+            vol.reload()
+        attempts = json.load(open(f"{out}/attempts.json")) if os.path.exists(f"{out}/attempts.json") else []
+        if attempts:
+            last = attempts[-1]
+            done = sorted((os.path.join(dp, f) for dp, _, fs in os.walk(last["dir"]) for f in fs if f.endswith(".bin")),
+                          key=lambda c: int(os.path.basename(c)[:-4]))
+            if done:
+                base_steps = last["base_steps"] + int(os.path.basename(done[-1])[:-4])
+                train_args += f" --base.warm_start_path={done[-1]}"
+                print(f"[resume] from {done[-1]}: {base_steps} steps so far")
+            else:
+                base_steps = last["base_steps"]
+                if last.get("warm"):
+                    train_args += f" --base.warm_start_path={last['warm']}"
+        toks = train_args.split()
+        for i, tok in enumerate(toks):
+            if tok.startswith("--train.total_timesteps=") and base_steps:
+                left = int(tok.split("=")[1].replace("_", "")) - base_steps
+                if left < 2_000_000:
+                    return {"resume": "nothing left to train", "steps": base_steps}
+                toks[i] = f"--train.total_timesteps={left}"
+        train_args = " ".join(toks)
+        k = len(attempts)
+        ckpt_dir, log = f"{out}/ckpt/a{k}", f"{out}/train.a{k}.log"
+        warm = [t.split("=", 1)[1] for t in toks if t.startswith("--base.warm_start_path=")]
+        attempts.append({"dir": ckpt_dir, "base_steps": base_steps, "warm": warm[-1] if warm else None,
+                         "args": train_args, "started": time.time()})
+        json.dump(attempts, open(f"{out}/attempts.json", "w"), indent=1)
+        vol.commit()
+
+    # Env settings that eval must repeat, read from the train args (rl/eval takes them from the meta).
+    settings = {"vote_mode": "bot", "move_rows": move_rows}
+    for tok in train_args.split():
+        if tok.startswith("--env.declare_always="):
+            settings["declare_always"] = tok.split("=")[1] not in ("0", "false")
+
+    def meta_for(c):
         meta = {"name": f"{run}/{os.path.basename(c)}", "format": f"puffer-{encoder}", "encoder": encoder,
-                "layout": layout["version"], "obs_size": obs, "act_size": layout["act_size"] + 1,
-                "hidden": hidden, "layers": layers,
-                "settings": {"vote_mode": "bot", "move_rows": move_rows}}
+                "layout": layout["version"], "obs_size": obs, "act_size": layout["act_size"] + 1, "hidden": hidden, "layers": layers,
+                "steps": base_steps + int(os.path.basename(c)[:-4]),
+                "settings": settings, "train_args": train_args}
         meta.update(json.loads(meta_extra) if meta_extra else {})
-        json.dump(meta, open(c + ".json", "w"))
+        return meta
+
+    import threading
+    stop = threading.Event()
+
+    def write_metas():
+        # Also commit the volume every 5 minutes, so the log and checkpoints survive if the job dies.
+        n = 0
+        while not stop.wait(60):
+            for dp, _, fs in os.walk(ckpt_dir):
+                for f in fs:
+                    c = os.path.join(dp, f)
+                    if f.endswith(".bin") and not os.path.exists(c + ".json"):
+                        json.dump(meta_for(c), open(c + ".json", "w"))
+            n += 1
+            if n % 5 == 0:
+                try:
+                    vol.commit()
+                except Exception as e:  # noqa: BLE001
+                    print(f"[commit] {e}", flush=True)
+    threading.Thread(target=write_metas, daemon=True).start()
+    os.environ["CHARTER_STALE_WAIT"] = str((json.loads(meta_extra) if meta_extra else {}).get("stale_wait", 0))
+    if not built:
+        sh("ln -sf /usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1 /usr/lib/x86_64-linux-gnu/libnvidia-ml.so; "
+           "nvidia-smi --query-gpu=name,driver_version --format=csv,noheader")
+        code, text = build_puffer(move_rows, patch=patch, encoder=encoder)
+        if code != 0:
+            return {"build": code, "tail": text[-2000:]}
+    build_s = time.time() - t0
+    args = (f"train --headless --base.checkpoint_dir={ckpt_dir} --base.log_dir={out}/logs "
+            + (" --env.move_rows=1" if move_rows else "") + f" {train_args}")
+    t1 = time.time()
+    code, _ = sh(f"cd {PUFFER} && timeout --kill-after=20 {seconds} ./puffer {args} 2>&1 | tr '\\r' '\\n' | "
+                 f"sed 's/\\x1b\\[[0-9;?]*[A-Za-z]//g' > {log}; echo exit ${{PIPESTATUS[0]}}")
+    train_s = time.time() - t1
+    stop.set()
+    _, tail = sh(f"grep -E 'bot_eval|ssert|Abort|rror|missing' {log} | head -20; tail -40 {log}")
+    ckpts = sorted((os.path.join(dp, f) for dp, _, fs in os.walk(ckpt_dir) for f in fs if f.endswith(".bin")),
+                   key=lambda c: int(os.path.basename(c)[:-4]))
+    for c in ckpts:
+        json.dump(meta_for(c), open(c + ".json", "w"))
     vol.commit()
     return {"build_seconds": round(build_s), "train_seconds": round(train_s), "checkpoints": len(ckpts),
             "first": ckpts[0] if ckpts else None, "last": ckpts[-1] if ckpts else None, "tail": tail[-6000:]}
@@ -210,11 +307,30 @@ def evaluate(subjects: list, out: str, games: int = 200, quick: bool = False, op
     """Run rl/eval on these subjects (`random`, `hand`, `champion`, or policy paths on the volume) and save the report,
     with `logs` saved games per table in `out/games/`."""
     vol.reload()
+    if "turnreset" in out:  # rl/reference/policy.py: reset the GRU state to its waiting fixed point after end turn
+        os.environ["CHARTER_TURN_RESET"] = "1"
     opp = f"--opponents {shlex.quote(opponents)}" if opponents else ""
     code, text = sh(f"cd {SRC}/.. && python3 rl/eval/eval.py {' '.join(map(shlex.quote, subjects))} --games {games} "
                     f"--jobs 8 --out {out} {'--quick' if quick else ''} {opp} --logs {logs}")
     vol.commit()
     return {"exit": code, "report": open(f"{out}/report.md").read() if os.path.exists(f"{out}/report.md") else text[-4000:]}
+
+
+@app.function(cpu=8, memory=16384, timeout=3600, volumes={VOL: vol})
+def bc_attention(out: str, games: int = 400, args: str = ""):
+    """Collect `hand`'s decisions (rl/imitation/collect.py) and clone them into the attention policy."""
+    os.makedirs(out, exist_ok=True)
+    data = f"{out}/hand.npz"
+    collect = "--seats 2-6"
+    if "--declare-always" in args:   # for collect.py, not bc_attention.py
+        args = args.replace("--declare-always", "")
+        collect += " --declare-always"
+    if not os.path.exists(data):
+        sh(f"cd {SRC}/.. && python3 rl/imitation/collect.py --games {games} {collect} --out {data}")
+    sh("pip install -q torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu 2>&1 | tail -1")
+    code, text = sh(f"cd {SRC}/.. && python3 rl/arch/attention/bc_attention.py {data} --out {out}/bc.bin {args}")
+    vol.commit()
+    return text[-4000:]
 
 
 # ---- Money -------------------------------------------------------------------------------------------------
@@ -251,19 +367,34 @@ def guard(max_dollars, gpu, cpu, gib, want_seconds):
 def main(action: str = "test", run: str = "smoke", minutes: float = 10, max_dollars: float = 1.0,
          train_args: str = "", games: int = 200, subjects: str = "", quick: bool = False, move_rows: bool = False,
          no_patch: bool = False, encoder: str = "flat", meta_extra: str = "", opponents: str = "", logs: int = 2,
-         eval_name: str = "eval"):
+         eval_name: str = "eval", cpus: int = 8,
+         resume: bool = False):
     if action == "test":
         total = guard(max_dollars, None, 4, 8, 1500)
         print(json.dumps(test.with_options(timeout=total).remote(quick), indent=1))
     elif action == "train":
         # The whole job, build and start included, stops at `total`. Training gets all but 10 minutes of it.
-        total = guard(max_dollars, GPU, 8, 16, int(minutes * 60) + 600)
+        # `--cpus N` gives the job N CPUs; pass `--vec.num_threads=N` in the train args to use them.
+        mem = max(16, 2 * cpus)
+        total = guard(max_dollars, GPU, cpus, mem, int(minutes * 60) + 600)
         seconds = total - 600
         if seconds < 60:
             sys.exit("[money] too little money for a useful run")
-        r = train.with_options(timeout=total).remote(run, train_args, seconds, move_rows, not no_patch, encoder,
-                                                            meta_extra)
+        r = train.with_options(timeout=total, cpu=cpus, memory=mem * 1024).remote(
+            run, train_args, seconds, move_rows, not no_patch, encoder, meta_extra, resume)
         print(json.dumps(r, indent=1))
+    elif action == "train-many":
+        # --run is a JSON list of [run, train_args]; all share --minutes, --encoder, --meta-extra and --resume.
+        jobs = json.loads(run)
+        mem = max(16, 2 * cpus)
+        total = guard(max_dollars, GPU, cpus, mem, int(minutes * 60) + 600)
+        seconds = total - 600
+        if seconds < 60:
+            sys.exit("[money] too little money for a useful run")
+        r = train_many.with_options(timeout=total, cpu=cpus, memory=mem * 1024).remote(
+            jobs, seconds, encoder, meta_extra, resume)
+        print(json.dumps({k: {x: v.get(x) for x in ("train_seconds", "last", "resume")} for k, v in r.items()}
+                         if isinstance(r, dict) and "build" not in r else r, indent=1))
     elif action == "eval":
         total = guard(max_dollars, None, 8, 8, 3 * 3600)
         evaluate_ = evaluate.with_options(timeout=total)
@@ -272,5 +403,8 @@ def main(action: str = "test", run: str = "smoke", minutes: float = 10, max_doll
         r = evaluate_.remote([s if s in bots or s.startswith("/") else f"{VOL}/{s}" for s in subs],
                             f"{VOL}/{run}/{eval_name}", games, quick, opponents, logs)
         print(r["report"])
+    elif action == "bc":
+        total = guard(max_dollars, None, 8, 16, 3600)
+        print(bc_attention.with_options(timeout=total).remote(f"{VOL}/{run}", games, train_args))
     else:
         sys.exit(f"unknown action {action}")
