@@ -1,0 +1,40 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "charter",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  // Keep the container's own logs. Per-request logs are off: they record addresses, and they would add
+  // nothing a friend's game needs.
+  "observability": {
+    "enabled": true,
+    "logs": { "enabled": true, "invocation_logs": false }
+  },
+  "containers": [
+    {
+      "class_name": "CharterServer",
+      "image": "../Dockerfile",
+      "image_build_context": "..",
+      // One process holds every table, so there is exactly one container.
+      "max_instances": 1,
+      "instance_type": "basic"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [{ "name": "CHARTER", "class_name": "CharterServer" }]
+  },
+  "exports": {
+    "CharterServer": { "type": "durable-object", "storage": "sqlite" }
+  },
+  "r2_buckets": [{ "binding": "MIRROR", "bucket_name": "charter-logs" }],
+  // Everything named CHARTER_* here is passed to the server. Change a value, deploy, and the next
+  // container start uses it. docs/deploy.md says what each one does.
+  "vars": {
+    "CHARTER_BUDGET_DAILY_USD": "500",
+    "CHARTER_BUDGET_PER_IP_USD": "100",
+    "CHARTER_GAMES_PER_DAY": "500",
+    "CHARTER_GAMES_PER_IP_DAY": "100",
+    "CHARTER_TABLE_AWAY_MS": "180000"
+  }
+  // Secret, by name only: ANTHROPIC_API_KEY. Set it with `npx wrangler secret put ANTHROPIC_API_KEY`.
+}

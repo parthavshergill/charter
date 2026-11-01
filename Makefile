@@ -2,6 +2,7 @@
 # make run          starts the server. PORT sets the port, 8787 by default.
 # make smoke        plays full games through the HTTP API, on a free port, and checks the result.
 # make clerk-check  checks the clerk and the Claude seats, against a stand-in for the API.
+# make deploy-check checks budgets, pausing, waking and the copy to storage, against stand-ins. See docs/deploy.md.
 # make audit        checks every theorem's axioms, replays the proofs through leanchecker, and scans for banned constructs.
 # make sim          plays complete games with no browser. See below.
 # make spectate     opens a finished run in the browser, as a spectator.
@@ -15,7 +16,9 @@
 #
 # The server reads: CHARTER_TURN_MS (a person's turn, 5 minutes), CHARTER_CLAUDE_TURN_MS (a Claude seat's
 # turn, 10 minutes, 25 in make sim), CHARTER_VOTE_HOLD_MS (how long other seats wait for a person's vote,
-# 30 seconds), CHARTER_SEAT_MODEL, CHARTER_SEAT_EFFORT, CHARTER_SEAT_CONCURRENCY. 0 turns a limit off.
+# 30 seconds), CHARTER_TABLE_AWAY_MS (a table pauses with none of its people there, 3 minutes), CHARTER_SEAT_MODEL,
+# CHARTER_SEAT_EFFORT, CHARTER_SEAT_CONCURRENCY. 0 turns a limit off. CHARTER_BIND sets the address to listen on,
+# 127.0.0.1 by default. docs/deploy.md lists the budgets.
 PORT ?= 8787
 SPECTATE_PORT ?= 8788
 GAMES ?= 1
@@ -24,7 +27,7 @@ GAME ?= island
 KINDS ?= claude
 MAX_MINUTES ?= 360
 
-.PHONY: install run smoke clerk-check audit sim spectate
+.PHONY: install run smoke clerk-check deploy-check audit sim spectate
 
 install:
 	@command -v lake >/dev/null || { echo "lake not found: install elan from https://github.com/leanprover/elan"; exit 1; }
@@ -39,6 +42,9 @@ smoke: install
 clerk-check: install
 	python3 scripts/clerk_check.py
 	python3 scripts/seat_check.py
+
+deploy-check: install
+	python3 scripts/deploy_check.py
 
 sim: install
 	.lake/build/bin/charter-sim --games $(GAMES) --seats $(SEATS) --game $(GAME) --kinds $(KINDS) --max-minutes $(MAX_MINUTES) \

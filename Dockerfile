@@ -1,11 +1,11 @@
 # syntax=docker/dockerfile:1
-# Charter's server, for Cloudflare Containers: linux/amd64 only.
+# Charter's server, for Cloudflare Containers. Build for linux/amd64, as wrangler does: docker build --platform linux/amd64 .
 # Nothing secret goes in this image. The Worker passes the API key when it starts a container.
 
-FROM --platform=linux/amd64 debian:12.11-slim AS build
+FROM debian:12.13-slim AS build
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates curl gcc libc6-dev binutils zstd \
- && curl -fsSL https://github.com/leanprover/elan/releases/download/v4.2.1/elan-x86_64-unknown-linux-gnu.tar.gz \
+ && curl -fsSL https://github.com/leanprover/elan/releases/download/v4.2.4/elan-x86_64-unknown-linux-gnu.tar.gz \
     | tar -xz -C /usr/local/bin \
  && /usr/local/bin/elan-init -y --no-modify-path --default-toolchain none
 ENV PATH=/root/.elan/bin:$PATH
@@ -16,7 +16,7 @@ RUN elan toolchain install "$(cat lean-toolchain)" && elan default "$(cat lean-t
 COPY . .
 RUN lake build charter-server && strip .lake/build/bin/charter-server
 
-FROM --platform=linux/amd64 debian:12.11-slim
+FROM debian:12.13-slim
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates curl \
  && rm -rf /var/lib/apt/lists/* /var/cache/apt/* /usr/share/doc/* /usr/share/man/* \
