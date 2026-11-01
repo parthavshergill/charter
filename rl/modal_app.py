@@ -241,10 +241,15 @@ def _train(run, train_args="", seconds=600, move_rows=False, patch=True, encoder
     stop = threading.Event()
 
     def keep_committing():
-        while not stop.wait(commit_every):
+        # Metas every minute and a commit every `commit_every` seconds, so a committed checkpoint almost always has
+        # its meta (one saved in the last minute before a commit gets it at the next commit).
+        last = time.time()
+        while not stop.wait(60):
             try:
                 write_metas(out, ckpt_dir, run, train_args, move_rows, encoder, meta_extra, base_steps)
-                vol.commit()
+                if time.time() - last >= commit_every:
+                    vol.commit()
+                    last = time.time()
             except Exception as e:  # noqa: BLE001
                 print(f"[commit] failed: {e}", flush=True)
     t0 = time.time()
