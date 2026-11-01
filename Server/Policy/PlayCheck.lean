@@ -152,7 +152,7 @@ def Result.summary (r : Result) : String := Id.run do
 
 def main (args : List String) : IO UInt32 := do
   let some path := args.head? | do
-    IO.eprintln "usage: charter-policy-check WEIGHTS [GAMES] [--vs-hand] [--record OBS.txt] [--logs DIR]"
+    IO.eprintln "usage: charter-policy-check WEIGHTS [GAMES] [--vs-hand] [--record OBS.txt] [--logs DIR] [--log-count N] [--world ID]"
     return 2
   let net ← match ← loadNet path with
     | .ok n => pure n
@@ -168,6 +168,12 @@ def main (args : List String) : IO UInt32 := do
   let logDir := match args.dropWhile (· != "--logs") with
     | _ :: p :: _ => some p
     | _ => none
+  let logCount := (match args.dropWhile (· != "--log-count") with
+    | _ :: n :: _ => n.toNat?
+    | _ => none).getD 4
+  let only := match args.dropWhile (· != "--world") with
+    | _ :: w :: _ => some w
+    | _ => none
   if !vsHand then
     for spec in gameSpecs do
       for seats in [2, 4, 6].filter fun n => spec.minSeats ≤ n && n ≤ spec.maxSeats do
@@ -180,11 +186,11 @@ def main (args : List String) : IO UInt32 := do
     IO.println (if ok then "policy check: PASS, every world ended at every seat count tried" else "policy check: FAILED")
   else
     let mut all : List Result := []
-    for spec in gameSpecs do
+    for spec in gameSpecs.filter fun sp => only.all (· == sp.id) do
       let seats := min 4 spec.maxSeats
       let mut rs : List Result := []
       for i in [0:games] do
-        let keep := logDir.isSome && i < 4
+        let keep := logDir.isSome && i < logCount
         let r ← playOne net spec seats (5000 + i) [i % seats] none keep
         if keep then
           if let some d := logDir then
@@ -201,7 +207,7 @@ def main (args : List String) : IO UInt32 := do
       let pts := rs.map fun r => r.points.getD (r.policySeats.headD 0) 0
       let best := rs.map fun r => (r.points.zipIdx.filter fun (_, i) => !r.policySeats.contains i).foldl (fun m (p, _) => max m p) 0
       s!"{wins.length}/{rs.length} wins ({target.length} by target, {wins.length - target.length} by round limit); policy points {pts.sum}, best current bot's points {best.sum}"
-    for spec in gameSpecs do
+    for spec in gameSpecs.filter fun sp => only.all (· == sp.id) do
       IO.println s!"{spec.id}: {tally (all.filter (·.game == spec.id))}"
     IO.println s!"all worlds: {tally all}"
     let d := (all.map (·.decisions)).sum
