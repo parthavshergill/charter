@@ -285,6 +285,91 @@ def getGrain (amount : String) : String :=
 #guard law "(on-build road (if (< 1 (points each)) (transfer actor treasury grain 1)))" ==
   s!"If 1 is less than 0 (no player is picked here), anyone who builds a road pays 1 grain to the treasury. / {short}"
 
+/-! ## Laws that react to the roll -/
+
+-- The three sentences a player should be able to say, read back from the rule.
+#guard law "(on-roll (for-each-player (= rolled 2) (transfer each treasury grain 1)))" ==
+  s!"When a 2 is rolled, every player pays 1 grain to the treasury. / {short}"
+#guard law "(on-roll (for-each-player (= rolled 12) (transfer bank each wool 1)))" ==
+  "When a 12 is rolled, every player gets 1 wool from the bank."
+#guard sample "seven-penalty" ==
+  "When a 7 is rolled, players with more than 7 grain, timber, ore, wool and brick in total pay " ++
+  "half of their grain, half of their timber, half of their ore, half of their wool and half of " ++
+  "their brick, each rounded down, to the bank."
+-- The same rule written another way reads the same.
+#guard law "(on-roll (if (= 7 rolled) (transfer bank treasury grain 1)))" ==
+  "When a 7 is rolled, the bank pays 1 grain to the treasury."
+#guard law "(on-roll (for-each-player (and (< 3 (holding each grain)) (= rolled 7)) (transfer each treasury grain 1)))" ==
+  "When a 7 is rolled, players with more than 3 grain pay 1 grain to the treasury."
+-- More than one number, and every number but one.
+#guard law "(on-roll (if (or (= rolled 2) (= rolled 12)) (transfer bank treasury grain 1)))" ==
+  "When a 2 or a 12 is rolled, the bank pays 1 grain to the treasury."
+#guard law "(on-roll (if (= rolled 8) (transfer bank treasury grain 1)))" ==
+  "When an 8 is rolled, the bank pays 1 grain to the treasury."
+#guard law "(on-roll (if (not (= rolled 7)) (transfer bank treasury grain 1)))" ==
+  "When anything but a 7 is rolled, the bank pays 1 grain to the treasury."
+-- A test of the number that is not one number stays in the words.
+#guard law "(on-roll (if (<= 10 rolled) (transfer bank treasury grain 1)))" ==
+  "Each time the dice roll, if the total rolled is at least 10, the bank pays 1 grain to the treasury."
+#guard law "(on-roll (if (< 10 rolled) (transfer bank treasury grain 1)))" ==
+  "Each time the dice roll, if the total rolled is more than 10, the bank pays 1 grain to the treasury."
+#guard law "(on-roll (if (<= rolled 3) (transfer bank treasury grain 1)))" ==
+  "Each time the dice roll, if the total rolled is at most 3, the bank pays 1 grain to the treasury."
+-- Two numbers cannot both be rolled, and the sentence does not hide it.
+#guard law "(on-roll (if (and (= rolled 2) (= rolled 7)) (transfer bank treasury grain 1)))" ==
+  "Each time the dice roll, if the total rolled is equal to 2 and the total rolled is equal to 7, " ++
+  "the bank pays 1 grain to the treasury."
+-- The actor is the player whose turn the roll starts.
+#guard law "(on-roll (transfer bank actor grain 1))" ==
+  "Each time the dice roll, the player whose turn starts gets 1 grain from the bank."
+#guard law "(on-roll (if (= rolled 7) (transfer actor treasury ore 2)))" ==
+  s!"When a 7 is rolled, the player whose turn starts pays 2 ore to the treasury. / {short}"
+#guard law "(on-roll (for-each-player (= rolled 7) (transfer each actor grain 1)))" ==
+  s!"When a 7 is rolled, the player whose turn starts gets 1 grain from every other player. / {short}"
+-- The total can be an amount.
+#guard law "(on-roll (transfer bank actor grain rolled))" ==
+  "Each time the dice roll, the player whose turn starts gets grain equal to the total rolled from the bank."
+#guard law "(on-roll (transfer bank actor grain (/ rolled 2)))" ==
+  "Each time the dice roll, the player whose turn starts gets grain equal to half of the total rolled, rounded down, from the bank."
+-- Outside a roll, `rolled` is 0, and the sentence says so as it does for `amount`.
+#guard law "(on-round-end (for-each-player true (transfer each treasury grain rolled)))" ==
+  s!"Each round, every player pays grain equal to 0 (no dice are rolled here) to the treasury. / {short}"
+#guard law "(on-round-end (if (= rolled 7) (transfer bank treasury grain 1)))" ==
+  "Each round, if 0 (no dice are rolled here) is equal to 7, the bank pays 1 grain to the treasury."
+#guard law "(on-build road (transfer actor treasury grain rolled))" ==
+  s!"Anyone who builds a road pays grain equal to 0 (no dice are rolled here) to the treasury. / {short}"
+-- Inside a roll, what only a harvest has is missing, and the sentence says that too.
+#guard law "(on-roll (transfer bank treasury res 1))" ==
+  "Each time the dice roll, nothing moves: nothing was harvested here."
+#guard law "(on-roll (transfer bank each grain 1))" ==
+  "Each time the dice roll, nothing moves: no player is picked here."
+#guard law "(on-roll (if (not true) (transfer bank treasury grain 1)))" ==
+  "Each time the dice roll, nothing moves: its condition is never true."
+#guard law "(on-roll (transfer bank treasury grain amount))" ==
+  "Each time the dice roll, the bank pays grain equal to 0 (nothing was harvested here) to the treasury."
+-- A clause with no effects does not parse, as for the other triggers.
+#guard (Rules.parseProposal "(law \"x\" (on-roll))").toOption.isNone
+
+-- The text goes through the parser and back unchanged, so the event log keeps its meaning.
+def rollTexts : List String :=
+  [ "(law \"x\" (on-roll (transfer bank actor grain rolled)))"
+  , "(law \"x\" (on-roll (for-each-player (= rolled 7) (transfer each treasury grain 1))))"
+  , "(law \"x\" (on-roll (if (<= 10 rolled) (transfer bank actor grain 1) (transfer bank treasury ore 1))))" ]
+
+#guard rollTexts.all fun t =>
+  match Rules.parseProposal t with
+  | .ok p => Rules.printProposal p == t
+  | .error _ => false
+
+-- A sum of one player's holdings reads as a total. Other sums keep the longer sentence.
+#guard law "(on-round-end (for-each-player (< 7 (+ (holding each grain) (holding each wool))) (transfer each treasury grain 1)))" ==
+  s!"Each round, players with more than 7 grain and wool in total pay 1 grain to the treasury. / {short}"
+#guard law "(on-round-end (for-each-player (< 7 (+ (holding each grain) (holding each grain))) (transfer each treasury grain 1)))" ==
+  s!"Each round, for each player, if 7 is less than their grain plus their grain, they pay 1 grain to the treasury. / {short}"
+-- Amounts that all round down share the words.
+#guard law "(on-round-end (for-each-player true (transfer each treasury grain (/ (holding each grain) 2)) (transfer each treasury ore (/ (holding each ore) 2))))" ==
+  "Each round, every player pays half of their grain and half of their ore, each rounded down, to the treasury."
+
 /-! ## Prices, points, the bank, repeal, new pieces, and many clauses -/
 
 #guard law "(set-cost road (bundle))" == "A road is free."

@@ -9,7 +9,7 @@ This file is written once and used twice: by `step` when a turn really ends, and
 The work has two parts:
 
 1. `turnEntries` computes every payment of the turn change, in order. At a round's end those are
-   `State.roundEndEntries`. If a new action turn starts, they end with that roll's harvest.
+   `State.roundEndEntries`. If a new action turn starts, they end with the whole of that roll.
 2. `startNextTurn` changes everything else: who plays, the round, and the dice counters.
 
 `nextStage` says what comes next. It is in the spec, in `Charter/Words/Turns.lean`.
@@ -19,10 +19,10 @@ namespace Charter.Engine
 
 variable {G : GameDef}
 
-/-- Every payment of the turn change, if the dice show `roll`. A harvest comes last. -/
+/-- Every payment of the turn change, if the dice show `roll`. The roll comes last. -/
 def turnEntries (s : State G) (roll : Nat) : List Entry :=
   let before := s.entriesBeforeRoll
-  if (nextStage s).rolls then before ++ harvestEntries (s.afterPosting before) roll else before
+  if (nextStage s).rolls then before ++ rollEntries (s.afterPosting before) roll else before
 
 /-- Start an action turn: the seat's open proposals expire, and the dice roll. -/
 def beginActionTurn (s : State G) (index roll : Nat) : State G :=

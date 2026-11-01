@@ -57,6 +57,7 @@ def monumentOf (L : Law) : MonumentKind :=
   | some (.onHarvest _) => .harvest
   | some (.onBuild _ _) => .build
   | some (.onRoundEnd _) => .roundEnd
+  | some (.onRoll _) => .roll
   | some (.newPiece p) => .newPiece p.name
   | _ => .repeal
 

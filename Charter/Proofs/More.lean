@@ -111,8 +111,10 @@ theorem step_bank {s s' : State G} {e : Event} (h : Engine.step G s e = .ok s') 
       · exact fun _ => Or.inr (Or.inr ⟨(lawEntries_form _ _ x h3).1, Or.inr ⟨hend, Or.inl h3⟩⟩)
       · obtain ⟨_, j, _, h4, _⟩ := refundEntries_form h3
         exact bank_of_deposit h4
-    · rcases harvestEntries_cases hx with h3 | h3
-      · exact fun _ => Or.inl ⟨(baseHarvest_form h3).2.1, hend, hx⟩
+    · rcases rollEntries_cases hx with h3 | h3
+      · rcases harvestEntries_cases h3 with h4 | h4
+        · exact fun _ => Or.inl ⟨(baseHarvest_form h4).2.1, hend, h3⟩
+        · exact fun _ => Or.inr (Or.inr ⟨h4.1, Or.inr ⟨hend, Or.inr hx⟩⟩)
       · exact fun _ => Or.inr (Or.inr ⟨h3.1, Or.inr ⟨hend, Or.inr hx⟩⟩)
   · obtain ⟨es, hj, hes⟩ := body_bank hb
     rcases finish_cases hf with rfl | ⟨w, hw⟩

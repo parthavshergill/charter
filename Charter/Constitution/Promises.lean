@@ -224,15 +224,15 @@ abbrev PaysInOwnTrade (s : State G) (e : Event) (x : Entry) (i : Seat) : Prop :=
 abbrev PaysOwnLawFee (G : GameDef) (e : Event) (x : Entry) (i : Seat) : Prop :=
   x.reason = .lawFee ∧ ∃ L, e = .propose i (.law L) ∧ x ∈ lawFeeEntries G i
 
-/-- A law in force asks for this entry: as a reaction to a build, at a round's end, or as a reaction
-to the dice payout. -/
+/-- A law in force asks for this entry: as a reaction to a build, at a round's end, as a reaction to
+the dice payout, or as a reaction to the roll itself. -/
 abbrev AskedForByLaw (s : State G) (e : Event) (x : Entry) : Prop :=
   x.reason = .lawEffect ∧
     ((∃ b k loc, e = .move b (.place k loc) ∧
        x ∈ lawEntries (s.afterPosting (s.costEntries b k)) (.build b k)) ∨
      (EndsTurn s e ∧
        (x ∈ s.roundEndLawEntries ∨
-        x ∈ harvestEntries (s.afterPosting s.entriesBeforeRoll) (rollAt G s.seed s.rollsMade))))
+        x ∈ rollEntries (s.afterPosting s.entriesBeforeRoll) (rollAt G s.seed s.rollsMade))))
 
 /-- Money leaves a seat's own account only for that seat's build, trade, law fee or deposit, or for
 what a law in force says. -/
@@ -417,16 +417,18 @@ def RoundEndPaysDealsFirst (G : GameDef) : Prop :=
     Reachable G s → Engine.step G s e = .ok s' → EndsTurn s e → s.isLastTurn = true →
     (s.duePayments ++ lawEntries (s.afterPosting s.duePayments) .roundEnd) <+: newEntries s s'
 
-/-- When a new turn rolls, the entries are exactly that roll's payout and the laws reacting to it. On
-a last turn, they come after exactly the round's end entries. -/
+/-- When a new turn rolls, the entries are exactly that roll's payout, the laws reacting to it, and the
+laws reacting to the roll itself. On a last turn, they come after exactly the round's end entries. The
+seat those laws call the actor is the seat whose turn the roll starts. -/
 def RollPaysExactly (G : GameDef) : Prop :=
   ∀ (s s' : State G) e,
     Reachable G s → Engine.step G s e = .ok s' → EndsTurn s e → s'.rollsMade = s.rollsMade + 1 →
     (s.isLastTurn = false →
-      newEntries s s' = harvestEntries s (rollAt G s.seed s.rollsMade)) ∧
+      newEntries s s' = rollEntries s (rollAt G s.seed s.rollsMade)) ∧
     (s.isLastTurn = true →
       newEntries s s' = s.roundEndEntries ++
-        harvestEntries (s.afterPosting s.roundEndEntries) (rollAt G s.seed s.rollsMade))
+        rollEntries (s.afterPosting s.roundEndEntries) (rollAt G s.seed s.rollsMade)) ∧
+    s.nextRoller = s'.currentSeat
 
 /-- A turn change with no roll makes only the round's end entries, if any. -/
 def NoRollPaysOnlyRoundEnd (G : GameDef) : Prop :=

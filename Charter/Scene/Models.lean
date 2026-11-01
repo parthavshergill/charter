@@ -248,7 +248,7 @@ def lawPieceModel (name : String) (seat : Nat) : List Part :=
 
 /-- What a law is about, for choosing its monument. -/
 inductive MonumentKind where
-  | cost | points | bank | harvest | build | roundEnd | newPiece (name : String) | repeal
+  | cost | points | bank | harvest | build | roundEnd | roll | newPiece (name : String) | repeal
 
 /-- A monument raised for a law. The kind sets its shape, and each stands on a plinth. -/
 def monument : MonumentKind → List Part
@@ -269,6 +269,10 @@ def monument : MonumentKind → List Part
     [ box 0 0 0 0.12 0.035 0.12 marble, box (-0.05) 0.03 0 0.014 0.19 0.03 timberDark
     , box 0.05 0.03 0 0.014 0.19 0.03 timberDark, box 0 0.215 0 0.12 0.016 0.03 timberDark
     , cone 0 0.13 0 0.038 0.085 gold ]
+  | .roll =>  -- two dice, one on the other, each with a gilded pip
+    [ box 0 0 0 0.12 0.035 0.12 marble, box 0 0.03 0 0.09 0.09 0.09 plaster
+    , box 0 0.12 0 0.065 0.065 0.065 plaster, box 0 0.185 0 0.018 0.008 0.018 gold
+    , box 0 0.075 0.045 0.018 0.018 0.004 gold ]
   | .newPiece name =>  -- a small gilded model of the piece
     (box 0 0 0 0.14 0.035 0.14 marble) ::
       (lawPieceModel name 0).map fun p => { p with

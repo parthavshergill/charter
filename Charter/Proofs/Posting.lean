@@ -283,6 +283,21 @@ theorem harvestEntries_posts (s : State G) (roll : Nat) :
   rw [hb] at this
   exact this
 
+/-- The whole of a roll always posts: the harvest, then the laws reacting to the roll. -/
+theorem rollEntries_posts (s : State G) (roll : Nat) :
+    ∃ b, s.books.postAll (rollEntries s roll) = some b := by
+  obtain ⟨b1, h1⟩ := harvestEntries_posts s roll
+  simp only [rollEntries]
+  rw [postAll_append, h1, Option.bind_some]
+  cases s.nextRoller with
+  | none => exact ⟨b1, rfl⟩
+  | some a =>
+    have := settle_posts (s.afterPosting (harvestEntries s roll))
+      ((s.afterPosting (harvestEntries s roll)).laws.flatMap fun x =>
+        Law.plan (s.afterPosting (harvestEntries s roll)) (.roll a roll) x.2)
+    rw [afterPosting_books h1] at this
+    exact this
+
 /-! ## Refunds always post -/
 
 /-- A valid game names each resource once. -/

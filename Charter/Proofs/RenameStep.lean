@@ -227,10 +227,24 @@ theorem nextStage_rename (s : State G) : nextStage (σ.state s) = nextStage s :=
   simp only [state_turnOrder, List.length_map]
   rfl
 
+theorem nextRoller_rename (s : State G) : (σ.state s).nextRoller = s.nextRoller.map σ.to := by
+  unfold State.nextRoller
+  rw [nextStage_rename]
+  cases nextStage s <;> simp [state_turnOrder]
+
+theorem rollEntries_rename (s : State G) (roll : Nat) :
+    rollEntries (σ.state s) roll = (rollEntries s roll).map σ.entry := by
+  simp only [rollEntries, harvestEntries_rename, afterPosting_rename, nextRoller_rename,
+    List.map_append]
+  congr 1
+  cases s.nextRoller with
+  | none => rfl
+  | some a => exact σ.lawEntries_rename _ (.roll a roll)
+
 theorem turnEntries_rename (s : State G) (roll : Nat) :
     turnEntries (σ.state s) roll = (turnEntries s roll).map σ.entry := by
   simp only [turnEntries, entriesBeforeRoll_rename, nextStage_rename, afterPosting_rename,
-    harvestEntries_rename]
+    rollEntries_rename]
   split <;> simp
 
 theorem some_to_bne (a : Seat) (b : Option Seat) :
