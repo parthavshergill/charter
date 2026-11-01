@@ -5,4 +5,7 @@ import Charter.Constitution.Examples
 import Charter.Engine
 import Charter.EngineTests
 import Charter.Games.Tiny
+import Charter.Games.Island
+import Charter.Games.IslandTests
 import Charter.Games.Witnesses
+import Charter.Scene.OfState
