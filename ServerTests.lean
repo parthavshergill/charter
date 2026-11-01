@@ -602,19 +602,19 @@ end Descriptions
 
 /-! ## The arena
 
-These run in the interpreter, so they use few games, on the shortest map. `charter-arena --check-reference`
+These run in the interpreter, so they use few games, on a game of ten rounds. `charter-arena --check-reference`
 and `--check-fixture` compare the bot with its old self. -/
 
 namespace ArenaTests
 open Arena Bots
 
 /-- A table of hand bots, with these weights by seat. -/
-def tableOf (weights : List Weights) : Table beltSpec.G :=
-  let board := Board.of beltSpec.G
+def tableOf (weights : List Weights) : Table strikeSpec.G :=
+  let board := Board.of strikeSpec.G
   { plans := weights.toArray.map fun W => (hand, { weights := W, board })
-    names := (beltSpec.G.resources.map (·.name)).toArray }
+    names := (strikeSpec.G.resources.map (·.name)).toArray }
 
-/-- Play a game of the Belt, and give the winning seat. -/
+/-- Play a game of Strike the Earth, and give the winning seat. -/
 def winner (weights : List Weights) (seed : Nat) : Option Nat :=
   (playGame {} (tableOf weights) seed).state.winner
 
@@ -678,10 +678,10 @@ same game and the same seat wins. Rotated through the seats, each of four player
 /-! A strategy that says nothing still ends, and a seat speaks only for itself. -/
 
 /-- A table of one kind of strategy. -/
-def tableWith (st : Strategy) : Table beltSpec.G :=
-  let board := Board.of beltSpec.G
+def tableWith (st : Strategy) : Table strikeSpec.G :=
+  let board := Board.of strikeSpec.G
   { plans := Array.replicate 4 (st, { weights := {}, board })
-    names := (beltSpec.G.resources.map (·.name)).toArray }
+    names := (strikeSpec.G.resources.map (·.name)).toArray }
 
 /-- Says nothing. -/
 def mute : Strategy := Strategy.ofSeat "mute" fun _ _ _ => []
