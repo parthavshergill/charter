@@ -12,9 +12,10 @@ server's tables.
 The policy is simple. On its own turn a bot places where the dice pay most, upgrades, builds, trades with
 the bank to complete a build, and ends its turn. It votes yes on a law when the law would not cost it
 resources on the next turn change and hands no other seat the win. It signs a deal that pays it at least
-what it pays, and it accepts an offer that gives it at least what it gives.
+what it pays, and it accepts an offer that gives it at least what it gives. A good that counts as points
+stays out of its bank trades and offers, and an offer that costs it points must pay for them in goods.
 
-Every constant of the policy is a field of `Weights`, and `Weights.default` plays as the bot always has.
+Every constant of the policy is a field of `Weights`, and `Weights.default` is the bot at real tables.
 -/
 
 namespace CharterServer.Bots
@@ -62,11 +63,18 @@ structure Weights where
   voteMargin : Int := 0
   /-- A deal gets a signature if each round costs the seat at most this much. -/
   dealMargin : Int := 0
+  /-- 1 to keep goods that count as points out of bank trades and offers, and to count points when
+  accepting an offer. 0 plays as the bot did before it knew about such goods. -/
+  keepPoints : Int := 1
+  /-- How many goods one point is worth, when accepting an offer and when declaring. -/
+  pointValue : Int := 100
+  /-- 1 to declare on its own turn when the round's end pays for it. 0 never declares. -/
+  declareOn : Int := 1
   /-- Constants that a rewritten strategy adds. -/
   extra : List (String × Int) := []
   deriving Inhabited
 
-/-- The weights that play as the bot always has. -/
+/-- The weights of the bot at real tables. -/
 def Weights.default : Weights := {}
 
 /-- A constant from `extra`, or this default. -/
@@ -101,7 +109,10 @@ def params : List Param :=
   , ⟨"offerLimit", 0, 4, (·.offerLimit), fun v w => { w with offerLimit := v }⟩
   , ⟨"offerGive", 1, 2, (·.offerGive), fun v w => { w with offerGive := v }⟩
   , ⟨"voteMargin", -20, 20, (·.voteMargin), fun v w => { w with voteMargin := v }⟩
-  , ⟨"dealMargin", -5, 5, (·.dealMargin), fun v w => { w with dealMargin := v }⟩ ]
+  , ⟨"dealMargin", -5, 5, (·.dealMargin), fun v w => { w with dealMargin := v }⟩
+  , ⟨"keepPoints", 0, 1, (·.keepPoints), fun v w => { w with keepPoints := v }⟩
+  , ⟨"pointValue", 0, 200, (·.pointValue), fun v w => { w with pointValue := v }⟩
+  , ⟨"declareOn", 0, 1, (·.declareOn), fun v w => { w with declareOn := v }⟩ ]
 
 /-- These weights with one changed. A name that is not a weight goes in `extra`. -/
 def Weights.withValue (W : Weights) (name : String) (v : Int) : Weights :=
@@ -162,6 +173,19 @@ def Ctx.of (G : GameDef) (W : Weights := .default) : Ctx G := { weights := W, bo
 /-! ## What a seat can see -/
 
 def bal (s : State G) (p : Nat) (r : Res) : Nat := s.balance (.player p) r
+
+/-- The points one unit of this good is worth under these rules. Most goods are worth 0. -/
+def worthIn (R : Rules) (r : Res) : Nat := ((R.worth.find? (·.1 == r)).map (·.2)).getD 0
+
+/-- The points these goods are worth under these rules. -/
+def bundleWorth (R : Rules) (b : Bundle) : Nat := (b.map fun x => x.2 * worthIn R x.1).sum
+
+/-- The seat keeps all of this good when it gives `n` of it in a trade or an offer toward a build that
+costs `cost` and is worth `gain` points. That is so when the good counts as points, unless the build is
+worth more points than its cost and the `n` given together. With `keepPoints` 0 it keeps nothing. -/
+def keeps (ctx : Ctx G) (R : Rules) (cost : Bundle) (gain n : Nat) (r : Res) : Bool :=
+  ctx.weights.keepPoints != 0 && decide (worthIn R r > 0) &&
+    !decide (gain > bundleWorth R cost + n * worthIn R r)
 
 /-- What a spot is worth under these weights. -/
 def spotValue (ctx : Ctx G) (v : Nat) : Int :=
@@ -320,12 +344,14 @@ def setupPlaces (ctx : Ctx G) (s : State G) (p : Nat) : List Move :=
 
 /-! ## Choosing a move -/
 
-/-- A bank trade toward paying `cost`, if trades can cover all of it. `ok` says which moves can happen. -/
-def tradeToward (s : State G) (p : Nat) (cost : Bundle) (ok : Move → Bool) : Option Move :=
+/-- A bank trade toward paying `cost`, if trades can cover all of it. `ok` says which moves can happen. The
+seat gives none of a good that `keep` picks. -/
+def tradeToward (s : State G) (p : Nat) (cost : Bundle) (ok : Move → Bool)
+    (keep : Res → Bool := fun _ => false) : Option Move :=
   let rate := s.rules.bankRate
   let need (r : Res) : Nat := ((cost.find? (·.1 == r)).map (·.2)).getD 0
   let names := G.resources.map (·.name)
-  let surplus (r : Res) : Nat := bal s p r - need r
+  let surplus (r : Res) : Nat := if keep r then 0 else bal s p r - need r
   let short := names.filter fun r => need r > bal s p r
   let missing := (short.map fun r => need r - bal s p r).sum
   if missing == 0 || rate == 0 then none else
@@ -337,28 +363,36 @@ def tradeToward (s : State G) (p : Nat) (cost : Bundle) (ok : Move → Bool) : O
   | _, _ => none
 
 /-- An offer to anyone toward paying `cost`: 1 or 2 of the good the seat has most spare, for 1 of the
-first good it is short of. -/
-def offerToward (ctx : Ctx G) (s : State G) (p : Nat) (cost : Bundle) : Option Move :=
+first good it is short of. The build is worth `gain` points, and the seat offers no good that it `keeps`. -/
+def offerToward (ctx : Ctx G) (s : State G) (p : Nat) (cost : Bundle) (gain : Nat := 0) : Option Move :=
   let give := (max 1 (min 2 ctx.weights.offerGive)).toNat
   let need (r : Res) : Nat := ((cost.find? (·.1 == r)).map (·.2)).getD 0
   let names := goodsOf G
-  let spare (r : Res) : Nat := bal s p r - need r
+  let R := s.rules
+  let spare (r : Res) : Nat := if keeps ctx R cost gain give r then 0 else bal s p r - need r
   match (names.filter fun r => need r > bal s p r).head?,
       bestBy (names.filter fun r => spare r ≥ give) (fun r => (spare r : Int)) with
   | some m, some g => some (.offer none [(g, give)] [(m, 1)])
   | _, _ => none
 
-/-- What the seat is saving for: an upgrade if it has something to upgrade, then the spot piece if it
-reaches a free site, and otherwise the link piece. The first that exists is its next build. -/
-def buildTargets (ctx : Ctx G) (s : State G) (p : Nat) : List Bundle :=
+/-- The points a piece of this kind is worth under the rules in force. -/
+def piecePoints (s : State G) (k : PieceKind) : Nat := ((s.rules.piece? k).map (·.points)).getD 0
+
+/-- What the seat is saving for, each with the points it is worth: an upgrade if it has something to
+upgrade, then the spot piece if it reaches a free site, and otherwise the link piece. The first that exists
+is its next build. -/
+def buildGoals (ctx : Ctx G) (s : State G) (p : Nat) : List (Bundle × Nat) :=
+  let goal (d : PieceDef) : Bundle × Nat := (s.costOf d.name, piecePoints s d.name)
   let up := match upgradePiece G with
-    | some (d, old) =>
-      if s.countOf p old > 0 && (s.rules.piece? d.name).isSome then [s.costOf d.name] else []
+    | some (d, old) => if s.countOf p old > 0 && (s.rules.piece? d.name).isSome then [goal d] else []
     | none => []
   let rest :=
-    if hasFreeSite ctx s p then ((spotPiece G).map fun d => s.costOf d.name).toList
-    else ((linkPiece G).map fun d => s.costOf d.name).toList
+    if hasFreeSite ctx s p then ((spotPiece G).map goal).toList
+    else ((linkPiece G).map goal).toList
   up ++ rest
+
+/-- The costs of `buildGoals`. -/
+def buildTargets (ctx : Ctx G) (s : State G) (p : Nat) : List Bundle := (buildGoals ctx s p).map (·.1)
 
 /-- Noise on a spot's value at setup, fixed by the game's seed and the spot, up to the weight `setupJitter`.
 That weight is 0 unless a test sets it. It makes bots open differently from game to game. -/
@@ -419,20 +453,23 @@ def actionMove (ctx : Ctx G) (s : State G) (p : Nat) : Move := Id.run do
           | _ => none
         if let some m := bestLegal s p roads then return m
   if (ctx.offersThisTurn : Int) < W.offerLimit then
-    for cost in buildTargets ctx s p do
-      if let some m := offerToward ctx s p cost then
+    for (cost, gain) in buildGoals ctx s p do
+      if let some m := offerToward ctx s p cost gain then
         if isLegal s p m then return m
   if W.bankTradeOn != 0 then
-    let trade (cost : Bundle) := tradeToward s p cost (isLegal s p)
+    let R := s.rules
+    let trade (d : PieceDef) :=
+      let cost := s.costOf d.name
+      tradeToward s p cost (isLegal s p) (keeps ctx R cost (piecePoints s d.name) R.bankRate)
     if let some (d, old) := upgradePiece G then
       if s.countOf p old > 0 && (s.rules.piece? d.name).isSome then
-        if let some m := trade (s.costOf d.name) then return m
+        if let some m := trade d then return m
     if hasSite.get then
       if let some d := spotPiece G then
-        if let some m := trade (s.costOf d.name) then return m
+        if let some m := trade d then return m
     else
       if let some d := linkPiece G then
-        if let some m := trade (s.costOf d.name) then return m
+        if let some m := trade d then return m
   return .endTurn
 
 /-- The move of this seat if it is its turn, whatever the phase. -/
@@ -505,14 +542,17 @@ def offerScarcity (s : State G) (b : Nat) (o : Offer) : Int :=
   worth o.give - worth o.get
 
 /-- A seat's score for an offer. It takes the offer when this is at least 0. By default that means it
-gets at least as many goods as it gives. -/
+gets at least as many goods as it gives, counting each point that the goods are worth as `pointValue` goods. -/
 def offerScore (ctx : Ctx G) (s : State G) (b : Nat) (o : Offer) : Int :=
   let W := ctx.weights
   let goods := W.acceptGoods * ((bundleTotal o.give : Int) - (bundleTotal o.get : Int))
   let need := if W.acceptNeed == 0 then 0 else W.acceptNeed * offerNeed ctx s b o
   let scarce := if W.acceptScarcity == 0 then 0 else W.acceptScarcity * offerScarcity s b o
   let rival := if W.acceptOtherPoints == 0 then 0 else W.acceptOtherPoints * (s.pointsOf o.src : Int)
-  goods + need + scarce - rival - W.acceptMargin
+  let points := if W.keepPoints == 0 then 0 else
+    let R := s.rules
+    W.pointValue * ((bundleWorth R o.give : Int) - (bundleWorth R o.get : Int))
+  goods + need + scarce - rival + points - W.acceptMargin
 
 /-- Votes, signatures and accepted offers from these seats. `mayVote` says which laws can be voted on now. -/
 def reactions (ctx : Ctx G) (s : State G) (bots : List Nat) (mayVote : Nat → Bool := fun _ => true) :

@@ -38,12 +38,28 @@ def roadValue (s : State G) (l : Nat × Nat) : Int :=
     (((near d).map (fun v => (spotValue G v : Int))).foldl max 0) - 40 * d
   [0, 1, 2, 3].foldl (fun b d => if (near d).isEmpty then b else max b (at_ d)) (-100)
 
-/-- A bank trade toward paying `cost`, if trades can cover all of it. -/
-def tradeToward (s : State G) (p : Nat) (cost : Bundle) (legal : List Move) : Option Move :=
+/-- The points one unit of a good is worth now. -/
+def worthOf (s : State G) (r : Res) : Nat :=
+  (s.rules.worth.filter (·.1 == r)).foldl (fun n x => n + x.2) 0
+
+/-- The points some goods are worth now. -/
+def goodsWorth (s : State G) (b : Bundle) : Nat :=
+  b.foldl (fun n x => n + x.2 * worthOf s x.1) 0
+
+/-- The points a piece of this kind is worth now. -/
+def pointsOfKind (s : State G) (k : PieceKind) : Nat :=
+  (((s.rules.pieces.filter (·.name == k)).head?).map (·.points)).getD 0
+
+/-- A bank trade toward building `k`, if trades can cover all of its cost. A good worth points is never
+spare, unless the piece is worth more points than its cost and the goods given for one trade. -/
+def tradeToward (s : State G) (p : Nat) (k : PieceKind) (legal : List Move) : Option Move :=
+  let cost := s.costOf k
   let rate := s.rules.bankRate
   let need (r : Res) : Nat := ((cost.find? (·.1 == r)).map (·.2)).getD 0
   let names := G.resources.map (·.name)
-  let surplus (r : Res) : Nat := bal s p r - need r
+  let kept (r : Res) : Bool :=
+    worthOf s r > 0 && !(goodsWorth s cost + rate * worthOf s r < pointsOfKind s k)
+  let surplus (r : Res) : Nat := if kept r then 0 else bal s p r - need r
   let short := names.filter fun r => need r > bal s p r
   let missing := (short.map fun r => need r - bal s p r).sum
   if missing == 0 || rate == 0 then none else
@@ -94,13 +110,13 @@ def actionMove (s : State G) (p : Nat) (legal : List Move) : Move := Id.run do
     if let some (m, _) := bestBy roads (·.2) then return m
   if let some (d, old) := upgradePiece G then
     if s.countOf p old > 0 && (s.rules.piece? d.name).isSome then
-      if let some m := tradeToward s p (s.costOf d.name) legal then return m
+      if let some m := tradeToward s p d.name legal then return m
   if hasSite then
     if let some d := spotPiece G then
-      if let some m := tradeToward s p (s.costOf d.name) legal then return m
+      if let some m := tradeToward s p d.name legal then return m
   else
     if let some d := linkPiece G then
-      if let some m := tradeToward s p (s.costOf d.name) legal then return m
+      if let some m := tradeToward s p d.name legal then return m
   return .endTurn
 
 /-- Yes if the law costs nothing at the next turn change, over every roll, and gives no other seat
@@ -141,7 +157,8 @@ def candidates (s : State G) (bots : List Nat) : List Event := Id.run do
   if s.phase == .actions then
     for o in s.offers do
       for b in bots do
-        if o.src != b && (o.to.isNone || o.to == some b) && bundleTotal o.give ≥ bundleTotal o.get then
+        if o.src != b && (o.to.isNone || o.to == some b) &&
+            bundleTotal o.give + 100 * goodsWorth s o.give ≥ bundleTotal o.get + 100 * goodsWorth s o.get then
           out := out.push (.move b (.accept o.id))
   if let some p := s.currentSeat then
     if bots.contains p then
@@ -161,8 +178,8 @@ def strategy : Strategy :=
 def shown (es : List Event) : List String :=
   es.map fun e => ((eventJson? e).map (·.compress)).getD "other"
 
-/-- Laws to put in force during a check: higher and lower prices, a new bank rate, law-made pieces, and
-laws that take resources on a build or a roll. They name this game's own goods and pieces. -/
+/-- Laws to put in force during a check: higher and lower prices, a new bank rate, law-made pieces, laws
+that take resources on a build or a roll, and goods worth points. They name this game's own goods and pieces. -/
 def testLaws (G : GameDef) : List Law :=
   let goods := goodsOf G
   let r0 := goods.getD 0 ""
@@ -186,7 +203,8 @@ def testLaws (G : GameDef) : List Law :=
   , { title := "A roll taxes"
       clauses := [.onRoll [.forEach .yes [.transfer .each .bank (.lit r0) (.lit 1)]]] }
   , { title := "Cheap upgrades", clauses := [.setCost up [(r2, 1)]] }
-  , { title := "Rate 0", clauses := [.setBankRate 0] } ]
+  , { title := "Rate 0", clauses := [.setBankRate 0] }
+  , { title := "A good is worth points", clauses := [.setWorth r1 1, .setWorth r2 2] } ]
 
 /-- A deal that forbids a seat to build on half the map, to put in force during a check. -/
 def testDeal (G : GameDef) (seat id round : Nat) : ActiveDeal :=
