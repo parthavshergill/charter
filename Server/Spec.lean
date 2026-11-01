@@ -3,6 +3,7 @@ import Charter.Games.Belt
 import Charter.Games.NotCatan
 import Charter.Games.NotCatanWords
 import Charter.Games.SlimeParliamentWords
+import Charter.Games.AIBubbleWords
 import Charter.Games.PirateRepublicWords
 import Charter.Scene.OfState
 import Charter.Scene.Belt
@@ -117,6 +118,20 @@ def slimeSpec : GameSpec :=
     foundingWords := Games.SlimeParliament.foundingWords
     guide := "You are a slime mould on a damp log. Oatmeal, dew, rot and pollen are the goods. A tendril costs oatmeal and dew. A node costs oatmeal, dew and rot. A swelling replaces a node. A puffball attaches to a node, costs pollen and oatmeal, and gives every seat pollen. The founding laws say more." }
 
+def bubbleSpec : GameSpec :=
+  { id := "ai-bubble"
+    name := "The AI Bubble"
+    blurb := "Rival labs raise money on promises and build datacenters. Hype is worth points until the crash."
+    G := Games.AIBubble.game
+    valid := Games.AIBubble.game_valid
+    layout :=
+      { tiles := Games.AIBubble.tiles, spots := Games.AIBubble.spots, edges := Games.AIBubble.edges
+        links := Games.AIBubble.links, theme := Games.AIBubble.theme, word := "the grid" }
+    minSeats := 3
+    maxSeats := 4
+    meshFolder := "packs/ai-bubble/meshes"
+    foundingWords := Games.AIBubble.foundingWords
+    guide := "You run a rival AI lab on a dark desert grid. Silicon, power and concrete come from the map. Capital comes from selling inference and from raising money. The founding laws bind, and they say all of this: Hype in your hand is worth 1 point each. When the dice pay your pieces, you also get that much inference. At each round's end, all inference held is sold, and customers pay 16 capital in all, split by each lab's share of what was sold. More supply means a lower price for everyone. At each round's end from round 2, you pay 1 power per datacenter and 2 per campus. If you hold less than that, you pay what you have and your newest datacenter is destroyed. To raise money, use declare on your turn with res capital and n the amount of hype to sell. At the round's end, that hype, up to what you hold, goes to the bank, you get twice as much capital, and it goes onto the bubble. The declaration clears each round. Building a datacenter pays you 2 hype and adds 1 to the bubble. A campus adds 2. The bubble is what the treasury holds of it. At each round's end every lab also gets 1 hype, plus 1 more for each 10 on the bubble. The crash: on any roll, if the dice plus a third of the bubble, rounded down, come to 20 or more, all hype in every hand goes to the bank and the bubble empties. Pieces and capital survive. A bubble of 24 can pop on a 12, 27 on an 11 or more, 39 on a 7 or more, 54 on anything. The first lab to 25 points, hype included, wins at once, even with the bubble still up. Otherwise the most points after round 10 wins. Regulation: 3 of 4 seats can call the crash early, or change anything else, by law. For example (law \"Emergency audit\" (now (for-each-player true (transfer each bank hype (holding each hype))) (transfer treasury bank bubble (holding treasury bubble)))) wipes all hype at once. Adding (end-game) to it ends the game on the spot, and a law can also repeal any founding law. So each vote on a regulation is a vote on who gets out in time. Deals can carry circular investment between labs: payments each round, or payments when a seat builds, in any resource." }
 def pirateSpec : GameSpec :=
   { id := "pirate-republic"
     name := "The Pirate Republic"
@@ -135,7 +150,7 @@ def pirateSpec : GameSpec :=
 instance : Inhabited GameSpec := ⟨islandSpec⟩
 
 /-- Every game this server can run. The first is the default. -/
-def gameSpecs : List GameSpec := [islandSpec, beltSpec, notCatanSpec, slimeSpec, pirateSpec]
+def gameSpecs : List GameSpec := [islandSpec, beltSpec, notCatanSpec, slimeSpec, bubbleSpec, pirateSpec]
 
 /-- The game with this id. A log entry with no id is from before there was a choice: it is the Island. -/
 def specOf? (id : Option String) : Option GameSpec :=

@@ -68,6 +68,11 @@ def casts : List (String × List (String × String)) :=
       , ("Little Arcyria", "a young pink mould who is very new to politics and much too keen on it")
       , ("Old Lycogala", "a wolf's-milk slime who whispers, chuckles, and hints at long-buried scandal")
       , ("Trichia", "a glittering mould who is vain about her spores and will trade anything for a compliment") ])
+  , ("ai-bubble",
+      [ ("Odile Marchetti", "the head of Larkspur Foundry, a former concert pianist who speaks in measured, serene sentences about inevitability")
+      , ("Tunde Bell", "the head of Ninefold, an ex-commodities trader who counts everything out loud and trusts no number he did not write down")
+      , ("Greta Nyland", "the head of Tessera Works, a safety-minded engineer who warns about the crash while building as fast as anyone")
+      , ("Cassius Oyelaran", "the head of Brightwater Cognition, a relentless showman who has never met a slide he could not improve") ])
   , ("pirate-republic",
       [ ("Bess Harrow", "a quartermaster with a silver tongue who has an answer for everything and a speech for every occasion")
       , ("Silas Crake", "a one-time castaway who talks low and slow and has not forgiven a single captain he ever sailed under")
