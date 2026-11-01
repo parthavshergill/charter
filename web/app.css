@@ -152,7 +152,10 @@ svg.shield { width: 16px; height: 19px; flex: none; vertical-align: -4px; clip-p
 .delta { position: fixed; z-index: 31; padding: 0 5px; font-size: 14px; font-weight: 600; background: var(--ink); color: var(--vellum); pointer-events: none; translate: -50% -70%; box-shadow: 0 2px 4px var(--drop); }
 .delta.up { background: var(--vellum); color: var(--ink); }
 .hand.many { display: grid; grid-template-rows: 1fr 1fr; grid-auto-flow: column; grid-auto-columns: 44px; flex: none; gap: var(--s1); }
-.hand.many .rcard { width: 44px; height: 32px; flex-direction: row; font-size: 14px; rotate: 0deg; --edges: none; }
+.hand.many .rcard { width: 44px; height: 32px; flex-direction: row; font-size: 14px; rotate: 0deg; translate: 0 0; --edges: 0 0 0 transparent; }
+.hand.many .rcard.none { box-shadow: inset 0 0 0 1px var(--walnut-3); }
+.hand.many .rcard:hover, .hand.many .rcard.pays { translate: 0 -2px; }
+.hand.many .rcard.pays::after { top: -6px; left: -4px; padding: 0 3px; font-size: 12px; z-index: 1; }
 .hand.many .rcard svg.res { width: 16px; height: 16px; }
 .tray { display: flex; gap: var(--s1); flex: 1; min-width: 0; }
 .tool { position: relative; width: 66px; height: 72px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 12px; line-height: 1.1; color: var(--pale); background: var(--walnut-2); box-shadow: inset 0 1px 0 var(--walnut-3), 0 3px 0 var(--walnut-0); transition: background .12s, color .12s, translate .1s cubic-bezier(.2,.9,.3,1.2); }
