@@ -1,0 +1,19 @@
+diff --git a/src/pufferl.cu b/src/pufferl.cu
+index 14be4eb2..e76a052f 100644
+--- a/src/pufferl.cu
++++ b/src/pufferl.cu
+@@ -3032,6 +3032,14 @@ TrainResult run_train(Ini* ini, TrainContext* ctx) {
+     }
+ 
+     PuffeRL* pufferl = create_pufferl(ini, ctx);
++    // Charter patch: warm start. base.warm_start_path names weights to load into the trainable policy first.
++    {
++        DictItem* ws = dict_find(puf_ini_section(ini, "base", 0), "warm_start_path");
++        if (ws && ws->str && ws->str[0] && strcmp(ws->str, "None") != 0) {
++            pufferl_load_policy(pufferl, 0, ws->str);
++            printf("warm start from %s\n", ws->str);
++        }
++    }
+     Selfplay selfplay = {0};
+     if (use_selfplay) {
+         char initial_checkpoint[4096];
