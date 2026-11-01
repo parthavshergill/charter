@@ -279,6 +279,12 @@ A new trigger, `now`, runs once, the moment a law passes.
 
 Statements changed. `AskedForByLaw` has a third case, a law's `now` clause at the vote that passes it. `every_other_event_is_exact` said a vote writes nothing unless it ends the game. It now says `VoteWritesExactly`: exactly the decree if the vote passes a law, nothing otherwise, and then the refunds if the game ends. `PiecesKept` and `PieceLeavesOnlyFor` each gain the same case. III's list of what passing a law does now names this.
 
+## Ending the game by law
+
+A law can end the game the moment it passes. It uses the same `endGame` path as a seat reaching the target, so deals refund, and most points wins with ties settled as before. `the_winner_earned_it` gains one case, `MajorityEndedTheGame`, and it keeps the statement that the winner has the most points. Commandment IX still holds: the game has ended, and no event is accepted after that. `PhaseChangesOnlyByTurnOrWin` gains the same case.
+
+The law stays in the laws in force, so the ended state shows what ended it. A founding law cannot do this, as there would be no game. `a_majority_can_end_the_game` plays this, and `an_unearned_end_is_rejected` rejects an end with no reason.
+
 ## How the checks work
 
 - **Axiom audit:** `make audit` fails if any theorem in a `Charter` module rests on an axiom other than `propext`, `Classical.choice` and `Quot.sound`. So a `sorry` fails it. It also replays the proofs through `leanchecker`, and scans for banned constructs.

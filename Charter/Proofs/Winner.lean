@@ -86,7 +86,8 @@ structure WinnerInv (G : GameDef) (s : State G) : Prop where
   won : ∀ w, s.winner = some w →
     s.phase = .ended ∧ w ∈ s.turnOrder ∧
     (∀ p ∈ s.turnOrder, s.pointsOf p ≤ s.pointsOf w) ∧
-    (G.targetPoints ≤ s.pointsOf w ∨ s.turnsTaken = maxTurns G s.turnOrder.length)
+    (G.targetPoints ≤ s.pointsOf w ∨ s.turnsTaken = maxTurns G s.turnOrder.length ∨
+      MajorityEndedTheGame s)
   isSome : s.phase = .ended → s.winner.isSome = true
 
 theorem WinnerInv.start (G : GameDef) (seats : Nat) (serverSeed : UInt64) (nonces : List UInt64) :
@@ -141,13 +142,19 @@ theorem refunds_no_seat_src {t : State G} : ∀ x ∈ t.deals.flatMap t.refundEn
   simp
 
 /-- A seat at the target before the refunds is still there after them, and the winner has the most points. -/
-theorem endGame_winner {t s' : State G} {w : Seat} (hb : bestSeat t (seatsAtTarget t) = some w)
+theorem endGame_winner {t s' : State G} {w : Seat} (hb : bestSeat t (winCandidates t) = some w)
     (he : endGame t w = .ok s') :
     WinnerInv G s' := by
   obtain ⟨hw, _⟩ := bestSeat_spec hb
   obtain ⟨bk, hbk, rfl⟩ := endGame_ok he
-  have hmem := List.mem_filter.mp hw
-  have htarget : G.targetPoints ≤ t.pointsOf w := by simpa using hmem.2
+  have hcases : w ∈ t.turnOrder ∧ (t.lawEnds = true ∨ G.targetPoints ≤ t.pointsOf w) := by
+    unfold winCandidates at hw
+    split at hw
+    · rename_i hl
+      exact ⟨hw, Or.inl hl⟩
+    · have hmem := List.mem_filter.mp hw
+      exact ⟨hmem.1, Or.inr (by simpa using hmem.2)⟩
+  obtain ⟨hmemT, hwhy⟩ := hcases
   refine ⟨fun h => (h rfl).elim, ?_, fun _ => rfl⟩
   intro x hx
   simp only [Option.some.injEq] at hx
@@ -157,8 +164,8 @@ theorem endGame_winner {t s' : State G} {w : Seat} (hb : bestSeat t (seatsAtTarg
   cases hbest : bestSeat ({ t with books := bk, journal := t.journal ++ t.deals.flatMap t.refundEntries } : State G) t.turnOrder with
   | none =>
     have := bestSeat_none hbest
-    rw [this] at hmem
-    simp at hmem
+    rw [this] at hmemT
+    simp at hmemT
   | some b =>
     obtain ⟨hbm, hmax⟩ := bestSeat_spec hbest
     simp only [Option.getD_some]
@@ -167,13 +174,18 @@ theorem endGame_winner {t s' : State G} {w : Seat} (hb : bestSeat t (seatsAtTarg
         winner := some b, deals := [], offers := [], openProposals := [] } : State G).pointsOf q =
         ({ t with books := bk, journal := t.journal ++ t.deals.flatMap t.refundEntries } : State G).pointsOf q :=
       pointsOf_congr rfl rfl rfl
-    refine ⟨trivial, hbm, ?_, Or.inl ?_⟩
+    refine ⟨trivial, hbm, ?_, ?_⟩
     · intro p hp
       rw [hsame, hsame]
       exact hmax p hp
-    · rw [hsame]
-      have := hmax w hmem.1
-      omega
+    · rcases hwhy with hl | hat
+      · refine Or.inr (Or.inr ?_)
+        obtain ⟨x, hx, hc⟩ := List.any_eq_true.mp hl
+        exact ⟨x, hx, hc⟩
+      · refine Or.inl ?_
+        rw [hsame]
+        have := hmax w hmemT
+        omega
 
 theorem WinnerInv.startNextTurn {s : State G} (hw : WinnerInv G s) (ht : TurnInv s)
     (hn : s.turnOrder ≠ []) (he : s.phase ≠ .ended) (roll : Nat) :
@@ -223,7 +235,7 @@ theorem WinnerInv.startNextTurn {s : State G} (hw : WinnerInv G s) (ht : TurnInv
       rw [hwin, hbest] at hx
       simp only [Option.some.injEq] at hx
       subst hx
-      refine ⟨hphase, by rw [hT]; exact hwm, ?_, Or.inr ?_⟩
+      refine ⟨hphase, by rw [hT]; exact hwm, ?_, Or.inr (Or.inl ?_)⟩
       · intro p hp2
         rw [hT] at hp2
         rw [hpts, hpts]
@@ -239,9 +251,9 @@ theorem WinnerInv.startNextTurn {s : State G} (hw : WinnerInv G s) (ht : TurnInv
         omega
 
 theorem finish_winner {t s' : State G} {e : Event} (h : finish t e = .ok s') :
-    s' = t ∨ ∃ w, bestSeat t (seatsAtTarget t) = some w ∧ endGame t w = .ok s' := by
+    s' = t ∨ ∃ w, bestSeat t (winCandidates t) = some w ∧ endGame t w = .ok s' := by
   have fromCheck : checkWin t = .ok s' →
-      s' = t ∨ ∃ w, bestSeat t (seatsAtTarget t) = some w ∧ endGame t w = .ok s' := by
+      s' = t ∨ ∃ w, bestSeat t (winCandidates t) = some w ∧ endGame t w = .ok s' := by
     intro hc
     unfold checkWin at hc
     split at hc

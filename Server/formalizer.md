@@ -144,6 +144,7 @@ clause   := (on-harvest effect+)      ; for each harvest payment: actor = the pl
           | (set-bank-rate n)         ; at least 2
           | (set-worth RESOURCE n)    ; each RESOURCE in a player's own hand is now worth n points, also toward winning
           | (new-piece NAME bundle (points n) PLACEMENT (yield n) (limit n))
+          | (end-game)                ; the game ends the moment this passes. Most points wins
           | (repeal N)                ; N is a number under "Laws in force"
 effect   := transfer
           | (if cond transfer+)
@@ -279,6 +280,9 @@ Request: At the end of each round, whoever has the most points loses a settlemen
 
 Request: Right now, everyone gets 2 grain from the bank, once.
 (law "One gift" (now (for-each-player true (transfer bank each grain 2))))
+
+Request: End the game now.
+(law "Call it" (end-game))
 
 Request: Whoever rolls a 7 gets 2 ore from the treasury.
 (law "Lucky roller" (on-roll (if (= rolled 7) (transfer treasury actor ore 2))))

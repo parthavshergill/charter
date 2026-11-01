@@ -141,7 +141,9 @@ def lawOk (s : State G) (p id : Nat) (L : Law) : Bool :=
     (rolls.map fun r => (pips G r : Int) * netFor p (Engine.predictNextTurn G x r)).foldl (· + ·) 0
   let handsOthersTheWin :=
     s.turnOrder.any fun q => q != p && decide (G.targetPoints ≤ s'.pointsOf q)
-  !handsOthersTheWin && decide (total s' ≥ total s)
+  -- A law that ends the game now is good only for the seat that would win.
+  let endsAgainstUs := L.clauses.any Clause.isEndGame && Engine.bestSeat s' s'.turnOrder != some p
+  !handsOthersTheWin && !endsAgainstUs && decide (total s' ≥ total s)
 
 /-- Yes if each round of the deal pays this seat at least what it pays. -/
 def dealOk (p : Nat) (d : Deal) : Bool :=

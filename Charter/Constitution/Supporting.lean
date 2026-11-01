@@ -10,9 +10,9 @@ close gaps that the commandments leave open.
 
 namespace Charter
 
-/-- **A winner earned it.** Nobody has more points than the winner, and the winner reached the target
-or the rounds really ran out. A game ends only by one of those two routes, so an ended game always has
-a winner. Points come from what a seat has built and from what it holds that a law says counts. After a move or a
+/-- **A winner earned it.** Nobody has more points than the winner, and the winner reached the target,
+the rounds really ran out, or a majority ended the game. A game ends only by one of those three routes, so
+an ended game always has a winner. Points come from what a seat has built and from what it holds that a law says counts. After a move or a
 vote, a seat at the target has ended the game. A turn change does not look: a seat that reaches the target
 from a harvest, or by a law that gives it a piece, wins at the next move or vote by anyone.
 
@@ -21,7 +21,8 @@ theorem the_winner_earned_it (G : GameDef) (hG : G.Valid) (s : State G) (hs : Re
     (∀ w, s.winner = some w →
       s.phase = .ended ∧ w ∈ s.turnOrder ∧
       (∀ p ∈ s.turnOrder, s.pointsOf p ≤ s.pointsOf w) ∧
-      (G.targetPoints ≤ s.pointsOf w ∨ s.turnsTaken = maxTurns G s.turnOrder.length)) ∧
+      (G.targetPoints ≤ s.pointsOf w ∨ s.turnsTaken = maxTurns G s.turnOrder.length ∨
+        MajorityEndedTheGame s)) ∧
     (s.phase = .ended → s.winner.isSome = true) ∧
     (∀ e s', Engine.step G s e = .ok s' → LooksForWinner e →
       (∃ p ∈ s'.turnOrder, G.targetPoints ≤ s'.pointsOf p) → s'.phase = .ended) :=

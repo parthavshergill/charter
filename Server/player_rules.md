@@ -45,7 +45,7 @@ Each law on your screen comes with its rule source, such as `(law "Toll" (on-bui
 - `(total-over test n)` adds up n for every player who passes the test. `(most-over test n)` and `(least-over test n)` are the highest and lowest n among them, or 0 if nobody passes. Inside them, `each` is the player being measured. They give a number, not a player, so a tie means several players match.
 - `(- a b)` stops at 0, and `(/ a b)` rounds down. Dividing by a number that turns out to be 0 gives 0. A payment from an account to itself does not happen.
 - No account goes below zero. An account that owes more than it holds pays each payment in proportion, rounded down, so a payment can shrink to nothing.
-- `(set-cost KIND bundle)`, `(set-points KIND n)` and `(set-bank-rate n)` change a rule. `(set-worth R n)` makes each R in a seat's own hand worth n points. `(new-piece ...)` adds a piece. `(repeal N)` ends law N and every rule it changed.
+- `(set-cost KIND bundle)`, `(set-points KIND n)` and `(set-bank-rate n)` change a rule. `(set-worth R n)` makes each R in a seat's own hand worth n points. `(new-piece ...)` adds a piece. `(end-game)` ends the game the moment the law passes, and most points wins. `(repeal N)` ends law N and every rule it changed.
 
 ## The rules
 The dice are rolled at the start of each turn. Each hex with that number pays its resource from the bank to every piece on its corners, by that piece's yield. So a good corner touches hexes with likely numbers and resources you need.

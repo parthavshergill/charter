@@ -41,11 +41,6 @@ theorem seatsAtTarget_congr {s s' : State G} (hT : s'.turnOrder = s.turnOrder)
   intro q _
   rw [pointsOf_congr hp hl hb]
 
-theorem checkWin_of_nil {s : State G} (h : seatsAtTarget s = []) : checkWin s = .ok s := by
-  unfold checkWin
-  rw [h]
-  rfl
-
 /-! ## What bodies leave alone -/
 
 theorem decideLaw_deals (s : State G) (id : Nat) (L : Law) : (decideLaw s id L).deals = s.deals := by

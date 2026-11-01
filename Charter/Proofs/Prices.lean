@@ -54,6 +54,7 @@ theorem clause_price {R : Rules} {c : Clause} (hR : RulesPriceOk G R) (hc : Clau
   | onRoundEnd _ => exact hR
   | onRoll _ => exact hR
   | now _ => exact hR
+  | endGame => exact hR
   | setBankRate _ => exact hR
   | setWorth _ _ => exact hR
   | repeal _ => exact hR
@@ -101,6 +102,7 @@ theorem lawProblems_price {s : State G} {L : Law} (h : lawProblems G s L = []) :
   | onRoundEnd _ => trivial
   | onRoll _ => trivial
   | now _ => trivial
+  | endGame => trivial
   | setPoints _ _ => trivial
   | setBankRate _ => trivial
   | setWorth _ _ => trivial

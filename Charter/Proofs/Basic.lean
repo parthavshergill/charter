@@ -103,7 +103,7 @@ theorem bestSeat_none {s : State G} {L : List Seat} (h : bestSeat s L = none) : 
     simp at hs
 
 theorem checkWin_ok {s s' : State G} (h : checkWin s = .ok s') :
-    (s' = s ∧ seatsAtTarget s = []) ∨ (∃ w, endGame s w = .ok s') := by
+    (s' = s ∧ winCandidates s = []) ∨ (∃ w, endGame s w = .ok s') := by
   unfold checkWin at h
   split at h
   · exact Or.inr ⟨_, h⟩

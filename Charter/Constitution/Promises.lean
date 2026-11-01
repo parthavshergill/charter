@@ -171,11 +171,16 @@ def ActionsAreCountedExactly (s s' : State G) (e : Event) : Prop :=
   (¬ EndsTurn s e → ∃ p, senderOf e = some p ∧ ∀ q,
     s'.actionsThisTurn q = if q = p then s.actionsThisTurn q + 1 else s.actionsThisTurn q)
 
-/-- An accepted event that does not end the turn keeps the phase, unless a seat is now at the target,
-which ends the game. -/
+/-- A majority passed a law that ends the game. -/
+def MajorityEndedTheGame (s : State G) : Prop :=
+  ∃ x ∈ s.laws, x.2.clauses.any Clause.isEndGame = true
+
+/-- An accepted event that does not end the turn keeps the phase, unless a seat is now at the target or a
+majority has ended the game, either of which ends it. -/
 def PhaseChangesOnlyByTurnOrWin (s s' : State G) (e : Event) : Prop :=
   ¬ EndsTurn s e → s'.phase = s.phase ∨
-    (s'.phase = .ended ∧ ∃ p ∈ s'.turnOrder, G.targetPoints ≤ s'.pointsOf p)
+    (s'.phase = .ended ∧
+      ((∃ p ∈ s'.turnOrder, G.targetPoints ≤ s'.pointsOf p) ∨ MajorityEndedTheGame s'))
 
 /-! ## IV. Promises are paid up front -/
 

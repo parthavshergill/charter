@@ -227,6 +227,9 @@ def tokenPointsOf (s : State G) (p : Seat) : Nat :=
 /-- A seat's points: what it has built, and what it holds that counts. -/
 def pointsOf (s : State G) (p : Seat) : Nat := s.builtPointsOf p + s.tokenPointsOf p
 
+/-- A law in force ends the game. -/
+def lawEnds (s : State G) : Bool := s.laws.any fun x => x.2.clauses.any Clause.isEndGame
+
 /-- `s` with entries posted to its books. Used to say what a later entry could see. -/
 def afterPosting (s : State G) (es : List Entry) : State G :=
   { s with books := (s.books.postAll es).getD s.books }

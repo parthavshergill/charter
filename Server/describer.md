@@ -28,6 +28,7 @@ clause := (on-harvest effect...)     ; runs once for each harvest payment
         | (set-bank-rate n)          ; the bank now trades n of one resource for 1 of another
         | (set-worth RESOURCE n)     ; each RESOURCE in a player's own hand is now worth n points. It counts toward winning. 0 means it is worth nothing
         | (new-piece NAME bundle (points n) PLACEMENT (yield n) (limit n))  ; a new kind of piece
+        | (end-game)                 ; the game ends the moment this passes. Most points wins
         | (repeal N)                 ; law N ends, and every rule it changed ends with it. Pieces it made stay on the board, worth 0 points and yielding 0
 effect := (transfer from FROM to TO RESOURCE number)   ; FROM pays TO
         | (when test transfer...)              ; all of these, only if the test holds now

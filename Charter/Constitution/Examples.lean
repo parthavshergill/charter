@@ -1165,6 +1165,63 @@ theorem a_decree_naming_the_actor_is_rejected :
 theorem a_founding_decree_is_invalid :
     ¬ ({ tinySettlers with foundingLaws := [giftOnce] } : GameDef).Valid := by decide +kernel
 
+/-! ## Ending the game by law -/
+
+/-- A law that ends the game. -/
+def callIt : Law := { title := "Call it", clauses := [.endGame] }
+
+/-- The events up to the vote that decides it. -/
+def callEvents : List Event :=
+  List.replicate 4 .forceEndTurn ++ [.propose 0 (.law callIt), .vote 0 0 true]
+
+/-- In a real game, the deciding vote ends the game. A seat has the most points, or the earliest of those tied. -/
+theorem a_majority_can_end_the_game :
+    ∃ s s', Reachable tinySettlers s ∧ Engine.step tinySettlers s (.vote 1 0 true) = .ok s' ∧
+      s.phase = .actions ∧ s'.phase = .ended ∧ s'.winner = some 0 ∧ MajorityEndedTheGame s' := by
+  have hc : (match Engine.replay tinySettlers 2 42 [25283273] callEvents with
+      | .error _ => false
+      | .ok s =>
+        match Engine.step tinySettlers s (.vote 1 0 true) with
+        | .error _ => false
+        | .ok s' => s.phase == .actions && s'.phase == .ended && s'.winner == some 0 && s'.lawEnds) = true := by
+    decide +kernel
+  cases hr : Engine.replay tinySettlers 2 42 [25283273] callEvents with
+  | error m => rw [hr] at hc; simp at hc
+  | ok s =>
+    rw [hr] at hc
+    cases hs : Engine.step tinySettlers s (.vote 1 0 true) with
+    | error m => simp [hs] at hc
+    | ok s' =>
+      simp only [hs, Bool.and_eq_true, beq_iff_eq] at hc
+      obtain ⟨⟨⟨h1, h2⟩, h3⟩, h4⟩ := hc
+      obtain ⟨x, hx, hl⟩ := List.any_eq_true.mp h4
+      exact ⟨s, s', ((X_what_you_vote_on_is_what_runs tinySettlers tinySettlers_valid).1 s).mpr
+        ⟨2, 42, [25283273], _, by decide, by decide, hr⟩, hs, h1, h2, h3, x, hx, hl⟩
+
+/-- One yes of two seats is not a majority, so the game goes on. -/
+example : ((after2 tinySettlers 25283273 callEvents).map (·.phase)) = some .actions := by decide +kernel
+
+/-- A step that ends the game when no seat is at the target, no rounds ran out and no law says so is
+rejected. -/
+theorem an_unearned_end_is_rejected :
+    ¬ PhaseChangesOnlyByTurnOrWin (initialState tinySettlers 2 42 [2])
+      ({ initialState tinySettlers 2 42 [2] with phase := .ended }) (.move 0 (.bankTrade "grain" "wool")) := by
+  intro h
+  rcases h (by simp [EndsTurn]) with hp | ⟨_, ⟨p, hp, ht⟩ | ⟨x, hx, _⟩⟩
+  · cases hp
+  · have hzero : ({ initialState tinySettlers 2 42 [2] with phase := .ended } : State tinySettlers).pointsOf p = 0 := by
+      have hp' : p ∈ List.range 2 := hp
+      have hlt : p < 2 := List.mem_range.mp hp'
+      have : p = 0 ∨ p = 1 := Nat.le_one_iff_eq_zero_or_eq_one.mp (Nat.lt_succ_iff.mp hlt)
+      rcases this with rfl | rfl <;> decide +kernel
+    rw [hzero] at ht
+    exact absurd ht (by decide)
+  · cases hx
+
+/-- A founding law cannot end the game. -/
+theorem a_founding_end_is_invalid : ¬ ({ tinySettlers with foundingLaws := [callIt] } : GameDef).Valid := by
+  decide +kernel
+
 /-- The conditions the theorems assume can be met: this new game is reachable. -/
 example : Reachable tinySettlers (initialState tinySettlers 2 42 [25283273]) :=
   .start 2 42 [25283273] (by decide) (by decide) (by simp)

@@ -199,7 +199,12 @@ def lawPreview (s : State G) (id : Nat) (L : Law) (you : Option Nat) (names : Na
   let firstRoll := (Scene.rollsOf G).head?.getD 0
   -- A round's end law gives the same answer on any roll. Roll laws can depend on it, and those show what they do at this roll.
   let pieces := if L.clauses.any Clause.movesPieces then pieceNotes s s' firstRoll names else []
-  let notes := refused ++ declared ++ pieces ++ ruleNotes s s' ++ unpaidBuildNotes s s' actor
+  let ending := if L.clauses.any Clause.isEndGame then
+      match Engine.bestSeat s' s'.turnOrder with
+      | some w => [s!"This ends the game the moment it passes. {names w} would win with {s'.pointsOf w} points."]
+      | none => []
+    else []
+  let notes := refused ++ ending ++ declared ++ pieces ++ ruleNotes s s' ++ unpaidBuildNotes s s' actor
   Json.mkObj
     [ ("sections", Json.arr (sections.map sectionJson).toArray)
     , ("moreRolls", toJson (rolls.length - min rolls.length 3))

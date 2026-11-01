@@ -100,6 +100,8 @@ inductive Clause where
   /-- Each unit of this resource in a seat's own account is now worth `n` points. -/
   | setWorth (r : Res) (n : Nat)
   | newPiece (p : PieceDef)
+  /-- Ends the game the moment the law passes. Most points wins, with ties settled as at any other end. -/
+  | endGame
   /-- Removes the law with this id, and with it every rule that law changed. If that law made a new
   piece, the pieces already on the board stay there, and they are worth 0 points and yield 0. -/
   | repeal (lawId : Nat)
@@ -114,6 +116,11 @@ structure Law where
 /-- This clause runs once when its law passes. -/
 def Clause.isNow : Clause → Bool
   | .now _ => true
+  | _ => false
+
+/-- This clause ends the game. -/
+def Clause.isEndGame : Clause → Bool
+  | .endGame => true
   | _ => false
 
 /-- Every clause of this law runs once when it passes, so it takes no place among the laws in force. -/

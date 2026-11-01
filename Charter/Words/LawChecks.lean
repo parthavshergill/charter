@@ -66,6 +66,7 @@ def clauseProblems {G : GameDef} (s : State G) (L : Law) : Clause → List Strin
   | .onRoundEnd _ => []
   | .onRoll _ => []
   | .now _ => if s.phase == .setup then ["a founding law cannot act once"] else []
+  | .endGame => if s.phase == .setup then ["a founding law cannot end the game"] else []
   | .onBuild k _ => if s.knownKind L k then [] else [s!"there is no piece named {k}"]
   | .setCost k b =>
       (if s.knownKind L k then [] else [s!"there is no piece named {k}"]) ++

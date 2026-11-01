@@ -174,7 +174,8 @@ theorem the_winner_earned_it (G : GameDef) (_hG : G.Valid) (s : State G) (hs : I
     (∀ w, s.winner = some w →
       s.phase = .ended ∧ w ∈ s.turnOrder ∧
       (∀ p ∈ s.turnOrder, s.pointsOf p ≤ s.pointsOf w) ∧
-      (G.targetPoints ≤ s.pointsOf w ∨ s.turnsTaken = maxTurns G s.turnOrder.length)) ∧
+      (G.targetPoints ≤ s.pointsOf w ∨ s.turnsTaken = maxTurns G s.turnOrder.length ∨
+        MajorityEndedTheGame s)) ∧
     (s.phase = .ended → s.winner.isSome = true) ∧
     (∀ e s', Engine.step G s e = .ok s' → LooksForWinner e →
       (∃ p ∈ s'.turnOrder, G.targetPoints ≤ s'.pointsOf p) → s'.phase = .ended) :=

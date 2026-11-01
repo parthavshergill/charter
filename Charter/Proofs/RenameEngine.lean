@@ -100,6 +100,13 @@ theorem seatsAtTarget_rename (s : State G) :
     seatsAtTarget (σ.state s) = (seatsAtTarget s).map σ.to := by
   simp [seatsAtTarget, List.filter_map, Function.comp_def]
 
+theorem winCandidates_rename (s : State G) :
+    winCandidates (σ.state s) = (winCandidates s).map σ.to := by
+  unfold winCandidates
+  have hl : (σ.state s).lawEnds = s.lawEnds := rfl
+  rw [hl, seatsAtTarget_rename]
+  split <;> rfl
+
 theorem endGame_rename (s : State G) (w : Seat) :
     endGame (σ.state s) (σ.to w) = (endGame s w).map σ.state := by
   unfold endGame
@@ -117,8 +124,8 @@ theorem endGame_rename (s : State G) (w : Seat) :
 theorem checkWin_rename (s : State G) :
     checkWin (σ.state s) = (checkWin s).map σ.state := by
   unfold checkWin
-  rw [seatsAtTarget_rename, bestSeat_rename]
-  cases bestSeat s (seatsAtTarget s) with
+  rw [winCandidates_rename, bestSeat_rename]
+  cases bestSeat s (winCandidates s) with
   | none => rfl
   | some w => exact σ.endGame_rename s w
 

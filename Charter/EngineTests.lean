@@ -678,7 +678,7 @@ def claimWinner (s : State G) : List String :=
        s.phase == .ended && s.turnOrder.contains w &&
        (s.turnOrder.all fun p => decide (s.pointsOf p ≤ s.pointsOf w)) &&
        (decide (G.targetPoints ≤ s.pointsOf w) ||
-         s.turnsTaken == maxTurns G s.turnOrder.length)) ++
+         s.turnsTaken == maxTurns G s.turnOrder.length || s.lawEnds)) ++
   claim "an ended game has a winner" (s.phase != .ended || s.winner.isSome) ++
   claim "reaching the target with built points ends the game"
     (s.phase == .ended || !s.turnOrder.any fun p => decide (G.targetPoints ≤ s.builtPointsOf p))
@@ -924,7 +924,7 @@ def fieldsAfterAction (s s' : State G) (e : Event) : List String :=
   let looks := match e with
     | .move .. | .vote .. => true
     | _ => false
-  let won := looks && !(seatsAtTarget s').isEmpty
+  let won := looks && !(winCandidates s').isEmpty
   claim "fields: the sender is in the game and under its limit"
     (match senderOf e with
      | some p => s.turnOrder.contains p && decide (s.actionsThisTurn p < maxActionsPerTurn)

@@ -77,11 +77,16 @@ def endGame (s : State G) (w : Seat) : Except String (State G) := do
 def seatsAtTarget (s : State G) : List Seat :=
   s.turnOrder.filter fun p => decide (G.targetPoints ≤ s.pointsOf p)
 
-/-- If a seat is at or above the target, the game ends. Moves and votes look for this, and a turn change
+/-- The seats that could win now: every seat if a law has just ended the game, and otherwise those at the
+target. -/
+def winCandidates (s : State G) : List Seat :=
+  if s.lawEnds then s.turnOrder else seatsAtTarget s
+
+/-- If a law ends the game, or a seat is at or above the target, the game ends. Moves and votes look for this, and a turn change
 does not. So a seat that reaches the target by holding goods at a turn change wins at the next move or
 vote by anyone. -/
 def checkWin (s : State G) : Except String (State G) :=
-  match bestSeat s (seatsAtTarget s) with
+  match bestSeat s (winCandidates s) with
   | some w => endGame s w
   | none => .ok s
 

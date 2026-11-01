@@ -152,6 +152,7 @@ def parseClause (rs : List Res) : SExp → P Clause
                          placement := ← parsePlacement pl, yield := ← parseNat y
                          limit := ← parseNat l }
   | .list [.atom "repeal", n] => return .repeal (← parseNat n)
+  | .list [.atom "end-game"] => .ok .endGame
   | x => fail "bad clause" x
 
 def parseLaw (rs : List Res) : SExp → P Law
@@ -275,6 +276,7 @@ def clauseS : Clause → SExp
       .list [.atom "new-piece", .atom p.name, bundleS p.cost, .list [.atom "points", natS p.points],
         placementS p.placement, .list [.atom "yield", natS p.yield], .list [.atom "limit", natS p.limit]]
   | .repeal n => .list [.atom "repeal", natS n]
+  | .endGame => .list [.atom "end-game"]
 
 def lawS (l : Law) : SExp := .list (.atom "law" :: .str l.title :: l.clauses.map clauseS)
 

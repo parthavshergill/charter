@@ -389,16 +389,22 @@ theorem phase_by_turn_or_win {s s' : State G} {e : Event} (h : Engine.step G s e
   rcases finish_winner hf with rfl | ⟨w, hbest, hend⟩
   · exact Or.inl (bodyOf_frame hb).phase
   · obtain ⟨hw, _⟩ := bestSeat_spec hbest
-    obtain ⟨hm, ht⟩ := List.mem_filter.mp hw
     obtain ⟨_, hbk, hs2⟩ := endGame_ok hend
-    have ht2 : G.targetPoints ≤ (countAction s1 (seatOf e)).pointsOf w := by simpa using ht
     have hT : s'.turnOrder = (countAction s1 (seatOf e)).turnOrder := by rw [hs2]
-    refine Or.inr ⟨by rw [hs2], w, by rw [hT]; exact hm, ?_⟩
-    have hmono : (countAction s1 (seatOf e)).pointsOf w ≤ s'.pointsOf w :=
-      pointsOf_mono (by rw [hs2]) (by rw [hs2]) (fun r => by
-        rw [hs2]
-        exact postAll_seat_mono refunds_no_seat_src hbk w r)
-    omega
+    refine Or.inr ⟨by rw [hs2], ?_⟩
+    unfold winCandidates at hw
+    split at hw
+    · rename_i hl
+      obtain ⟨x, hx, hc⟩ := List.any_eq_true.mp hl
+      exact Or.inr ⟨x, by rw [hs2]; exact hx, hc⟩
+    · obtain ⟨hm, ht⟩ := List.mem_filter.mp hw
+      have ht2 : G.targetPoints ≤ (countAction s1 (seatOf e)).pointsOf w := by simpa using ht
+      refine Or.inl ⟨w, by rw [hT]; exact hm, ?_⟩
+      have hmono : (countAction s1 (seatOf e)).pointsOf w ≤ s'.pointsOf w :=
+        pointsOf_mono (by rw [hs2]) (by rw [hs2]) (fun r => by
+          rw [hs2]
+          exact postAll_seat_mono refunds_no_seat_src hbk w r)
+      omega
 
 /-- After a move or a vote, a seat at the target has ended the game. -/
 theorem looks_for_winner {s s' : State G} {e : Event} (h : Engine.step G s e = .ok s')
@@ -420,9 +426,13 @@ theorem looks_for_winner {s s' : State G} {e : Event} (h : Engine.step G s e = .
   obtain ⟨t, hct⟩ := hfin
   obtain ⟨p, hp, ht⟩ := hat
   rcases checkWin_ok hct with ⟨rfl, hnil⟩ | ⟨w, hw⟩
-  · have : p ∈ seatsAtTarget s' := List.mem_filter.mpr ⟨hp, by simpa using ht⟩
-    rw [hnil] at this
-    simp at this
+  · unfold winCandidates at hnil
+    split at hnil
+    · rw [hnil] at hp
+      cases hp
+    · have : p ∈ seatsAtTarget s' := List.mem_filter.mpr ⟨hp, by simpa using ht⟩
+      rw [hnil] at this
+      simp at this
   · obtain ⟨_, _, rfl⟩ := endGame_ok hw
     rfl
 
