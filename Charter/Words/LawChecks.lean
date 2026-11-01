@@ -70,6 +70,7 @@ def clauseProblems {G : GameDef} (s : State G) (L : Law) : Clause → List Strin
       (if G.bundleOk b then [] else ["a cost must name real resources, each once"])
   | .setPoints k _ => if s.knownKind L k then [] else [s!"there is no piece named {k}"]
   | .setBankRate n => if 2 ≤ n then [] else ["the bank rate must be at least 2"]
+  | .setWorth r _ => if G.isRes r then [] else [s!"there is no resource called {r}"]
   | .newPiece p =>
       (if (s.rules.piece? p.name).isSome then [s!"the piece {p.name} already exists"] else []) ++
       (if G.bundleOk p.cost then [] else ["a cost must name real resources, each once"]) ++
@@ -216,6 +217,7 @@ def Clause.ruleSet : Clause → Option String
   | .setCost k _ => some s!"cost of {k}"
   | .setPoints k _ => some s!"points of {k}"
   | .setBankRate _ => some "bank rate"
+  | .setWorth r _ => some s!"worth of {r}"
   | _ => none
 
 /-- Why a law cannot pass in this state. An empty list means it can. -/

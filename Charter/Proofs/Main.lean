@@ -96,7 +96,7 @@ theorem V_your_money_is_yours (G : GameDef) (_hG : G.Valid) (s s' : State G) (e 
             x ∈ rollEntries (s.afterPosting s.entriesBeforeRoll)
               (rollAt G s.seed s.rollsMade)))))) ∧
     MoneyLeavesBankOnlyFor s e x := by
-  refine ⟨offers_kept h, accepted_offers_exact hs.noPending h, fun x hx => ?_⟩
+  refine ⟨offers_kept h, accepted_offers_exact h, fun x hx => ?_⟩
   have hv := step_vconj hs.ids h hx
   exact ⟨hv.1, hv.2.1, hv.2.2.1, hv.2.2.2.1, hv.2.2.2.2, step_bank h hx⟩
 
@@ -171,8 +171,11 @@ theorem the_winner_earned_it (G : GameDef) (_hG : G.Valid) (s : State G) (hs : I
       (∀ p ∈ s.turnOrder, s.pointsOf p ≤ s.pointsOf w) ∧
       (G.targetPoints ≤ s.pointsOf w ∨ s.turnsTaken = maxTurns G s.turnOrder.length)) ∧
     (s.phase = .ended → s.winner.isSome = true) ∧
-    ((∃ p ∈ s.turnOrder, G.targetPoints ≤ s.pointsOf p) → s.phase = .ended) :=
-  ⟨hs.winner.won, hs.winner.isSome, fun ⟨_, hp, ht⟩ => target_ends_game hs.noPending hp ht⟩
+    ((∃ p ∈ s.turnOrder, G.targetPoints ≤ s.builtPointsOf p) → s.phase = .ended) ∧
+    (∀ e s', Engine.step G s e = .ok s' → LooksForWinner e →
+      (∃ p ∈ s'.turnOrder, G.targetPoints ≤ s'.pointsOf p) → s'.phase = .ended) :=
+  ⟨hs.winner.won, hs.winner.isSome, fun ⟨_, hp, ht⟩ => target_ends_game hs.noPending hp ht,
+    fun _ _ h hl hat => looks_for_winner h hl hat⟩
 
 theorem limits_hold (G : GameDef) (_hG : G.Valid) (s : State G) (hs : Inv G s) :
     s.laws.length ≤ maxLawsInForce ∧
@@ -186,10 +189,10 @@ theorem limits_hold (G : GameDef) (_hG : G.Valid) (s : State G) (hs : Inv G s) :
     hs.planned.each, hs.planned.total, hs.planned.reads⟩
 
 theorem every_other_event_is_exact (G : GameDef) (_hG : G.Valid) (s s' : State G) (e : Event)
-    (hs : Inv G s) (h : Engine.step G s e = .ok s') :
+    (_hs : Inv G s) (h : Engine.step G s e = .ok s') :
     (∀ seat dealId, e = .exit seat dealId → newEntries s s' = []) ∧
-    (∀ p to give get, e = .move p (.offer to give get) → newEntries s s' = []) ∧
-    (∀ p id, e = .move p (.cancel id) → newEntries s s' = []) ∧
+    (∀ p to give get, e = .move p (.offer to give get) → NoEntriesUnlessEnded s s') ∧
+    (∀ p id, e = .move p (.cancel id) → NoEntriesUnlessEnded s s') ∧
     (∀ seat d, e = .propose seat (.deal d) → newEntries s s' = []) ∧
     (∀ seat L, e = .propose seat (.law L) → newEntries s s' = []) ∧
     (∀ seat id, e = .sign seat id → ∃ p d,
@@ -197,24 +200,22 @@ theorem every_other_event_is_exact (G : GameDef) (_hG : G.Valid) (s s' : State G
       ((∀ j ∈ d.signers, j ∈ p.signed ∨ j = seat) →
         newEntries s s' = depositEntries s.dealsStarted d) ∧
       ((¬ ∀ j ∈ d.signers, j ∈ p.signed ∨ j = seat) → newEntries s s' = [])) ∧
-    (∀ seat id yes, e = .vote seat id yes →
-      (s'.phase = .ended → newEntries s s' = s.deals.flatMap s.refundEntries) ∧
-      (s'.phase ≠ .ended → newEntries s s' = [])) ∧
+    (∀ seat id yes, e = .vote seat id yes → NoEntriesUnlessEnded s s') ∧
     (∀ p id, e = .move p (.accept id) → ∃ o, s.offers.find? (·.id == id) = some o) ∧
     (∀ p, e = .move p .endTurn → EndsTurn s e) ∧
     ((∀ p k loc, e ≠ .move p (.place k loc)) → s'.pieces = s.pieces) ∧
     (¬ EndsTurn s e →
       s'.turnsTaken = s.turnsTaken ∧ s'.turnIndex = s.turnIndex ∧ s'.round = s.round ∧
       s'.rollsMade = s.rollsMade) ∧
-    (∀ p r n, e = .move p (.declare r n) →
+    (∀ p r n, e = .move p (.declare r n) → NoEntriesUnlessEnded s s' ∧ s'.phase ≠ .ended →
       s' = { s with
         declared := fun q x => if q = p ∧ x = r then n else s.declared q x
         actionsThisTurn := fun q => if q = p then s.actionsThisTurn q + 1 else s.actionsThisTurn q
         eventsApplied := s.eventsApplied + 1 }) ∧
     DeclarationsKept s s' e := by
-  obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11⟩ := step_is_exact hs.noPending h
+  obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11⟩ := step_is_exact h
   exact ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11,
-    fun _ _ _ he => declare_is_exact hs.noPending (he ▸ h), declarations_kept hs.noPending h⟩
+    fun _ _ _ he hn => (declare_is_exact (he ▸ h)).2 hn.2, declarations_kept h⟩
 
 /-- Every reachable state has the properties the other proofs rely on. -/
 theorem _root_.Charter.Reachable.inv {G : GameDef} (hG : G.Valid) {s : State G} (hs : Reachable G s) :

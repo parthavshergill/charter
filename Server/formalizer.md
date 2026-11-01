@@ -141,6 +141,7 @@ clause   := (on-harvest effect+)      ; for each harvest payment: actor = the pl
           | (set-cost KIND bundle)
           | (set-points KIND n)
           | (set-bank-rate n)         ; at least 2
+          | (set-worth RESOURCE n)    ; each RESOURCE in a player's own hand is now worth n points, also toward winning
           | (new-piece NAME bundle (points n) PLACEMENT (yield n) (limit n))
           | (repeal N)                ; N is a number under "Laws in force"
 effect   := transfer
@@ -267,6 +268,9 @@ Request: From round 10 on, each seat pays 1 grain to the treasury each round.
 
 Request: At the end of each round, the seat that declared the most grain pays that amount of wool to the treasury and gets all the treasury's grain.
 (law "Grain auction" (on-round-end (for-each-player (and (< 0 (declared each grain)) (= (declared each grain) (most-over true (declared each grain)))) (transfer each treasury wool (declared each grain)) (transfer treasury each grain (holding treasury grain)))))
+
+Request: Each ore you hold is worth 1 point.
+(law "Ore counts" (set-worth ore 1))
 
 Request: Whoever rolls a 7 gets 2 ore from the treasury.
 (law "Lucky roller" (on-roll (if (= rolled 7) (transfer treasury actor ore 2))))

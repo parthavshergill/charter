@@ -67,7 +67,10 @@ theorem endGame_ok {s s' : State G} {w : Seat} (h : endGame s w = .ok s') :
     ∃ b, s.books.postAll (s.deals.flatMap s.refundEntries) = some b ∧
       s' = { s with
         books := b, journal := s.journal ++ s.deals.flatMap s.refundEntries
-        phase := .ended, winner := some w, deals := [], offers := [], openProposals := [] } := by
+        phase := .ended
+        winner := some ((bestSeat ({ s with books := b, journal := s.journal ++ s.deals.flatMap s.refundEntries } : State G)
+          s.turnOrder).getD w)
+        deals := [], offers := [], openProposals := [] } := by
   unfold endGame at h
   cases hr : record s (s.deals.flatMap s.refundEntries) with
   | error m => simp [hr, bind, Except.bind] at h

@@ -18,6 +18,8 @@ These show that the promises are not empty:
   game, and a wrong amount is rejected.
 * A declaration changes what a law does. `an_auction_settles` is a worked auction, with a tie and a bid
   nobody can pay.
+* A resource can be worth points, and a seat that reaches the target at a turn change wins at the next
+  move or vote.
 * The promises reject bad steps. Each `..._is_rejected` theorem shows a named part of a commandment
   saying no to a forged step. Next to most is an `example` of the honest step, which it allows.
 
@@ -911,6 +913,90 @@ theorem charging_to_propose_is_rejected :
   · cases hr
   · cases hf
   · cases hr
+
+/-! ## What a resource is worth
+
+A law can say that a resource is worth points. Only a seat's own account counts. -/
+
+/-- Grain is worth a point, so holding it can win a game. -/
+def grainCounts : Law := { title := "Grain counts", clauses := [.setWorth "grain" 1] }
+
+/-- Tiny Settlers with `rollerGift` and grain worth a point, and a target of 15 points. -/
+def worthGame : GameDef :=
+  { tinySettlers with
+    name := "Worth"
+    diceCount := 2
+    diceSides := 6
+    targetPoints := 15
+    foundingLaws := [rollerGift, grainCounts] }
+
+theorem worthGame_valid : worthGame.Valid := by decide +kernel
+
+/-- What a state looks like after these events. -/
+def after2 (G : GameDef) (nonce : UInt64) (events : List Event) : Option (State G) :=
+  (Engine.replay G 2 42 [nonce] events).toOption
+
+/-- A real game. The first three rolls pay seat 0 10 grain, seat 1 5 grain and seat 0 3 grain. So seat 0
+has 13 points. A resource moves the score. -/
+example : ((after2 worthGame 2 (List.replicate 6 .forceEndTurn)).map (·.pointsOf 0)) = some 13 := by
+  decide +kernel
+
+/-- Later rolls take seat 0 past the target at a turn change, and the game goes on: a turn change does not
+look for a winner. -/
+def worthEvents : List Event := List.replicate 8 .forceEndTurn
+
+/-- At the end of those events, a seat is at the target and the game runs. -/
+example : ((after2 worthGame 2 worthEvents).map fun s =>
+    (s.phase, decide (15 ≤ s.pointsOf 0))) = some (.actions, true) := by decide +kernel
+
+/-- Any move or vote then ends the game, even one by another seat that moves nothing. So the winner is
+named the next time anyone acts. -/
+theorem a_seat_at_the_target_wins_at_the_next_move :
+    ∃ s s', Reachable worthGame s ∧ Engine.step worthGame s (.move 0 (.declare "grain" 0)) = .ok s' ∧
+      s.phase = .actions ∧ 15 ≤ s.pointsOf 0 ∧ s'.phase = .ended ∧ s'.winner = some 0 := by
+  have hc : (match Engine.replay worthGame 2 42 [2] worthEvents with
+      | .error _ => false
+      | .ok s =>
+        match Engine.step worthGame s (.move 0 (.declare "grain" 0)) with
+        | .error _ => false
+        | .ok s' => s.phase == .actions && decide (15 ≤ s.pointsOf 0) && s'.phase == .ended &&
+            s'.winner == some 0) = true := by decide +kernel
+  cases hr : Engine.replay worthGame 2 42 [2] worthEvents with
+  | error m => rw [hr] at hc; simp at hc
+  | ok s =>
+    rw [hr] at hc
+    cases hs : Engine.step worthGame s (.move 0 (.declare "grain" 0)) with
+    | error m => simp [hs] at hc
+    | ok s' =>
+      simp only [hs, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hc
+      obtain ⟨⟨⟨h1, h2⟩, h3⟩, h4⟩ := hc
+      exact ⟨s, s', ((X_what_you_vote_on_is_what_runs worthGame worthGame_valid).1 s).mpr
+        ⟨2, 42, [2], _, by decide, by decide, hr⟩, hs, h1, h2, h3, h4⟩
+
+/-- A move that does not end the game with a seat at the target is rejected: that is a false end. -/
+theorem no_win_at_the_target_is_rejected {s s' : State G} {e : Event} (h : Engine.step G s e = .ok s')
+    (hl : LooksForWinner e) (hp : p ∈ s'.turnOrder) (ht : G.targetPoints ≤ s'.pointsOf p) :
+    s'.phase = .ended :=
+  Proofs.looks_for_winner h hl ⟨p, hp, ht⟩
+
+/-- A deposit does not count. These books give seat 0 3 grain in a deposit and none in hand, so seat 0 has
+no points from them. -/
+example : (({ initialState worthGame 2 42 [2] with
+      books := fun a r => match a, r with
+        | .deposit 0 0, "grain" => 3
+        | _, _ => 0 } : State worthGame)).pointsOf 0 = 0 := by decide +kernel
+
+/-- A law that names no real resource is refused. -/
+theorem worth_of_nothing_is_rejected :
+    "there is no resource called gold" ∈ lawProblems tinySettlers (initialState tinySettlers 2 42 [3])
+      { title := "Gold", clauses := [.setWorth "gold" 1] } := by decide +kernel
+
+/-- Repealing the law takes the worth away. -/
+example : (({ initialState worthGame 2 42 [2] with
+      laws := [] ,
+      books := fun a r => match a, r with
+        | .player 0, "grain" => 3
+        | _, _ => 0 } : State worthGame)).pointsOf 0 = 0 := by decide +kernel
 
 /-- The conditions the theorems assume can be met: this new game is reachable. -/
 example : Reachable tinySettlers (initialState tinySettlers 2 42 [25283273]) :=

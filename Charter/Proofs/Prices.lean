@@ -54,6 +54,7 @@ theorem clause_price {R : Rules} {c : Clause} (hR : RulesPriceOk G R) (hc : Clau
   | onRoundEnd _ => exact hR
   | onRoll _ => exact hR
   | setBankRate _ => exact hR
+  | setWorth _ _ => exact hR
   | repeal _ => exact hR
 
 theorem law_price {R : Rules} {L : Law} (hR : RulesPriceOk G R)
@@ -68,13 +69,13 @@ theorem law_price {R : Rules} {L : Law} (hR : RulesPriceOk G R)
 
 theorem rules_price {laws : List (Nat × Law)} (hG : G.Valid)
     (hL : ∀ x ∈ laws, ∀ c ∈ x.2.clauses, ClausePriceOk G c) : RulesPriceOk G (rulesFrom G laws) := by
-  have h0 : RulesPriceOk G { pieces := G.pieces, bankRate := G.bankRate } := by
+  have h0 : RulesPriceOk G { pieces := G.pieces, bankRate := G.bankRate, worth := [] } := by
     have hG := valid_shape hG
     simp only [GameDef.shapeChecks, Bool.and_eq_true] at hG
     intro d hd
     exact List.all_eq_true.mp hG.1.1.1.1.1.1.1.1.1.1.2 d hd
   unfold rulesFrom
-  generalize ({ pieces := G.pieces, bankRate := G.bankRate } : Rules) = R at h0
+  generalize ({ pieces := G.pieces, bankRate := G.bankRate, worth := [] } : Rules) = R at h0
   induction laws generalizing R with
   | nil => exact h0
   | cons x t ih =>
@@ -100,6 +101,7 @@ theorem lawProblems_price {s : State G} {L : Law} (h : lawProblems G s L = []) :
   | onRoll _ => trivial
   | setPoints _ _ => trivial
   | setBankRate _ => trivial
+  | setWorth _ _ => trivial
   | repeal _ => trivial
 
 /-- Every law in force sets only checked prices. -/

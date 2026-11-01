@@ -139,6 +139,18 @@ def senderOf : Event → Option Seat
   | .exit p _ => some p
   | .forceEndTurn => none
 
+/-- The engine looks for a winner after this event: a move other than ending a turn, or a vote. -/
+def LooksForWinner : Event → Prop
+  | .move _ .endTurn => False
+  | .move .. => True
+  | .vote .. => True
+  | _ => False
+
+/-- This step writes no entries, unless it ended the game, and then it writes only the refunds. -/
+def NoEntriesUnlessEnded (s s' : State G) : Prop :=
+  (s'.phase = .ended → newEntries s s' = s.deals.flatMap s.refundEntries) ∧
+  (s'.phase ≠ .ended → newEntries s s' = [])
+
 /-- An accepted event that does not end the turn adds 1 to its sender's action count and leaves every
 other seat's count alone. A turn end resets every count to 0. -/
 def ActionsAreCountedExactly (s s' : State G) (e : Event) : Prop :=
@@ -182,11 +194,13 @@ def OffersKept {G : GameDef} (s s' : State G) (e : Event) : Prop :=
     o ∈ s.offers ∨
     ∃ to give get, e = .move o.src (.offer to give get) ∧ o = ⟨s.nextOfferId, o.src, to, give, get⟩
 
-/-- Accepting an offer moves exactly the offered goods. Its maker cannot accept it. If it names a seat,
-only that seat can accept it. -/
+/-- Accepting an offer moves exactly the offered goods, and then any refunds if the goods put a seat at the
+target and the game ends. Its maker cannot accept it. If it names a seat, only that seat can accept it. -/
 def AcceptedOffersAreExact (s s' : State G) (e : Event) : Prop :=
   ∀ p id o, e = .move p (.accept id) → s.offers.find? (·.id == id) = some o →
-    p ≠ o.src ∧ (o.to = none ∨ o.to = some p) ∧ newEntries s s' = offerEntries o p
+    p ≠ o.src ∧ (o.to = none ∨ o.to = some p) ∧
+    ∃ refunds, newEntries s s' = offerEntries o p ++ refunds ∧
+      (∀ x ∈ refunds, x.reason = .refund) ∧ (refunds = [] ∨ s'.phase = .ended)
 
 /-- This entry funds a new deal. The event is the signature that starts the deal as id `k`, everyone
 has now signed, `i` is a signer, and the deal lists this deposit. -/

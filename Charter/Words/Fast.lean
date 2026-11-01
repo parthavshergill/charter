@@ -73,7 +73,8 @@ def settleFast {G : GameDef} (s : State G) (es : List Entry) : List Entry :=
 /-- `State.pointsOf`, working out the rules in force once and not once per piece. -/
 def State.pointsOfFast {G : GameDef} (s : State G) (p : Seat) : Nat :=
   let R := s.rules
-  ((s.pieces.filter (·.owner == p)).map fun x => ((R.piece? x.kind).map (·.points)).getD 0).sum
+  ((s.pieces.filter (·.owner == p)).map fun x => ((R.piece? x.kind).map (·.points)).getD 0).sum +
+    (R.worth.map fun x => x.2 * s.balance (.player p) x.1).sum
 
 @[csimp] theorem pointsOf_eq_fast : @State.pointsOf = @State.pointsOfFast := rfl
 

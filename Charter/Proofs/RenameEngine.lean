@@ -104,7 +104,15 @@ theorem endGame_rename (s : State G) (w : Seat) :
     endGame (σ.state s) (σ.to w) = (endGame s w).map σ.state := by
   unfold endGame
   rw [refunds_rename, record_rename]
-  cases record s (s.deals.flatMap s.refundEntries) <;> rfl
+  cases record s (s.deals.flatMap s.refundEntries) with
+  | error m => rfl
+  | ok s1 =>
+    simp only [Except.map, bind, Except.bind, pure, Except.pure, Except.ok.injEq]
+    have hb : bestSeat (σ.state s1) (σ.state s1).turnOrder = (bestSeat s1 s1.turnOrder).map σ.to :=
+      σ.bestSeat_rename s1 s1.turnOrder
+    state_ext
+    rw [hb]
+    cases bestSeat s1 s1.turnOrder <;> rfl
 
 theorem checkWin_rename (s : State G) :
     checkWin (σ.state s) = (checkWin s).map σ.state := by

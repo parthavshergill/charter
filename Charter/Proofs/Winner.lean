@@ -93,24 +93,87 @@ theorem WinnerInv.start (G : GameDef) (seats : Nat) (serverSeed : UInt64) (nonce
     WinnerInv G (initialState G seats serverSeed nonces) :=
   ⟨fun _ => rfl, fun _ hw => (by cases hw), fun h => (by cases h)⟩
 
-/-- A seat at the target beats every seat below it, and is best among those at it. -/
+/-- Entries that take nothing from any seat leave each seat holding at least as much. -/
+theorem postAll_seat_mono {b b' : Books} {es : List Entry} (hs : ∀ x ∈ es, ∀ i, x.src ≠ .player i)
+    (h : b.postAll es = some b') (q : Seat) (r : Res) : b (.player q) r ≤ b' (.player q) r := by
+  induction es generalizing b with
+  | nil =>
+    simp only [Books.postAll, Option.some.injEq] at h
+    rw [h]
+    exact Nat.le_refl _
+  | cons e es ih =>
+    simp only [Books.postAll, Option.bind_eq_some_iff] at h
+    obtain ⟨b1, hp, hrest⟩ := h
+    have hstep : b (.player q) r ≤ b1 (.player q) r := by
+      unfold Books.post at hp
+      split at hp
+      · simp only [Option.some.injEq] at hp
+        subst hp
+        have hne : ¬ (Account.player q = e.src) := fun he => hs e (by simp) q he.symm
+        by_cases hr : r = e.res
+        · simp only [hr, ↓reduceIte, hne]
+          split <;> omega
+        · simp [hr]
+      · cases hp
+    exact Nat.le_trans hstep (ih (fun x hx => hs x (by simp [hx])) hrest)
+
+/-- With the same pieces and laws, a seat that holds at least as much has at least as many points. -/
+theorem pointsOf_mono {s s' : State G} (hp : s'.pieces = s.pieces) (hl : s'.laws = s.laws)
+    (hb : ∀ r, s.books (.player q) r ≤ s'.books (.player q) r) : s.pointsOf q ≤ s'.pointsOf q := by
+  have hbuilt := builtPointsOf_congr (s := s) (s' := s') hp hl q
+  have hr : s'.rules = s.rules := by simp only [State.rules, hl]
+  have htok : s.tokenPointsOf q ≤ s'.tokenPointsOf q := by
+    simp only [State.tokenPointsOf, hr, State.balance]
+    induction s.rules.worth with
+    | nil => simp
+    | cons x t ih =>
+      simp only [List.map_cons, List.sum_cons]
+      exact Nat.add_le_add (Nat.mul_le_mul_left _ (hb x.1)) ih
+  simp only [State.pointsOf]
+  omega
+
+/-- Refunds take nothing from any seat. -/
+theorem refunds_no_seat_src {t : State G} : ∀ x ∈ t.deals.flatMap t.refundEntries, ∀ i, x.src ≠ .player i := by
+  intro x hx i
+  obtain ⟨d, _, hd⟩ := List.mem_flatMap.mp hx
+  obtain ⟨_, j, _, h1, _⟩ := refundEntries_form hd
+  rw [h1]
+  simp
+
+/-- A seat at the target before the refunds is still there after them, and the winner has the most points. -/
 theorem endGame_winner {t s' : State G} {w : Seat} (hb : bestSeat t (seatsAtTarget t) = some w)
     (he : endGame t w = .ok s') :
     WinnerInv G s' := by
-  obtain ⟨hw, hmax⟩ := bestSeat_spec hb
-  obtain ⟨_, _, rfl⟩ := endGame_ok he
+  obtain ⟨hw, _⟩ := bestSeat_spec hb
+  obtain ⟨bk, hbk, rfl⟩ := endGame_ok he
   have hmem := List.mem_filter.mp hw
   have htarget : G.targetPoints ≤ t.pointsOf w := by simpa using hmem.2
   refine ⟨fun h => (h rfl).elim, ?_, fun _ => rfl⟩
   intro x hx
   simp only [Option.some.injEq] at hx
   subst hx
-  refine ⟨rfl, hmem.1, ?_, Or.inl htarget⟩
-  intro p hp
-  change t.pointsOf p ≤ t.pointsOf _
-  by_cases hat : G.targetPoints ≤ t.pointsOf p
-  · exact hmax p (List.mem_filter.mpr ⟨hp, by simpa using hat⟩)
-  · omega
+  have hmono : t.pointsOf w ≤ ({ t with books := bk, journal := t.journal ++ t.deals.flatMap t.refundEntries } : State G).pointsOf w :=
+    pointsOf_mono rfl rfl (fun r => postAll_seat_mono refunds_no_seat_src hbk w r)
+  cases hbest : bestSeat ({ t with books := bk, journal := t.journal ++ t.deals.flatMap t.refundEntries } : State G) t.turnOrder with
+  | none =>
+    have := bestSeat_none hbest
+    rw [this] at hmem
+    simp at hmem
+  | some b =>
+    obtain ⟨hbm, hmax⟩ := bestSeat_spec hbest
+    simp only [Option.getD_some]
+    have hsame : ∀ q, ({ t with
+        books := bk, journal := t.journal ++ t.deals.flatMap t.refundEntries, phase := .ended
+        winner := some b, deals := [], offers := [], openProposals := [] } : State G).pointsOf q =
+        ({ t with books := bk, journal := t.journal ++ t.deals.flatMap t.refundEntries } : State G).pointsOf q :=
+      pointsOf_congr rfl rfl rfl
+    refine ⟨trivial, hbm, ?_, Or.inl ?_⟩
+    · intro p hp
+      rw [hsame, hsame]
+      exact hmax p hp
+    · rw [hsame]
+      have := hmax w hmem.1
+      omega
 
 theorem WinnerInv.startNextTurn {s : State G} (hw : WinnerInv G s) (ht : TurnInv s)
     (hn : s.turnOrder ≠ []) (he : s.phase ≠ .ended) (roll : Nat) :
@@ -150,7 +213,7 @@ theorem WinnerInv.startNextTurn {s : State G} (hw : WinnerInv G s) (ht : TurnInv
       unfold Engine.startNextTurn
       rw [hs]
     have hpts : ∀ q, (Engine.startNextTurn s roll).pointsOf q = s.pointsOf q :=
-      pointsOf_congr (startNextTurn_pieces _ _) (startNextTurn_laws _ _)
+      pointsOf_congr (startNextTurn_pieces _ _) (startNextTurn_laws _ _) (startNextTurn_books _ _)
     cases hbest : bestSeat s s.turnOrder with
     | none => exact absurd (bestSeat_none hbest) hn
     | some w =>
@@ -199,7 +262,8 @@ theorem WinnerInv.step {s s' : State G} {e : Event} (hw : WinnerInv G s) (ht : T
   rcases step_view h with ⟨_, h⟩ | ⟨_, _, s1, hb, hf⟩
   · obtain ⟨b, _, rfl⟩ := endTurnNow_ok h
     exact WinnerInv.startNextTurn (s := { s with books := b, journal := _ })
-      ⟨hw.1, hw.2, hw.3⟩ ⟨ht.1, ht.2, ht.3⟩ hn he _
+      ⟨hw.1, fun w hx => absurd (Eq.trans (Eq.symm hx) (hw.running he)) (by simp), fun hend => absurd hend he⟩
+      ⟨ht.1, ht.2, ht.3⟩ hn he _
   · have f := bodyOf_frame hb
     rcases finish_winner hf with rfl | ⟨w, hbest, hend⟩
     · have hph : (countAction s1 (seatOf e)).phase ≠ .ended := by

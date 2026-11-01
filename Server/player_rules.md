@@ -44,14 +44,14 @@ Each law on your screen comes with its rule source, such as `(law "Toll" (on-bui
 - `(total-over test n)` adds up n for every player who passes the test. `(most-over test n)` and `(least-over test n)` are the highest and lowest n among them, or 0 if nobody passes. Inside them, `each` is the player being measured. They give a number, not a player, so a tie means several players match.
 - `(- a b)` stops at 0, and `(/ a b)` rounds down. Dividing by a number that turns out to be 0 gives 0. A payment from an account to itself does not happen.
 - No account goes below zero. An account that owes more than it holds pays each payment in proportion, rounded down, so a payment can shrink to nothing.
-- `(set-cost KIND bundle)`, `(set-points KIND n)` and `(set-bank-rate n)` change a rule. `(new-piece ...)` adds a piece. `(repeal N)` ends law N and every rule it changed.
+- `(set-cost KIND bundle)`, `(set-points KIND n)` and `(set-bank-rate n)` change a rule. `(set-worth R n)` makes each R in a seat's own hand worth n points. `(new-piece ...)` adds a piece. `(repeal N)` ends law N and every rule it changed.
 
 ## The rules
 The dice are rolled at the start of each turn. Each hex with that number pays its resource from the bank to every piece on its corners, by that piece's yield. So a good corner touches hexes with likely numbers and resources you need.
 
 The game starts with setup: each seat places its free setup pieces, once in turn order and once in reverse, with no roll. A piece on a spot must have no piece on a neighbouring spot, and after setup it must connect to your links.
 
-You win the moment you reach the target points. If nobody does by the last round, the most points wins. Points come only from the pieces you own.
+You win the moment you reach the target points, after a move or a vote. A turn change does not check, so a seat that reaches the target by holding goods from a harvest wins at the next move or vote by anyone. If nobody reaches it by the last round, the most points wins. Points come from the pieces you own, and from what you hold of any resource a law has made worth points. A deposit does not count.
 
 ### Laws
 Any seat can propose a law, and it costs nothing. A law takes effect the moment more than half of all seats vote yes. It lapses if it has not passed when its proposer's next turn starts. A vote is final, and each seat can have two proposals open at once. At most 48 laws can be in force.

@@ -383,18 +383,46 @@ theorem phase_by_turn_or_win {s s' : State G} {e : Event} (h : Engine.step G s e
   · exact Or.inl (bodyOf_frame hb).phase
   · obtain ⟨hw, _⟩ := bestSeat_spec hbest
     obtain ⟨hm, ht⟩ := List.mem_filter.mp hw
-    obtain ⟨_, _, hs2⟩ := endGame_ok hend
+    obtain ⟨_, hbk, hs2⟩ := endGame_ok hend
     have ht2 : G.targetPoints ≤ (countAction s1 (seatOf e)).pointsOf w := by simpa using ht
-    have hP : s'.pieces = (countAction s1 (seatOf e)).pieces := by rw [hs2]
-    have hL : s'.laws = (countAction s1 (seatOf e)).laws := by rw [hs2]
     have hT : s'.turnOrder = (countAction s1 (seatOf e)).turnOrder := by rw [hs2]
-    exact Or.inr ⟨by rw [hs2], w, by rw [hT]; exact hm, by rw [pointsOf_congr hP hL]; exact ht2⟩
+    refine Or.inr ⟨by rw [hs2], w, by rw [hT]; exact hm, ?_⟩
+    have hmono : (countAction s1 (seatOf e)).pointsOf w ≤ s'.pointsOf w :=
+      pointsOf_mono (by rw [hs2]) (by rw [hs2]) (fun r => by
+        rw [hs2]
+        exact postAll_seat_mono refunds_no_seat_src hbk w r)
+    omega
+
+/-- After a move or a vote, a seat at the target has ended the game. -/
+theorem looks_for_winner {s s' : State G} {e : Event} (h : Engine.step G s e = .ok s')
+    (hl : LooksForWinner e) (hat : ∃ p ∈ s'.turnOrder, G.targetPoints ≤ s'.pointsOf p) :
+    s'.phase = .ended := by
+  have hfin : ∃ t, checkWin t = .ok s' := by
+    rcases step_view h with ⟨hend, hnow⟩ | ⟨_, _, s1, _, hf⟩
+    · cases e with
+      | move p m =>
+        cases m with
+        | endTurn => exact hl.elim
+        | _ => exact hend.elim
+      | vote a b c => exact hend.elim
+      | _ => exact hl.elim
+    · cases e with
+      | move p m => exact ⟨_, hf⟩
+      | vote a b c => exact ⟨_, hf⟩
+      | _ => exact hl.elim
+  obtain ⟨t, hct⟩ := hfin
+  obtain ⟨p, hp, ht⟩ := hat
+  rcases checkWin_ok hct with ⟨rfl, hnil⟩ | ⟨w, hw⟩
+  · have : p ∈ seatsAtTarget s' := List.mem_filter.mpr ⟨hp, by simpa using ht⟩
+    rw [hnil] at this
+    simp at this
+  · obtain ⟨_, _, rfl⟩ := endGame_ok hw
+    rfl
 
 /-! ## Accepted offers -/
 
-/-- Accepting an offer writes exactly the offer's entries. It cannot end the game, because it changes
-no points and no seat in a running game is at the target. -/
-theorem accepted_offers_exact {s s' : State G} {e : Event} (hn : NoPending s)
+/-- Accepting an offer writes exactly the offer's entries, and then any refunds if the game ends. -/
+theorem accepted_offers_exact {s s' : State G} {e : Event}
     (h : Engine.step G s e = .ok s') : AcceptedOffersAreExact s s' e := by
   rintro p id o rfl ho
   have he := step_not_ended h
@@ -405,11 +433,23 @@ theorem accepted_offers_exact {s s' : State G} {e : Event} (hn : NoPending s)
   rw [ho] at ho'
   injection ho' with ho'
   subst ho'
-  have hx := move_no_win (s := s) hn he (by subst hs1; rfl) (by subst hs1; rfl)
-    (by subst hs1; rfl) hf'
-  refine ⟨fun e => h1 e.symm, h2, newEntries_of ?_⟩
-  rw [hx, hs1]
-  rfl
+  refine ⟨fun e => h1 e.symm, h2, ?_⟩
+  rcases checkWin_ok hf' with ⟨rfl, _⟩ | ⟨w, hw⟩
+  · refine ⟨[], ?_, by simp, Or.inl rfl⟩
+    rw [List.append_nil]
+    apply newEntries_of
+    rw [hs1]
+    rfl
+  · obtain ⟨_, _, rfl⟩ := endGame_ok hw
+    refine ⟨(countAction s1 p).deals.flatMap (countAction s1 p).refundEntries, ?_, ?_, Or.inr rfl⟩
+    · apply newEntries_of
+      have hj : (countAction s1 p).journal = s.journal ++ offerEntries o p := by rw [hs1]; rfl
+      change (countAction s1 p).journal ++ _ = _
+      rw [hj, List.append_assoc]
+    · intro x hx
+      obtain ⟨d, _, hd⟩ := List.mem_flatMap.mp hx
+      exact (refundEntries_form hd).1
+
 
 /-! ## A running game has a current seat -/
 
@@ -566,12 +606,10 @@ theorem blocked_offer_rejected {s : State G} {p q : Seat} {give get : Bundle}
 /-! ## Reaching the target ends the game -/
 
 theorem target_ends_game {s : State G} (hn : NoPending s) {p : Seat} (hp : p ∈ s.turnOrder)
-    (ht : G.targetPoints ≤ s.pointsOf p) : s.phase = .ended := by
+    (ht : G.targetPoints ≤ s.builtPointsOf p) : s.phase = .ended := by
   by_cases he : s.phase = .ended
   · exact he
-  · have hnil := hn he
-    have : p ∈ seatsAtTarget s := List.mem_filter.mpr ⟨hp, by simpa using ht⟩
-    rw [hnil] at this
-    cases this
+  · have := hn he p hp
+    omega
 
 end Charter.Proofs

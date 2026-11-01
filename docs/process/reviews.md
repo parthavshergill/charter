@@ -228,6 +228,23 @@ This is a strengthening of V, because one reason money could leave a seat went a
 
 `a_ruined_seat_can_ask_for_a_repeal` plays this, and `charging_to_propose_is_rejected` rejects a charge. A saved game where a law was proposed no longer replays the same way, and only test tables exist. On start, the server leaves out such a log and says which one, as `docs/deploy.md` describes.
 
+## What a resource is worth
+
+A resource can be worth points. A seat's score is what it has built plus what it holds that counts. Only its own account counts, so a deposit does not.
+
+Wins are still checked after moves and votes, and not at a turn change. So a harvest can put a seat at the target with the game still going on. That seat wins at the next move or vote by anyone. This changed statements that said no seat in a running game is ever at the target. Each change below is required by that one fact, and none gives up anything for a game with no such law.
+
+| Statement | Before | After |
+|---|---|---|
+| `the_winner_earned_it`, its last part | `(∃ p ∈ s.turnOrder, G.targetPoints ≤ s.pointsOf p) → s.phase = .ended` | `(∃ p ∈ s.turnOrder, G.targetPoints ≤ s.builtPointsOf p) → s.phase = .ended`, and a new part: after any step that `LooksForWinner`, a seat at the target means `s'.phase = .ended` |
+| `AcceptedOffersAreExact` | `newEntries s s' = offerEntries o p` | `newEntries s s' = offerEntries o p ++ refunds`, where `refunds` are refund entries, and they are empty unless the game ended |
+| `every_other_event_is_exact`, offers and cancels | `newEntries s s' = []` | `NoEntriesUnlessEnded s s'`, the same words as a vote already had |
+| `every_other_event_is_exact`, declarations | the exact new state | the same exact state, if the game goes on |
+
+The winner still has the most points. `endGame` now chooses the winner after the refunds, because a refund can change what a seat holds. With no law on worth, the choice is the same as before: the most points, then earlier turn order. `postAll_seat_mono` shows that refunds take nothing from a seat, so a seat at the target stays there.
+
+A law's preview already flags a win, and the flag reads `pointsOf`, so it covers worth. `a_seat_at_the_target_wins_at_the_next_move` plays a real game. A saved game with no such law replays as before.
+
 ## How the checks work
 
 - **Axiom audit:** `make audit` fails if any theorem in a `Charter` module rests on an axiom other than `propext`, `Classical.choice` and `Quot.sound`. So a `sorry` fails it. It also replays the proofs through `leanchecker`, and scans for banned constructs.

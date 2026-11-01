@@ -61,12 +61,14 @@ def bestSeat (s : State G) (seats : List Seat) : Option Seat :=
       | some b => if s.pointsOf b < s.pointsOf c then some c else some b)
     none
 
-/-- End the game early: refund every running deal and clear what is still open. -/
+/-- End the game early: refund every running deal and clear what is still open. A refund can change a
+seat's points, so the winner is the seat with the most points after the refunds. Most points wins, then
+earlier turn order. `w` is used only if there are no seats at all. -/
 def endGame (s : State G) (w : Seat) : Except String (State G) := do
   let s1 ← record s (s.deals.flatMap s.refundEntries)
   pure { s1 with
     phase := .ended
-    winner := some w
+    winner := some ((bestSeat s1 s1.turnOrder).getD w)
     deals := []
     offers := []
     openProposals := [] }
@@ -75,7 +77,9 @@ def endGame (s : State G) (w : Seat) : Except String (State G) := do
 def seatsAtTarget (s : State G) : List Seat :=
   s.turnOrder.filter fun p => decide (G.targetPoints ≤ s.pointsOf p)
 
-/-- A seat at or above the target wins at once. Most points wins a tie, then earlier turn order. -/
+/-- If a seat is at or above the target, the game ends. Moves and votes look for this, and a turn change
+does not. So a seat that reaches the target by holding goods at a turn change wins at the next move or
+vote by anyone. -/
 def checkWin (s : State G) : Except String (State G) :=
   match bestSeat s (seatsAtTarget s) with
   | some w => endGame s w

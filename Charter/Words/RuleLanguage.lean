@@ -92,6 +92,8 @@ inductive Clause where
   | setCost (k : PieceKind) (b : Bundle)
   | setPoints (k : PieceKind) (n : Nat)
   | setBankRate (n : Nat)
+  /-- Each unit of this resource in a seat's own account is now worth `n` points. -/
+  | setWorth (r : Res) (n : Nat)
   | newPiece (p : PieceDef)
   /-- Removes the law with this id, and with it every rule that law changed. If that law made a new
   piece, the pieces already on the board stay there, and they are worth 0 points and yield 0. -/

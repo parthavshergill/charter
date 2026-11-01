@@ -156,6 +156,8 @@ definition and the laws in force.
 structure Rules where
   pieces : List PieceDef
   bankRate : Nat
+  /-- What a unit of a resource is worth in points. A resource not listed is worth 0. -/
+  worth : List (Res × Nat)
   deriving Repr
 
 /-- The piece of this kind, if the rules have one. -/
@@ -168,6 +170,7 @@ def Clause.applyTo : Clause → Rules → Rules
   | .setPoints k n, R =>
       { R with pieces := R.pieces.map fun p => if p.name == k then { p with points := n } else p }
   | .setBankRate n, R => { R with bankRate := n }
+  | .setWorth r n, R => { R with worth := R.worth.filter (·.1 != r) ++ [(r, n)] }
   | .newPiece p, R => { R with pieces := R.pieces ++ [p] }
   | _, R => R
 
@@ -176,7 +179,7 @@ def Law.applyTo (L : Law) (R : Rules) : Rules := L.clauses.foldl (fun R c => c.a
 
 /-- The rules: the game's starting rules, then each law in force, oldest first. -/
 def rulesFrom (G : GameDef) (laws : List (Nat × Law)) : Rules :=
-  laws.foldl (fun R x => x.2.applyTo R) { pieces := G.pieces, bankRate := G.bankRate }
+  laws.foldl (fun R x => x.2.applyTo R) { pieces := G.pieces, bankRate := G.bankRate, worth := [] }
 
 /-- The ids of the laws this law repeals. -/
 def Law.repeals (L : Law) : List Nat :=
@@ -210,11 +213,18 @@ def costOf (s : State G) (k : PieceKind) : Bundle :=
 def countOf (s : State G) (p : Seat) (k : PieceKind) : Nat :=
   (s.pieces.filter fun x => x.owner == p && x.kind == k).length
 
-/-- A seat's points: the current worth of everything it owns. A piece whose law was repealed is
-worth 0. -/
-def pointsOf (s : State G) (p : Seat) : Nat :=
+/-- The points from what a seat has built. A piece whose law was repealed is worth 0. -/
+def builtPointsOf (s : State G) (p : Seat) : Nat :=
   ((s.pieces.filter (·.owner == p)).map fun x =>
     ((s.rules.piece? x.kind).map (·.points)).getD 0).sum
+
+/-- The points from what a seat holds that a law says is worth something. Only a seat's own account
+counts, so a deposit does not. -/
+def tokenPointsOf (s : State G) (p : Seat) : Nat :=
+  (s.rules.worth.map fun x => x.2 * s.balance (.player p) x.1).sum
+
+/-- A seat's points: what it has built, and what it holds that counts. -/
+def pointsOf (s : State G) (p : Seat) : Nat := s.builtPointsOf p + s.tokenPointsOf p
 
 /-- `s` with this law enacted. Used to say what a vote's preview means. -/
 def withLaw (s : State G) (id : Nat) (L : Law) : State G :=

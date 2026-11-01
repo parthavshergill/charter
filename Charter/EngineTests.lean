@@ -680,8 +680,8 @@ def claimWinner (s : State G) : List String :=
        (decide (G.targetPoints ≤ s.pointsOf w) ||
          s.turnsTaken == maxTurns G s.turnOrder.length)) ++
   claim "an ended game has a winner" (s.phase != .ended || s.winner.isSome) ++
-  claim "reaching the target ends the game"
-    (s.phase == .ended || !s.turnOrder.any fun p => decide (G.targetPoints ≤ s.pointsOf p))
+  claim "reaching the target with built points ends the game"
+    (s.phase == .ended || !s.turnOrder.any fun p => decide (G.targetPoints ≤ s.builtPointsOf p))
 
 /-- A value as text, for types that have no equality test. -/
 def textOf {α : Type} [Repr α] (x : α) : String := toString (repr x)
@@ -921,7 +921,10 @@ def senderOf : Event → Option Seat
 def fieldsAfterAction (s s' : State G) (e : Event) : List String :=
   if endsTurn s e then [] else
   let seats := 999 :: s.turnOrder
-  let won := !(seatsAtTarget s').isEmpty
+  let looks := match e with
+    | .move .. | .vote .. => true
+    | _ => false
+  let won := looks && !(seatsAtTarget s').isEmpty
   claim "fields: the sender is in the game and under its limit"
     (match senderOf e with
      | some p => s.turnOrder.contains p && decide (s.actionsThisTurn p < maxActionsPerTurn)
@@ -942,7 +945,7 @@ def fieldsAfterAction (s s' : State G) (e : Event) : List String :=
       | _ => false) ++
   (if won then
     claim "fields: a win ends the game and names the winner"
-      (s'.phase == .ended && s'.winner == bestSeat s' (seatsAtTarget s')) ++
+      (s'.phase == .ended && s'.winner == bestSeat s' s'.turnOrder) ++
     (businessDiff (businessOf s')
       { afterAction s e with deals := [], offers := [], openProposals := [] }).map
         ("fields: after a win, " ++ ·)
@@ -2591,6 +2594,31 @@ def declareSetup : List Event := settlersRound2
 -- `legalMoves` does not list declarations, as it does not list offers.
 #guard after (settlers2 declareSetup) fun s =>
   (legalMoves tinySettlers s 0).all fun | .declare .. => false | _ => true
+
+/-! ### What a resource is worth -/
+
+def worthState : State tinySettlers :=
+  { testStart tinySettlers 2 42 with
+    phase := .actions
+    laws := [(0, { title := "w", clauses := [.setWorth "grain" 2] })]
+    books := fun a r => match a, r with
+      | .player 0, "grain" => 3 | .player 1, "timber" => 9 | .deposit 0 1, "grain" => 9 | _, _ => 0 }
+
+#guard worthState.pointsOf 0 == 6
+#guard worthState.tokenPointsOf 0 == 6
+#guard worthState.builtPointsOf 0 == 0
+#guard worthState.pointsOf 1 == 0
+-- A later clause replaces an earlier one, and a repeal takes it away.
+#guard ({ worthState with laws := worthState.laws ++ [(1, { title := "x", clauses := [.setWorth "grain" 5] })] } : State tinySettlers).pointsOf 0 == 15
+#guard ({ worthState with laws := [] } : State tinySettlers).pointsOf 0 == 0
+#guard lawAccepted [.setWorth "grain" 1]
+#guard lawRejected [.setWorth "gold" 1]
+#guard lawRejected [.setWorth "grain" 1, .setWorth "grain" 2]
+-- The law's own vote looks for a winner: this law makes seat 0 win at once.
+#guard after (settlers2 (settlersRound2 ++ [.propose 0 (.law { title := "w", clauses := [.setWorth "grain" 100] }), .vote 0 0 true, .vote 1 0 true]))
+  fun s => s.phase == .ended && s.winner.isSome
+-- The claims hold when the win comes from what a seat holds.
+#guard traceFailures tinySettlers 2 42 (settlersRound2 ++ [.propose 0 (.law { title := "w", clauses := [.setWorth "grain" 100] }), .vote 0 0 true, .vote 1 0 true]) == []
 
 /-! ### The total limit on planned payments -/
 

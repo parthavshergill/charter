@@ -331,7 +331,10 @@ def sentences (g : Game) (s s' : State G) (e : Event) : List (Option Nat × Stri
     ((none : Option Nat), "law", what, true)
   let over :=
     match s.winner, s'.winner with
-    | none, some w => [((none : Option Nat), "end", s!"The game ended. {g.nameOf w} won with {s'.pointsOf w} points.", true)]
+    | none, some w =>
+      let held := s'.tokenPointsOf w
+      let from_ := if held == 0 then "" else s!", {held} of them from what they held"
+      [((none : Option Nat), "end", s!"The game ended. {g.nameOf w} won with {s'.pointsOf w} points{from_}.", true)]
     | _, _ => []
   let beforeRoll := moneyLines.map fun (k, t, m) => ((none : Option Nat), k, t, m)
   let (k, t, m) := actionText g s s' e

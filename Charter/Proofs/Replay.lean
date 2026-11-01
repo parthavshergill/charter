@@ -25,7 +25,7 @@ structure Agree (s t : State G) : Prop where
   declared : s.declared = t.declared
 
 theorem Agree.pointsOf {s t : State G} (h : Agree s t) (q : Seat) : s.pointsOf q = t.pointsOf q :=
-  pointsOf_congr h.pieces h.laws q
+  pointsOf_congr h.pieces h.laws h.books q
 
 theorem Agree.countOf {s t : State G} (h : Agree s t) (q : Seat) (k : PieceKind) :
     s.countOf q k = t.countOf q k := by

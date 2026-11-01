@@ -138,6 +138,7 @@ def parseClause (rs : List Res) : SExp → P Clause
   | .list [.atom "set-cost", k, b] => return .setCost (← parseKind k) (← parseBundle rs b)
   | .list [.atom "set-points", k, n] => return .setPoints (← parseKind k) (← parseNat n)
   | .list [.atom "set-bank-rate", n] => return .setBankRate (← parseNat n)
+  | .list [.atom "set-worth", r, n] => return .setWorth (← parseRes rs r) (← parseNat n)
   | .list [.atom "new-piece", .atom name, b, .list [.atom "points", n], pl,
       .list [.atom "yield", y], .list [.atom "limit", l]] =>
       return .newPiece { name := name, cost := ← parseBundle rs b, points := ← parseNat n
@@ -260,6 +261,7 @@ def clauseS : Clause → SExp
   | .setCost k b => .list [.atom "set-cost", .atom k, bundleS b]
   | .setPoints k n => .list [.atom "set-points", .atom k, natS n]
   | .setBankRate n => .list [.atom "set-bank-rate", natS n]
+  | .setWorth r n => .list [.atom "set-worth", .atom r, natS n]
   | .newPiece p =>
       .list [.atom "new-piece", .atom p.name, bundleS p.cost, .list [.atom "points", natS p.points],
         placementS p.placement, .list [.atom "yield", natS p.yield], .list [.atom "limit", natS p.limit]]

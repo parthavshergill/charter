@@ -339,6 +339,8 @@ def roundTrips (text : String) : Bool :=
 #guard (match Rules.parseProposal "(law \"(declared each grain)\" (on-round-end (transfer bank treasury wool 1)))" with
   | .ok (.law L) => !Rules.lawReadsDeclared L
   | _ => false)
+#guard roundTrips "(law \"Ore counts\" (set-worth ore 1))"
+#guard (Rules.parseProposal "(law \"x\" (set-worth gold 1))").toOption.isNone
 -- A number below a division stays the fixed kind, so an old law reads as it did.
 #guard (match Rules.parseProposal "(law \"x\" (on-round-end (transfer bank treasury wool (/ 7 2))))" with
   | .ok (.law { clauses := [.onRoundEnd [.transfer _ _ _ (.div (.lit 7) 2)]], .. }) => true

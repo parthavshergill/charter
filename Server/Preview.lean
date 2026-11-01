@@ -139,13 +139,16 @@ def unpaidBuildNotes (s s' : State G) (actor : Nat) : List String :=
 def ruleNotes (s s' : State G) : List String :=
   let bank := if s'.rules.bankRate != s.rules.bankRate then
       [s!"Today the bank takes {s.rules.bankRate} for 1."] else []
+  let worth := s'.rules.worth.filterMap fun x =>
+    if s.rules.worth.contains x then none else
+    some s!"Each {x.1} in a seat's own hand would be worth {x.2} points."
   let costs := s'.rules.pieces.filterMap fun d =>
     match s.rules.piece? d.name with
     | some old => if old.cost != d.cost then some s!"Today {Charter.Text.article d.name} costs {Charter.Text.bundleText old.cost}." else none
     | none => none
   let gone := s.rules.pieces.filterMap fun d =>
     if (s'.rules.piece? d.name).isNone then some s!"The {d.name} would no longer exist." else none
-  bank ++ costs ++ gone
+  bank ++ worth ++ costs ++ gone
 
 def rowJson (r : Row) : Json :=
   Json.mkObj [("seat", toJson r.who), ("res", toJson r.res), ("delta", toJson r.delta)]

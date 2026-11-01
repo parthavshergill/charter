@@ -59,6 +59,7 @@ def seatJson (g : Game) (s : Option (State g.spec.G)) (showPersona : Bool) (i : 
   | some st =>
     Json.mkObj (base ++
       [ ("points", toJson (st.pointsOf i))
+      , ("tokenPoints", toJson (st.tokenPointsOf i))
       , ("hand", handJson st (.player i))
       , ("pieces", Json.mkObj (st.rules.pieces.map fun d => (d.name, toJson (st.countOf i d.name)))) ])
 
@@ -277,6 +278,7 @@ def view (g : Game) (code : String) (you : Option Nat) (drafting : List Nat) (bo
       , ("pieces", Json.arr (s.pieces.map pieceJson).toArray)
       , ("pieceDefs", Json.arr (s.rules.pieces.map (pieceDefJson s you legal)).toArray)
       , ("treasury", handJson s .treasury), ("bank", handJson s .bank)
+      , ("worth", Json.arr (s.rules.worth.map fun x => Json.mkObj [("res", x.1), ("points", toJson x.2)]).toArray)
       , ("declarations", declarationsJson s you)
       , ("legalMoves", Json.arr (legal.map (moveEntry g.spec.layout s)).toArray)
       , ("proposals", Json.arr (s.openProposals.map (proposalJson g s book you)).toArray)

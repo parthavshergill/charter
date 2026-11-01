@@ -513,6 +513,7 @@ function renderHouses() {
       h("span", { class: "name" }, s.seat === v.you ? "You" : s.name.replace(/^Bot /, "")),
       h("div", { class: "card-tip vellum" },
         h("div", {}, h("strong", {}, s.name), ` · ${plural(s.points, "point")} of ${v.target}`),
+        s.tokenPoints ? h("div", { class: "row" }, `${plural(s.tokenPoints, "point")} from what they hold`) : null,
         s.persona ? h("div", { class: "row" }, `Plays as a ${s.persona}: ${s.voice}.`) : null,
         held.length ? h("div", { class: "row" }, held.map(([r, n]) => h("span", {}, String(n), " ", resIcon(r, "res small")))) : h("div", { class: "row" }, "Holds nothing"),
         built.length ? h("div", { class: "row" }, built.map(([k, n]) => h("span", {}, plural(n, k)))) : null));
@@ -637,6 +638,9 @@ function renderPrompt() {
   p.className = "prompt" + (G.dock ? " dock-open" : "");
   if (G.errMsg) { p.classList.add("err"); p.textContent = G.errMsg; p.hidden = false; return; }
   if (!v || v.phase === "lobby" || v.phase === "ended") { p.hidden = true; return; }
+  // A harvest can put a seat at the target by what it holds. It wins at the next move or vote by anyone.
+  const atTarget = v.phase === "actions" && (v.seats || []).find(s => s.points >= v.target);
+  if (atTarget && !G.selected) { p.textContent = `${nameOf(atTarget.seat)} reached the target. The next move or vote ends the game.`; p.hidden = false; return; }
   if (G.selected) {
     const d = (v.pieceDefs || []).find(x => x.name === G.selected);
     fill(p, `${capital(G.selected)}: `, costOf(d?.cost), `. Pick a glowing place, or Esc.`);
@@ -1460,7 +1464,8 @@ function gathering(v) {
 function proclamation(v) {
   const w = seat(v.winner);
   const order = [...v.seats].sort((a, b) => b.points - a.points);
-  const pieces = s => Object.entries(s.pieces || {}).filter(([k, n]) => n > 0 && k !== "road").map(([k, n]) => plural(n, k)).join(", ");
+  const pieces = s => Object.entries(s.pieces || {}).filter(([k, n]) => n > 0 && k !== "road").map(([k, n]) => plural(n, k))
+    .concat(s.tokenPoints ? [`${plural(s.tokenPoints, "point")} from what they held`] : []).join(", ");
   const nLaws = (v.laws || []).length;
   return h("div", { class: "proclaim" },
     h("div", { class: "smallcaps" }, v.round >= v.rounds && w?.points < v.target ? `All ${v.rounds} rounds played` : `Round ${v.round}`),

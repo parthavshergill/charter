@@ -29,7 +29,10 @@ theorem endGame_eq {t : State G} {b : Books} (w : Seat)
     (hb : t.books.postAll (t.deals.flatMap t.refundEntries) = some b) :
     endGame t w = .ok { t with
       books := b, journal := t.journal ++ t.deals.flatMap t.refundEntries
-      phase := .ended, winner := some w, deals := [], offers := [], openProposals := [] } := by
+      phase := .ended
+      winner := some ((bestSeat ({ t with books := b, journal := t.journal ++ t.deals.flatMap t.refundEntries } : State G)
+        t.turnOrder).getD w)
+      deals := [], offers := [], openProposals := [] } := by
   unfold endGame
   rw [record_some hb]
   rfl

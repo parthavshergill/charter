@@ -210,7 +210,14 @@ theorem balance_deposit (k : Nat) (i : Seat) (r : Res) :
   simp [State.countOf, List.filter_map, Function.comp_def]
 
 @[simp] theorem pointsOf_rename (p : Seat) : (σ.state s).pointsOf (σ.to p) = s.pointsOf p := by
-  simp [State.pointsOf, List.filter_map, Function.comp_def]
+  have h1 : (σ.state s).builtPointsOf (σ.to p) = s.builtPointsOf p := by
+    simp [State.builtPointsOf, List.filter_map, Function.comp_def]
+  have h2 : (σ.state s).tokenPointsOf (σ.to p) = s.tokenPointsOf p := by
+    simp only [State.tokenPointsOf, state_rules]
+    congr 2
+    funext x
+    rw [show (Account.player (σ.to p)) = σ.account (.player p) from rfl, balance_rename]
+  simp only [State.pointsOf, h1, h2]
 
 end views
 
