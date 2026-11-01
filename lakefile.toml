@@ -21,6 +21,10 @@ path = "packages/lean-gpu-cmd"
 name = "Charter"
 
 [[lean_lib]]
+name = "Comparator"
+roots = ["Comparator.Challenge", "Comparator.Solution"]
+
+[[lean_lib]]
 name = "Server"
 
 [[lean_lib]]
