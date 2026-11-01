@@ -141,7 +141,7 @@ Two more theorems, in `Server/SecrecyReach.lean`, carry the promise to code that
 
 **What is trusted.** The server limit that no trade, offer or deal can carry hidden goods. `applyLive` checks it, and the engine does not know it. The pack's choice of what to hide: hiding the roll means nothing in a game whose hexes pay on it, because the harvest shows the roll. Nothing checks this.
 
-**What a seat can still work out.** What the game itself makes public. A showdown that pays the highest card says who had it. A movement of hidden goods shows, without its amount. Points from hidden goods leave other seats' scores short until the end. Table talk is free text, and a seat can say anything, true or not.
+**What a seat can still work out.** What the game itself makes public. A showdown that pays the highest card says who had it. A movement of hidden goods shows, without its amount. Whether a seat declared shows, without the number: the event is in the chronicle, and each seat's count of actions is public. Points from hidden goods leave other seats' scores short until the end. Table talk is free text, and a seat can say anything, true or not.
 
 ## What is tested but not proved
 
