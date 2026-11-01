@@ -18,9 +18,11 @@ namespace Charter.Games.ThePit
 def foundingWords : List (Law × String × String) :=
   [ (lawSpot, "f858a384",
       "At each round's end, customers buy all the wheat in every hand. They pay 4 gold plus 2 for each round so far, split by how much wheat each seat sells. More wheat means a lower price for everyone. Wheat in a deal's deposit is not sold, so it waits for a later round.")
-  , (lawBumper, "2d3900ed",
-      "Whenever the dice pay anyone wheat, the bank pays them as much again.")
+  , (lawBell, "e8223e04",
+      "On the first roll of the game, every seat gets 8 gold and 4 wheat. So round 1 is a glut: wheat sold at once fetches little, and wheat sold forward can wait for a bigger pot.")
   , (lawAuction, "301f1e94",
-      "Each membership in your hand is worth 3 points. One is for sale each round. To bid, declare a number of gold on your turn. At the round's end the highest bid wins and pays 1 more than the next-highest bid. A bid counts only up to the gold in your own hand before this round's wheat is sold, so gold in a deal's deposit cannot bid. A tie sells nothing, and the membership is added to the next round's sale. In round 10, all that are left are sold.") ]
+      "Each membership in your hand is worth 3 points. One is for sale each round. To bid, declare a number of gold on your turn. At the round's end the highest bid wins and pays 1 more than the next-highest bid. A bid counts only up to the gold in your own hand before this round's wheat is sold, so gold in a deal's deposit cannot bid. A tie sells nothing, and the membership is added to the next round's sale. In round 10, all that are left are sold.")
+  , (lawFee, "db602dde",
+      "At each round's end, every seat pays the bank a quarter of the gold in its hand, rounded down. The auction's winner pays its price first, and the fee on what is left. Gold in a deal's deposit pays nothing.") ]
 
 end Charter.Games.ThePit

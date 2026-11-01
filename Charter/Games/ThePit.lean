@@ -18,8 +18,10 @@ already has:
 * **The auction.** Each round, a membership of the Board goes to the highest bid. A bid is a public
   number a seat declares, and only gold in a seat's own hand backs it. Gold in a deal's deposit does
   not. So every future ties up capital.
-* **The bumper crop.** Wheat comes in double, so some rounds glut the market and a seat can hold enough
-  wheat to sell it forward.
+* **The vault fee.** Gold in a hand pays a quarter each round. Gold in a deposit pays nothing, so a future
+  is also a shelter, and sheltered gold cannot bid.
+* **The opening bell.** Every seat starts with gold and wheat, into a glutted first market. Wheat sold at
+  once fetches little; wheat sold forward can wait for a bigger pot.
 
 Wheat in a hand is always sold at the round's end. Wheat in a deposit waits. So a future is also the
 only way to keep wheat for a later round, when the pot is bigger.
@@ -82,11 +84,15 @@ def lawSpot : Law :=
           [ pay .bank .each "gold" (.divBy (.mul pot (held .each "wheat")) supply)
           , pay .each .bank "wheat" (held .each "wheat") ]] ] }
 
-/-- **The bumper crop.** Whenever the dice pay anyone wheat, the bank pays them as much again. So wheat
-comes in heaps, some rounds glut the market, and a seat can hold enough to sell it forward. -/
-def lawBumper : Law :=
-  { title := "The prairie gives a bumper crop: wheat comes in double"
-    clauses := [.onHarvest [.when (.harvestedIs "wheat") [.transfer .bank .actor .harvested .harvestedAmount]]] }
+/-- **The opening bell.** On the first roll of the game, every seat gets 8 gold and 4 wheat. The bell
+in the treasury marks that it has rung. So round 1 opens with 16 wheat or more against a pot of 6: wheat
+sold at once fetches very little, and wheat sold forward can wait for a bigger pot. -/
+def lawBell : Law :=
+  { title := "The opening bell: every trader starts with 8 gold and 4 wheat"
+    clauses :=
+      [ .onRoll [.when (.eq (held .treasury "bell") (.lit 0))
+          [ .forEach .yes [pay .bank .each "gold" (.lit 8), pay .bank .each "wheat" (.lit 4)]
+          , pay .bank .treasury "bell" (.lit 1) ]] ] }
 
 /-- A seat's bid: the gold it declared, up to the gold in its own hand. -/
 def bid (p : Party) : Expr := .min (said p "gold") (held p "gold")
@@ -114,7 +120,20 @@ def lawAuction : Law :=
       , .onRoll [pay .bank .treasury "membership" (held .bank "membership")]
       , .setWorth "membership" 3 ] }
 
-def foundingLaws : List Law := [lawSpot, lawBumper, lawAuction]
+/-- The seat that wins this round's auction. -/
+def wins : Cond := .and oneWinner (.eq (bid .each) topBid)
+
+/-- **The vault fee.** Gold must work. At each round's end, every seat pays the bank a quarter of the gold in
+its hand, rounded down. The auction's winner pays its price first, and the fee on what is left. Gold in a
+deal's deposit is not in the hand, so it pays no fee. -/
+def lawFee : Law :=
+  { title := "Idle gold pays a quarter to the bank each round"
+    clauses :=
+      [ .onRoundEnd
+          [ .forEach wins [pay .each .bank "gold" (.div (.sub (held .each "gold") (.add nextBid (.lit 1))) 4)]
+          , .forEach (.not wins) [pay .each .bank "gold" (.div (held .each "gold") 4)] ] ] }
+
+def foundingLaws : List Law := [lawSpot, lawBell, lawAuction, lawFee]
 
 /-! ## The game -/
 
@@ -123,7 +142,7 @@ leaves a resource that no piece costs out of hands and trades. -/
 def game : GameDef where
   name := "The Pit"
   resources :=
-    [ ⟨"wheat", 200⟩, ⟨"lumber", 120⟩, ⟨"iron", 120⟩, ⟨"gold", 600⟩, ⟨"membership", 10⟩ ]
+    [ ⟨"wheat", 200⟩, ⟨"lumber", 120⟩, ⟨"iron", 120⟩, ⟨"gold", 600⟩, ⟨"membership", 10⟩, ⟨"bell", 1⟩ ]
   pieces :=
     [ { name := "rail", cost := [("lumber", 1), ("iron", 1)], points := 0
         placement := .link, yield := 0, limit := 15 }
@@ -306,6 +325,8 @@ def theme : Theme :=
                            , { d := "M7 8h10M7 11h7", stroke := "#4f3f2a", width := 1.1 }
                            , { d := "M15 14a3 3 0 1 0 .010 0z", fill := "#8e1f2a" }
                            , { d := "M13.500 19l1.500-2 1.500 2", stroke := "#8e1f2a", width := 1.2 } ])
+          , ("bell", [ { d := "M12 3c-3.500 0-5.500 2.500-5.500 6v4L4 17h16l-2.500-4V9c0-3.500-2-6-5.500-6z", fill := "#e8bb4d", stroke := "#6e4c08", width := 1.3 }
+                     , { d := "M10 19a2 2 0 0 0 4 0", fill := "#6e4c08" } ])
           , ("rail", [ { d := "M4 4l4 16M20 4l-4 16", stroke := "currentColor", width := 1.8 }
                      , { d := "M5 7h14M5.700 11h12.600M6.500 15h11M7.300 19h9.400", stroke := "currentColor", width := 2.2 } ])
           , ("farm", [ { d := "M3 20V11l6-5 6 5v9z", fill := "currentColor" }

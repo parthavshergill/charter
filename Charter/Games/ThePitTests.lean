@@ -26,10 +26,11 @@ def farms : List Piece := [0, 1, 2, 3].map fun p => ⟨p, "farm", .spot (farmOf 
 def give (s : St) (p : Seat) (b : Bundle) : St :=
   { s with books := (s.books.postAll (b.map fun x => ⟨.bank, .player p, x.1, x.2, .trade⟩)).getD s.books }
 
-/-- A table in play, with the memberships on the secretary's desk, as after the first roll. -/
+/-- A table in play, as after the first roll: the memberships are on the secretary's desk, and the
+opening bell has rung. Nobody holds anything. -/
 def table : St :=
   let s : St := { fresh with phase := .actions, pieces := farms }
-  { s with books := (s.books.postAll [⟨.bank, .treasury, "membership", 10, .trade⟩]).getD s.books }
+  { s with books := (s.books.postAll [⟨.bank, .treasury, "membership", 10, .trade⟩, ⟨.bank, .treasury, "bell", 1, .trade⟩]).getD s.books }
 
 /-- The next roll is this number. -/
 def rolling (s : St) (r : Nat) : St :=
@@ -51,7 +52,7 @@ def bidding (s : St) (bids : List (Seat × Nat)) : St :=
 
 /-! ## The founding laws, in place -/
 
-#guard foundingLaws.length == 3 && game.rounds == 10 && game.targetPoints == 24
+#guard foundingLaws.length == 4 && game.rounds == 10 && game.targetPoints == 24
 
 -- The founding laws leave room for a table's own.
 #guard plannedTotal (table).laws 4 < maxPlannedTotal / 2
@@ -90,18 +91,25 @@ def selling : St := give (give (table) 0 [("wheat", 3)]) 1 [("wheat", 1)]
   | some s => [0, 1, 2, 3].all fun p => holds s p "gold" == 0
   | none => false
 
-/-! ## The bumper crop -/
+/-! ## The opening bell -/
 
--- Seat 0's farm stands on the wheat hex numbered 6. A 6 pays it 1 wheat, and the bank pays it 1 more.
-#guard (game.map.regions.getD 0 noRegion).res == "wheat" && (game.map.regions.getD 0 noRegion).number == 6
-#guard match afterTurn (rolling (table) 6) with
-  | some s => holds s 0 "wheat" == 2
+/-- The table before the first roll: the bell has not rung. -/
+def beforeBell : St := { fresh with phase := .actions, pieces := farms }
+
+-- The first roll gives every seat 8 gold and 4 wheat, whatever the dice show.
+#guard match afterTurn (rolling beforeBell 7) with
+  | some s => [0, 1, 2, 3].all (fun p => holds s p "gold" == 8 && holds s p "wheat" == 4) && s.balance .treasury "bell" == 1
   | none => false
 
--- Other goods are not doubled: seat 1's farm on the lumber hex numbered 8 gets 1 lumber.
-#guard (game.map.regions.getD 4 noRegion).res == "lumber" && (game.map.regions.getD 4 noRegion).number == 8
-#guard match afterTurn (rolling (table) 8) with
-  | some s => holds s 1 "lumber" == 1
+-- It rings once: a later roll gives nothing more.
+#guard match (afterTurn (rolling beforeBell 7)).bind (fun s => afterTurn (rolling s 7)) with
+  | some s => holds s 0 "gold" == 8 && holds s 0 "wheat" == 4
+  | none => false
+
+-- So round 1 is a glut: 16 wheat against a pot of 6. Each seat sells its 4 for 6 × 4 / 16, which is 1 gold,
+-- and pays a quarter of its 8 gold as the vault fee.
+#guard match (afterTurn (rolling beforeBell 7)).bind afterRound with
+  | some s => [0, 1, 2, 3].all fun p => holds s p "gold" == 8 - 2 + 1 && holds s p "wheat" == 0
   | none => false
 
 /-! ## The auction -/
@@ -111,12 +119,13 @@ counts 4. -/
 def auction : St :=
   bidding (give (give (give (table) 0 [("gold", 10)]) 1 [("gold", 20)]) 2 [("gold", 4)]) [(0, 9), (1, 5), (2, 12)]
 
--- The highest bid wins one membership and pays 1 more than the next-highest bid: 6, not 9.
+-- The highest bid wins one membership and pays 1 more than the next-highest bid: 6, not 9. Then each seat
+-- pays the vault fee, a quarter of its gold: the winner on the 4 it has left, the others on all of theirs.
 #guard match afterRound auction with
   | some s =>
-    holds s 0 "membership" == 1 && holds s 0 "gold" == 4 && s.pointsOf 0 == 4 &&
-    holds s 1 "membership" == 0 && holds s 1 "gold" == 20 &&
-    holds s 2 "membership" == 0 && holds s 2 "gold" == 4 &&
+    holds s 0 "membership" == 1 && holds s 0 "gold" == 10 - 6 - 1 && s.pointsOf 0 == 4 &&
+    holds s 1 "membership" == 0 && holds s 1 "gold" == 20 - 5 &&
+    holds s 2 "membership" == 0 && holds s 2 "gold" == 4 - 1 &&
     s.balance .treasury "membership" == 9
   | none => false
 
@@ -125,20 +134,20 @@ def auction : St :=
   | some s => !(holds s 1 "membership" == 1) && !(holds s 0 "gold" == 1)
   | none => false
 
--- A lone bidder pays 1.
+-- A lone bidder pays 1, and the fee on the 6 it has left.
 #guard match afterRound (bidding (give (table) 3 [("gold", 7)]) [(3, 7)]) with
-  | some s => holds s 3 "membership" == 1 && holds s 3 "gold" == 6
+  | some s => holds s 3 "membership" == 1 && holds s 3 "gold" == 7 - 1 - 1
   | none => false
 
--- A tie at the top sells nothing, and nobody pays.
+-- A tie at the top sells nothing, and nobody pays for it. Both pay the fee.
 #guard match afterRound (bidding (give (give (table) 0 [("gold", 5)]) 1 [("gold", 5)]) [(0, 5), (1, 5)]) with
-  | some s => holds s 0 "membership" == 0 && holds s 1 "membership" == 0 && holds s 0 "gold" == 5 && holds s 1 "gold" == 5
+  | some s => holds s 0 "membership" == 0 && holds s 1 "membership" == 0 && holds s 0 "gold" == 4 && holds s 1 "gold" == 4
   | none => false
 
 -- An unsold lot rolls over: after a tie in round 1, a lone bid of 3 in round 2 buys 2 memberships, for 1.
 #guard match (afterRound (bidding (give (give (table) 0 [("gold", 5)]) 1 [("gold", 5)]) [(0, 5), (1, 5)])).bind
     (fun s => afterRound (bidding s [(0, 3)])) with
-  | some s => holds s 0 "membership" == 2 && holds s 0 "gold" == 4 && s.balance .treasury "membership" == 8
+  | some s => holds s 0 "membership" == 2 && holds s 0 "gold" == 4 - 1 && s.balance .treasury "membership" == 8
   | none => false
 
 -- In round 10, every membership left on the desk is sold.
@@ -187,10 +196,16 @@ def signed : Option St := do
 
 -- At the round's end the deal pays first, so the wheat it delivers is sold that round. Seat 1 is the only
 -- seller, so it takes the whole pot of 6. Seat 0 gets its 3 gold. The wheat still in deposit is not sold.
+-- Seat 1 pays the fee on the 4 gold in its hand, and nothing on the 3 still in deposit.
 #guard match signed.bind afterRound with
   | some s =>
-    holds s 1 "gold" == 10 && holds s 0 "gold" == 3 && holds s 1 "wheat" == 0 &&
-    s.balance (.deposit 0 0) "wheat" == 1
+    holds s 1 "gold" == 4 - 1 + 6 && holds s 0 "gold" == 3 && holds s 1 "wheat" == 0 &&
+    s.balance (.deposit 0 0) "wheat" == 1 && s.balance (.deposit 0 1) "gold" == 3
+  | none => false
+
+-- The vault fee: 10 gold in hand pays 2. The same 10 gold with 6 of it in a deposit pays 1.
+#guard match afterRound (give (table) 1 [("gold", 10)]) with
+  | some s => holds s 1 "gold" == 8
   | none => false
 
 -- Gold in deposit cannot bid. Seat 1 declares 9 but holds only 4 in hand, and seat 0 wins with 5.

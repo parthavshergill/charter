@@ -700,7 +700,7 @@ def lawOf (text : String) : Law :=
 #guard (packWords bubbleSpec).length == 4
 #guard (packWords strikeSpec).length == 4
 #guard (packWords pirateSpec).length == 4
-#guard (packWords pitSpec).length == 3
+#guard (packWords pitSpec).length == 4
 #guard (packWords islandSpec).isEmpty
 #eval show IO Unit from do
   let problems := packProblems notCatanSpec ++ packProblems slimeSpec ++ packProblems bubbleSpec ++ packProblems strikeSpec ++ packProblems pirateSpec ++ packProblems pitSpec
