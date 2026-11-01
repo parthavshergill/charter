@@ -140,7 +140,7 @@ def main():
     meta = {"name": "bc-hand-entity" + ["", "-pointer"][pointer], "layout": LAYOUT["version"], "format": "puffer-entity",
             "encoder": "entity", "obs_size": LAYOUT["base_size"], "act_size": ACTS, "hidden": args.hidden,
             "layers": 1, "entity_dim": args.entity_dim, "pointer": pointer,
-            "settings": {"vote_mode": "bot", "move_rows": False, "declare_always": 1},
+            "settings": {"vote_mode": "bot", "move_rows": False, "declare_always": True},
             "agreement_with_hand": round(a, 4)}
     json.dump(meta, open(args.out + ".json", "w"))
     print(f"wrote {args.out}")
