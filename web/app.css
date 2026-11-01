@@ -4,7 +4,7 @@
    ink     text and rules
    gold    what you can do right now: one thing at a time
    wax     the constitution and the law: seals, stamps, refusals
-   Type: one serif face at 12, 14, 16, 20, 28, 44. Space: 4, 8, 12, 16, 24, 32.
+   Type: one serif face at 12, 14, 16, 20, 28, 44; the title page alone has the --brand faces. Space: 4, 8, 12, 16, 24, 32.
    Corners are square. Banners, stamps and seals give the shapes. */
 :root {
   --walnut-0: #150d07; --walnut-1: #1f140c; --walnut-2: #2c1d12; --walnut-3: #3c2919; --brass: #8f6f3a;
@@ -14,12 +14,21 @@
   --wax: #8f1f17; --wax-2: #b23a2e;
   --pale: #e9dcc0; --pale-2: #b7a688;
   --serif: Palatino, "Palatino Linotype", "Book Antiqua", "Iowan Old Style", Georgia, serif;
-  --display: "Hoefler Text", Palatino, "Palatino Linotype", Georgia, serif;
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --brand-wordmark: "Grenze Gotisch", "Hoefler Text", Georgia, serif; /* the word Charter, and nothing else */
+  --brand-text: "IM Fell English", "Hoefler Text", Palatino, Georgia, serif; /* the title page and document headings */
+  --brand-sign: "Mrs Saint Delafield", "Snell Roundhand", "Segoe Script", var(--serif); /* a signature */
+  --sign-ink: #1c2f6b;
   --ledge: 96px; --rail: 52px; --dock: 372px;
   --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px;
   --paper: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.7' numOctaves='3'/%3E%3CfeColorMatrix values='0 0 0 0 .32 0 0 0 0 .22 0 0 0 0 .08 0 0 0 .10 0'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)'/%3E%3C/svg%3E");
 }
+@font-face { font-family: "Grenze Gotisch"; font-weight: 700; font-display: swap; src: url(fonts/grenze-gotisch-700-charter.woff2) format("woff2"); }
+@font-face { font-family: "IM Fell English"; font-display: swap; src: url(fonts/im-fell-english.woff2) format("woff2"); }
+@font-face { font-family: "IM Fell English"; font-style: italic; font-display: swap; src: url(fonts/im-fell-english-italic.woff2) format("woff2"); }
+/* The script is drawn very small for its size. Growing it here, not in the input's font size, means a
+   letter it lacks falls back to a font at an ordinary size, so a name in any alphabet stays readable. */
+@font-face { font-family: "Mrs Saint Delafield"; font-display: swap; size-adjust: 175%; src: url(fonts/mrs-saint-delafield.woff2) format("woff2"); }
 * { box-sizing: border-box; }
 html, body, #app { height: 100%; margin: 0; }
 body { font: 14px/1.4 var(--serif); color: var(--pale); background: var(--walnut-0); overflow: hidden; -webkit-font-smoothing: antialiased; font-variant-numeric: lining-nums tabular-nums; }
@@ -309,23 +318,60 @@ svg.wax { width: 96px; height: 96px; animation: sealDrop .42s cubic-bezier(.2,.9
 .menu .code { font: 20px var(--mono); letter-spacing: .1em; }
 .menu .fine { font: 12px/1.4 var(--mono); word-break: break-all; color: var(--ink-3); }
 
-/* ---------- title page and the gathering ---------- */
-.titlepage { position: fixed; left: max(var(--s5), 7vw); top: 50%; transform: translateY(-50%); width: 400px; max-width: calc(100vw - 48px); max-height: calc(100vh - 32px); overflow-y: auto; padding: var(--s6); z-index: 5; }
-.titlepage h1 { margin: 0; font-family: var(--display); font-size: 44px; font-weight: 400; letter-spacing: .14em; text-transform: uppercase; line-height: 1.05; }
-.titlepage .rule { height: 3px; margin: var(--s2) 0 var(--s3); border-top: 1px solid var(--ink); border-bottom: 1px solid var(--ink); }
-.titlepage .sub { margin: 0 0 var(--s5); font-size: 16px; line-height: 1.35; color: var(--ink-2); }
+/* ---------- the scroll: the title page and the gathering ---------- */
+.scroll { position: fixed; left: max(var(--s5), 7vw); top: 50%; transform: translateY(-50%); width: 400px; max-width: calc(100vw - 48px); max-height: calc(100dvh - 72px); display: flex; flex-direction: column; z-index: 5; }
+.titlepage { position: relative; flex: 0 1 auto; min-height: 0; overflow-y: auto; padding: var(--s6) 28px 34px; scrollbar-width: thin; scrollbar-color: var(--vellum-3) transparent; }
+.scroll::before { content: ""; position: absolute; z-index: 1; left: -3px; right: -3px; top: -5px; height: 11px; border-radius: 3px; background: linear-gradient(#a8956b, #efe4c8 45%, #b9a67c); box-shadow: 0 2px 3px rgba(60, 40, 15, .35); pointer-events: none; }
+/* The roller is as tall as the sheet, with the roll at its foot, so moving it by its own height travels exactly the sheet. */
+.roller { position: absolute; z-index: 2; inset: 0 -10px; pointer-events: none; }
+.roll { position: absolute; left: 0; right: 0; top: calc(100% - 12px); height: 24px; border-radius: 4px / 12px; background: var(--paper), linear-gradient(#8a7650, #d9c9a0 18%, #f4ebd2 40%, #e2d3ae 62%, #b09c72 84%, #6f5d3c); box-shadow: 0 7px 12px rgba(0, 0, 0, .5); }
+.roll::before, .roll::after { content: ""; position: absolute; top: 0; bottom: 0; width: 9px; border-radius: 50%; background: radial-gradient(ellipse at center, #6f5d3c 0 22%, #cdbc90 24% 44%, #8a7650 46% 56%, #d9c9a0 58%); }
+.roll::before { left: 0; } .roll::after { right: 0; }
+svg.seal { position: absolute; left: 50%; top: 100%; width: 52px; height: 52px; margin: -26px 0 0 -26px; filter: drop-shadow(0 2px 2px rgba(0, 0, 0, .45)); }
+
+/* The first visit. The fall follows dropCurve in vendor/player.js: a fall, then one small hop.
+   While .waiting holds it, the scroll waits above the window for the board to start. */
+.scroll.opening .titlepage { animation: sheetOpen var(--unroll) cubic-bezier(.45, .05, .25, 1) var(--unroll-at) both; }
+.scroll.opening .roller { animation: rollerOpen var(--unroll) cubic-bezier(.45, .05, .25, 1) var(--unroll-at) both; }
+.scroll.opening .roll { animation: rollThin var(--unroll) cubic-bezier(.45, .05, .25, 1) var(--unroll-at) both; }
+.scroll.opening { --unroll: .42s; --unroll-at: 0s; }
+.scroll.opening.whole { --unroll: 1.1s; --unroll-at: 1s; animation: scrollFall .7s linear .28s both; }
+.scroll.waiting, .scroll.waiting .titlepage, .scroll.waiting .roller, .scroll.waiting .roll { animation-play-state: paused !important; }
+@keyframes scrollFall {
+  0% { translate: 0 -105vh; animation-timing-function: cubic-bezier(.55, .08, .9, .6); }
+  62% { translate: 0 0; animation-timing-function: cubic-bezier(.2, .6, .5, 1); }
+  81% { translate: 0 -11px; animation-timing-function: cubic-bezier(.5, 0, .8, .5); }
+  100% { translate: 0 0; }
+}
+@keyframes sheetOpen { from { clip-path: inset(-12px -40px 100% -40px); } to { clip-path: inset(-12px -40px 0 -40px); } }
+@keyframes rollerOpen { from { translate: 0 -100%; } to { translate: 0 0; } }
+@keyframes rollThin { from { scale: 1 1.45; } to { scale: 1 1; } }
+/* The change to and from the Library. TURN_MS in app.js is this length. */
+.scroll.turning .titlepage { animation: sheetTurn .52s ease-in-out; }
+.scroll.turning .roller { animation: rollerTurn .52s ease-in-out; }
+@keyframes sheetTurn { 0%, 100% { clip-path: inset(-12px -40px 0 -40px); } 50% { clip-path: inset(-12px -40px 100% -40px); } }
+@keyframes rollerTurn { 0%, 100% { translate: 0 0; } 50% { translate: 0 -100%; } }
+
+/* the sheet */
+.titlepage h1 { margin: 0; font: 700 62px/1 var(--brand-wordmark); text-align: center; color: var(--ink); }
+.titlepage .sub { margin: var(--s1) 0 var(--s4); font: italic 17px/1.3 var(--brand-text); text-align: center; text-wrap: balance; color: var(--ink-2); }
+.numerals { display: flex; justify-content: space-between; margin-bottom: var(--s2); padding: 5px 2px 4px; border-top: 1px solid var(--ink); border-bottom: 1px solid var(--ink); font: 14px/1 var(--brand-text); color: var(--ink); }
 .field { display: block; margin-bottom: var(--s3); }
-.seg { display: flex; gap: var(--s1); margin-bottom: var(--s4); align-items: center; }
-.seg .lbl { margin-right: var(--s2); }
-.seg button { width: 40px; height: 36px; background: #f8f1dd; color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink-3); font-size: 16px; }
-.seg button:hover { background: var(--vellum-2); }
-.seg button.on { background: var(--ink); color: var(--vellum); }
+.signline { display: block; width: 100%; height: 56px; padding: 12px 10px 0; font: 21px/40px var(--brand-sign); color: var(--sign-ink); caret-color: var(--sign-ink); background: none; border: 0; border-bottom: 1px solid var(--ink); border-radius: 0; outline: none; }
+.signline:focus { border-bottom-color: var(--wax); box-shadow: 0 1px 0 var(--wax); }
+.signlabel { display: block; margin-top: 3px; font: italic 13px/1.2 var(--brand-text); color: var(--ink-2); }
+.seg { display: flex; gap: var(--s1); margin-bottom: var(--s1); align-items: center; }
+.seg .lbl, .packs .lbl { flex: none; width: 48px; }
+.seg button { width: 24px; height: 26px; padding: 0; color: var(--ink-2); font-size: 16px; line-height: 24px; border-bottom: 1px solid transparent; }
+.seg button:hover { color: var(--ink); }
+.seg button.on { color: var(--ink); border-bottom-color: var(--ink); }
 .seg button:disabled { opacity: .35; cursor: default; }
-.packs { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px var(--s3); }
-.packs .lbl { margin-right: var(--s1); }
-.packs .pack { background: none; padding: 4px 0; color: var(--ink-2); font-size: 16px; box-shadow: none; border-bottom: 1px solid transparent; }
+.packs { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 10px; }
+.packs .pack { background: none; padding: 1px 0 0; line-height: 24px; color: var(--ink-2); font-size: 16px; box-shadow: none; border-bottom: 1px solid transparent; }
 .packs .pack:hover { color: var(--ink); }
 .packs .pack.on { color: var(--ink); border-bottom-color: var(--ink); }
+.packs .library { margin-left: auto; font-style: italic; color: var(--ink-3); text-decoration: none; }
+.packs .library:hover { color: var(--ink); text-decoration: underline; }
 .packnote { min-height: 2.6em; margin: var(--s1) 0 var(--s3); font-size: 14px; line-height: 1.3; color: var(--ink-2); }
 .packnote b { font-weight: 600; color: var(--ink); }
 .upmark { display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; margin-left: var(--s1); background: var(--vellum); border-radius: 50%; animation: upmark 1.6s ease-in-out infinite alternate; }
@@ -333,13 +379,47 @@ svg.wax { width: 96px; height: 96px; animation: sealDrop .42s cubic-bezier(.2,.9
 @keyframes upmark { from { box-shadow: 0 0 0 0 #e8c96688; } to { box-shadow: 0 0 0 5px #e8c96600; } }
 @media (prefers-reduced-motion: reduce) { .upmark { animation: none; } }
 .titlepage .act.gold { width: 100%; min-height: 48px; font-size: 20px; }
-.joinline { display: flex; gap: var(--s2); margin-top: var(--s4); }
-.joinline .input { font-family: var(--mono); text-transform: uppercase; letter-spacing: .08em; }
-.tablelist { margin-top: var(--s3); display: grid; }
-.tablelist .t { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); padding: 6px 0; border-top: 1px solid var(--vellum-3); font-size: 14px; }
+.joinline { display: flex; align-items: flex-end; gap: var(--s2); margin-top: var(--s3); }
+.joinline .input { padding: 6px 2px; background: none; border: 0; border-bottom: 1px solid var(--ink-3); font-family: var(--mono); text-transform: uppercase; letter-spacing: .08em; }
+.joinline .input:focus { outline: none; border-bottom-color: var(--wax); box-shadow: 0 1px 0 var(--wax); }
+.joinline .input::placeholder { text-transform: none; letter-spacing: 0; font-family: var(--serif); }
+.joinline .act { min-height: 34px; padding: 4px 16px; }
+.tablelist { margin-top: var(--s2); display: grid; }
+.tablelist .t { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); padding: 5px 0; border-top: 1px solid var(--vellum-3); font-size: 14px; }
 .tablelist .code { font-family: var(--mono); font-size: 14px; }
 .tablelist .state { color: var(--ink-3); flex: 1; }
 .errline { min-height: 20px; margin-top: var(--s2); color: var(--wax); font-size: 14px; }
+
+/* the Library: the other side of the sheet */
+.scroll.shelved .titlepage { display: flex; flex-direction: column; }
+.shelf { display: flex; flex-direction: column; flex: 0 1 auto; min-height: 0; }
+.shelf h2 { margin: 0 0 var(--s3); font: 400 34px/1.1 var(--brand-text); text-align: center; outline: none; }
+.shelfempty { margin: 0 0 var(--s3); font: italic 17px/1.3 var(--brand-text); text-align: center; color: var(--ink-2); }
+.shelflist { flex: 0 1 auto; min-height: 0; overflow-y: auto; margin-bottom: var(--s3); border-top: 1px solid var(--ink); border-bottom: 1px solid var(--ink); scrollbar-width: thin; scrollbar-color: var(--vellum-3) transparent; }
+.shelfrow { display: flex; align-items: flex-start; gap: var(--s3); width: 100%; padding: var(--s3) var(--s1); text-align: left; border-bottom: 1px solid var(--ink); }
+.shelfrow:last-child { border-bottom: 0; }
+.shelfrow:hover { background: rgba(120, 88, 40, .12); }
+.shelfrow:focus-visible { outline-offset: -2px; }
+.shelfrow svg.seal { position: static; flex: none; width: 26px; height: 26px; margin: 2px 0 0; }
+.shelftext { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.shelfname { font: 20px/1.15 var(--brand-text); color: var(--ink); }
+.shelfrow.on .shelfname { text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
+.shelfblurb { font-size: 14px; line-height: 1.3; color: var(--ink-2); }
+.shelfback { align-self: center; flex: none; font-family: var(--brand-text); font-size: 16px; }
+
+@media (max-width: 560px) {
+  .scroll { left: 16px; width: calc(100vw - 32px); max-width: none; }
+  .titlepage { padding: var(--s5) var(--s5) 34px; }
+  .numerals { padding-inline: 0; }
+}
+/* A short window: enough of the sheet shows to reach "Found a table", and the rest scrolls inside it. */
+@media (max-height: 640px) {
+  .titlepage { padding-top: var(--s4); }
+  .titlepage h1 { font-size: 44px; }
+  .titlepage .sub { margin-bottom: var(--s2); font-size: 15px; }
+  .signline { height: 46px; padding-top: 6px; }
+  .packnote { min-height: 0; margin-bottom: var(--s2); }
+}
 .seats { display: flex; gap: var(--s2); margin: var(--s4) 0; }
 .seatbanner { width: 62px; text-align: center; font-size: 12px; line-height: 1.15; }
 .seatbanner .cloth { display: block; position: relative; overflow: hidden; width: 62px; height: 66px; clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 84%, 0 100%); animation: unfurl .3s cubic-bezier(.2,.9,.3,1) both; transform-origin: top; }
