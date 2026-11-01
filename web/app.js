@@ -64,11 +64,42 @@ function myNonce() {
   return (a & 0xfffff) * 2 ** 32 + b;
 }
 
+// ---------------------------------------------------------------- the scroll
+/** The document a table is founded on: a sheet, with a roller and the seal at its foot. */
+const scrollSheet = (...kids) => h("div", { class: "scroll" },
+  h("div", { class: "titlepage vellum" }, kids),
+  h("div", { class: "roller", "aria-hidden": "true" }, h("span", { class: "roll" }), waxSeal("seal")));
+
+/** Open the scroll once. A first visit waits for the board and takes the whole fall and unroll; any other
+ *  visit takes a short unroll. The animation only hides the form: it can be typed in throughout, and any
+ *  key, click or focus inside the sheet opens it at once. Returns the call that starts a waiting scroll. */
+function openScroll(scroll, whole) {
+  const finish = () => {
+    scroll.classList.remove("opening", "whole", "waiting");
+    document.removeEventListener("keydown", finish, true);
+    document.removeEventListener("pointerdown", finish, true);
+    scroll.removeEventListener("focusin", focused);
+    scroll.removeEventListener("animationend", ended);
+  };
+  const ended = e => { if (e.target.classList.contains("roller")) finish(); };
+  // The name line may already hold the focus, and its event can arrive late, when the window gains focus.
+  const held = document.activeElement;
+  const focused = e => { if (e.target !== held) finish(); };
+  scroll.classList.add("opening");
+  if (whole) scroll.classList.add("whole", "waiting");
+  document.addEventListener("keydown", finish, true);
+  document.addEventListener("pointerdown", finish, true);
+  scroll.addEventListener("focusin", focused);
+  scroll.addEventListener("animationend", ended);
+  return () => scroll.classList.remove("waiting");
+}
+const TURN_MS = 520; // as .scroll.turning in app.css
+
 // ---------------------------------------------------------------- title page
 async function lobby() {
   const stage = h("div", { class: "stage" }, h("canvas"), h("div", { class: "vignette" }));
   let seats = 4;
-  const name = h("input", { class: "input", placeholder: "Your name", "aria-label": "Your name", value: store.get("charter.name") || "" });
+  const name = h("input", { class: "signline", "aria-label": "Your name", value: store.get("charter.name") || "", autocomplete: "off", spellcheck: "false", autocapitalize: "words" });
   const joinCode = h("input", { class: "input", placeholder: "Code", "aria-label": "Table code", maxlength: 5, value: params.get("join") || "" });
   const err = h("div", { class: "errline", role: "status" });
   const seatButtons = [2, 3, 4].map(n =>
@@ -91,12 +122,56 @@ async function lobby() {
   showSeats();
   const packList = h("div", { class: "packs", role: "group", "aria-label": "World" });
   const packNote = h("p", { class: "packnote" });
+  // The row shows the first three games, and the chosen game if it is further along.
+  // Every game after the first three is on the Library's shelf.
+  const libraryLink = h("button", { class: "link library", onclick: () => turnTo(true) }, "Library");
   const showPacks = () => {
-    fill(packList, h("span", { class: "smallcaps lbl" }, "World"), defs.map(d =>
-      h("button", { class: "pack" + (d.id === game ? " on" : ""), "aria-pressed": d.id === game ? "true" : "false", onclick: () => { game = d.id; showPacks(); showSeats(); } }, d.name)));
+    const row = defs.filter((d, i) => i < 3 || d.id === game);
+    fill(packList, h("span", { class: "smallcaps lbl" }, "World"), row.map(d =>
+      h("button", { class: "pack" + (d.id === game ? " on" : ""), "aria-pressed": d.id === game ? "true" : "false", onclick: () => { game = d.id; showPacks(); showSeats(); packList.querySelector(".pack.on").focus(); } }, d.name)), libraryLink);
     packNote.textContent = defs.find(d => d.id === game)?.blurb || "";
   };
+  showPacks();
   api("/api/defs").then(list => { defs = list; game = list[0]?.id ?? null; showPacks(); showSeats(); });
+  const seatRange = d => d.minSeats === d.maxSeats ? plural(d.minSeats, "seat") : `${d.minSeats} to ${d.maxSeats} seats`;
+  // One row of the shelf. A picture can go after .shelftext later: the row leaves no gap without one.
+  const shelfRow = d => h("button", { class: "shelfrow" + (d.id === game ? " on" : ""), "aria-pressed": d.id === game ? "true" : "false", onclick: () => { game = d.id; showPacks(); showSeats(); turnTo(false, () => packList.querySelector(".pack.on")); } },
+    waxSeal("seal small"),
+    h("span", { class: "shelftext" }, h("span", { class: "shelfname" }, d.name), h("span", { class: "shelfblurb" }, d.blurb), h("span", { class: "smallcaps" }, seatRange(d))));
+  const libraryHead = h("h2", { tabindex: "-1" }, "Library");
+  const shelf = h("div", { class: "shelf", hidden: true, onkeydown: e => { if (e.key === "Escape") turnTo(false); } });
+  const showShelf = () => {
+    const rest = defs.slice(3);
+    fill(shelf, libraryHead,
+      rest.length ? h("div", { class: "shelflist" }, rest.map(shelfRow)) : h("p", { class: "shelfempty" }, "No charters are shelved here yet."),
+      h("button", { class: "link shelfback", onclick: () => turnTo(false) }, "Back to the charter"));
+  };
+  // Change between the form and the Library: the sheet rolls up and comes down again with the other side.
+  // Its top stays where it is. The Library is never taller than the form, so a long list scrolls inside it.
+  let turning = false;
+  const turnTo = (toLibrary, focusTarget) => {
+    if (turning) return;
+    const sheet = page.firstChild;
+    const swap = () => {
+      turning = false;
+      if (toLibrary) {
+        const top = page.getBoundingClientRect().top;
+        Object.assign(page.style, { top: `${top}px`, transform: "none", maxHeight: `calc(100dvh - ${top + 36}px)` });
+        sheet.style.maxHeight = `${sheet.offsetHeight}px`;
+        showShelf();
+      } else page.style.top = page.style.transform = page.style.maxHeight = sheet.style.maxHeight = "";
+      page.classList.toggle("shelved", toLibrary);
+      form.hidden = toLibrary; shelf.hidden = !toLibrary;
+      sheet.scrollTop = 0;
+      if (toLibrary) shelf.querySelector(".shelfrow.on")?.scrollIntoView({ block: "nearest" });
+      (focusTarget?.() ?? (toLibrary ? libraryHead : libraryLink)).focus({ preventScroll: true });
+    };
+    if (reduced()) { swap(); return; }
+    turning = true;
+    page.classList.add("turning");
+    setTimeout(swap, TURN_MS / 2);
+    setTimeout(() => page.classList.remove("turning"), TURN_MS);
+  };
   const nameOk = () => {
     const v = name.value.trim();
     if (!v) { err.textContent = "A player needs a name."; name.focus(); return false; }
@@ -111,10 +186,11 @@ async function lobby() {
     location.href = `/?game=${code}`;
   };
   const tables = h("div", { class: "tablelist" });
-  const page = h("div", { class: "titlepage vellum" },
-    h("h1", {}, "Charter"), h("div", { class: "rule" }),
+  const form = h("div", {},
+    h("h1", {}, "Charter"),
     h("p", { class: "sub" }, "Settle an island. Rewrite its rules. The constitution holds."),
-    h("label", { class: "field" }, name),
+    h("div", { class: "numerals", "aria-hidden": "true" }, ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"].map(n => h("span", {}, n))),
+    h("label", { class: "field signature" }, name, h("span", { class: "signlabel" }, "Sign your name")),
     seg, packList, packNote,
     h("button", { class: "act gold", onclick: async () => {
       if (!nameOk()) return;
@@ -124,13 +200,22 @@ async function lobby() {
     } }, "Found a table"),
     h("div", { class: "joinline" }, joinCode, h("button", { class: "act", onclick: () => nameOk() && join(joinCode.value) }, "Join")),
     err, tables);
+  const page = scrollSheet(form, shelf);
   app.replaceChildren(stage, page);
   name.addEventListener("keydown", e => { if (e.key === "Enter") e.target.closest(".titlepage").querySelector(".act.gold").click(); });
+  // The signature font loads before it is needed, so the first letter typed is already in ink.
+  document.fonts?.load('32px "Mrs Saint Delafield"').catch(() => {});
+  // A person with a mouse can start signing at once. A phone keeps its keyboard down until asked.
+  if (!name.value && matchMedia("(pointer: fine)").matches) name.focus({ preventScroll: true });
+  const whole = !params.has("join") && !store.get("charter.opened");
+  const release = reduced() ? () => {} : openScroll(page, whole);
+  if (whole && !reduced()) { store.set("charter.opened", "1"); setTimeout(release, 1200); }
   loadPlayer(stage.querySelector("canvas")).then(async p => {
-    if (!p) return;
-    p.setInsets({ l: Math.min(innerWidth * .46, 480), r: 16, t: 16, b: 16 });
+    if (!p) { release(); return; }
+    p.setInsets({ l: innerWidth <= 560 ? 16 : Math.min(innerWidth * .46, 480), r: 16, t: 16, b: 16 });
     const buf = await api("/api/island");
     if (buf.byteLength > 4) p.render(buf);
+    release();
   });
   // Only the tables this browser holds a seat at. No route lists every table, because a code is what
   // lets a person reach one. Any table lost from the server is left out.
@@ -1283,7 +1368,7 @@ function gathering(v) {
   }
   const open = v.maxSeats - v.filled;
   const invite = `${location.origin}/?join=${v.code}`;
-  return h("div", { class: "titlepage vellum" },
+  return scrollSheet(
     h("div", { class: "smallcaps" }, "The table"),
     h("div", { class: "bigcode", title: invite }, v.code),
     h("p", { class: "packnote" }, h("b", {}, v.game?.name), `. ${v.game?.blurb || ""}`),

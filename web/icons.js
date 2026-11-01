@@ -80,11 +80,12 @@ export function shield(seat, color, cls = "shield") {
     `<path d="M1.5 1.5h57v37L30 68.5 1.5 38.5z" fill="none" stroke="#1c120b" stroke-width="3"/>`, cls);
 }
 
-/** The wax seal stamped on an enacted law. */
+/** Charter's mark: a wax seal with ten notches, for the ten commandments, and a hexagon, for the board.
+ *  It closes the scroll on the title page and is stamped on an enacted law. web/index.html has a copy
+ *  as the favicon. */
 export function waxSeal(cls = "wax") {
   return svg("0 0 100 100",
-    `<path d="M50 4c7 0 9 6 15 8s12-1 17 4 2 11 5 16 10 7 10 15-7 10-8 16 3 13-3 18-12 2-18 5-9 10-17 10-10-7-16-9-13 0-18-6-2-12-5-17-10-8-9-16 8-10 9-16-2-12 4-17 12-1 17-4 8-7 17-7z" fill="#8f1f17"/>` +
-    `<path d="M50 4c7 0 9 6 15 8s12-1 17 4 2 11 5 16 10 7 10 15" fill="none" stroke="#c9483c" stroke-width="2"/>` +
-    `<circle cx="50" cy="50" r="28" fill="#7c1812" stroke="#5e100c" stroke-width="2"/>` +
-    `<path d="M50 28 54 39 66 39 56 46 60 58 50 51 40 58 44 46 34 39 46 39z" fill="#b8352a"/>`, cls);
+    `<path d="M37.5 11.5Q38.8 2.8 44.9 3.8T57.5 4.1Q63.6 3.5 64.7 11.7Q71.1 3.6 74.3 7.4T82.3 13.2Q87 14.9 82.9 22.4Q88.9 22.7 90.3 28.8T94.6 41.1Q97.4 46.8 90.5 50.7Q100.3 55 97.3 60.7T92.7 73Q91.2 79.2 82.6 77.3Q84.8 83 80.4 84.6T72.8 90Q69.9 93.7 65.1 89.2Q64.1 99 57.4 98.4T43.4 98.6Q36.7 99.2 36.1 88.1Q30.7 93.4 27.3 89.4T18.9 83.2Q14.1 81.1 15.7 75.9Q8.1 77.3 7.3 71.9T3.4 61.5Q.5 56.9 9.1 52.9Q1.5 48.9 4.1 42.6T8.5 29Q10.1 22.4 17.4 22.7Q13.6 15 18.6 13.1T27.5 7Q31.2 3.1 37.5 11.5z" fill="var(--wax)"/>` +
+    `<circle cx="50" cy="50" r="30" fill="#7c1812"/>` +
+    `<polygon points="50,31 66.5,40.5 66.5,59.5 50,69 33.5,59.5 33.5,40.5" fill="var(--wax-2)"/>`, cls);
 }
