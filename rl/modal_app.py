@@ -166,6 +166,27 @@ def test(quick: bool = False):
 @app.function(gpu=GPU, cpu=8, memory=16384, timeout=4 * 3600, volumes={VOL: vol})
 def train(run: str, train_args: str = "", seconds: int = 600, move_rows: bool = False, patch: bool = True,
           encoder: str = "flat", meta_extra: str = "", resume: bool = False):
+    return _train(run, train_args, seconds, move_rows, patch, encoder, meta_extra, resume)
+
+
+@app.function(gpu=GPU, cpu=32, memory=49152, timeout=4 * 3600, volumes={VOL: vol})
+def train_many(jobs: list, seconds: int = 600, encoder: str = "flat", meta_extra: str = "", resume: bool = False):
+    """Several runs side by side on one GPU, built once. `jobs` is a list of [run, train_args]. The env is the
+    limit, not the GPU (one run uses about a quarter of a T4), so give each run its share of the CPUs with
+    `--vec.num_threads`."""
+    from concurrent.futures import ThreadPoolExecutor
+    vol.reload()
+    sh("ln -sf /usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1 /usr/lib/x86_64-linux-gnu/libnvidia-ml.so")
+    code, text = build_puffer(False, encoder=encoder)
+    if code != 0:
+        return {"build": code, "tail": text[-2000:]}
+    with ThreadPoolExecutor(len(jobs)) as pool:
+        futs = [pool.submit(_train, r, a, seconds, False, True, encoder, meta_extra, resume, True) for r, a in jobs]
+        return {r: f.result() for (r, _), f in zip(jobs, futs)}
+
+
+def _train(run, train_args="", seconds=600, move_rows=False, patch=True, encoder="flat", meta_extra="",
+           resume=False, built=False):
     """Build the trainer and train for at most `seconds`. Writes /vol/<run>/: train.log, ckpt/, meta.json.
 
     Every checkpoint gets its JSON meta within a minute of being written, so a run that dies can still be evaluated.
@@ -185,7 +206,8 @@ def train(run: str, train_args: str = "", seconds: int = 600, move_rows: bool = 
     obs = 7122 if move_rows else 4434
     base_steps, ckpt_dir, log = 0, f"{out}/ckpt", f"{out}/train.log"
     if resume:
-        vol.reload()
+        if not built:   # train_many reloads once, before its runs open files
+            vol.reload()
         attempts = json.load(open(f"{out}/attempts.json")) if os.path.exists(f"{out}/attempts.json") else []
         if attempts:
             last = attempts[-1]
@@ -234,11 +256,12 @@ def train(run: str, train_args: str = "", seconds: int = 600, move_rows: bool = 
                     if f.endswith(".bin") and not os.path.exists(c + ".json"):
                         json.dump(meta_for(c), open(c + ".json", "w"))
     threading.Thread(target=write_metas, daemon=True).start()
-    sh("ln -sf /usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1 /usr/lib/x86_64-linux-gnu/libnvidia-ml.so; "
-       "nvidia-smi --query-gpu=name,driver_version --format=csv,noheader")
-    code, text = build_puffer(move_rows, patch=patch, encoder=encoder)
-    if code != 0:
-        return {"build": code, "tail": text[-2000:]}
+    if not built:
+        sh("ln -sf /usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1 /usr/lib/x86_64-linux-gnu/libnvidia-ml.so; "
+           "nvidia-smi --query-gpu=name,driver_version --format=csv,noheader")
+        code, text = build_puffer(move_rows, patch=patch, encoder=encoder)
+        if code != 0:
+            return {"build": code, "tail": text[-2000:]}
     build_s = time.time() - t0
     args = (f"train --headless --base.checkpoint_dir={ckpt_dir} --base.log_dir={out}/logs "
             + (" --env.move_rows=1" if move_rows else "") + f" {train_args}")
@@ -274,6 +297,19 @@ def read_games(subject: str, out: str, args: str = ""):
     code, text = sh(f"cd {SRC}/.. && python3 rl/arch/attention/read_games.py {shlex.quote(subject)} --out {out} {args}")
     vol.commit()
     return text[-60000:]
+
+
+@app.function(cpu=8, memory=16384, timeout=3600, volumes={VOL: vol})
+def bc_attention(out: str, games: int = 400, args: str = ""):
+    """Collect `hand`'s decisions (rl/imitation/collect.py) and clone them into the attention policy."""
+    os.makedirs(out, exist_ok=True)
+    data = f"{out}/hand.npz"
+    if not os.path.exists(data):
+        sh(f"cd {SRC}/.. && python3 rl/imitation/collect.py --games {games} --out {data}")
+    sh("pip install -q torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu 2>&1 | tail -1")
+    code, text = sh(f"cd {SRC}/.. && python3 rl/arch/attention/bc_attention.py {data} --out {out}/bc.bin {args}")
+    vol.commit()
+    return text[-4000:]
 
 
 # ---- Money -------------------------------------------------------------------------------------------------
@@ -324,6 +360,18 @@ def main(action: str = "test", run: str = "smoke", minutes: float = 10, max_doll
         r = train.with_options(timeout=total, cpu=cpus, memory=mem * 1024).remote(
             run, train_args, seconds, move_rows, not no_patch, encoder, meta_extra, resume)
         print(json.dumps(r, indent=1))
+    elif action == "train-many":
+        # --run is a JSON list of [run, train_args]; all share --minutes, --encoder, --meta-extra and --resume.
+        jobs = json.loads(run)
+        mem = max(16, 2 * cpus)
+        total = guard(max_dollars, GPU, cpus, mem, int(minutes * 60) + 600)
+        seconds = total - 600
+        if seconds < 60:
+            sys.exit("[money] too little money for a useful run")
+        r = train_many.with_options(timeout=total, cpu=cpus, memory=mem * 1024).remote(
+            jobs, seconds, encoder, meta_extra, resume)
+        print(json.dumps({k: {x: v.get(x) for x in ("train_seconds", "last", "resume")} for k, v in r.items()}
+                         if isinstance(r, dict) and "build" not in r else r, indent=1))
     elif action == "eval":
         total = guard(max_dollars, None, 8, 8, 3 * 3600)
         evaluate_ = evaluate.with_options(timeout=total)
@@ -331,6 +379,9 @@ def main(action: str = "test", run: str = "smoke", minutes: float = 10, max_doll
         r = evaluate_.remote([s if s in ("random", "hand") or s.startswith("/") else f"{VOL}/{s}" for s in subs],
                             f"{VOL}/{run}/eval", games, quick)
         print(r["report"])
+    elif action == "bc":
+        total = guard(max_dollars, None, 8, 16, 3600)
+        print(bc_attention.with_options(timeout=total).remote(f"{VOL}/{run}", games, train_args))
     elif action == "games":
         # --subjects is one policy path on the volume; --train-args here are read_games.py's own arguments.
         total = guard(max_dollars, None, 2, 4, 1800)
