@@ -50,6 +50,10 @@ TRAIN = ["island", "not-catan"]
 HELD_OUT = ["slime-parliament", "ai-bubble", "strike-the-earth", "pirate-republic"]
 SEATS = 4
 OPPONENTS = ["hand", "random", "champion"]
+# Step a policy's recurrent state on a zero observation each time another caller seat decides, as training does
+# (every agent's row goes through the network on every tick; a waiting agent sees zeros). Bots inside the environment
+# take no ticks, in training or here. `--wait-steps 0` turns it off.
+WAIT_STEPS = [1]
 BOTS = ["hand", "champion", "champion-closed"]   # subjects and opponents the environment plays itself
 PHASES = ["whole", "setup", "play"]
 NOTE_WEAK = ("`hand` is a weak opponent on some held-out games: in the builder's run, random players beat three `hand` "
@@ -169,6 +173,7 @@ def play_table(task):
         others = RandomPlayer(seed + 1)
         if subject:
             subject.reset()
+            subject.stale_wait = bool(settings.get("stale_wait"))
         while not g.over:
             seat = g.seat
             if seat == at:
@@ -181,6 +186,8 @@ def play_table(task):
                 decisions += 1
             else:
                 a = others.act(g)
+                if subject is not None and WAIT_STEPS[0] and hasattr(subject, "wait"):
+                    subject.wait(g.obs_size)
             if not g.step(a):
                 refused += 1
                 g.step(int(g.legal()[0]))
@@ -247,6 +254,8 @@ def can_play_task(task):
                         g.step(int(g.legal()[0]))
                 else:
                     g.step(others.act(g))
+                    if subject is not None and WAIT_STEPS[0] and hasattr(subject, "wait"):
+                        subject.wait(g.obs_size)
             out["games"] += 1
             out["ended"] += int(g.info()["over"]) and int(g.over)
         except Exception as e:  # noqa: BLE001
@@ -484,10 +493,13 @@ def main():
     ap.add_argument("--opponents", default=",".join(OPPONENTS),
                     help="comma-separated: hand, random, champion, champion-closed")
     ap.add_argument("--logs", type=int, default=2, help="games kept per table, with logs and summaries")
+    ap.add_argument("--wait-steps", type=int, default=1,
+                    help="1: step the policy's recurrent state on zeros when another caller decides, as in training")
     ap.add_argument("--can-play", type=int, default=1, help="1 to run the can-it-play check on made-up games")
     ap.add_argument("--can-play-games", type=int, default=6, help="games per made-up game and seat count")
     args = ap.parse_args()
     OPPONENTS[:] = args.opponents.split(",")
+    WAIT_STEPS[0] = args.wait_steps
     log_dir = os.path.join(args.out, "games")
     n = max(SEATS, args.games - args.games % SEATS)
     os.makedirs(args.out, exist_ok=True)

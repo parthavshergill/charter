@@ -244,8 +244,15 @@ structure Settings where
   rewardWin : Float := 1.0
   /-- The reward for final standing: this much for first, minus this much for last, even steps between. -/
   rewardStanding : Float := 0.25
-  /-- A small reward for each point gained, as a share of the target. Off by default. -/
+  /-- A small reward for each point gained, as a share of the target. Off by default. It is not potential-based,
+  so it can change which play is best; `shapingRelative` is. -/
   shapingPoints : Float := 0.0
+  /-- Potential-based shaping, off by default (0). The potential of a seat is this much times its points less the
+  mean of the other seats' points, over the target. Each step pays each seat `shapingGamma * Φ(after) - Φ(before)`,
+  with Φ = 0 once the game is over, which keeps the best play the same (Ng, Harada and Russell, 1999) when
+  `shapingGamma` is the trainer's gamma per tick. Results are judged on real wins only. -/
+  shapingRelative : Float := 0.0
+  shapingGamma : Float := 0.995
   /-- Keep every event of the game, in the server's log format, for `Env.savedLog`. Off in training. -/
   record : Bool := false
   /-- Offer declarations in every game, also where no law reads them (the engine accepts them there and they change

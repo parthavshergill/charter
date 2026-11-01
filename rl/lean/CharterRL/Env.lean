@@ -63,6 +63,8 @@ structure Env where
   /-- Each seat's pips when setup ended. -/
   opening : Array Nat := #[]
   pointsSeen : Array Nat := #[]
+  /-- Each seat's potential at the last step, for `shapingRelative`. Empty before the first. -/
+  phiSeen : Array Float := #[]
   rewards : FloatArray
   proposed : Nat := 0
   passed : Nat := 0
@@ -318,6 +320,17 @@ private def Env.reckon (e : Env) : Env := Id.run do
       let gained := Float.ofNat now[q]! - Float.ofNat (e.pointsSeen.getD q 0)
       rewards := rewards.set! q (e.settings.shapingPoints * gained / Float.ofNat (max 1 e.G.targetPoints))
     e := { e with pointsSeen := now }
+  if e.settings.shapingRelative != 0 then
+    let n := s.turnOrder.length
+    let pts := (List.range n).toArray.map fun q => Float.ofNat (s.pointsOf q)
+    let total := pts.foldl (· + ·) 0
+    let target := Float.ofNat (max 1 e.G.targetPoints)
+    let phi : Array Float := if s.phase == .ended then Array.replicate n 0 else
+      pts.map fun p => e.settings.shapingRelative * (p - (total - p) / Float.ofNat (max 1 (n - 1))) / target
+    if e.phiSeen.size == n then
+      for q in [0:n] do
+        rewards := rewards.set! q (rewards.get! q + e.settings.shapingGamma * phi[q]! - e.phiSeen[q]!)
+    e := { e with phiSeen := phi }
   if s.phase == .ended then
     let final := e.finalRewards
     for q in [0:maxSeats] do
@@ -464,7 +477,8 @@ private def readBool (j : Json) (k : String) (dflt : Bool) : Except String Bool 
 /-- The settings of a configuration. An unknown key is an error, so a misspelt switch cannot pass unnoticed. -/
 def readSettings (j : Json) : Except String Settings := do
   let known := ["game", "seats", "lineup", "seed", "law_every", "vote_mode", "move_rows", "preview", "random_map",
-    "slot_order", "reward_win", "reward_standing", "shaping_points", "record", "declare_always"]
+    "slot_order", "reward_win", "reward_standing", "shaping_points", "record", "declare_always", "shaping_relative",
+    "shaping_gamma"]
   match j.getObj? with
   | .error _ => throw "a configuration must be an object"
   | .ok kvs =>
@@ -498,7 +512,9 @@ def readSettings (j : Json) : Except String Settings := do
       rewardStanding := ← readFloat j "reward_standing" d.rewardStanding
       shapingPoints := ← readFloat j "shaping_points" d.shapingPoints
       record := ← readBool j "record" d.record
-      declareAlways := ← readBool j "declare_always" d.declareAlways }
+      declareAlways := ← readBool j "declare_always" d.declareAlways
+      shapingRelative := ← readFloat j "shaping_relative" d.shapingRelative
+      shapingGamma := ← readFloat j "shaping_gamma" d.shapingGamma }
 
 /-- One seat of a lineup: `caller`, a strategy's name, or `first+then` for one thing in setup and another after. -/
 def readSeat (text : String) : Except String SeatPlan := do

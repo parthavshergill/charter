@@ -198,6 +198,15 @@ def train(run: str, train_args: str = "", seconds: int = 600, move_rows: bool = 
                 "layout": layout["version"], "obs_size": obs, "act_size": layout["act_size"] + 1,
                 "hidden": hidden, "layers": layers,
                 "settings": {"vote_mode": "bot", "move_rows": move_rows}}
+        # Env switches that change what a policy sees go into the meta, so eval plays it the same way.
+        for tok in train_args.split():
+            for key in ("vote_mode", "slot_order", "declare_always", "stale_wait", "shaping_points",
+                        "shaping_relative", "bot_share", "bot_policy", "seats"):
+                if tok.startswith(f"--env.{key}="):
+                    v = tok.split("=", 1)[1]
+                    if key in ("declare_always", "stale_wait"):
+                        v = bool(int(float(v)))
+                    meta["settings"][key] = v
         meta.update(json.loads(meta_extra) if meta_extra else {})
         json.dump(meta, open(c + ".json", "w"))
     vol.commit()

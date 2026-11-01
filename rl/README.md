@@ -16,6 +16,8 @@ Every action goes through the Lean engine's `Engine.step`. There is no second mo
 | `rl/modal_app.py` | `test`, `train`, `eval` on Modal, each with a timeout cut to a dollar limit |
 | `rl/eval/eval.py` | One command, one report |
 | `rl/reference/policy.py` | Runs a PufferLib checkpoint in NumPy (MinGRU + linear decoder), for eval |
+| `rl/RUN_A_POLICY.md` | How a checkpoint chooses one action: observation, mask, forward pass (flat, and entity with pointer), decoding, and the recurrent state between decisions |
+| `rl/imitation/` | `collect.py` (the hand bot's decisions, with ticks and final returns), `bc.py` (behaviour cloning; `--sequences` replays whole games with waiting ticks, `--vf-coef` trains the value) |
 
 Pinned: Lean v4.35.0, PufferLib `ea7f989371270d2948f96728bda8aec5e7634a4c`.
 
@@ -126,8 +128,25 @@ actions, at most 8 resources, 60 spots, 84 links, 24 tiles, 16 laws) refused lar
 
 `[env]` keys in `charter.ini`: `games` (comma-separated ids), `seats`, `vote_mode`, `slot_order`, `move_rows`, `law_every`,
 `random_map`, `preview`, `reward_win`, `reward_standing`, `shaping_points`, `bot_policy`, `bot_share`,
-`distinct_opps`, `declare_always`. The Lean configuration also takes `record` (keep the game's events for a saved log;
+`distinct_opps`, `declare_always`, `stale_wait`, `shaping_relative`, `shaping_gamma`. The Lean configuration also takes `record` (keep the game's events for a saved log;
 eval only).
+
+- **Waiting rows** (`stale_wait`, off by default). By default a waiting agent's observation is all zeros. PufferLib
+  still runs it through the network on every tick, so its recurrent state moves on those ticks, and with zero input
+  MinGRU pulls the state halfway to 0.5 each time; the critic also sees one constant on every waiting row. With
+  `stale_wait = 1`, an agent that has decided in this game keeps its last observation while it waits (only the mask
+  changes). Agents that sit the game out, and agents before their first decision, see zeros.
+- **Shaping** (`shaping_relative = c`, off by default): potential-based. A seat's potential is c times its points
+  less the mean of the others' points, over the target, and is 0 once the game is over. Each tick pays each seat
+  `shaping_gamma * Φ(after) - Φ(before)`. With `shaping_gamma` equal to `[train] gamma` it keeps the best play the
+  same (Ng, Harada and Russell 1999); `charter-rl-check` confirms that with gamma 1 each seat's shaped returns over a
+  game equal the unshaped ones. `shaping_points` (absolute, not potential-based) is still there. Eval always judges
+  real wins; the report prints a policy's training settings.
+- **Eval and the server run the recurrent state as training did.** `Player.wait` runs one forward pass on the
+  waiting observation (zeros, or the last one under `stale_wait`) for every decision of another caller seat;
+  `rl/eval` does it by default (`--wait-steps 0` turns it off). `rl/RUN_A_POLICY.md` says what a server must do.
+- **Setup:** the mask does not offer end turn in a setup turn while a placement is legal (the engine allows it, and
+  policies gave up free opening pieces that way).
 
 `declare_always = 1` offers declarations in every game. Island and Not Catan have no law that reads one, so by
 default declarations are never legal there, their outputs are never trained, and on held-out games that do read them

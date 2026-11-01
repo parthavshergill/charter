@@ -2,8 +2,10 @@
 
     python3 rl/imitation/collect.py --games 400 --out results/imitation/hand.npz
 
-Stores float16 observations, the packed mask, the action, the game and seat, and the step within that seat's
-decisions. Settings follow round 1: `vote_mode=bot`, no per-move rows. Decisions where `hand` wants something with no
+Stores float16 observations, the packed mask, the action, the game and seat, the decision's tick in its game, and
+the seat's final return (`ret`, the sum of its rewards over the game). In this self-play every decision is one tick,
+as in PufferLib, so `bc.py --sequences` can replay each seat's whole game, waiting ticks included, and fit the value
+to `gamma ** (ticks to the end) * ret`. Settings follow round 1: `vote_mode=bot`, no per-move rows. Decisions where `hand` wants something with no
 action (an offer) are labelled end turn, which is what the arena does when no event is accepted."""
 import argparse
 import os
@@ -23,10 +25,13 @@ def main():
     ap.add_argument("--out", default="results/imitation/hand.npz")
     ap.add_argument("--seed", type=int, default=1)
     args = ap.parse_args()
-    obs, masks, acts, game_ids, seats, fallback = [], [], [], [], [], 0
+    obs, masks, acts, game_ids, seats, ticks, rets, fallback = [], [], [], [], [], [], [], 0
     for k in range(args.games):
         gid = TRAIN[k % len(TRAIN)]
         g = Game({"game": gid, "lineup": ["caller"] * 4, "seed": args.seed * 100000 + k, "vote_mode": "bot"})
+        first = len(acts)
+        total = g.rewards().astype(np.float64)
+        t = 0
         while not g.over:
             m = g.mask()
             a = g.suggest("hand")
@@ -38,10 +43,15 @@ def main():
             acts.append(a)
             game_ids.append(k)
             seats.append(g.seat)
+            ticks.append(t)
+            t += 1
             g.step(a)
+            total += g.rewards()
+        rets.extend(float(total[s]) for s in seats[first:])
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
     np.savez_compressed(args.out, obs=np.stack(obs), mask=np.stack(masks), action=np.array(acts, np.int16),
-                        game=np.array(game_ids, np.int32), seat=np.array(seats, np.int8))
+                        game=np.array(game_ids, np.int32), seat=np.array(seats, np.int8),
+                        tick=np.array(ticks, np.int32), ret=np.array(rets, np.float32))
     print(f"{len(acts)} decisions from {args.games} games, {fallback} labelled by fallback, wrote {args.out}")
 
 

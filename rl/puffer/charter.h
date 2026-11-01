@@ -63,7 +63,9 @@ struct Env {
     int seats;             // seats in this game
     int seat_choices[SEATS];
     int num_seat_choices;
-    int zeroed[SEATS];     // this agent's observation is all zeros already
+    int zeroed[SEATS];     // this agent's waiting row is written already (zeros, or its last observation)
+    int decided[SEATS];    // this agent has decided in this game
+    int stale_wait;        // a waiting agent that has decided in this game keeps its last observation
     int num_games;
     void* games[MAX_GAMES];
     int current;
@@ -127,9 +129,14 @@ static void write_outputs(Env* env) {
             charter_mask(G(env), a->action_mask, CHARTER_ACTS);
             a->action_mask[NOOP_ACTION] = 0;
             env->zeroed[i] = 0;
+            env->decided[i] = 1;
         } else if (!env->zeroed[i]) {
-            // A waiting agent's rows stay zero until it decides again, so they are written once.
-            memset(a->observations, 0, OBS_SIZE * sizeof(obs_t));
+            // A waiting agent's row is written once, when it starts waiting. By default it is all zeros. With
+            // stale_wait, an agent that has decided in this game keeps its last observation and only the mask
+            // changes, so the critic and the recurrent state still see its position while others move.
+            if (!(env->stale_wait && i < env->playing && env->decided[i])) {
+                memset(a->observations, 0, OBS_SIZE * sizeof(obs_t));
+            }
             memset(a->action_mask, 0, CHARTER_ACTS);
             a->action_mask[NOOP_ACTION] = 1;
             env->zeroed[i] = 1;
@@ -251,6 +258,8 @@ static void start_game(Env* env) {
     env->moves = env->invalid = 0;
     for (int i = 0; i < SEATS; i++) {
         env->returns[i] = 0;
+        env->decided[i] = 0;
+        env->zeroed[i] = 0;    // a new game: every waiting row is written again
     }
     run_random_bots(env);
     add_rewards(env);
@@ -365,7 +374,9 @@ void puf_init(Env* env, Dict* kwargs) {
     }
     for (int i = 0; i < SEATS; i++) {
         env->zeroed[i] = 0;
+        env->decided[i] = 0;
     }
+    env->stale_wait = (int)opt_num(kwargs, "stale_wait", 0);
     int move_rows = (int)opt_num(kwargs, "move_rows", 0);
 #ifdef CHARTER_MOVE_ROWS
     assert(move_rows && "built with CHARTER_MOVE_ROWS: set env.move_rows = 1");
@@ -392,11 +403,12 @@ void puf_init(Env* env, Dict* kwargs) {
             snprintf(cfg, sizeof(cfg),
                 "{\"game\": \"%s\", \"lineup\": [%s], \"seed\": %u, "
                 "\"vote_mode\": \"%s\", \"slot_order\": \"%s\", \"move_rows\": %s, \"law_every\": %d, "
-                "\"random_map\": %s, \"preview\": %s, \"reward_win\": %g, \"reward_standing\": %g, \"shaping_points\": %g, \"declare_always\": %s}",
+                "\"random_map\": %s, \"preview\": %s, \"reward_win\": %g, \"reward_standing\": %g, \"shaping_points\": %g, \"declare_always\": %s, \"shaping_relative\": %g, \"shaping_gamma\": %g}",
                 id, lineup, env->rng, vote, slots, move_rows ? "true" : "false", (int)opt_num(kwargs, "law_every", 8),
                 opt_num(kwargs, "random_map", 1) ? "true" : "false", opt_num(kwargs, "preview", 1) ? "true" : "false",
                 opt_num(kwargs, "reward_win", 1.0), opt_num(kwargs, "reward_standing", 0.25),
-                opt_num(kwargs, "shaping_points", 0.0), opt_num(kwargs, "declare_always", 0) ? "true" : "false");
+                opt_num(kwargs, "shaping_points", 0.0), opt_num(kwargs, "declare_always", 0) ? "true" : "false",
+                opt_num(kwargs, "shaping_relative", 0.0), opt_num(kwargs, "shaping_gamma", 0.995));
             if (!charter_error(cfg, err, sizeof(err))) {
                 break;
             }

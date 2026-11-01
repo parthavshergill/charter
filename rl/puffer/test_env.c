@@ -10,6 +10,8 @@ static double now(void) {
     return t.tv_sec + t.tv_nsec * 1e-9;
 }
 
+static int stale = 0;
+
 static int run(const char* games, int num_agents, int bot, double seconds, const char* vote, const char* share,
                const char* seats) {
     Dict kw = {0};
@@ -22,6 +24,7 @@ static int run(const char* games, int num_agents, int bot, double seconds, const
     puf_ini_set(&kw, "vote_mode", vote);
     puf_ini_set(&kw, "bot_share", share);
     puf_ini_set(&kw, "seats", seats);
+    puf_ini_set(&kw, "stale_wait", stale ? "1" : "0");
 #ifdef CHARTER_MOVE_ROWS
     puf_ini_set(&kw, "move_rows", "1");
 #endif
@@ -109,6 +112,10 @@ int main(int argc, char** argv) {
     fails += run("island,not-catan", 1, BOT_CHAMPION_CLOSED, s, "bot", "0", "4");
     // Half the games against champions, half in self-play. Rewards no longer sum to 1 per game.
     fails += run("island,not-catan", 4, BOT_CHAMPION, s, "bot", "0.5", "4");
+    // Waiting agents keep their last observation; the mask rules are the same.
+    stale = 1;
+    fails += run("island,not-catan", 6, 0, s, "bot", "0", "2-6");
+    stale = 0;
     // Made-up games at the engine's limits and at odd sizes.
     fails += run("gen-limits-1,gen-odd-2,gen-odd-3,gen-tiny-3", 6, 0, s * 8 > 20 ? s * 8 : 20, "policy", "0", "2-6");
     printf(fails ? "FAIL\n" : "PASS\n");

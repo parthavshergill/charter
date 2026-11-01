@@ -161,6 +161,35 @@ def main (args : List String) : IO UInt32 := do
         n := n + k
       | _, _ => report bad false s!"champion {id}: the game did not start"
     report bad (diffs == 0 && n > 0) s!"champion {id}: {diffs} of {n} decisions differ from the champion as written"
+  -- Potential-based shaping telescopes: with gamma 1 each seat's rewards over a game add up to the unshaped ones.
+  for id in trainIds do
+    let some T := tablesOf? id | continue
+    let total (st : Settings) (g : Nat) : Array Float := Id.run do
+      let some e0 := (Env.start T st (callers 4) (900 + g)).toOption | return #[]
+      let mut e := e0
+      let mut sum : Array Float := (List.range maxSeats).toArray.map fun q => e.rewards.get! q
+      let mut r : Rng := ⟨UInt64.ofNat (950 + g)⟩
+      for _ in [0:20000] do
+        if e.decision.seat?.isNone then break
+        let (a, r') := pick r e.mask
+        r := r'
+        match a with
+        | none => break
+        | some a =>
+          e := e.step a
+          sum := (List.range maxSeats).toArray.map fun q => sum[q]! + e.rewards.get! q
+      return sum
+    let mut worst : Float := 0
+    let mut moved : Float := 0
+    for g in [0:(if quick then 2 else 6)] do
+      let plain := total { lawEvery := 0 } g
+      let shaped := total { lawEvery := 0, shapingRelative := 0.5, shapingGamma := 1.0 } g
+      let shaped99 := total { lawEvery := 0, shapingRelative := 0.5, shapingGamma := 0.9 } g
+      for q in [0:maxSeats] do
+        worst := max worst (Float.abs (plain[q]! - shaped[q]!))
+        moved := max moved (Float.abs (plain[q]! - shaped99[q]!))
+    report bad (worst < 1e-9 && moved > 1e-6)
+      s!"shaping {id}: with gamma 1 the shaped returns equal the plain ones (worst gap {worst}); with gamma 0.9 they differ ({moved})"
   -- Random maps pass the full checks.
   for id in allIds do
     let some T := tablesOf? id | continue
