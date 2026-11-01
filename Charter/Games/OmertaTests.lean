@@ -59,11 +59,11 @@ def reward (s : St) : Nat := s.balance .treasury "cash"
 
 -- Seat 0 talks on its turn. At the roll that starts seat 1's turn it takes all 20 of the reward, and it
 -- hands over its dirt. Both its rackets close. Every other seat loses one racket, and keeps its dirt.
--- The roll then puts 2 back in the reward, for the 8 rackets that ran when the dice fell.
+-- The roll then puts 1 back in the reward, for the 8 rackets that ran when the dice fell.
 #guard match next (declaring (table 0) [(0, "dirt", 1)]) with
   | some s =>
     holds s 0 "cash" == 20 && holds s 0 "dirt" == 0 && rackets s 0 == 0 &&
-      [1, 2, 3].all (fun p => rackets s p == 1 && holds s p "dirt" == 1) && reward s == 2
+      [1, 2, 3].all (fun p => rackets s p == 1 && holds s p "dirt" == 1) && reward s == 1
   | none => false
 
 -- Talking costs the talker its rackets, but not its fronts.
@@ -74,12 +74,12 @@ def reward (s : St) : Nat := s.balance .treasury "cash"
 -- The reward goes once. Seat 1 plays on after seat 0 talked, and at the next roll nobody is paid again,
 -- though seat 0's declaration still stands. Three rackets run now, too few to make the reward grow.
 #guard match (next (declaring (table 0) [(0, "dirt", 1)])).bind next with
-  | some s => holds s 0 "cash" == 20 && rackets s 1 == 1 && reward s == 2
+  | some s => holds s 0 "cash" == 20 && rackets s 1 == 1 && reward s == 1
   | none => false
 
--- Declaring dirt with no dirt in hand is not talking: nothing happens but the roll's 2.
+-- Declaring dirt with no dirt in hand is not talking: nothing happens but the roll's 1.
 #guard match next (declaring { table 0 with books := ((table 0).books.postAll [⟨.player 0, .bank, "dirt", 1, .trade⟩]).getD (table 0).books } [(0, "dirt", 3)]) with
-  | some s => holds s 0 "cash" == 0 && rackets s 0 == 2 && reward s == 22
+  | some s => holds s 0 "cash" == 0 && rackets s 0 == 2 && reward s == 21
   | none => false
 
 -- Seat 3 is last in the round, and sees what everyone did. If it talks, it is paid at the round's end,
@@ -131,9 +131,9 @@ def busy : List Piece :=
     [⟨p, "front", .spot (spotOf (10 + 2 * p))⟩, ⟨p, "racket", .spot (spotOf (10 + 2 * p))⟩,
      ⟨p, "front", .spot (spotOf (11 + 2 * p))⟩, ⟨p, "racket", .spot (spotOf (11 + 2 * p))⟩]
 
--- Twelve rackets running make the reward grow by 3 on a roll.
+-- Twelve rackets running make the reward grow by 2 on a roll.
 #guard match next { fund (table 0) 0 with pieces := busy } with
-  | some s => reward s == 23
+  | some s => reward s == 22
   | none => false
 
 end Charter.Games.Omerta.Tests

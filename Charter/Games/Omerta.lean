@@ -105,13 +105,13 @@ def lawTake : Law :=
           , .forEach (.and (.and runsRacket (.not talksNow)) (.eq (held .each "dirt") (.lit 0))) [pay .treasury .each "dirt" (.lit 1)] ]
       , .setWorth "cash" 1 ] }
 
-/-- **The heat.** On every roll the reward grows by 1 cash for every 4 rackets running in the city. Dirt is
+/-- **The heat.** On every roll the reward grows by 1 cash for every 6 rackets running in the city. Dirt is
 kept in the treasury, and every roll sweeps the bank's dirt there, so nobody can buy it from the bank.
 There are only 6 dirt in the game, so the treasury's heap is nearly all reward. A seat holds at most 1,
 so with 4 seats the treasury always has enough to hand out. -/
 def lawHeat : Law :=
   { title := "The more rackets run, the faster the reward grows"
-    clauses := [.onRoll [pay .bank .treasury "cash" (.div allRackets 4), pay .bank .treasury "dirt" (held .bank "dirt")]] }
+    clauses := [.onRoll [pay .bank .treasury "cash" (.div allRackets 6), pay .bank .treasury "dirt" (held .bank "dirt")]] }
 
 /-- **Talking.** It acts on every roll, which comes right after a seat's turn, and pays the whole reward.
 It acts again at the round's end, which comes right after the last seat's turn, and pays half. -/
@@ -142,7 +142,7 @@ def game : GameDef where
       regions := regionsOf tiles }
   diceCount := 2
   diceSides := 6
-  targetPoints := 40
+  targetPoints := 60
   rounds := 8
   bankRate := 4
   setupPieces := ["front", "street", "racket"]
