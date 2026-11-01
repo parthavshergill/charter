@@ -482,9 +482,11 @@ def main():
         # Out of time, then resumed.
         slow = os.path.join(data, "sim3")
         reset(answer([{"action": "end_turn"}]))
-        StandIn.delay = 0.0
+        # The runner first looks at the clock after half a second. A slower seat keeps the game going past that.
+        StandIn.delay = 1.0
         r = subprocess.run([SIM, "--seats", "2", "--seed", "6", "--out", slow, "--max-minutes", "0"], env=env, capture_output=True, text=True, timeout=120)
-        check(r.returncode == 1, "a game that runs out of time stops, and says so")
+        StandIn.delay = 0.0
+        check(r.returncode == 1, f"a game that runs out of time stops, and says so (exit code {r.returncode})")
         run3 = glob.glob(os.path.join(slow, "*"))[0]
         check(json.load(open(glob.glob(os.path.join(run3, "*.summary.json"))[0]))["status"] == "stopped", "its summary says it stopped")
         r = subprocess.run([SIM, "--resume", run3], env=env, capture_output=True, text=True, timeout=300)
