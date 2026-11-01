@@ -37,10 +37,18 @@ structure Row where
   delta : Int
   deriving BEq
 
+/-- One seat's change in how many of a kind of piece it owns. -/
+structure PieceRow where
+  who : Nat
+  kind : PieceKind
+  delta : Int
+  deriving BEq
+
 structure Section where
   whenText : String
   dice : Bool
   rows : List Row
+  pieces : List PieceRow := []
 
 def netOf (es : List Entry) (a : Account) (r : Res) : Int :=
   es.foldl (fun acc e =>
@@ -58,9 +66,25 @@ def rowsOf (s : State G) (before after : List Entry) : List Row :=
       let d := netOf after a r - netOf before a r
       if d == 0 then none else some { who, res := r, delta := d }
 
-def rollWords (rs : List Nat) : String :=
-  let t := Charter.Text.andList (rs.map toString)
-  if rs.length == 1 then s!"On a roll of {t}" else s!"On a roll of {t}"
+/-- The change the law makes to what each seat owns: `lawBefore` to `lawAfter` with it, against `before` to
+`after` without it. So a law already moving pieces does not count as this law's doing. -/
+def pieceRowsOf (s : State G) (before after lawBefore lawAfter : List Piece) : List PieceRow :=
+  let kinds := ((before ++ after ++ lawBefore ++ lawAfter).map (·.kind)).eraseDups
+  let count (ps : List Piece) (p : Nat) (k : PieceKind) : Int :=
+    ((ps.filter fun x => x.owner == p && x.kind == k).length : Int)
+  s.turnOrder.flatMap fun p =>
+    kinds.filterMap fun k =>
+      let d := (count lawAfter p k - count lawBefore p k) - (count after p k - count before p k)
+      if d == 0 then none else some { who := p, kind := k, delta := d }
+
+/-- The pieces after the laws act at a round's end, whichever turn this is. On a round's last turn this is
+`piecesBeforeRoll`. -/
+def piecesAtRoundEnd (x : State G) : List Piece :=
+  applyOrders x.rules (lawOrders (x.afterPosting x.duePayments) .roundEnd) x.pieces
+
+def rollWords (all rs : List Nat) : String :=
+  if rs.length == all.length then "On every roll" else
+  s!"On a roll of {Charter.Text.andList (rs.map toString)}"
 
 /-- What the next turn change pays for this roll, after whatever it pays before the roll. -/
 def afterTheRoll (x : State G) (roll : Nat) : List Entry :=
@@ -99,14 +123,17 @@ def rollsCannotChange (s : State G) (L : Law) : Bool :=
 /-- Rolls that change something, likeliest first, with equal cases joined. -/
 def rollSections (s s' : State G) (L : Law) : List Section :=
   let rolls := if rollsCannotChange s L then [] else Scene.rollsOf G
-  let cases := (rolls.map fun r => (r, rollRows s s' r)).filter (!·.2.isEmpty)
-  let grouped : List (List Nat × List Row) := cases.foldl (fun acc (r, rows) =>
-    if acc.any (·.2 == rows) then
-      acc.map fun x => if x.2 == rows then (x.1 ++ [r], x.2) else x
-    else acc ++ [([r], rows)]) []
-  let weight (g : List Nat × List Row) : Nat := (g.1.map (Scene.chanceOf G)).sum
+  let pieceRows (r : Nat) : List PieceRow :=
+    pieceRowsOf s s.piecesBeforeRoll (s.turnPieces r) s'.piecesBeforeRoll (s'.turnPieces r)
+  let cases := (rolls.map fun r => (r, (rollRows s s' r, pieceRows r))).filter fun c =>
+    !c.2.1.isEmpty || !c.2.2.isEmpty
+  let grouped : List (List Nat × (List Row × List PieceRow)) := cases.foldl (fun acc (r, what) =>
+    if acc.any (·.2 == what) then
+      acc.map fun x => if x.2 == what then (x.1 ++ [r], x.2) else x
+    else acc ++ [([r], what)]) []
+  let weight (g : List Nat × (List Row × List PieceRow)) : Nat := (g.1.map (Scene.chanceOf G)).sum
   let sorted := (grouped.toArray.qsort fun a b => weight a > weight b).toList
-  sorted.map fun (rs, rows) => { whenText := rollWords rs, dice := true, rows }
+  sorted.map fun (rs, (rows, pieces)) => { whenText := rollWords (Scene.rollsOf G) rs, dice := true, rows, pieces }
 
 def buildSections (s s' : State G) (you : Option Nat) (names : Nat → String) : List Section :=
   match you, s.turnOrder.head? with
@@ -121,13 +148,11 @@ def buildSections (s s' : State G) (you : Option Nat) (names : Nat → String) :
       some { whenText := s!"When {who} {Charter.Text.article d.name}", dice := false, rows }
 
 def roundEndSections (s s' : State G) : List Section :=
-  if s.isLastTurn then
-    let rows := beforeRollRows s s'
-    if rows.isEmpty then [] else [{ whenText := "When this turn ends", dice := false, rows }]
-  else
-    -- Not covered by commandment X: moves before the round's end can change this.
-    let rows := rowsOf s s.roundEndEntries s'.roundEndEntries
-    if rows.isEmpty then [] else [{ whenText := "At the end of this round", dice := false, rows }]
+  let pieces := pieceRowsOf s s.pieces (piecesAtRoundEnd s) s'.pieces (piecesAtRoundEnd s')
+  let rows := if s.isLastTurn then beforeRollRows s s' else rowsOf s s.roundEndEntries s'.roundEndEntries
+  if rows.isEmpty && pieces.isEmpty then [] else
+  -- On any other turn this is not covered by commandment X: moves before the round's end can change it.
+  [{ whenText := if s.isLastTurn then "When this turn ends" else "At the end of this round", dice := false, rows, pieces }]
 
 /-- Kinds of piece whose build this law changes, but which this seat cannot pay for today. -/
 def unpaidBuildNotes (s s' : State G) (actor : Nat) : List String :=
@@ -141,7 +166,7 @@ def ruleNotes (s s' : State G) : List String :=
       [s!"Today the bank takes {s.rules.bankRate} for 1."] else []
   let worth := s'.rules.worth.filterMap fun x =>
     if s.rules.worth.contains x then none else
-    some s!"Each {x.1} in a seat's own hand would be worth {x.2} points."
+    some s!"Each {x.1} in a seat's own hand would be worth {x.2} {if x.2 == 1 then "point" else "points"}."
   let costs := s'.rules.pieces.filterMap fun d =>
     match s.rules.piece? d.name with
     | some old => if old.cost != d.cost then some s!"Today {Charter.Text.article d.name} costs {Charter.Text.bundleText old.cost}." else none
@@ -150,43 +175,42 @@ def ruleNotes (s s' : State G) : List String :=
     if (s'.rules.piece? d.name).isNone then some s!"The {d.name} would no longer exist." else none
   bank ++ worth ++ costs ++ gone
 
-/-- Pieces a law would take or give at the next turn change, for this roll, in words. -/
-def pieceNotes (s s' : State G) (roll : Nat) (names : Nat → String) : List String :=
-  let before := s.turnPieces roll
-  let after := s'.turnPieces roll
-  let gone := after.isEmpty && before.isEmpty
-  if gone then [] else
-  s.turnOrder.flatMap fun p =>
-    (s'.rules.pieces.map (·.name)).filterMap fun k =>
-      let count (ps : List Piece) : Nat := (ps.filter fun x => x.owner == p && x.kind == k).length
-      let a := count before
-      let b := count after
-      if a == b then none
-      else if b < a then some s!"{names p} would lose {a - b} {k}."
-      else some s!"{names p} would gain {b - a} {k}."
-
 def rowJson (r : Row) : Json :=
   Json.mkObj [("seat", toJson r.who), ("res", toJson r.res), ("delta", toJson r.delta)]
 
+def pieceRowJson (r : PieceRow) : Json :=
+  Json.mkObj [("seat", toJson r.who), ("kind", toJson r.kind), ("delta", toJson r.delta)]
+
 def sectionJson (x : Section) : Json :=
   Json.mkObj [("when", toJson x.whenText), ("dice", toJson x.dice),
-    ("rows", Json.arr (x.rows.map rowJson).toArray)]
+    ("rows", Json.arr (x.rows.map rowJson).toArray),
+    ("pieces", Json.arr (x.pieces.map pieceRowJson).toArray)]
 
 /-- The preview of a law for one viewer, as the screen shows it. -/
 def lawPreview (s : State G) (id : Nat) (L : Law) (you : Option Nat) (names : Nat → String) : Json :=
   let s' := s.withLaw id L
+  -- The game as the vote would leave it, if it ends there. It goes through `checkWin`, as the vote does.
+  let final : Option (State G) := match Engine.checkWin s' with
+    | .ok x => if x.phase == Phase.ended then some x else none
+    | .error _ => none
+  let winner := final.bind (·.winner)
   let points := s.turnOrder.filterMap fun p =>
     let a := s.pointsOf p
     let b := s'.pointsOf p
     if a == b then none else
     some (Json.mkObj [("seat", toJson p), ("from", toJson a), ("to", toJson b),
-      ("wins", toJson (decide (G.targetPoints ≤ b)))])
-  let rolls := rollSections s s' L
+      ("wins", toJson (winner == some p))])
+  let ends := L.clauses.any Clause.isEndGame
+  let rolls := if ends then [] else rollSections s s' L
   -- What a law's `now` clauses do is the first thing that happens, the moment it passes.
   let nowRows := rowsOf s [] (s.decreeEntries L)
+  let nowPieces := pieceRowsOf s [] [] s.pieces s'.pieces
   let nowSection : List Section :=
-    if nowRows.isEmpty then [] else [{ whenText := "The moment this passes", dice := false, rows := nowRows }]
-  let sections := nowSection ++ roundEndSections s s' ++ buildSections s s' you names ++ rolls.take 3
+    if nowRows.isEmpty && nowPieces.isEmpty then [] else
+    [{ whenText := "The moment this passes", dice := false, rows := nowRows, pieces := nowPieces }]
+  -- A law that ends the game does nothing after it passes.
+  let sections := if ends then nowSection else
+    nowSection ++ roundEndSections s s' ++ buildSections s s' you names ++ rolls.take 3
   let actor := (you.orElse fun _ => s.turnOrder.head?).getD 0
   let refused := match lawProblems G s L with
     | [] => []
@@ -196,22 +220,20 @@ def lawPreview (s : State G) (id : Nat) (L : Law) (you : Option Nat) (names : Na
   let declared := if readsDeclared then
       ["These figures hold if declarations stay as they are. A seat can change its own on its turn."]
     else []
-  let firstRoll := (Scene.rollsOf G).head?.getD 0
-  -- A round's end law gives the same answer on any roll. Roll laws can depend on it, and those show what they do at this roll.
-  let pieces := if L.clauses.any Clause.movesPieces then pieceNotes s s' firstRoll names else []
-  let ending := if L.clauses.any Clause.isEndGame then
-      match Engine.bestSeat s' s'.turnOrder with
-      | some w => [s!"This ends the game the moment it passes. {names w} would win with {s'.pointsOf w} points."]
-      | none => []
-    else []
-  let notes := refused ++ ending ++ declared ++ pieces ++ ruleNotes s s' ++ unpaidBuildNotes s s' actor
+  let ending := match ends, final, winner with
+    | true, some x, some w =>
+      let who := if you == some w then "You" else names w
+      toJson s!"This ends the game the moment it passes. {who} would win with {x.pointsOf w} points."
+    | _, _, _ => Json.null
+  let notes := refused ++ declared ++ ruleNotes s s' ++ unpaidBuildNotes s s' actor
   Json.mkObj
     [ ("sections", Json.arr (sections.map sectionJson).toArray)
     , ("moreRolls", toJson (rolls.length - min rolls.length 3))
     , ("points", Json.arr points.toArray)
+    , ("ending", ending)
     , ("notes", toJson notes)
     , ("dice", toJson (!rolls.isEmpty))
-    , ("nothing", toJson (sections.isEmpty && points.isEmpty && notes.isEmpty)) ]
+    , ("nothing", toJson (sections.isEmpty && points.isEmpty && notes.isEmpty && ending.isNull)) ]
 
 /-- The preview for the person drafting a law. -/
 def draftPreview (s : State G) (id : Nat) (L : Law) (you : Nat) (names : Nat → String) : Json :=

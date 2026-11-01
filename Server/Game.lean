@@ -219,7 +219,9 @@ def isSpotKind (G : GameDef) (k : String) : Bool := ((spotPiece G).map (·.name)
 
 /-- Told once in a game: the first of a kind of building in this world. -/
 def firstOnIsland (g : Game) (s : State G) (k : String) : String :=
-  if !isLinkKind G k && (s.pieces.filter (·.kind == k)).isEmpty then s!", the first on {g.spec.layout.word}" else ""
+  let told := s!" {k}, the first on {g.spec.layout.word}"
+  let toldBefore := g.chronicle.any fun l => (l.text.splitOn told).length > 1
+  if !isLinkKind G k && (s.pieces.filter (·.kind == k)).isEmpty && !toldBefore then s!", the first on {g.spec.layout.word}" else ""
 
 /-- This vote closes a law that passes `lawProblems`, so it passed. A law of only `now` clauses does not join
 the laws in force, so the list of laws cannot say this. -/
@@ -291,9 +293,10 @@ def rollLawPart (s : State G) (roll : Nat) : List Entry :=
   let x := s.afterPosting s.entriesBeforeRoll
   (rollEntries x roll).drop (harvestEntries x.atRoll roll).length
 
-/-- What the laws did on a roll, as one line: "By law, on a 7, Ada paid the bank 2 brick and 1 ore. Mara
-paid the bank 1 ore." A roll law can touch every seat at once, so the screen tells it in one caption. -/
-def rollLawSentence (g : Game) (roll : Nat) (part : List Entry) : Option String :=
+/-- What the laws did at one moment, as one line: "By law, on a 7, Ada paid the bank 2 brick and 1 ore. Mara
+paid the bank 1 ore." A law can touch every seat at once, so the screen tells it in one caption. `moment`
+is how the line says when, and it can be empty. -/
+def lawSentence (g : Game) (moment : String) (part : List Entry) : Option String :=
   let grouped := groupEntries part
   let pairs := grouped.foldl (fun (acc : List (Account × Account)) e =>
     if acc.contains (e.src, e.dst) then acc else acc ++ [(e.src, e.dst)]) []
@@ -304,7 +307,33 @@ def rollLawSentence (g : Game) (roll : Nat) (part : List Entry) : Option String 
   | [] => none
   | first :: rest =>
     let others := rest.map fun w => s!" {Text.capFirst w}."
-    some s!"By law, on {Text.rollName roll}, {first}.{String.join others}"
+    some s!"By law, {moment}{first}.{String.join others}"
+
+def rollLawSentence (g : Game) (roll : Nat) (part : List Entry) : Option String :=
+  lawSentence g s!"on {Text.rollName roll}, " part
+
+/-- What the laws did to the pieces at one moment, as one line: "By law, Ada lost a settlement and a mill.
+Ben seized Cleo's road." A law can touch every seat at once, so the screen tells it in one caption. -/
+def pieceSentence (g : Game) (s s' : State G) : Option String :=
+  let kindsText (taken : List PieceKind) : List String :=
+    taken.eraseDups.map fun k =>
+      let n := (taken.filter (· == k)).length
+      if n == 1 then Text.article k else Text.plural n k
+  let sayings := s.turnOrder.flatMap fun p =>
+    let gone := s.pieces.filter fun x => x.owner == p && !s'.pieces.contains x
+    let goesTo (x : Piece) : Option Nat :=
+      (s'.pieces.find? fun y => y.loc == x.loc && y.kind == x.kind).map (·.owner)
+    let lost := (gone.filter fun x => (goesTo x).isNone).map (·.kind)
+    let takers := (gone.filterMap goesTo).eraseDups
+    (if lost.isEmpty then [] else [s!"{g.nameOf p} lost {Text.andList (kindsText lost)}"]) ++
+      takers.map fun q =>
+        let seized := (gone.filter fun x => goesTo x == some q).map (·.kind)
+        s!"{g.nameOf q} seized {Text.andList (seized.eraseDups.map fun k =>
+          let n := (seized.filter (· == k)).length
+          if n == 1 then s!"{g.nameOf p}'s {k}" else s!"{Text.plural n k} of {g.nameOf p}'s")}"
+  match sayings with
+  | [] => none
+  | first :: rest => some s!"By law, {first}.{String.join (rest.map fun w => s!" {w}.")}"
 
 /-- All the sentences for one accepted event. Each has its actor, kind, text and weight. -/
 def sentences (g : Game) (s s' : State G) (e : Event) : List (Option Nat × String × String × Bool) :=
@@ -315,7 +344,17 @@ def sentences (g : Game) (s s' : State G) (e : Event) : List (Option Nat × Stri
   let all := newEntries s s'
   let others := all.take (all.length - ((rollLaw.map (·.2.length)).getD 0))
   -- A counter is not money, so it gets no line of its own.
-  let moneyLines := ((groupEntries others).filter (!markRes G ·.res)).filterMap (entryLine g)
+  let isLaw (x : Entry) : Bool := x.reason == .lawEffect && !markRes G x.res
+  -- A law's payments are one line that the screen tells, and the other money has a line each.
+  let moneyLines := ((groupEntries (others.filter (·.reason != .lawEffect))).filter (!markRes G ·.res)).filterMap (entryLine g)
+  let isVote := match e with | .vote .. => true | _ => false
+  let atRoundEnd := if s'.rollsMade != s.rollsMade then s.entriesBeforeRoll.length else 0
+  let lawLine (moment : String) (part : List Entry) : List (Option Nat × String × String × Bool) :=
+    match lawSentence g moment (part.filter isLaw) with
+    | some text => [((none : Option Nat), "money", text, true)]
+    | none => []
+  let roundEndLaw := lawLine "at the round's end, " (others.take atRoundEnd)
+  let otherLaw := lawLine (if isVote then "the moment it passed, " else if s'.rollsMade != s.rollsMade then "at the harvest, " else "") (others.drop atRoundEnd)
   let rollLawLine := match rollLaw with
     | some (r, part) =>
       match rollLawSentence g r (part.filter (!markRes G ·.res)) with
@@ -342,21 +381,18 @@ def sentences (g : Game) (s s' : State G) (e : Event) : List (Option Nat × Stri
     | none, some w =>
       let held := s'.tokenPointsOf w
       let from_ := if held == 0 then "" else s!", {held} of them from what they held"
-      [((none : Option Nat), "end", s!"The game ended. {g.nameOf w} won with {s'.pointsOf w} points{from_}.", true)]
+      let how := if s'.lawEnds then "The game ended by law." else "The game ended."
+      [((none : Option Nat), "end", s!"{how} {g.nameOf w} won with {s'.pointsOf w} points{from_}.", true)]
     | _, _ => []
   let beforeRoll := moneyLines.map fun (k, t, m) => ((none : Option Nat), k, t, m)
   -- A law can take a piece at a turn change. Tell it, or the board would change with no word.
   let pieceLines : List (Option Nat × String × String × Bool) :=
     if (match e with | .move _ (.place ..) => true | _ => false) then [] else
-    s.turnOrder.flatMap fun p =>
-      (s.pieces.filter (·.owner == p)).filterMap fun x =>
-        if s'.pieces.contains x then none else
-        let seized := s'.pieces.find? fun y => y.loc == x.loc && y.kind == x.kind
-        match seized with
-        | some y => some (none, "build", s!"By law, {g.nameOf y.owner} seized {g.nameOf p}'s {x.kind}.", true)
-        | none => some (none, "build", s!"By law, {g.nameOf p} lost {article x.kind}.", true)
+    match pieceSentence g s s' with
+    | some text => [(none, "build", text, true)]
+    | none => []
   let (k, t, m) := actionText g s s' e
-  [(actor, k, t, m)] ++ roundLine ++ expired ++ rolled ++ beforeRoll ++ rollLawLine ++ pieceLines ++ over
+  [(actor, k, t, m)] ++ roundEndLaw ++ roundLine ++ expired ++ rolled ++ beforeRoll ++ otherLaw ++ rollLawLine ++ pieceLines ++ over
 
 /-- Laws that left the open list in this step, with how they ended. -/
 def closedLaws (g : Game) (s s' : State G) (e : Event) : List Decision :=

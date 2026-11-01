@@ -700,7 +700,7 @@ function renderPrompt() {
   if (!v || v.phase === "lobby" || v.phase === "ended") { p.hidden = true; return; }
   // A harvest can put a seat at the target by what it holds. It wins at the next move or vote by anyone.
   const atTarget = v.phase === "actions" && (v.seats || []).find(s => s.points >= v.target);
-  if (atTarget && !G.selected) { p.textContent = `${nameOf(atTarget.seat)} reached the target. The next move or vote ends the game.`; p.hidden = false; return; }
+  if (atTarget && !G.selected) { p.textContent = `${nameOf(atTarget.seat)} reached the target. The next build, trade or vote ends the game.`; p.hidden = false; return; }
   if (G.selected) {
     const d = (v.pieceDefs || []).find(x => x.name === G.selected);
     fill(p, `${capital(G.selected)}: `, costOf(d?.cost), `. Pick a glowing place, or Esc.`);
@@ -853,16 +853,18 @@ function consequences(pv) {
   if (!pv) return null;
   if (pv.nothing) return h("p", { class: "note-line" }, "Nothing changes at this table yet.");
   const whoName = s => s == null ? "Treasury" : nameOf(s);
-  const rows = rows => {
+  const sign = d => d > 0 ? "+" : "−";
+  const rows = s => {
     const groups = new Map();
-    for (const r of rows) { const k = r.seat == null ? "t" : r.seat; if (!groups.has(k)) groups.set(k, { seat: r.seat, list: [] }); groups.get(k).list.push(r); }
+    for (const r of [...s.rows, ...(s.pieces || [])]) { const k = r.seat == null ? "t" : r.seat; if (!groups.has(k)) groups.set(k, { seat: r.seat, list: [] }); groups.get(k).list.push(r); }
     return [...groups.values()].map(g => h("div", { class: "who" }, h("b", {}, whoName(g.seat)),
-      g.list.map(r => h("span", { class: "chg " + (r.delta > 0 ? "up" : "down") }, `${r.delta > 0 ? "+" : "−"}${Math.abs(r.delta)}`, resIcon(r.res, "res small")))));
+      g.list.map(r => h("span", { class: "chg " + (r.delta > 0 ? "up" : "down") }, r.kind ? `${sign(r.delta)}${plural(Math.abs(r.delta), r.kind)}` : [`${sign(r.delta)}${Math.abs(r.delta)}`, resIcon(r.res, "res small")]))));
   };
   return h("div", { class: "conseq" },
+    pv.ending ? h("div", { class: "note win" }, pv.ending) : null,
     (pv.points || []).map(x => h("div", { class: "note" + (x.wins ? " win" : "") }, `${nameOf(x.seat)}: ${x.from} → ${plural(x.to, "point")}.${x.wins ? ` ${x.seat === you() ? "You would win" : nameOf(x.seat) + " would win"} at once.` : ""}`)),
     (pv.notes || []).map(n => h("div", { class: "note" }, n)),
-    (pv.sections || []).map(s => h("div", { class: "case" }, h("div", { class: "when" }, s.when), rows(s.rows))),
+    (pv.sections || []).map(s => h("div", { class: "case" }, h("div", { class: "when" }, s.when), rows(s))),
     pv.moreRolls ? h("div", { class: "note" }, `And on ${plural(pv.moreRolls, "other roll")}.`) : null);
 }
 const formalText = text => h("details", { class: "formal" }, h("summary", {}, "Formal text"), h("pre", { class: "sexp" }, text));
@@ -880,7 +882,7 @@ function describedOf(d, badge = null) {
       : h("p", { class: "saying" }, d.text));
 }
 /** The rule source, as it prints, with line breaks added so that it can be read. */
-const SOURCE_LINES = new Set(["new-piece", "repeal", "for-each-player", "if", "transfer"]);
+const SOURCE_LINES = new Set(["new-piece", "repeal", "now", "end-game", "for-each-player", "if", "transfer", "move-piece"]);
 function laidOut(text) {
   let out = "", depth = 0, quoted = false;
   for (let i = 0; i < text.length; i++) {
@@ -901,7 +903,18 @@ const sourceLines = text => laidOut(text).split("\n").map(line => {
   const indent = line.length - line.trimStart().length;
   return h("span", { class: "srcline", style: { paddingLeft: `${indent + 2}ch`, textIndent: "-2ch" } }, line.trimStart());
 });
-const sourceOf = text => h("div", { class: "source" }, h("div", { class: "byline" }, h("span", {}, "Rule source")), h("pre", { class: "sexp" }, sourceLines(text)));
+/** Sources a player has opened. The page redraws on each poll, so this keeps them open. */
+const openSources = new Set();
+/** The rule source, folded away while words above it say what the law does. With no words to read, it
+ *  stays open, because then it is all there is. */
+function sourceOf(text, description) {
+  const st = description?.status || "none";
+  if (st === "none" || st === "failed")
+    return h("div", { class: "source" }, h("div", { class: "byline" }, h("span", {}, "Rule source")), h("pre", { class: "sexp" }, sourceLines(text)));
+  return h("details", { class: "source formal", open: openSources.has(text),
+      ontoggle: e => { if (e.currentTarget.open) openSources.add(text); else openSources.delete(text); } },
+    h("summary", {}, "Rule source"), h("pre", { class: "sexp" }, sourceLines(text)));
+}
 
 /** The charter at a vote: the description, consequences and source the proposer saw, then the signatures. */
 function voteDoc(p) {
@@ -922,7 +935,7 @@ function voteDoc(p) {
     describedOf(p.description),
     consequences(p.preview),
     p.stale ? h("p", { class: "note-line" }, "Moves since it was proposed changed these figures.") : null,
-    sourceOf(p.text),
+    sourceOf(p.text, p.description),
     h("div", { class: "signatures" }, lines),
     h("div", { class: "tally" }, p.canPass ? (p.yesNeeded ? `${plural(p.yesNeeded, "more yes vote")} needed.` : "") : "It can no longer pass."),
     p.canVote ? h("div", { class: "votebar" },
@@ -962,7 +975,7 @@ function lawsDoc() {
     laws.map(l => h("div", { class: "lawrow" + (l.by == null ? " founding" : ""), "data-pick": l.pick },
       h("div", { class: "head" }, h("span", { class: "ttl" }, l.title), h("span", { class: "num" }, `Law ${l.id}`)),
       describedOf(l.description),
-      sourceOf(l.text),
+      sourceOf(l.text, l.description),
       l.by != null ? h("div", { class: "meta" }, `${nameOf(l.by)} proposed it in round ${l.round}. ${l.votes.filter(x => x.yes).length} yes, ${l.votes.filter(x => !x.yes).length} no.`) : h("div", { class: "meta" }, "In force from the founding. A majority can repeal it."))),
     deals.map(d => h("details", { class: "lawrow" },
       h("summary", {},
@@ -1143,7 +1156,8 @@ function startMoment(d) {
     const seal = reduced() ? 200 : 900, carry = reduced() ? 400 : 2000;
     G.momentTimers = [
       setTimeout(() => { if (G.moment) G.moment.sealed = true; renderDock(); thump(G.ui.dock, 3, SEAL_FALL_MS); }, seal),
-      setTimeout(() => carryToMonument(d), carry)];
+      // A decree leaves no monument, so nothing is carried to the square.
+      setTimeout(() => { if (d.decree) { G.holdScene = false; endMoment(); refreshScene(); } else carryToMonument(d); }, carry)];
   } else {
     G.holdScene = false;
     G.momentTimers = [setTimeout(() => endMoment(), reduced() ? 1500 : 2600)];
@@ -1167,9 +1181,9 @@ function momentDoc(m) {
   return h("div", { class: "momentdoc" },
     h("div", { class: "smallcaps" }, d.title),
     describedOf(d.description),
-    sourceOf(d.text),
+    sourceOf(d.text, d.description),
     h("div", { class: "signatures" }, lines),
-    h("div", { class: "outcome " + (passed ? "passed" : "failed") + (landing && (m.sealed || !passed) ? " fresh" : "") }, passed ? (m.sealed ? `Enacted, ${yes} to ${no}.` : `${yes} to ${no}.`) : "It did not take effect."),
+    h("div", { class: "outcome " + (passed ? "passed" : "failed") + (landing && (m.sealed || !passed) ? " fresh" : "") }, passed ? (m.sealed ? `${d.decree ? "Done" : "Enacted"}, ${yes} to ${no}.${d.decree ? " It does not stay in force." : ""}` : `${yes} to ${no}.`) : "It did not take effect."),
     passed && m.sealed ? h("div", { class: "sealmark" + (landing ? " fresh" : "") }, waxSeal()) : null);
 }
 function carryToMonument(d) {
@@ -1187,7 +1201,8 @@ function carryToMonument(d) {
           spawn(h("div", { class: "ripple law", style: { left: `${at.x}px`, top: `${at.y}px` } }), 950);
           thump(G.ui.canvas, 3);
         }
-        caption(`"${d.title}" stands in the square.`);
+        // What the law just did comes first.
+        if (!G.ui.caption.classList.contains("on")) caption(`"${d.title}" stands in the square.`);
       }, 320);
     });
   };
@@ -1245,8 +1260,9 @@ function animateChanges(prev, v) {
   const byLaw = lines.filter(l => l.kind === "money" && l.text.startsWith("By law"));
   // A caption for what the other seats just did, so their turns can be watched without the log.
   // What a law just did always gets one: otherwise the cards seem to move by themselves.
+  const lawTold = lines.filter(l => l.text.startsWith("By law"));
   const told = lines.filter(l => l.major && l.actor !== v.you && l.kind !== "law");
-  if (byLaw.length) caption(byLaw[0].text + (byLaw.length > 1 ? ` And ${byLaw.length - 1} more.` : ""));
+  if (lawTold.length) caption(lawCaption(lawTold));
   else if (told.length) caption(told[told.length - 1].text);
 
   const rolled = v.rollsMade !== prev.rollsMade;
@@ -1259,7 +1275,7 @@ function animateChanges(prev, v) {
 
   if (rolled) rollDie(!hit.length, gained >= MANY_CARDS);
   if (rolled && !reduced()) for (const t of hit) setTimeout(() => ring(boardPoint(t), "small"), DIE_MS);
-  if (byLaw.length) lawFires(v, rolled ? DIE_MS : 0);
+  if (lawTold.length) lawFires(v, rolled ? DIE_MS : 0);
 
   // Pieces. The ring finds where someone built. Your own piece has some weight.
   const was = new Set((prev.pieces || []).map(p => JSON.stringify(p)));
@@ -1271,6 +1287,14 @@ function animateChanges(prev, v) {
       ring(boardPoint(p.at), "small");
       if (p.owner === v.you) thump(boardEl(), (v.pieceDefs || []).find(d => d.name === p.kind)?.points ? 3 : 1.5);
     }, LAND_MS);
+  }
+  // A piece a law destroyed: the ring marks the place it stood.
+  if (!G.holdScene && !reduced() && lawTold.length) {
+    const standing = new Set((v.pieces || []).map(p => JSON.stringify(pieceAt(p, v))));
+    for (const p of prev.pieces || []) {
+      const at = pieceAt(p, v);
+      if (at && !standing.has(JSON.stringify(at))) setTimeout(() => ring(boardPoint(at), "law small"), LAND_MS);
+    }
   }
 
   // Cards. Those that come from the table fly. A trade drops them in from above the hand.
@@ -1304,6 +1328,14 @@ function animateChanges(prev, v) {
   if (v.winner != null && prev.winner == null) thump(boardEl(), 4);
 }
 
+/** What the laws just did, short enough to read over the table. The chronicle keeps all of it. */
+function lawCaption(lines) {
+  const said = lines.flatMap(l => l.text.split(/(?<=\.) /));
+  const kept = [];
+  for (const x of said) { if (kept.length && kept.join(" ").length + x.length > 170) break; kept.push(x); }
+  const more = said.length - kept.length;
+  return kept.join(" ") + (more ? ` And ${more} more.` : "");
+}
 function pieceAt(p, v) {
   const spots = v.board?.spots || [];
   if (p.spot != null) return spots[p.spot];
@@ -1622,7 +1654,7 @@ function renderDraft() {
     rv.kind === "deal" ? statementOf(rv.statement) : describedOf(rv.description, rv.difference ? h("span", { class: "notasked", title: "The clerk compared this rule with your words. This says nothing about the description." }, "Not exactly what you asked") : null),
     rv.difference ? h("p", { class: "diff" }, h("span", { class: "diffby" }, "The clerk, on your request: "), rv.difference) : null,
     consequences(rv.preview),
-    rv.kind === "deal" ? formalText(rv.text) : sourceOf(rv.text)));
+    rv.kind === "deal" ? formalText(rv.text) : sourceOf(rv.text, rv.description)));
   const bar = U.proposeBar;
   bar.hidden = !same;
   if (same) {
@@ -1691,17 +1723,19 @@ function proclamation(v) {
   const w = seat(v.winner);
   const order = [...v.seats].sort((a, b) => b.points - a.points);
   const pieces = s => Object.entries(s.pieces || {}).filter(([k, n]) => n > 0 && !(v.look?.quietPieces || []).includes(k)).map(([k, n]) => plural(n, k))
-    .concat(s.tokenPoints ? [`${plural(s.tokenPoints, "point")} from what they held`] : []).join(", ");
+    .concat((v.worth || []).filter(x => x.points > 0 && s.hand?.[x.res] > 0).map(x => `${s.hand[x.res]} ${x.res} for ${plural(s.hand[x.res] * x.points, "point")}`)).join(", ");
   const nLaws = (v.laws || []).length;
   // The result is sealed, and the seal lands only the first time it is drawn.
   const landing = !G.endSealed;
   G.endSealed = true;
   return h("div", { class: "proclaim" },
     h("div", { class: "sealmark" + (landing ? " fresh" : "") }, waxSeal()),
-    h("div", { class: "smallcaps" }, v.round >= v.rounds && w?.points < v.target ? `All ${v.rounds} rounds played` : `Round ${v.round}`),
+    h("div", { class: "smallcaps" }, v.round >= v.rounds && w?.points < v.target && !v.endedBy ? `All ${v.rounds} rounds played` : `Round ${v.round}`),
     h("h2", {}, v.winner === v.you ? `${capital(v.game?.word || "the island")} is yours.` : `${capital(v.game?.word || "the island")} is ${w?.name}'s.`),
     order.map(s => h("div", { class: "standing" }, shield(s.seat, seatColor(s.seat)), h("span", {}, nameOf(s.seat)), h("span", { class: "fine" }, pieces(s)), h("b", {}, String(s.points)))),
-    h("p", { class: "note-line", style: { marginTop: "12px" } }, nLaws ? `${plural(nLaws, "law")} in force at the end.` : "It ended under the constitution alone."),
+    v.endedBy ? h("p", { class: "note-line", style: { marginTop: "12px" } }, `The law "${v.endedBy}" ended the game. Most points wins.`) : null,
+    h("p", { class: "note-line", style: { marginTop: v.endedBy ? null : "12px" } }, nLaws ? `${plural(nLaws, "law")} in force at the end.` : "It ended under the constitution alone."),
+    v.realTokens ? h("p", { class: "note-line" }, `The Claude seats at this table spent ${v.realTokens.toLocaleString("en-US")} real tokens.`) : null,
     h("details", { class: "formal" }, h("summary", {}, "Check the dice"), h("div", { class: "fine", style: { fontFamily: "var(--mono)", fontSize: "12px", wordBreak: "break-all" } }, `Seed ${v.serverSeed}. Fingerprint published at the start: ${v.fingerprint}.`)),
     h("div", { class: "bar" }, h("button", { class: "act", onclick: () => openDock({ t: "chronicle" }) }, "Read the chronicle")));
 }

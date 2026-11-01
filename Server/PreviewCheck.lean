@@ -58,6 +58,17 @@ def lawsFor (spec : GameSpec) : List String :=
     , "(law \"Tithe\" (on-harvest (transfer actor treasury res (/ amount 2))))"
     , "(law \"Cheap tendrils\" (set-cost tendril (bundle (oatmeal 1))))"
     , "(law \"Sporangia\" (new-piece sporangium (bundle (pollen 2) (rot 1)) (points 2) (attach node) (yield 1) (limit 2)))" ]
+  else if spec.id == bubbleSpec.id then
+    [ "(law \"Half on a campus\" (on-build campus (transfer actor treasury capital (/ (holding actor capital) 2))))"
+    , "(law \"Half on a datacenter\" (on-build datacenter (transfer actor treasury capital (/ (holding actor capital) 2))))"
+    , "(law \"Fibre tax\" (on-build fibre (transfer actor treasury concrete 1)))"
+    , "(law \"Capital levy\" (on-round-end (for-each-player true (transfer each treasury capital (/ (holding each capital) 2)))))"
+    , "(law \"Tithe\" (on-harvest (transfer actor treasury res (/ amount 2))))"
+    , "(law \"Cheap fibre\" (set-cost fibre (bundle (concrete 1))))"
+    , "(law \"Emergency audit\" (now (for-each-player true (transfer each bank hype (holding each hype))) (transfer treasury bank bubble (holding treasury bubble))))"
+    , "(law \"Margin call\" (on-roll (for-each-player (<= 10 rolled) (transfer each treasury hype (/ (holding each hype) 2)))))"
+    , "(law \"Bailout\" (on-round-end (for-each-player (< (points each) 5) (transfer bank each capital 3))))"
+    , "(law \"Radomes\" (new-piece radome (bundle (silicon 2) (capital 2)) (points 2) (attach datacenter) (yield 1) (limit 2)))" ]
   else if spec.id == beltSpec.id then
     [ "(law \"Half on a station\" (on-build station (transfer actor treasury ice (/ (holding actor ice) 2))))"
     , "(law \"Half on an outpost\" (on-build outpost (transfer actor treasury helium (/ (holding actor helium) 2))))"
