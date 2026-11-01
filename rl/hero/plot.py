@@ -18,7 +18,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-MAIN_RUN = "ws-v2-champ"      # imitation warm start, then PPO with champion bots in 25% of games
+MAIN_RUN = "v2-fix"           # imitation warm start, then PPO; waiting-row fix; hand bots in 50% of games
 SCRATCH_RUN = "v2-mix"        # the same network, PPO from random weights, hand bots in 25% of games
 TRAIN = ["island", "not-catan"]
 HELD_OUT = ["slime-parliament", "ai-bubble", "strike-the-earth", "pirate-republic"]
@@ -95,7 +95,7 @@ def draw(theme_name, rows, sonnet, out_paths):
                          "axes.labelcolor": t["ink2"], "xtick.color": t["ink2"], "ytick.color": t["ink2"],
                          "axes.edgecolor": t["grid"], "svg.fonttype": "none"})
     fig = plt.figure(figsize=(16, 9), facecolor=t["bg"])
-    gs = fig.add_gridspec(1, 2, width_ratios=[2.15, 1], left=0.065, right=0.975, top=0.80, bottom=0.24, wspace=0.33)
+    gs = fig.add_gridspec(1, 2, width_ratios=[2.15, 1], left=0.065, right=0.975, top=0.80, bottom=0.27, wspace=0.33)
     ax = fig.add_subplot(gs[0])
     bx = fig.add_subplot(gs[1])
     for a in (ax, bx):
@@ -110,7 +110,7 @@ def draw(theme_name, rows, sonnet, out_paths):
 
     # equal-player line
     ax.axhline(25, color=t["ink2"], lw=1.5, ls=(0, (4, 3)), zorder=1)
-    ax.text(0.5, 26.3, "equal player: 25%", color=t["ink2"], fontsize=14, ha="left", va="bottom")
+    ax.text(6.5, 26.3, "equal player: 25%", color=t["ink2"], fontsize=14, ha="left", va="bottom")
 
     # from-scratch PPO, same network, a separate run: grey dotted lines
     scratch = {o: series(rows, SCRATCH_RUN, o, TRAIN) for o in ("random", "hand")}
@@ -205,21 +205,20 @@ def draw(theme_name, rows, sonnet, out_paths):
     cp = can_play_line(MAIN_RUN, best)
     if cp:
         status, games, ended, refused = cp
-        bx.text(-0.02, -0.17, f"Can it play any world? {games} made-up worlds,\n"
+        bx.text(-0.02, -0.16, f"Can it play any world? {games} made-up worlds,\n"
                 f"2 to 6 seats: {'all' if ended == games else ended} finished, {refused} illegal moves", fontsize=13, color=t["ink"], va="top",
                 transform=bx.transAxes, linespacing=1.4)
 
     # title and footnote
     h = main["hand"]
     if h:
-        fig.text(0.065, 0.93, f"Our trained bot learns Charter: {100 * h[0][1]:.0f}% → {100 * h[-1][1]:.0f}% "
-                 "against our rule-based bot", fontsize=26, fontweight="bold", color=t["ink"])
-    fig.text(0.065, 0.875, "Warm-started from our rule-based bot, then trained with PPO against itself and an evolved "
-             "rival. 95% intervals; 800 games per point.", fontsize=15, color=t["ink2"])
-    foot = ("* Evolved rival: our best bot from evolutionary program synthesis [read: Claude keeps rewriting the bot and we "
-            "keep whatever wins]; shown with trading off, since the bot can't trade.\n"
-            "The bot never proposes laws, talks or trades with players; it votes by the rule-based bot's rule. "
-            "Wins on 10-round worlds come at the round limit and don't count as strength.")
+        fig.text(0.065, 0.93, f"PPO lifts our bot from {100 * h[0][1]:.0f}% to {100 * h[-1][1]:.0f}%, level with the bot it copied", fontsize=26, fontweight="bold", color=t["ink"])
+    fig.text(0.065, 0.875, "Warm-started by imitating our rule-based bot, then trained with PPO against itself and that "
+             "bot. 95% intervals; 800 games per point.", fontsize=15, color=t["ink2"])
+    foot = ("* Evolved rival: never seen in training. Made by evolutionary program synthesis [read: Claude keeps rewriting the "
+            "bot and we keep whatever wins].\nShown with trading off, since our bot can't trade. "
+            "Our bot never proposes laws, talks or trades with players; it votes by the rule-based bot's rule.\n"
+            "Wins at the round limit (most of them on the 10-round worlds) don't count as strength.")
     if sonnet:
         foot += ("\nSonnet points: Claude Sonnet subagents playing seats over HTTP; 'same moves' limits them in code "
                  "to the bot's moves, 'full game' lets them talk, trade and propose laws.")
