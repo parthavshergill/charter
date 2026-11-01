@@ -154,7 +154,7 @@ def play(srv, code, token):
                 did["deal"] = True
                 continue
             if not did["form"] and rich:
-                form = {"with": other, "give": rich[0], "giveN": 1, "get": "", "getN": 0, "rounds": 1, "exitNotice": 0}
+                form = {"with": other, "give": [{"res": rich[0], "n": 1}], "get": [], "rounds": 1, "exitNotice": 0}
                 check(post("propose", {"dealForm": form})["ok"], "a deal can be proposed from the form")
                 did["form"] = True
                 continue
@@ -648,6 +648,174 @@ def refusals_and_embargo(srv):
     return code
 
 
+def five_kinds_in_hand(srv):
+    """Two people at a table, one on their turn with all 5 resources in hand, and the other holding at
+    least 2 each of 2 resources. Returns the table, the tokens, the seat on its turn and the other."""
+    code = srv.post("/api/games", {"seats": 2})["code"]
+    tokens = [srv.post(f"/api/games/{code}/join", {"name": n, "nonce": 7})["token"] for n in ("Mara", "Ada")]
+
+    def ready(v):
+        if v["phase"] != "actions":
+            return False
+        hand, rate = v["seats"][v["turn"]]["hand"], v["bankRate"]
+        missing = sum(1 for n in hand.values() if n == 0)
+        spare = sum((n - 1) // rate for n in hand.values() if n > 1)
+        other = v["seats"][1 - v["turn"]]["hand"]
+        return spare >= missing and sum(1 for n in other.values() if n >= 2) >= 2
+
+    v = end_turn_until(srv, code, tokens, ready)
+    a = v["turn"]
+    for _ in range(5):
+        hand = v["seats"][a]["hand"]
+        gone = [k for k, n in hand.items() if n == 0]
+        if not gone:
+            break
+        rich = max(hand, key=hand.get)
+        r = srv.post(f"/api/games/{code}/move", {"token": tokens[a], "move": {"t": "bankTrade", "give": rich, "get": gone[0]}})
+        check(r["ok"], "the bank trades for a resource the seat lacks")
+        v = srv.get(f"/api/games/{code}/view?token={tokens[a]}")
+    check(all(n > 0 for n in v["seats"][a]["hand"].values()), "a seat can come to hold all 5 resources")
+    return code, tokens, a, 1 - a
+
+
+def ones(kinds):
+    return [{"res": k, "n": 1} for k in kinds]
+
+
+@on_fresh_tables
+def trades_of_several_resources(srv):
+    """An offer and a deal can each carry several resources, up to 4 on each side, and a trade pays in full."""
+    code, tokens, a, b = five_kinds_in_hand(srv)
+    move = lambda seat, m: srv.post(f"/api/games/{code}/move", {"token": tokens[seat], "move": m})
+    view = lambda: srv.get(f"/api/games/{code}/view?token={tokens[a]}")
+    v = view()
+    kinds = sorted(v["seats"][a]["hand"])
+    check(v["maxGoodsPerSide"] == 4, "the view tells the page how many resources a side can carry")
+
+    # The limit on offers: 4 different resources pass, on either side, and 5 are refused.
+    r = move(a, {"t": "offer", "to": None, "give": ones(kinds[:4]), "get": ones(kinds[:4])})
+    check(r["ok"], "an offer with 4 different resources on each side is accepted")
+    offer = view()["offers"][-1]
+    check(len(offer["give"]) == 4 and len(offer["get"]) == 4, "the offer keeps all 4 on each side")
+    check(move(a, {"t": "cancel", "id": offer["id"]})["ok"], "the offer can be taken back")
+    for give, get in ((kinds, kinds[:1]), (kinds[:1], kinds)):
+        r = move(a, {"t": "offer", "to": None, "give": ones(give), "get": ones(get)})
+        check(not r["ok"] and "at most 4 different resources" in r["error"], f"an offer with 5 different resources on one side is refused: {r.get('error')}")
+
+    # A trade of two for two moves exactly those cards, and both sides read it in the chronicle.
+    v = view()
+    other = v["seats"][b]["hand"]
+    want = sorted((k for k, n in other.items() if n >= 2), key=lambda k: -other[k])[:2]
+    pay = [k for k in kinds if k not in want][:2]
+    mine = dict(v["seats"][a]["hand"])
+    theirs = dict(other)
+    check(move(a, {"t": "offer", "to": b, "give": [{"res": pay[0], "n": 1}, {"res": pay[1], "n": 1}], "get": [{"res": want[0], "n": 2}, {"res": want[1], "n": 1}]})["ok"], "a two for two offer is made")
+    oid = view()["offers"][-1]["id"]
+    check(move(b, {"t": "accept", "id": oid})["ok"], "the other seat accepts the two for two offer")
+    v = view()
+    for k, d in ((pay[0], -1), (pay[1], -1), (want[0], 2), (want[1], 1)):
+        mine[k] += d
+        theirs[k] -= d
+    check(v["seats"][a]["hand"] == mine and v["seats"][b]["hand"] == theirs, "both hands change by exactly the offer")
+    check(not v["offers"], "the accepted offer is gone")
+    line = v["chronicle"][-1]["text"]
+    check(f"1 {pay[0]} and 1 {pay[1]} for 2 {want[0]} and 1 {want[1]}" in line, f"the chronicle names every resource: {line}")
+
+    # Accepting pays in full or not at all.
+    v = view()
+    too_much = v["seats"][b]["hand"][want[1]] + 1
+    check(move(a, {"t": "offer", "to": b, "give": ones(want[:1]), "get": [{"res": want[0], "n": 1}, {"res": want[1], "n": too_much}]})["ok"], "an offer can ask for more than a seat holds")
+    oid = view()["offers"][-1]["id"]
+    r = move(b, {"t": "accept", "id": oid})
+    check(not r["ok"], "a seat cannot accept an offer it can pay only in part")
+    now = view()["seats"]
+    check(now[a]["hand"] == v["seats"][a]["hand"] and now[b]["hand"] == v["seats"][b]["hand"], "a refused acceptance moves nothing")
+    check(move(a, {"t": "cancel", "id": oid})["ok"], "the offer is taken back")
+
+    # A deal from the form takes the same lists, under the same limit.
+    propose = lambda body: srv.post(f"/api/games/{code}/propose", {"token": tokens[a], **body})
+    form = lambda give, get: {"dealForm": {"with": b, "give": ones(give), "get": ones(get), "rounds": 2, "exitNotice": 1}}
+    for give, get in ((kinds, kinds[:1]), (kinds[:1], kinds)):
+        r = propose(form(give, get))
+        check(not r["ok"] and "at most 4 different resources" in r["error"], f"a deal form with 5 different resources on one side is refused: {r.get('error')}")
+    pays = " ".join(f"(pay {a} {b} {k} 1)" for k in kinds)
+    deposits = " ".join(f"({a} {k} 2)" for k in kinds)
+    r = propose({"text": f'(deal "All five" (signers {a} {b}) (rounds 2) (exit-notice 0) (deposits {deposits}) (every-round {pays}))'})
+    check(not r["ok"] and "at most 4 different resources" in r["error"], "the same deal sent as text is refused too")
+    check(propose(form(kinds[:4], kinds[1:]))["ok"], "a deal form with 4 different resources on each side is accepted")
+    deal = view()["proposals"][-1]
+    check(deal["kind"] == "deal" and all(k in deal["english"] for k in kinds), "the deal names every resource")
+
+    # A two for two deal starts, and sets aside what it says.
+    v = view()
+    rich = [k for k, n in v["seats"][a]["hand"].items() if n >= 2][:1]
+    if rich:
+        want = sorted((k for k, n in v["seats"][b]["hand"].items() if n >= 2 and k not in rich))[:1]
+        if want:
+            check(propose(form(rich, want))["ok"], "a deal that both seats can fund is proposed")
+            pid = view()["proposals"][-1]["id"]
+            before_a, before_b = dict(view()["seats"][a]["hand"]), dict(view()["seats"][b]["hand"])
+            for s in (a, b):
+                check(srv.post(f"/api/games/{code}/sign", {"token": tokens[s], "id": pid})["ok"], "a signer signs the deal from the form")
+            v = view()
+            check("The deal started." in " ".join(l["text"] for l in v["chronicle"]), "the deal from the form started")
+            check(v["seats"][a]["hand"][rich[0]] == before_a[rich[0]] - 2 and v["seats"][b]["hand"][want[0]] == before_b[want[0]] - 2, "each signer sets aside its deposit")
+
+
+@on_fresh_tables
+def a_bot_takes_a_good_offer(srv):
+    """A bot takes an offer of several resources that gives it at least what it gives."""
+    code = srv.post("/api/games", {"seats": 2})["code"]
+    r = srv.post(f"/api/games/{code}/join", {"name": "Human", "nonce": 7})
+    token, you = r["token"], r["seat"]
+    check(srv.post(f"/api/games/{code}/bot", {})["ok"], "a bot joins")
+    move = lambda m: srv.post(f"/api/games/{code}/move", {"token": token, "move": m})
+    view = lambda: srv.get(f"/api/games/{code}/view?token={token}")
+    for _ in range(4000):
+        v = view()
+        if v["phase"] == "ended":
+            raise TableRanOut()
+        if v["turn"] != you:
+            time.sleep(0.002)
+            continue
+        hand, bot = v["seats"][you]["hand"], v["seats"][1 - you]["hand"]
+        wanted = [k for k, n in bot.items() if n > 0]
+        offered = [k for k, n in hand.items() if n > 0 and k not in wanted[:1]]
+        if v["phase"] == "actions" and wanted and len(offered) >= 2:
+            give = ones(offered[:2])
+            check(move({"t": "offer", "to": 1 - you, "give": give, "get": ones(wanted[:1])})["ok"], "a two for one offer goes to a bot")
+            for _ in range(500):
+                now = view()
+                if now["seats"][you]["hand"][wanted[0]] == hand[wanted[0]] + 1:
+                    check(all(now["seats"][you]["hand"][k] == hand[k] - 1 for k in offered[:2]), "the bot took the offer, and paid for it")
+                    return
+                time.sleep(0.005)
+            raise SystemExit("FAILED: the bot did not take an offer that gives it more than it gives")
+        place = [m for m in v["legalMoves"] if m["move"]["t"] == "place"]
+        r = move(place[0]["move"] if v["phase"] == "setup" and place else {"t": "endTurn"})
+        if not r["ok"]:
+            raise SystemExit(f"FAILED: a turn was refused: {r}")
+    raise TableRanOut()
+
+
+@on_fresh_tables
+def a_table_over_the_limit(srv):
+    """A table where a seat holds all 5 resources. Returns what `add_offer_over_the_limit` writes to its log."""
+    code, tokens, a, _ = five_kinds_in_hand(srv)
+    kinds = sorted(srv.get(f"/api/games/{code}/view?token={tokens[a]}")["seats"][a]["hand"])
+    event = {"t": "move", "seat": a, "move": {"t": "offer", "to": None, "give": ones(kinds), "get": ones(kinds[:1])}}
+    return code, tokens[a], event
+
+
+def add_offer_over_the_limit(data, code, event):
+    """Add an event to a saved log, as an older version could have written it before the limit."""
+    db = sqlite3.connect(os.path.join(data, f"{code}.db"))
+    with db:
+        seq = db.execute("SELECT MAX(seq) FROM events").fetchone()[0] + 1
+        db.execute("INSERT INTO events (seq, body) VALUES (?, ?)", (seq, log_body(event)))
+    db.close()
+
+
 def log_body(event):
     """An event as the log stores it: a byte count in LEB128, then the JSON in UTF-8."""
     body = json.dumps(event).encode()
@@ -796,6 +964,9 @@ def main():
         a_roll_law_fires(srv)
         griefer_findings_stay_fixed(srv)
         table3 = refusals_and_embargo(srv)
+        trades_of_several_resources(srv)
+        a_bot_takes_a_good_offer(srv)
+        over_limit, over_token, over_event = a_table_over_the_limit(srv)
         check(v["serverSeed"] is not None, "the seed is revealed at the end")
         check(srv.post(f"/api/games/{code}/move", {"token": token, "move": {"t": "endTurn"}})["ok"] is False, "nothing happens after the end")
         events = srv.get(f"/api/games/{code}/events")
@@ -803,6 +974,7 @@ def main():
         check_scenes(data)
         srv.stop()
         old = write_old_logs(data)
+        add_offer_over_the_limit(data, over_limit, over_event)
         err_path = os.path.join(data, "stderr.txt")
         with open(err_path, "w") as err:
             srv = Server(port, data, err)
@@ -811,6 +983,7 @@ def main():
             err_text = f.read()
         check(not any(o in codes for o in old) and code in codes and table3 in codes, "a saved game that no longer replays is left out, and the others load")
         check(second in codes and claude_table in codes, "tables of other games and with other seats load")
+        check(over_limit in codes and len(srv.get(f"/api/games/{over_limit}/view?token={over_token}")["offers"][-1]["give"]) == 5, "a saved table with an offer over the limit still replays")
         check(pack in codes and srv.get(f"/api/games/{pack}/view")["game"]["id"] == "not-catan", "a pack's table replays from its log after a restart")
         check(srv.get(f"/api/games/{second}/view")["game"]["id"] == "slime-parliament", "a replay from the log runs the game named in the log")
         check(srv.get(f"/api/games/{code}/talk")["lines"][-1]["text"] == "Good game.", "talk survives a restart")

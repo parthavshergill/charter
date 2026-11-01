@@ -406,7 +406,7 @@ def problemsOf (g : Game) (seat : Nat) (text : String) : Except String (List Str
     match p with
     | .law L => pure (lawProblems g.spec.G s L)
     | .deal d =>
-      pure (dealProblems s d ++ (if d.signers.contains seat then [] else ["you must be one of the signers of your own deal"]))
+      pure (dealProblems s d ++ dealLimitProblems d ++ (if d.signers.contains seat then [] else ["you must be one of the signers of your own deal"]))
 
 /-- Say a constitution problem as a plain sentence. -/
 def sentence (s : String) : String :=

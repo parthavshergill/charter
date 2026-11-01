@@ -14,7 +14,7 @@ Each action names itself in its `action` field:
 - `place`: put a piece on a spot (a corner of a hex). Give `kind` and `spot`.
 - `place_link`: put a piece on a link (a side of a hex). Give `kind`, and the two spots of the link as `from_spot` and `to_spot`.
 - `bank_trade`: trade with the bank. Give `give` and `get`, each a resource.
-- `offer`: on your turn, offer a trade to one seat, or to anyone with `to` null. `give` is what you give and `get` is what you ask for. An open offer goes away at the end of your turn.
+- `offer`: on your turn, offer a trade to one seat, or to anyone with `to` null. `give` is what you give and `get` is what you ask for. Each is a list, so one offer can name several resources, at most 4 different ones on each side. An open offer goes away at the end of your turn.
 - `accept`: accept an offer by its `id`. `cancel`: take back your own offer by its `id`.
 - `declare`: on your turn, set your public number for a resource. Give `res` and `n`. Everyone can see it, it moves nothing, and it counts as an action. It clears when the round ends. Only laws read it, so ignore it unless a law does.
 - `vote`: vote on a law by its `id`, with `yes` true or false. A vote is final.
@@ -64,10 +64,10 @@ A law can change prices and points, change the bank's rate, make a resource wort
 The treasury holds what laws pay into it. Only a law can pay it out.
 
 ### Deals
-A deal binds only those who sign it. It can have payments each round, payments when a seat builds, a promise not to build on certain spots, and a promise not to trade with a seat. It starts when every signer has signed. Each payer must put up a deposit in advance that covers everything they could owe, so a promise is always paid. A deal ends after its rounds, or after a signer gives notice. What is left of a deposit comes back.
+A deal binds only those who sign it. It can have payments each round, payments when a seat builds, a promise not to build on certain spots, and a promise not to trade with a seat. It starts when every signer has signed. Each payer must put up a deposit in advance that covers everything they could owe, so a promise is always paid. A deal ends after its rounds, or after a signer gives notice. What is left of a deposit comes back. A deal can ask each signer for at most 4 different resources.
 
 ### Trades
-An offer is a trade of any resources between two seats. It happens the moment someone accepts it, and only if both sides can pay.
+An offer is a trade of any resources between two seats, at most 4 different resources on each side. It happens the moment someone accepts it, and only if both sides can pay.
 
 ### Strategy notes
 Laws are the point of this game. The base game is ordinary, and the rules can change. Try things. Think about who a law really helps, and count the votes before you propose it. Talk to people first: a law nobody expected rarely passes. Use `draft` to find out what the rule language can say, and read the clerk's result closely: the clerk says what it changed from what you asked.
