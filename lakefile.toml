@@ -1,5 +1,5 @@
 name = "charter"
-defaultTargets = ["Charter"]
+defaultTargets = ["Charter", "Server"]
 
 [[require]]
 name = "hexgrid"
@@ -19,3 +19,7 @@ path = "packages/lean-gpu-cmd"
 
 [[lean_lib]]
 name = "Charter"
+
+[[lean_lib]]
+name = "Server"
+roots = ["Server.Util", "Server.SExp", "Server.Text", "Server.Rules", "Server.Preview", "Server.Spec", "Server.Persona", "Server.Game", "Server.Bots", "Server.Player", "Server.Http"]

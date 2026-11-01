@@ -7,5 +7,7 @@ import Charter.EngineTests
 import Charter.Games.Tiny
 import Charter.Games.Island
 import Charter.Games.IslandTests
+import Charter.Games.Belt
+import Charter.Scene.Belt
 import Charter.Games.Witnesses
 import Charter.Scene.OfState
