@@ -109,7 +109,11 @@ def load_subject(spec):
     from reference.policy import load_policy
     net = load_policy(spec, meta)
     label = meta.get("name", os.path.basename(spec))
-    return label, (lambda seed: net.player(seed)), meta.get("settings", {})
+    settings = dict(meta.get("settings", {}))
+    # Some metas give stale_wait at the top level (rl/entity2's runs), not in settings.
+    if "stale_wait" in meta and "stale_wait" not in settings:
+        settings["stale_wait"] = bool(int(meta["stale_wait"]))
+    return label, (lambda seed: net.player(seed)), settings
 
 
 # ---- Playing -----------------------------------------------------------------------------------------------
