@@ -30,6 +30,7 @@ def lib():
             "charter_copy": (vp, [vp]), "charter_free": (None, [vp]),
             "charter_seat": (i, [vp]), "charter_over": (i, [vp]), "charter_refused": (i, [vp]),
             "charter_voting": (i, [vp]), "charter_seats": (i, [vp]),
+            "charter_min_seats": (i, [vp]), "charter_max_seats": (i, [vp]),
             "charter_obs": (i, [vp, fp, i]), "charter_mask": (i, [vp, bp, i]),
             "charter_rewards": (i, [vp, fp, i]), "charter_info": (i, [vp, fp, i]),
             "charter_suggest": (i, [vp, cp]), "charter_saved_log": (i, [vp, cp, cp, cp, i]),
@@ -129,6 +130,11 @@ class Game:
     @property
     def seats(self):
         return lib().charter_seats(self._h)
+
+    @property
+    def seat_range(self):
+        """The fewest and most seats this game allows."""
+        return lib().charter_min_seats(self._h), lib().charter_max_seats(self._h)
 
     def obs(self, out=None):
         out = self._obs if out is None else out

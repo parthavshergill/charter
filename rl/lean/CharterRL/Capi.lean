@@ -98,6 +98,14 @@ def savedLog (e : Env) (code names : String) : String :=
 @[export charter_rl_saved_state]
 def savedState (e : Env) : String := e.savedState
 
+/-- The fewest seats this game can have. -/
+@[export charter_rl_min_seats]
+def minSeatsC (e : Env) : UInt32 := UInt32.ofNat e.T.minSeats
+
+/-- The most seats this game can have. -/
+@[export charter_rl_max_seats]
+def maxSeatsC (e : Env) : UInt32 := UInt32.ofNat e.T.maxSeats
+
 /-- How many seats this game has. -/
 @[export charter_rl_seats]
 def seats (e : Env) : UInt32 := UInt32.ofNat e.lineup.size

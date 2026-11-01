@@ -19,6 +19,11 @@ Everything is fixed, so two runs and two subjects see the same games:
   plays on for it) and `play` (`hand` places the opening pieces, then the subject plays on).
 - Laws: with laws (`law_every` 8) and without (0). Votes follow `vote_mode` from the policy's meta, `bot` otherwise.
 
+Can it play (`--can-play`, on by default): a separate check from how well it plays. The subject plays made-up
+games that pass `G.Valid` (rl/lean/CharterRL/Gen.lean: at the engine's limits, tiny, and odd sizes) at every seat
+count from 2 to 6, at every seat, against random players. It reports games that did not end, refused actions and
+errors. It says nothing about strength.
+
 Saved games (`--logs K`, default 2): the first K games of every table are kept in `OUT/games/`, each as
 `<code>.jsonl`, the server's event log, which `charter-rl-logs OUT/games` turns into `<code>.db` for
 `make spectate RESULTS=OUT/games`, and as `<code>.md`, a short summary: moves by type, what was built and when,
@@ -131,7 +136,7 @@ def play_table(task):
     wins, by_seat, points, rounds, refused, decisions, ended = 0, [0] * SEATS, 0.0, 0.0, 0, 0, 0
     base = {"game": game_id, "lineup": ["caller"] * SEATS, "seed": 1, "vote_mode": vote_mode,
             "law_every": 8 if laws else 0}
-    for key in ("slot_order", "move_rows", "random_map", "preview"):
+    for key in ("slot_order", "move_rows", "random_map", "preview", "declare_always"):
         if key in settings:
             base[key] = settings[key]
     plain = Game(base)
@@ -174,6 +179,74 @@ def play_table(task):
     return {"subject": label, "game": game_id, "opponent": opponent, "phase": phase, "laws": laws, "games": n,
             "wins": wins, "wins_by_seat": by_seat, "points": points / n, "rounds": rounds / n,
             "refused": refused, "decisions": decisions, "ended": ended, "saved": saved}
+
+
+# ---- Can it play -------------------------------------------------------------------------------------------
+
+CAN_PLAY = ["gen-limits-1", "gen-limits-2", "gen-tiny-1", "gen-tiny-2", "gen-tiny-3"] + [f"gen-odd-{i}" for i in range(8)]
+
+
+def can_play_task(task):
+    """Play one made-up game at one seat count, the subject at each seat in turn, the others random."""
+    from charter import Game
+    spec, game_id, seats, n, vote_mode = task
+    label, maker, _ = load_subject(spec)
+    bot = spec if spec in BOTS else None
+    out = {"game": game_id, "seats": seats, "games": 0, "ended": 0, "refused": 0, "errors": 0, "decisions": 0,
+           "first_error": ""}
+    try:
+        g = Game({"game": game_id, "lineup": ["caller"] * seats, "seed": 1, "vote_mode": vote_mode})
+    except Exception as e:  # noqa: BLE001
+        out["errors"] += 1
+        out["first_error"] = f"could not start: {e}"
+        return out
+    for k in range(n):
+        at = k % seats
+        me = bot if bot and bot != "hand" else "caller"
+        lineup = [me if s == at else "caller" for s in range(seats)]
+        try:
+            g.restart(lineup, 7000 + k)
+            subject = maker(7000 + k) if maker else None
+            if subject:
+                subject.reset()
+            others = RandomPlayer(7001 + k)
+            steps = 0
+            while not g.over and steps < 50000:
+                steps += 1
+                if g.seat == at:
+                    a = subject.act(g) if subject else g.suggest("hand")
+                    if a < 0:
+                        a = int(g.legal()[0])
+                    out["decisions"] += 1
+                    if not g.step(a):
+                        out["refused"] += 1
+                        if not out["first_error"]:
+                            out["first_error"] = f"game {k}: action {a} refused"
+                        g.step(int(g.legal()[0]))
+                else:
+                    g.step(others.act(g))
+            out["games"] += 1
+            out["ended"] += int(g.info()["over"]) and int(g.over)
+        except Exception as e:  # noqa: BLE001
+            out["errors"] += 1
+            if not out["first_error"]:
+                out["first_error"] = f"game {k}: {type(e).__name__}: {e}"
+    return out
+
+
+def can_play_report(label, rows):
+    bad = sum(r["games"] - r["ended"] + r["refused"] + r["errors"] for r in rows)
+    out = [f"**Can it play: {label}** (made-up games that pass `G.Valid`, 2 to 6 seats, at every seat, against "
+           f"random players). {'PASS' if bad == 0 else 'FAIL'}: {sum(r['games'] for r in rows)} games, "
+           f"{sum(r['ended'] for r in rows)} ended, {sum(r['refused'] for r in rows)} refused actions, "
+           f"{sum(r['errors'] for r in rows)} errors, {sum(r['decisions'] for r in rows)} decisions by the subject.", ""]
+    problems = [r for r in rows if r["games"] - r["ended"] + r["refused"] + r["errors"]]
+    if problems:
+        out += ["| game | seats | games | ended | refused | errors | first error |", "|---|---|---|---|---|---|---|"]
+        out += [f"| {r['game']} | {r['seats']} | {r['games']} | {r['ended']} | {r['refused']} | {r['errors']} | "
+                f"{r['first_error']} |" for r in problems]
+        out.append("")
+    return "\n".join(out) + "\n"
 
 
 # ---- Saved games -------------------------------------------------------------------------------------------
@@ -373,6 +446,8 @@ def main():
     ap.add_argument("--opponents", default=",".join(OPPONENTS),
                     help="comma-separated: hand, random, champion, champion-closed")
     ap.add_argument("--logs", type=int, default=2, help="games kept per table, with logs and summaries")
+    ap.add_argument("--can-play", type=int, default=1, help="1 to run the can-it-play check on made-up games")
+    ap.add_argument("--can-play-games", type=int, default=6, help="games per made-up game and seat count")
     args = ap.parse_args()
     OPPONENTS[:] = args.opponents.split(",")
     log_dir = os.path.join(args.out, "games")
@@ -395,6 +470,12 @@ def main():
         with ProcessPoolExecutor(max_workers=args.jobs) as pool:
             results = list(pool.map(play_table, tasks))
         text.append(report(label, settings, results, time.time() - t0))
+        if args.can_play:
+            cp_tasks = [(spec, gid, seats, args.can_play_games, vote_mode) for gid in CAN_PLAY for seats in range(2, 7)]
+            with ProcessPoolExecutor(max_workers=args.jobs) as pool:
+                cp = list(pool.map(can_play_task, cp_tasks))
+            text.append(can_play_report(label, cp))
+            print(f"{label}: can it play done", flush=True)
         everything[label] = results
         print(f"{label}: done in {time.time() - t0:.0f} s", flush=True)
     if args.logs:

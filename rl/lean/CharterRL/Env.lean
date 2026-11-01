@@ -1,5 +1,6 @@
 import Lean.Data.Json
 import CharterRL.Obs
+import CharterRL.Gen
 
 /-!
 # The environment
@@ -16,6 +17,18 @@ the caller only under `voteMode := .policy`.
 
 namespace CharterRL
 open Lean Charter CharterServer CharterServer.Bots CharterServer.Arena
+
+/-- What `lawOk` (the hand bot's vote check) works out about one open law, for every seat at once: each seat's net
+at the next turn change, summed over the rolls and weighted by how often each comes up, without the law and with it.
+Only votes on this law happen while it is open, and votes do not change the next turn change, so this holds for
+every voter of the law. `charter-rl-check` plays games with and without it and finds them the same. -/
+structure VoteNets where
+  id : Nat
+  rollsMade : Nat
+  turnsTaken : Nat
+  before : Array Int
+  after : Array Int
+  deriving Inhabited
 
 /-- A seat that the caller plays: it asks for nothing, so the arena's loop passes it by. -/
 def silent : Strategy := Strategy.ofSeat "caller" fun _ _ _ => []
@@ -40,6 +53,11 @@ structure Env where
   lawTurn : Nat := 0
   lawsSeen : List Nat := []
   decision : Decision := .none
+  /-- The decision's legal placements, in `placeOrder`: what the rows of `places` and actions from `actPlace` mean. -/
+  places : Array Move := #[]
+  /-- The decision's free spots, and the spots its seat reaches: `freeMap` and `reachMap`, worked out once. -/
+  free : Array Bool := #[]
+  reach : Array Bool := #[]
   /-- The last `step` was refused. -/
   refused : Bool := false
   /-- Each seat's pips when setup ended. -/
@@ -49,6 +67,12 @@ structure Env where
   proposed : Nat := 0
   passed : Nat := 0
   decisions : Nat := 0
+  /-- The current law's `VoteNets`, once a seat has voted on it. -/
+  voteNets : Option VoteNets := Option.none
+  /-- The open law's `Preview`, for the observations of its voters. -/
+  preview : Option Preview := Option.none
+  /-- Off only for the test that compares games with and without `voteNets` and a shared `preview`. -/
+  shareVotes : Bool := true
   /-- Every event so far, in the server's log format, when `settings.record` is on. -/
   trail : Array Json := #[]
   /-- After each event of `trail`: the round, 1 if still in setup, the number of laws in force, and each seat's
@@ -115,12 +139,9 @@ private def Env.syncLaws (e : Env) : Env :=
 
 /-- A law has a row for each new piece it makes, and a place among the laws in force. -/
 private def Env.lawFits (e : Env) (L : Law) : Bool :=
-  let free := (e.ep.rowKind.toList.drop maxLinkKinds).filter (· == "") |>.length
-  let linkFree := (e.ep.rowKind.toList.take maxLinkKinds).filter (· == "") |>.length
+  let free := (e.ep.rowKind.toList.filter (· == "")).length
   let news := L.clauses.filterMap fun | .newPiece p => some p | _ => Option.none
-  let isLink (p : PieceDef) : Bool := match p.placement with | .link => true | _ => false
-  e.play.state.laws.length < maxLaws &&
-    (news.filter (!isLink ·)).length ≤ free && (news.filter isLink).length ≤ linkFree
+  e.play.state.laws.length < maxLaws && news.length ≤ free
 
 /-- At the start of a turn in play, by chance, the seat whose turn it is proposes a law from the library. The engine
 may refuse one, for example if it is already in force, so this tries each in turn from a random place. -/
@@ -159,10 +180,48 @@ private def Env.noteOpening (e : Env) : Env :=
     | .link _ => acc) (Array.replicate s.turnOrder.length 0)
   { e with opening }
 
+/-- The strategies whose vote on a law is exactly `lawOk` under their own weights: the hand bot's family and the
+champion both vote through `reactions`. -/
+private def votesByLawOk (o : Opponent) : Bool :=
+  ["hand", "fair", "closed", "champion", "champion-closed", "champion-ref"].contains o.name
+
+/-- This law's `VoteNets` for this state, worked out afresh. -/
+private def Env.freshNets (e : Env) (id : Nat) (L : Law) : VoteNets × Env :=
+  let s := e.play.state
+  let G := e.G
+  let seats := s.turnOrder.length
+  let rolls := Scene.rollsOf G
+  let totals (x : State G) : Array Int :=
+    rolls.foldl (fun acc r =>
+      let es := Engine.predictNextTurn G x r
+      let w : Int := pips G r
+      (List.range seats).foldl (fun acc p => acc.modify p (· + w * netFor p es)) acc) (Array.replicate seats 0)
+  let n : VoteNets :=
+    { id, rollsMade := s.rollsMade, turnsTaken := s.turnsTaken, before := totals s, after := totals (s.withLaw id L) }
+  (n, { e with voteNets := some n })
+
+/-- This law's `VoteNets` for this state, from the cache when it is for the same law and the same turn. -/
+private def Env.netsFor (e : Env) (id : Nat) (L : Law) : VoteNets × Env :=
+  let s := e.play.state
+  match e.voteNets with
+  | some n =>
+    if n.id == id && n.rollsMade == s.rollsMade && n.turnsTaken == s.turnsTaken then (n, e) else e.freshNets id L
+  | Option.none => e.freshNets id L
+
+/-- `lawOk` for this seat, from the shared nets. The same tests as `lawOk`, in the same order. -/
+private def Env.lawOkShared (e : Env) (W : Weights) (seat id : Nat) (L : Law) : Bool × Env :=
+  let (n, e) := e.netsFor id L
+  let s := e.play.state
+  let s' := s.withLaw id L
+  let handsOthersTheWin := s.turnOrder.any fun q => q != seat && decide (e.G.targetPoints ≤ s'.pointsOf q)
+  let endsAgainstUs := L.clauses.any Clause.isEndGame && Engine.bestSeat s' s'.turnOrder != some seat
+  (!handsOthersTheWin && !endsAgainstUs && decide (n.after.getD seat 0 + W.voteMargin ≥ n.before.getD seat 0), e)
+
 /-- Cast a vote that is not the caller's to choose, or that is the caller's under a vote mode that handles it. -/
 private def Env.castVote (e : Env) (seat id : Nat) (L : Law) : Option Env :=
   let (yes, e) : Bool × Env := match e.planOf seat with
     | some o =>
+      if e.shareVotes && votesByLawOk o then e.lawOkShared o.weights seat id L else
       let c := ctxOf e.ctx.board o
       let yes := (o.strategy.decide c e.play.state [seat]).findSome? fun
         | .vote q i y => if q == seat && i == id then some y else Option.none
@@ -170,7 +229,7 @@ private def Env.castVote (e : Env) (seat id : Nat) (L : Law) : Option Env :=
       (yes.getD false, e)
     | Option.none =>
       match e.settings.voteMode with
-      | .bot => (lawOk e.ctx e.play.state seat id L, e)
+      | .bot => if e.shareVotes then e.lawOkShared e.ctx.weights seat id L else (lawOk e.ctx e.play.state seat id L, e)
       | _ =>
         let (x, e) := e.draw
         (x % 2 == 0, e)
@@ -181,6 +240,26 @@ private def Env.castVote (e : Env) (seat id : Nat) (L : Law) : Option Env :=
     match Engine.step e.G s (.vote seat id false) with
     | .ok s' => some ({ e with play := e.play.commit {} e.playTable (.vote seat id false) s' }.note (.vote seat id false))
     | .error _ => Option.none
+
+/-- Wait for this decision, and work out its placements once. -/
+def Env.await (e : Env) (d : Decision) : Env :=
+  let s := e.play.state
+  match d with
+  | .turn seat =>
+    let free := freeMap e.ctx s
+    let reach := reachMap e.ctx s seat
+    { e with decision := d, places := placeList e.ctx e.ep s seat free reach, free, reach }
+  | .vote seat id L =>
+    let cached := match e.preview with
+      | some p => if e.shareVotes && p.id == id && p.rollsMade == s.rollsMade && p.turnsTaken == s.turnsTaken then some p
+        else Option.none
+      | Option.none => Option.none
+    let preview := if !e.settings.preview then Option.none else
+      match cached with
+      | some p => some p
+      | Option.none => some (previewOf e.ep s s.turnOrder.length id L)
+    { e with decision := d, places := #[], free := freeMap e.ctx s, reach := reachMap e.ctx s seat, preview }
+  | .none => { e with decision := d, places := #[], free := #[], reach := #[] }
 
 /-- Run until a caller must decide or the game ends. A law passing is counted in `syncLaws`, by a new id appearing
 among the laws in force. -/
@@ -197,7 +276,7 @@ private def Env.settle (e : Env) : Nat → Env
     match nextVoter s with
     | some (seat, id, L) =>
       let callerDecides := (e.planOf seat).isNone && e.settings.voteMode == .policy
-      if callerDecides then { e with decision := .vote seat id L } else
+      if callerDecides then e.await (.vote seat id L) else
       match e.castVote seat id L with
       | some e' => Env.settle e' fuel
       | Option.none => { e with decision := .none }
@@ -205,7 +284,7 @@ private def Env.settle (e : Env) : Nat → Env
       match s.currentSeat with
       | Option.none => { e with decision := .none }
       | some seat =>
-        if (e.planOf seat).isNone then { e with decision := .turn seat } else
+        if (e.planOf seat).isNone then e.await (.turn seat) else
         let table := if s.phase == .setup then e.setupTable else e.playTable
         match advance {} table e.play with
         | some (ev, p) => Env.settle ({ e with play := p }.note ev) fuel
@@ -246,7 +325,9 @@ private def Env.reckon (e : Env) : Env := Id.run do
   return { e with rewards }
 
 /-- Start a game with this seed. The map, the dice, the row order and the laws all follow from the seed. -/
-def Env.start (T : Tables) (settings : Settings) (lineup : Array SeatPlan) (seed : Nat) : Except String Env := do
+def Env.start (T : Tables) (settings : Settings) (lineup : Array SeatPlan) (seed : Nat) (shareVotes : Bool := true) :
+    Except String Env := do
+  let T := if settings.declareAlways then { T with declares := true } else T
   let seats := lineup.size
   let G := if settings.randomMap then randomMap T.G seed else T.G
   if settings.randomMap && !G.shapeChecks then
@@ -266,14 +347,14 @@ def Env.start (T : Tables) (settings : Settings) (lineup : Array SeatPlan) (seed
       play := Play.start s seats, ep
       base := template T ep G seats settings.moveRows
       draws := mix seed 77, lawsSeen := s.laws.map (·.1)
-      pointsSeen := Array.replicate seats 0, rewards := seatZeros }
+      pointsSeen := Array.replicate seats 0, rewards := seatZeros, shareVotes }
   return (Env.settle e e.fuel).reckon
 
 /-- Apply an action for the seat that must decide. An action not on offer, or one the engine refuses, changes nothing
 and sets `refused`. -/
 def Env.step (e : Env) (action : Nat) : Env :=
   let bad := { e with refused := true, rewards := seatZeros }
-  match decode e.T e.ep e.decision action with
+  match decode e.T e.ep e.places e.decision action with
   | Option.none => bad
   | some ev =>
     match Engine.step e.G e.play.state ev with
@@ -288,10 +369,10 @@ def Env.step (e : Env) (action : Nat) : Env :=
 
 /-- The numbers for the seat that must decide. -/
 def Env.observation (e : Env) : FloatArray :=
-  observe e.T e.ep e.ctx e.settings e.base e.play.state e.decision
+  observe e.T e.ep e.ctx e.settings e.base e.play.state e.decision e.places e.free e.reach e.preview
 
 /-- The actions on offer. -/
-def Env.legalActions (e : Env) : List (Nat × Event) := legal e.T e.ep e.ctx e.play.state e.decision
+def Env.legalActions (e : Env) : List (Nat × Event) := legal e.T e.ep e.places e.play.state e.decision
 
 def Env.mask (e : Env) : ByteArray := maskOf e.legalActions
 
@@ -310,7 +391,7 @@ def Env.suggest (e : Env) (name : String) : Option Nat := do
   | _ =>
     let moves := wants.filter fun | .move .. => true | _ => false
     let (chosen : Event) ← (moves.find? fun ev => (Engine.step e.G s ev).toOption.isSome)
-    encode e.T e.ep e.decision chosen
+    encode e.ep e.places e.decision chosen
 
 /-! ## The game as a server log
 
@@ -380,7 +461,7 @@ private def readBool (j : Json) (k : String) (dflt : Bool) : Except String Bool 
 /-- The settings of a configuration. An unknown key is an error, so a misspelt switch cannot pass unnoticed. -/
 def readSettings (j : Json) : Except String Settings := do
   let known := ["game", "seats", "lineup", "seed", "law_every", "vote_mode", "move_rows", "preview", "random_map",
-    "slot_order", "reward_win", "reward_standing", "shaping_points", "record"]
+    "slot_order", "reward_win", "reward_standing", "shaping_points", "record", "declare_always"]
   match j.getObj? with
   | .error _ => throw "a configuration must be an object"
   | .ok kvs =>
@@ -413,7 +494,8 @@ def readSettings (j : Json) : Except String Settings := do
       rewardWin := ← readFloat j "reward_win" d.rewardWin
       rewardStanding := ← readFloat j "reward_standing" d.rewardStanding
       shapingPoints := ← readFloat j "shaping_points" d.shapingPoints
-      record := ← readBool j "record" d.record }
+      record := ← readBool j "record" d.record
+      declareAlways := ← readBool j "declare_always" d.declareAlways }
 
 /-- One seat of a lineup: `caller`, a strategy's name, or `first+then` for one thing in setup and another after. -/
 def readSeat (text : String) : Except String SeatPlan := do
@@ -433,7 +515,10 @@ def readSeat (text : String) : Except String SeatPlan := do
 def Env.ofJson (j : Json) : Except String Env := do
   let settings ← readSettings j
   let id ← j.getObjValAs? String "game"
-  let some T := tablesOf? id | throw s!"there is no game called {id}"
+  let T ← match tablesOf? id, Gen.tables? id with
+    | some T, _ => pure T
+    | none, some made => made
+    | none, none => throw s!"there is no game called {id}"
   let lineup ← j.getObjValAs? (List String) "lineup"
   let seats := lineup.length
   if seats < T.minSeats || T.maxSeats < seats then

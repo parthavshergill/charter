@@ -17,6 +17,21 @@ Runs were 7 to 8 minutes at 20M steps, and no policy came near `hand`: on traini
 
 Open a draft PR titled `[RL round 2] <name>`, from `rl/<name>` to `rl-harness`, when you start.
 
+## Layout version 2: a change after the start, and it comes first
+
+The owner, through the lead, added a headline goal: the shipped bot has no fallback, so it must play **any game that
+passes `G.Valid`, at any seat count from 2 to 6**. Layout version 1 refused games past 8 resources, 9 kinds, 60 spots,
+84 links, 24 tiles or 16 laws, and trained at 4 seats only. Where this conflicts with the rest of this file, this
+takes priority.
+
+- `speed` builds layout version 2 before the speed work: limits equal to the engine's, placements chosen by row
+  among the legal ones, training and eval across 2 to 6 seats, a test that plays made-up games at the engine's limits
+  and at odd small sizes to the end, and a "can it play" check in `rl/eval`, apart from strength.
+- Checkpoints do not carry across a layout change. Trainers move to the commit of the `HARNESS-READY` that says
+  "layout version 2" at a sensible point between runs, and say in their `PROGRESS` which layout each result used.
+  Results on version 1 compare only with version 1.
+- A flat encoder may become impractical at these sizes. That is a fair finding to report.
+
 ## `speed`
 
 Signal with a comment starting `HARNESS-READY` on PR #11, as before.

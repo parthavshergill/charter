@@ -193,10 +193,12 @@ def train(run: str, train_args: str = "", seconds: int = 600, move_rows: bool = 
             hidden = int(tok.split("=")[1])
         if tok.startswith("--policy.num_layers="):
             layers = int(tok.split("=")[1])
-    obs = 7122 if move_rows else 4434
+    layout = json.load(open(f"{SRC}/layout.json"))
+    obs = layout["full_size"] if move_rows else layout["base_size"]
     for c in ckpts[-1:] + ckpts[:1]:
         meta = {"name": f"{run}/{os.path.basename(c)}", "format": f"puffer-{encoder}", "encoder": encoder,
-                "obs_size": obs, "act_size": 696, "hidden": hidden, "layers": layers,
+                "layout": layout["version"], "obs_size": obs, "act_size": layout["act_size"] + 1,
+                "hidden": hidden, "layers": layers,
                 "settings": {"vote_mode": "bot", "move_rows": move_rows}}
         meta.update(json.loads(meta_extra) if meta_extra else {})
         json.dump(meta, open(c + ".json", "w"))
