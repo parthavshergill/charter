@@ -490,6 +490,7 @@ def check_descriptions(srv, data, port, api_port):
     # A description says nothing to the clerk, whose memory shares the log.
     t.draft(seat, "After the descriptions.", BANK)
     check(StandIn.describe_default not in last_message(), "the clerk's memory holds no description")
+    wait_description(t, seat)
 
     # A restart keeps what was written.
     count = len(StandIn.describe_requests)
