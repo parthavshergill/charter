@@ -185,14 +185,21 @@ A dealt map reaches the server through an optional `_map` field of the creation 
 
 ## Known limits
 
-- Speed, one thread: self-play with observations about 4.4k ticks/s (17k agent rows/s); one seat against three
-  `hand` bots about 1.3k decisions/s. The vote preview is about half the cost of an observation (`preview = 0`
-  doubles the speed). Per-move rows cost about 2.3x (6.1k to 2.7k decisions/s on Island).
+- Speed, one thread (this harness's own measure, `prof.c`-style: self-play, `vote_mode = bot`, observation and mask
+  at every decision): Island about 6.0K decisions/s, Not Catan 4.0K, Island at 6 seats 4.9K. Before round 2's speed
+  work, on the same machine and layout: 4.1K, 3.4K and 3.0K. What changed: the hand bot's vote check (`lawOk`) is
+  worked out once per law for all seats (it was 41% of the time), a law's preview once per law for all voters, table
+  widths are kept, and `freeMap`/`reachMap` once per decision. Waiting agents' zero rows are written once.
+- `champion` is about 5 times faster than as written (Island, one seat against three: 128 to 650 decisions/s;
+  `champion-closed` about 300 to 1,120), and still about 3 times slower than `hand`.
+- Trainer speed on Modal (T4, 8 CPUs, flat 128, one MinGRU layer, layout 2, 1536 agents, 6 per env, seats 2 to 6):
+  about 53K SPS, with the env 33% of each epoch and copying observations to the GPU 35%. SPS counts agent rows, and
+  5 of 6 rows per tick are waiting rows, so that is about 9K decisions/s. Layout 1 (2048 agents, 4 per env): about
+  56K SPS, env 67%, so about 14K decisions/s. Training at 4 seats (`--env.seats=4 --env.num_agents=4`) has fewer
+  waiting rows.
 - A linear decoder has one fixed output per action. Under layout 2 a placement's action is its row in a fixed order,
   not a spot number; scoring rows by their features needs a pointer-style decoder, which PufferLib's linear decoder is
   not.
-- The pool holds only `hand`, whose strength relied on offers, which this env has no action for.
+- The policy has no action for offers, and `champion` gets much of its strength from offers (see the PR).
 - `hand` is weak on some held-out games: random players beat three `hand` bots in 69% of Pirate Republic games and
   matched them on Strike the Earth (200 games each). Read held-out results by game; the report has a table for it.
-- Trainer speed on Modal (T4, 8 CPUs, 2048 agents, flat 128, one MinGRU layer): about 56k SPS, with the env 67% of
-  each epoch. Most of an agent's rows are waiting rows (3 of 4 in self-play).
