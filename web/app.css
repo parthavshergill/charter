@@ -450,17 +450,18 @@ svg.seal { position: absolute; left: 50%; top: 100%; width: 52px; height: 52px; 
 .signline:focus { border-bottom-color: var(--wax); box-shadow: 0 1px 0 var(--wax); }
 .signlabel { display: block; margin-top: 3px; font: italic 13px/1.2 var(--brand-text); color: var(--ink-2); }
 .seg { display: flex; gap: var(--s1); margin-bottom: var(--s1); align-items: center; }
-.seg .lbl, .packs .lbl { flex: none; width: 48px; }
+.seg .lbl, .packs .lbl { flex: none; width: 56px; }
 .seg button { width: 24px; height: 26px; padding: 0; color: var(--ink-2); font-size: 16px; line-height: 24px; border-bottom: 1px solid transparent; }
 @media (hover: hover) { .seg button:hover { color: var(--ink); } }
 .seg button.on { color: var(--ink); border-bottom-color: var(--ink); }
 .seg button:disabled { opacity: .35; cursor: default; }
-.packs { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 10px; }
-.packs .pack { background: none; padding: 1px 0 0; line-height: 24px; color: var(--ink-2); font-size: 16px; box-shadow: none; border-bottom: 1px solid transparent; }
-@media (hover: hover) { .packs .pack:hover { color: var(--ink); } }
-.packs .pack.on { color: var(--ink); border-bottom-color: var(--ink); }
-.packs .library { margin-left: auto; font-style: italic; color: var(--ink-3); text-decoration: none; }
-@media (hover: hover) { .packs .library:hover { color: var(--ink); text-decoration: underline; } }
+.packs { display: flex; align-items: center; gap: var(--s1); }
+.worldbutton { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: var(--s2); padding: 1px 0 0; line-height: 24px; font-size: 16px; text-align: left; color: var(--ink); border-bottom: 1px solid var(--ink-3); transition: border-color .12s; }
+.worldname { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chevron { margin-left: auto; padding-right: 2px; font-size: 24px; line-height: 20px; color: var(--ink-2); transition: translate .2s cubic-bezier(.2,.9,.3,1); }
+@media (hover: hover) { .worldbutton:hover { border-bottom-color: var(--ink); } .worldbutton:hover .chevron { translate: 2px 0; } }
+.worldbutton[aria-expanded="true"] { border-bottom-color: var(--wax); }
+.worldbutton[aria-expanded="true"] .chevron { color: var(--wax); translate: 3px 0; }
 .packnote { min-height: 2.6em; margin: var(--s1) 0 var(--s3); font-size: 14px; line-height: 1.3; color: var(--ink-2); }
 .packnote b { font-weight: 600; color: var(--ink); }
 .titlepage .act.gold { width: 100%; min-height: 48px; font-size: 20px; }
@@ -475,20 +476,35 @@ svg.seal { position: absolute; left: 50%; top: 100%; width: 52px; height: 52px; 
 .tablelist .state { color: var(--ink-3); flex: 1; }
 .errline { min-height: 20px; margin-top: var(--s2); color: var(--wax); font-size: 14px; }
 
-/* the Library: the other side of the sheet */
-.scroll.shelved .titlepage { display: flex; flex-direction: column; }
-.shelf { display: flex; flex-direction: column; flex: 0 1 auto; min-height: 0; }
-.shelf h2 { margin: 0 0 var(--s3); font: 400 34px/1.1 var(--brand-text); text-align: center; outline: none; }
-.shelfempty { margin: 0 0 var(--s3); font: italic 17px/1.3 var(--brand-text); text-align: center; color: var(--ink-2); }
-.shelflist { flex: 0 1 auto; min-height: 0; overflow-y: auto; margin-bottom: var(--s3); border-top: 1px solid var(--ink); border-bottom: 1px solid var(--ink); scrollbar-width: thin; scrollbar-color: var(--vellum-3) transparent; }
-.shelfrow { display: flex; align-items: flex-start; gap: var(--s3); width: 100%; padding: var(--s3) var(--s1); text-align: left; border-bottom: 1px solid var(--ink); }
-.shelfrow:last-child { border-bottom: 0; }
+/* The list of worlds: a second sheet behind the first. placePicker in app.js sets its place and how far it and
+   the scroll move. The board's framing eases at about the same pace, in the player. */
+.scroll { transform-origin: 0 0; transition: translate .34s cubic-bezier(.2,.9,.3,1), scale .34s cubic-bezier(.2,.9,.3,1), opacity .2s; }
+.scroll.picking { translate: var(--pick-shift, 0) 0; scale: var(--pick-scale, 1); }
+/* Room for the longest line of each world, so that the form holds still while worlds are compared. */
+@media (min-height: 641px) {
+  .titlepage .sub { min-height: 2.6em; }
+  .scroll.picking .packnote { min-height: 3.9em; }
+}
+.picker { position: fixed; z-index: 4; display: flex; flex-direction: column; overflow: hidden; visibility: hidden; box-shadow: 0 10px 24px rgba(0,0,0,.45); transition: translate .34s cubic-bezier(.2,.9,.3,1), transform .3s cubic-bezier(.2,.9,.3,1), visibility 0s .34s; }
+.picker.open { visibility: visible; translate: var(--pick-slide, 0) 0; transition: translate .34s cubic-bezier(.2,.9,.3,1), transform .3s cubic-bezier(.2,.9,.3,1); }
+.picker.pulled { transition: none; }
+/* The sheet's shading and the scroll's shadow on it lie over the rows, so a row's own colour does not hide them. */
+.picker::after { content: ""; position: absolute; inset: 0; z-index: 2; pointer-events: none; box-shadow: inset 14px 0 12px -12px color-mix(in srgb, var(--stain) 70%, transparent), inset 0 0 40px color-mix(in srgb, var(--stain) 22%, transparent); }
+.pickerhead { display: none; }
+/* The last lines fade as they reach the foot, which says there is more, and no line is cut in half. */
+.picker::before { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: var(--s5); z-index: 2; pointer-events: none; background: linear-gradient(transparent, var(--vellum)); }
+.worldlist { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; outline: none; padding: 0 var(--s3) var(--s5) var(--s4); scrollbar-width: thin; scrollbar-color: var(--vellum-3) transparent; }
+/* A group's label stays in sight while its rows scroll under it. */
+.worldgroup { position: sticky; top: 0; z-index: 1; padding: var(--s4) 0 var(--s1); background: var(--paper), var(--vellum); border-bottom: 1px solid var(--ink); }
+.shelfrow { display: flex; align-items: flex-start; gap: var(--s3); width: 100%; padding: var(--s3) var(--s2); text-align: left; border-bottom: 1px solid var(--vellum-3); scroll-margin: 44px 0 var(--s5); }
+[role="group"] .shelfrow:last-child { border-bottom: 0; }
 @media (hover: hover) { .shelfrow:hover { background: color-mix(in srgb, var(--stain) 12%, transparent); } }
 .shelfrow:focus-visible { outline-offset: -2px; }
+.shelfrow[aria-selected="true"] { background: color-mix(in srgb, var(--stain) 18%, transparent); box-shadow: inset 3px 0 0 var(--wax); }
+.shelfrow[aria-selected="true"] .shelfblurb, .shelfrow[aria-selected="true"] .smallcaps { color: var(--ink); }
 .shelfrow svg.seal { position: static; flex: none; width: 26px; height: 26px; margin: 2px 0 0; }
 .shelftext { flex: 1; min-width: 0; display: grid; gap: 2px; }
 .shelfname { font: 20px/1.15 var(--brand-text); color: var(--ink); }
-.shelfrow.on .shelfname { text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
 .shelfblurb { font-size: 14px; line-height: 1.3; color: var(--ink-2); }
 .shelfback { align-self: center; flex: none; font-family: var(--brand-text); font-size: 16px; }
 
@@ -581,8 +597,7 @@ svg.seal { position: absolute; left: 50%; top: 100%; width: 52px; height: 52px; 
   .toggleline { display: flex; margin-bottom: var(--s1); }
   .empty .constitutionlink { display: inline; min-height: 0; }
   .seg button { width: 44px; height: 44px; line-height: 44px; }
-  .packs .pack { display: inline-flex; align-items: center; min-height: 44px; padding: 0 var(--s1); }
-  .packs .library { min-height: 44px; }
+  .worldbutton { min-height: 44px; align-items: center; }
   .numerals { display: grid; grid-template-columns: repeat(5, 1fr); padding: 0; }
   .numerals button { min-height: 44px; margin: 0; padding: 0; }
   .signline, .joinline .input { min-height: 44px; }
@@ -602,7 +617,7 @@ svg.seal { position: absolute; left: 50%; top: 100%; width: 52px; height: 52px; 
   .banner { touch-action: manipulation; cursor: pointer; }
   /* A vote can always be cast, however long the rule is. */
   .votebar { position: sticky; bottom: calc(-1 * var(--s4)); z-index: 1; margin: var(--s2) calc(-1 * var(--s4)) calc(-1 * var(--s4)); padding: var(--s2) var(--s4) var(--s3); background: var(--paper), var(--vellum-2); box-shadow: 0 -1px 0 var(--vellum-3); }
-  .sheet, .titlepage, .shelflist, .tray, .hand, .rail { overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+  .sheet, .titlepage, .worldlist, .tray, .hand, .rail { overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
   /* Long words in a law's source, a name or a chat line never push the page sideways. */
   .sheet { overflow-wrap: anywhere; }
 }
@@ -750,6 +765,29 @@ svg.seal { position: absolute; left: 50%; top: 100%; width: 52px; height: 52px; 
   .caption { font-size: 14px; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
   .scroll { left: calc(var(--s3) + var(--safe-l)); width: min(400px, calc(100vw - 24px - var(--safe-l) - var(--safe-r))); max-height: calc(100dvh - 36px); }
   .stage svg.board2d { inset: 0 calc(var(--rail) + var(--safe-r)) var(--ledge) 0; width: calc(100% - var(--rail) - var(--safe-r)); height: calc(100% - var(--ledge)); }
+}
+
+/* ---------- the list of worlds, in a window too small to set it beside the board: pickerSheeted in app.js ---------- */
+/* It rises from the foot of the screen. The scroll moves away, and the board has what is left above the sheet. */
+@media (max-width: 999px), (max-height: 500px) and (orientation: landscape) {
+  .scroll { transition: translate .3s cubic-bezier(.2,.9,.3,1), opacity .2s, visibility 0s; }
+  .scroll.picking { translate: 0 -100dvh; scale: 1; opacity: 0; visibility: hidden; transition: translate .3s cubic-bezier(.2,.9,.3,1), opacity .2s, visibility 0s .3s; }
+  .picker { z-index: 6; left: 0; right: 0; bottom: 0; height: 56dvh; transform: translateY(calc(100% + var(--s4))); box-shadow: 0 -6px 18px rgba(0,0,0,.4); }
+  .picker::after { box-shadow: inset 0 0 40px color-mix(in srgb, var(--stain) 22%, transparent); }
+  .picker.open { translate: none; transform: none; }
+  .pickerhead { display: block; position: relative; flex: none; height: 22px; }
+  .pickerhead .grab { position: absolute; inset: 0 44px 0 0; touch-action: none; cursor: grab; }
+  .pickerhead .grab::before { content: ""; position: absolute; left: calc(50% + 22px); top: 9px; width: 40px; height: 4px; margin-left: -20px; background: var(--ink-3); opacity: .5; }
+  .pickerhead .grab::after { content: ""; position: absolute; inset: -12px 0; }
+  .pickerhead .x { position: absolute; top: 0; right: 0; z-index: 2; width: 44px; height: 44px; display: grid; place-items: center; color: var(--ink-2); }
+  .worldlist { padding: 0 var(--s4) calc(var(--s5) + var(--safe-b)) var(--s4); }
+  .worldgroup { padding-top: var(--s2); }
+}
+/* A phone on its side has no height to spare, so the sheet stands at the left, and the board beside it. */
+@media (max-height: 500px) and (orientation: landscape) {
+  .picker { right: auto; top: 0; width: min(340px, 46vw); height: auto; transform: translateX(calc(-100% - var(--s4))); }
+  .pickerhead .grab { display: none; }
+  .worldlist { padding-left: calc(var(--s3) + var(--safe-l)); }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-delay: 0s !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
