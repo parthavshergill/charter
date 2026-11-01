@@ -253,7 +253,8 @@ async function lobby() {
     }
   };
   const choose = d => { game = d.id; showPacks(); showSeats(); };
-  const seatRange = d => d.minSeats === d.maxSeats ? plural(d.minSeats, "seat") : `${d.minSeats} to ${d.maxSeats} seats`;
+  // The form offers up to 4 seats, so the list says no more than that, whatever a game allows.
+  const seatRange = d => { const most = Math.min(d.maxSeats, 4); return d.minSeats === most ? plural(most, "seat") : `${d.minSeats} to ${most} seats`; };
 
   // The list of worlds: a second sheet behind the first. Choosing a world shows it at once, and the list stays
   // open, so that worlds can be compared. A hover or focus only starts loading the scene.
