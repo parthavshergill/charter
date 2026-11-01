@@ -58,7 +58,7 @@ def play(spec, game_id, opponent, k, laws=True):
     seed = ev.seed_of(game_id, k, laws, "whole", opponent)
     base = {"game": game_id, "lineup": ["caller"] * ev.SEATS, "seed": 1, "vote_mode": "bot",
             "law_every": 8 if laws else 0}
-    for key in ("slot_order", "move_rows", "random_map", "preview"):
+    for key in ("slot_order", "move_rows", "random_map", "preview", "declare_always"):
         if key in settings:
             base[key] = settings[key]
     g = Game(base)
@@ -69,7 +69,7 @@ def play(spec, game_id, opponent, k, laws=True):
     if subject:
         subject.reset()
     lines, counts, last_round = [], Counter(), -1
-    who = lambda s: "SUBJECT" if s == at else (opponent if opponent == "hand" else "random")
+    who = lambda s: "SUBJECT" if s == at else (opponent if opponent != "random" else "random")
     lines.append(f"# {label} at seat {at} on {game_id}, against 3 {opponent}, seed {seed}, laws {'on' if laws else 'off'}")
     while not g.over:
         info = g.info()
@@ -105,6 +105,37 @@ def play(spec, game_id, opponent, k, laws=True):
     return "\n".join(lines), int(info["winner"]) == at
 
 
+# Each game's target and round limit (Charter/Games/*.lean: targetPoints, rounds).
+TARGET = {"island": (10, 24), "not-catan": (10, 30), "slime-parliament": (10, 24), "ai-bubble": (25, 10),
+          "strike-the-earth": (40, 10), "pirate-republic": (18, 10)}
+
+
+def count_one(task):
+    spec, gid, opp, k = task
+    text, won = play(spec, gid, opp, k)
+    end = text.splitlines()[-4]
+    pts = [float(x) for x in end.split("points [")[1].split("]")[0].split(",")]
+    rnd = int(end.split("round ")[1].split(":")[0])
+    target, limit = TARGET[gid]
+    return gid, opp, won, won and max(pts) >= target, rnd
+
+
+def count(spec, games, opps, n, jobs):
+    """Wins split into target wins (the winner reached the game's target) and limit wins (the round limit ended it)."""
+    from concurrent.futures import ProcessPoolExecutor
+    tasks = [(spec, g, o, k) for g in games for o in opps for k in range(n)]
+    with ProcessPoolExecutor(jobs) as ex:
+        res = list(ex.map(count_one, tasks))
+    print("| game | opponents | games | wins | target wins | limit wins | mean rounds |")
+    print("|---|---|---|---|---|---|---|")
+    for g in games:
+        for o in opps:
+            r = [x for x in res if x[0] == g and x[1] == o]
+            w = sum(x[2] for x in r)
+            t = sum(x[3] for x in r)
+            print(f"| {g} | {o} | {len(r)} | {w} | {t} | {w - t} | {sum(x[4] for x in r) / len(r):.1f} |")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("subject")
@@ -112,8 +143,12 @@ def main():
     ap.add_argument("--opponent", default="hand")
     ap.add_argument("--n", type=int, default=2, help="games per map")
     ap.add_argument("--first", type=int, default=0, help="first game index k")
-    ap.add_argument("--out", required=True)
+    ap.add_argument("--out", default="")
+    ap.add_argument("--count", action="store_true", help="only count wins: target wins against limit wins")
+    ap.add_argument("--jobs", type=int, default=os.cpu_count())
     a = ap.parse_args()
+    if a.count:
+        return count(a.subject, a.games_list.split(","), a.opponent.split(","), a.n, a.jobs)
     os.makedirs(a.out, exist_ok=True)
     for gid in a.games_list.split(","):
         for k in range(a.first, a.first + a.n):

@@ -27,6 +27,22 @@ def games(subject: str, out: str, opponents: str, games_list: str, n: int, first
     return texts
 
 
+@app.function(cpu=8, memory=8192, timeout=1800, volumes={m.VOL: m.vol})
+def wincount(subject: str, opponents: str, games_list: str, n: int):
+    m.vol.reload()
+    code, text = m.sh(f"cd {m.SRC}/.. && python3 rl/entity/tools/games.py {shlex.quote(subject)} --count --jobs 8 "
+                      f"--opponent {opponents} --games-list {games_list} --n {n}")
+    return text[-4000:]
+
+
+@app.local_entrypoint()
+def wincount_main(subject: str, opponents: str = "hand,champion,random",
+                  games_list: str = "island,not-catan,slime-parliament,ai-bubble,strike-the-earth,pirate-republic",
+                  n: int = 40):
+    sub = subject if subject in ("random", "hand") or subject.startswith("/") else f"{m.VOL}/{subject}"
+    print(wincount.remote(sub, opponents, games_list, n))
+
+
 @app.function(cpu=1, memory=1024, timeout=300, volumes={m.VOL: m.vol})
 def meta(ckpt: str, like: str, extra: str = ""):
     """Write ckpt's .json meta from another checkpoint's of the same run (or from `extra` alone, with like = "")."""
