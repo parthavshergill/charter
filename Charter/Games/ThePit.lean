@@ -90,9 +90,9 @@ sold at once fetches very little, and wheat sold forward can wait for a bigger p
 def lawBell : Law :=
   { title := "The opening bell: every trader starts with 8 gold and 4 wheat"
     clauses :=
-      [ .onRoll [.when (.eq (held .treasury "bell") (.lit 0))
-          [ .forEach .yes [pay .bank .each "gold" (.lit 8), pay .bank .each "wheat" (.lit 4)]
-          , pay .bank .treasury "bell" (.lit 1) ]] ] }
+      [ .onRoll
+          [ .forEach (.eq (held .treasury "bell") (.lit 0)) [pay .bank .each "gold" (.lit 8), pay .bank .each "wheat" (.lit 4)]
+          , .when (.eq (held .treasury "bell") (.lit 0)) [pay .bank .treasury "bell" (.lit 1)] ] ] }
 
 /-- A seat's bid: the gold it declared, up to the gold in its own hand. -/
 def bid (p : Party) : Expr := .min (said p "gold") (held p "gold")
@@ -107,6 +107,9 @@ def lots : Expr := .sub (held .treasury "membership") (.sub (.lit 10) .round)
 def oneWinner : Cond :=
   .and (.lt (.lit 0) topBid) (.eq (.totalOver (.eq (bid .each) topBid) (.lit 1)) (.lit 1))
 
+/-- The seat that wins this round's auction. -/
+def wins : Cond := .and oneWinner (.eq (bid .each) topBid)
+
 /-- **The auction.** The highest bid wins the lot, and pays 1 more than the next-highest bid. So a seat
 can bid all it is willing to pay, and the order of turns matters less. A tie at the top sells nothing, and
 the lot rolls over into the next round's. The Board keeps the memberships in the treasury, so the bank
@@ -114,14 +117,11 @@ cannot sell them. -/
 def lawAuction : Law :=
   { title := "Each round, the highest bid buys the Board's memberships for sale"
     clauses :=
-      [ .onRoundEnd [.when oneWinner [.forEach (.eq (bid .each) topBid)
+      [ .onRoundEnd [.forEach wins
           [ pay .each .bank "gold" (.add nextBid (.lit 1))
-          , pay .treasury .each "membership" lots ]]]
+          , pay .treasury .each "membership" lots ]]
       , .onRoll [pay .bank .treasury "membership" (held .bank "membership")]
       , .setWorth "membership" 3 ] }
-
-/-- The seat that wins this round's auction. -/
-def wins : Cond := .and oneWinner (.eq (bid .each) topBid)
 
 /-- **The vault fee.** Gold must work. At each round's end, every seat pays the bank a quarter of the gold in
 its hand, rounded down. The auction's winner pays its price first, and the fee on what is left. Gold in a

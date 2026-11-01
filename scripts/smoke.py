@@ -344,11 +344,12 @@ def pit_pack(srv):
     no membership is sold, since no bot bids."""
     d = next(x for x in srv.get("/api/defs") if x["id"] == "the-pit")
     check("membership" in d["look"]["icons"] and "gold" in d["look"]["icons"], "the pack draws gold and memberships")
-    code, v = bots_only(srv, 4, "the-pit", "farm")
-    check({"wheat", "gold", "membership"} <= set(v["resources"]), "wheat, gold and memberships are on the screen")
-    check(v["round"] <= 10 and len(v["laws"]) >= 2, "the pack ends by round 10 with its laws in force")
-    check(v["treasury"].get("membership", 0) == 10, "with no bids, every membership is still on the secretary's desk")
-    SCENES.append((srv.raw(f"/api/games/{code}/scene"), [], ["Law 0"]))
+    for n in (3, 4):
+        code, v = bots_only(srv, n, "the-pit", "farm")
+        check({"wheat", "gold", "membership"} <= set(v["resources"]), "wheat, gold and memberships are on the screen")
+        check(v["round"] <= 10 and len(v["laws"]) >= 4, "the pack ends by round 10 with its laws in force")
+        check(v["treasury"].get("membership", 0) == 10, "with no bids, every membership is still on the secretary's desk")
+        SCENES.append((srv.raw(f"/api/games/{code}/scene"), [], ["Law 0"]))
 
 
 def claude_with_no_key(srv):
