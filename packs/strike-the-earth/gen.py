@@ -200,8 +200,8 @@ def hall():
     def roof(x, y, z):
         return max(y - (.235 - 1.05 * max(abs(x), abs(z) * 1.12)), .1 - y, abs(x) - .136, abs(z) - .122), WHITE
     mesh("hall_roof", faced(paint(roof, lambda x, y, z, c: mix(c, (.7, .7, .7), sstep(.75, 1., abs(sin(y * 62)))))), (.2, .25), .03, floor=.095)
-    mesh("hall_fire", faced(union(egg(-.062, .092, .118, .017, .03, .017, FLAME), egg(.062, .092, .118, .017, .03, .017, FLAME),
-                                  block(0, .05, .1, .028, .04, .012, FLAME2, .006))), (.16, .14), .017, (.0, 0, .55), BARE, floor=.0)
+    mesh("hall_fire", faced(union(egg(-.088, .098, .118, .014, .026, .014, FLAME), egg(.088, .098, .118, .014, .026, .014, FLAME),
+                                  block(0, .045, .098, .026, .038, .012, FLAME2, .006))), (.16, .14), .017, (.0, 0, .55), BARE, floor=.0)
 
 def workshop():
     walls = union(block(0, .08, 0, .21, .085, .155, STONE, .02), block(.135, .2, -.085, .05, .2, .05, DARKSTONE, .01),
@@ -350,8 +350,8 @@ def stele(name, shape, h=.42, cell=.021, motion=(0, 0, .05)):
 
 def monuments():
     pillar = lambda h: block(0, h / 2, 0, .022, h / 2, .022, PALE, .004)
-    stele("law_cost", union(pillar(.15), block(0, .165, 0, .07, .014, .03, C(0x4C4A4C), .004), block(0, .19, 0, .04, .014, .022, C(0x4C4A4C), .004), block(0, .215, 0, .082, .016, .026, C(0x6A686A), .004),
-                            egg(-.085, .216, 0, .03, .012, .02, C(0x6A686A))), h=.26)
+    stele("law_cost", union(pillar(.15), block(0, .165, 0, .075, .016, .034, C(0x8E94A2), .004), block(0, .19, 0, .042, .014, .024, C(0x8E94A2), .004), block(0, .217, 0, .09, .02, .032, C(0xC2C8D4), .004),
+                            egg(-.095, .218, 0, .034, .014, .024, C(0xC2C8D4))), h=.26)
     crown = [rod((.05 * cos(i * 1.257), .245, .05 * sin(i * 1.257)), (.05 * cos(i * 1.257), .29, .05 * sin(i * 1.257)), .013, .004, GOLD) for i in range(5)]
     stele("law_points", union(pillar(.19), block(0, .2, 0, .04, .012, .04, PALE, .004), egg(0, .232, 0, .06, .022, .06, GOLD), *crown), h=.33)
     def ingots():
@@ -363,17 +363,17 @@ def monuments():
     stele("law_bank", union(*ingots()), h=.2)
     stele("law_harvest", union(rod((0, .04, 0), (0, .19, 0), .022, .016, C(0xC9D8D0)), paint(egg(0, .205, 0, .09, .05, .09, C(0x2FCDB0)), lambda x, y, z, c: mix(c, C(0xD5FFF4), sstep(.3, .65, wave(x, y, z, 54.)))),
                             rod((.05, .04, .03), (.06, .11, .03), .012, .008, C(0xC9D8D0)), egg(.06, .12, .03, .042, .022, .042, C(0x9A6CE8))), h=.28, motion=(0, .012, .22))
-    pick = lambda s: union(rod((s * -.075, .05, 0), (s * .075, .27, 0), .011, .011, TIMBER), rod((s * .075 - .07, .285, 0), (s * .075 + .07, .25, 0), .014, .006, C(0xC9CDD8)))
+    pick = lambda s: union(rod((s * -.07, .05, 0), (s * .07, .25, 0), .017, .017, C(0x9A6A3A)), rod((s * .07 - .085, .29, 0), (s * .07 + .085, .235, 0), .024, .012, C(0xE4E8F0)))
     stele("law_build", union(pick(1), pick(-1)), h=.33)
     stele("law_round", union(rod((0, .04, 0), (0, .15, 0), .022, .03, DARKSTONE), egg(0, .17, 0, .082, .04, .082, C(0x3A3430)), egg(0, .215, 0, .05, .07, .05, FLAME2), egg(0, .24, 0, .025, .045, .025, FLAME)), h=.33, motion=(.04, 0, .6))
-    die = lambda cx, cy, cz, s: paint(block(cx, cy, cz, s, s, s, C(0x2A2527), .012), lambda x, y, z, c: mix(c, LAVA, sstep(.55, .85, cos((x - cx) * 40 / s * .12) * cos((z - cz) * 40 / s * .12) * cos((y - cy) * 40 / s * .12))))
+    die = lambda cx, cy, cz, s: paint(block(cx, cy, cz, s, s, s, C(0xDDD5C4), .012), lambda x, y, z, c: mix(c, LAVA, sstep(.55, .85, cos((x - cx) * 40 / s * .12) * cos((z - cz) * 40 / s * .12) * cos((y - cy) * 40 / s * .12))))
     stele("law_roll", union(die(0, .1, 0, .052), die(.012, .19, .006, .037)), h=.26, motion=(0, 0, .4))
     def gem(x, y, z):
         return (abs(x) + abs(y - .19) + abs(z) - .082) * .577, mix(C(0x35D0E8), C(0xD8FBFF), sstep(.16, .26, y))
     stele("law_piece", union(pillar(.11), gem), h=.3, motion=(0, 0, .5))
-    broken = carve(.012, block(0, .1, 0, .036, .075, .036, PALE, .004), rod((-.06, .19, .05), (.05, .13, -.05), .03, .03, C(0x3A3430)))
+    broken = carve(.012, block(0, .135, 0, .042, .11, .042, PALE, .004), rod((-.07, .25, .06), (.06, .17, -.06), .036, .036, C(0x3A3430)))
     crack = lambda x, y, z, c: mix(c, LAVA, sstep(.82, .97, abs(sin((x + z) * 26 + y * 11))) * sstep(.035, .18, y))
-    stele("law_broken", union(paint(broken, crack), block(.075, .02, .05, .022, .014, .03, STONE, .005), block(-.05, .018, .08, .018, .012, .02, PALE, .004)), h=.21, motion=(0, 0, .3))
+    stele("law_broken", union(paint(broken, crack), block(.075, .02, .05, .022, .014, .03, STONE, .005), block(-.05, .018, .08, .018, .012, .02, PALE, .004)), h=.26, motion=(0, 0, .3))
     # The head of the founder: the huge carved thing at the centre of the chamber.
     def head():
         skull = egg(0, .475, -.01, .17, .185, .16, STONE)

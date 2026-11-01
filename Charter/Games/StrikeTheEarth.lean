@@ -233,15 +233,15 @@ def decor (res : Option Res) (seed : Nat) (keep : Float → Float → Bool) (_cu
 /-- A law's stone, by what the law is about. A law on worth or on ending the game also raises the broken
 pillar, as `Scene.monumentOf` gives those the repeal's kind. -/
 def lawStone : MonumentKind → List Part
-  | .cost => [m lawCost 0 0 0]
-  | .points => [m lawPoints 0 0 0]
-  | .bank => [m lawBank 0 0 0]
-  | .harvest => [m lawHarvest 0 0 0]
-  | .build => [m lawBuild 0 0 0]
-  | .roundEnd => [m lawRound 0 0 0]
-  | .roll => [m lawRoll 0 0 0]
-  | .newPiece _ => [m lawPiece 0 0 0]
-  | .repeal => [m lawBroken 0 0 0]
+  | .cost => [m lawCost 0 0 0 0xFFFFFF 1.2]
+  | .points => [m lawPoints 0 0 0 0xFFFFFF 1.2]
+  | .bank => [m lawBank 0 0 0 0xFFFFFF 1.2]
+  | .harvest => [m lawHarvest 0 0 0 0xFFFFFF 1.2]
+  | .build => [m lawBuild 0 0 0 0xFFFFFF 1.2]
+  | .roundEnd => [m lawRound 0 0 0 0xFFFFFF 1.2]
+  | .roll => [m lawRoll 0 0 0 0xFFFFFF 1.2]
+  | .newPiece _ => [m lawPiece 0 0 0 0xFFFFFF 1.2]
+  | .repeal => [m lawBroken 0 0 0 0xFFFFFF 1.2]
 
 /-- A point on the table, by how far it is toward the viewer and to the viewer's right. -/
 def onTable (a b : Float) : Float × Float := (0.7071 * (a + b), 0.7071 * (a - b))
