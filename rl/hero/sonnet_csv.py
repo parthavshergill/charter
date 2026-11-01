@@ -10,7 +10,7 @@ import json
 import os
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-STEPS = {"v2fix-0": 0, "v2fix-44.2M": 44236800, "v2fix-60.0M": 59965440, "v2fix-29.5M": 29491200}
+STEPS = {"c4-99M": 99287040, "v2fix-0": 0, "v2fix-44.2M": 44236800, "v2fix-60.0M": 59965440, "v2fix-29.5M": 29491200}
 
 
 def main():

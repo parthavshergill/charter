@@ -4,7 +4,7 @@
 set -uo pipefail
 export SSL_CERT_FILE=${SSL_CERT_FILE:-/root/.ccr/ca-bundle.crt}
 DIR=$1; HERE=$(dirname "$0")
-for RUN in ws-v2-champ v2-mix v2-fix v2-fixv; do
+for RUN in ws-v2-champ v2-mix v2-fix v2-fixv hero-v2 v2-long-champ ref; do
   for E in $(modal volume ls charter-rl "/hero/$RUN" 2>/dev/null | grep -o 'e[0-9]*$'); do
     mkdir -p "$DIR/$RUN/$E"
     [ -s "$DIR/$RUN/$E/report.json" ] && continue
