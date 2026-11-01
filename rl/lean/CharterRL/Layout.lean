@@ -77,9 +77,9 @@ structure Table where
   /-- The rows line up with this. -/
   rowsAre : Across := .one
   cols : List Cols
+  /-- The numbers in one row. Kept, so that writing a number does not add up the columns again. -/
+  width : Nat := (cols.map Cols.width).sum
   deriving Inhabited
-
-def Table.width (t : Table) : Nat := (t.cols.map (·.width)).sum
 
 /-- The column where this run starts. A wrong name stops the program when it loads. -/
 def Table.col (t : Table) (name : String) : Nat :=

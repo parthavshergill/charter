@@ -465,7 +465,7 @@ private def writePlaces (a : FloatArray) (T : Tables) (ctx : Ctx G) (ep : Episod
 
 /-- The whole observation for the seat that must decide. `base` is the game's template. -/
 def observe (T : Tables) (ep : Episode) (ctx : Ctx G) (settings : Settings) (base : FloatArray) (s : State G)
-    (d : Decision) (places : Array Move) : FloatArray := Id.run do
+    (d : Decision) (places : Array Move) (free reach : Array Bool) : FloatArray := Id.run do
   let some me := d.seat? | return base
   let mut a := base
   let seats := s.turnOrder.length
@@ -512,8 +512,6 @@ def observe (T : Tables) (ep : Episode) (ctx : Ctx G) (settings : Settings) (bas
       goodsBySeat := goodsBySeat.modify q (· + h)
       incomeBySeat := incomeBySeat.modify q (· + inc)
   -- Spots and links, from the map first, then from each piece.
-  let free := freeMap ctx s
-  let reach := reachMap ctx s me
   let spotCount := G.map.spotCount
   for v in [0:spotCount] do
     if free.getD v false then a := put a tSpots oSpots v pFree 1

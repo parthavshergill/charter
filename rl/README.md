@@ -77,7 +77,8 @@ actions, at most 8 resources, 60 spots, 84 links, 24 tiles, 16 laws) refused lar
 `e466f9f`.
 
 - **Seats.** `seats` in `[env]` gives the seat counts, for example `2-6` (the default) or `4`; each game draws one
-  that the game allows (Not Catan takes 3 or 4). `num_agents` must be the most of them (6 for `2-6`). Agent `i`
+  that the game allows (Not Catan takes 3 or 4). `num_agents` must be the most of them (6 for `2-6`), and `[vec] total_agents` a multiple of `num_agents`
+  (3072 by default: 512 envs, as at 2048 with 4 seats). Agent `i`
   plays game seat `seat_of[i]`, drawn afresh each game; agents past the seat count sit the game out. Each tick,
   exactly one agent may act. The others see zeros and a mask with only the no-op (action 515), written once when they
   start waiting. Bots inside the env (`hand`, `fair`, `closed`, `champion`) play without ticks.

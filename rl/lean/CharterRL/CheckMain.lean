@@ -108,6 +108,25 @@ def main (args : List String) : IO UInt32 := do
       let (d, n) := sideBySide a b 17
       report bad (d > 0) s!"renaming {id} seeded error (rows follow the game's list order) caught: {d} of {n} differ"
     | .error e, _ | _, .error e => report bad false s!"renaming {id} seeded: {e}"
+  -- Votes worked out once per law for all seats give the same games as `lawOk` for each voter.
+  for id in allIds do
+    let some T := tablesOf? id | continue
+    let seats := min 4 T.maxSeats
+    let hand := (opponents.find? (·.name == "hand")).get!
+    let champ := (opponents.find? (·.name == "champion")).get!
+    let mixed : Array SeatPlan := #[{ setup := none, play := none }, { setup := some hand, play := some hand },
+      { setup := some champ, play := some champ }] ++ Array.replicate (seats - 3) { setup := none, play := none }
+    let botVotes : Settings := { voteMode := .bot, lawEvery := 2 }
+    let mut diffs := 0
+    let mut n := 0
+    for g in [0:(if quick then 3 else 8)] do
+      match Env.start T botVotes mixed (600 + g), Env.start T botVotes mixed (600 + g) (shareVotes := false) with
+      | .ok a, .ok b =>
+        let (d, k) := sideBySide a b (700 + g) 2000
+        diffs := diffs + d
+        n := n + k
+      | _, _ => report bad false s!"shared votes {id}: the game did not start"
+    report bad (diffs == 0 && n > 0) s!"shared votes {id}: {diffs} of {n} decisions differ from lawOk per voter"
   -- Random maps pass the full checks.
   for id in allIds do
     let some T := tablesOf? id | continue

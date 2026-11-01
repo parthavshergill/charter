@@ -61,10 +61,9 @@ private def keyLt (a b : Nat × Nat × Nat × Nat × Nat) : Bool :=
     (a.2.2.1 == b.2.2.1 && (a.2.2.2.1 < b.2.2.2.1 || (a.2.2.2.1 == b.2.2.2.1 && a.2.2.2.2 < b.2.2.2.2)))))))
 
 /-- Every legal placement of this seat now, in `placeOrder`. Rows of `places` are the first `maxPlaceRows`. -/
-def placeList (ctx : Ctx G) (ep : Episode) (s : State G) (seat : Nat) : Array Move :=
-  let free := freeMap ctx s
+def placeList (ctx : Ctx G) (ep : Episode) (s : State G) (seat : Nat) (free reach : Array Bool) : Array Move :=
   let cands := if s.phase == .setup then setupPlaces ctx s seat
-    else placesWith ctx s seat (Thunk.pure free) (Thunk.mk fun _ => reachMap ctx s seat) fun _ => true
+    else placesWith ctx s seat (Thunk.pure free) (Thunk.pure reach) fun _ => true
   let ok := (cands.filter fun m => (match m with | .place .. => true | _ => false) && isLegal s seat m).toArray
   let keyed := ok.map fun m => (placeKey ctx ep s.rules free m, m)
   (keyed.qsort fun x y => keyLt x.1 y.1).map (·.2)
