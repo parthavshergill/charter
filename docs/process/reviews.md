@@ -274,7 +274,7 @@ V now says that what you own leaves you only for a stated reason. `PieceLeavesOn
 
 One statement gave way. `the_winner_earned_it` said that built points alone at the target end the game at once. A seat can now gain a piece at a turn change, which does not look for a winner. So that clause is gone, and the clause that holds is the one from the worth section: after a move or a vote, a seat at the target has ended the game. `every_other_event_is_exact` said that only placing a piece changes the pieces. It now says that about events that do not end the turn, and `PiecesKept` covers the rest.
 
-The preview and the chronicle say what a seat would lose or lost. The 3D board draws each piece from its owner, so a seized piece should change colour where it stands. This was read from the code and not looked at in a browser.
+The preview says, for each moment, what each seat would lose or gain, and the chronicle says what it lost, in one line that the screen tells. The 3D board draws each piece from its owner, so a seized piece changes colour where it stands. This was looked at in a browser.
 
 ## Decrees
 

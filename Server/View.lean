@@ -241,6 +241,7 @@ def decisionJson (book : Describe.Book) (d : Decision) : Json :=
     , ("text", Rules.printProposal (.law d.law))
     , ("votes", Json.arr (d.votes.map fun v => Json.mkObj [("seat", toJson v.1), ("yes", toJson v.2)]).toArray)
     , ("outcome", d.outcome), ("round", toJson d.round), ("event", toJson d.event)
+    , ("decree", toJson d.law.isDecree)
     , ("pick", toJson (Scene.lawPick d.id).toNat) ]
 
 def lawJson (g : Game) (book : Describe.Book) (x : Nat × Law) : Json :=
@@ -302,6 +303,7 @@ def view (g : Game) (code : String) (you : Option Nat) (drafting : List Nat) (bo
       , ("offers", Json.arr (s.offers.map (offerJson s you)).toArray)
       , ("samples", samplesJson g)
       , ("winner", toJson s.winner)
+      , ("endedBy", toJson (if s.phase == .ended then (s.laws.find? fun x => x.2.clauses.any Clause.isEndGame).map (·.2.title) else none))
       , ("actionsLeft", toJson (match you with
           | some y => maxActionsPerTurn - s.actionsThisTurn y
           | none => 0))
