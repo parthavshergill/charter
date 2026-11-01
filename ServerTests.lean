@@ -497,6 +497,26 @@ def line (kind : String) (to : Option Nat := none) : Talk.Line := { event := 0, 
 #guard ((Persona.pick 7 5).map (·.style)).eraseDups.length == 5
 #guard (Persona.pick 7 2 ["newcomer", "schemer"]).map (·.style) == ["newcomer", "schemer"]
 #guard (Persona.pick 7 1 ["newcomer"]).map (·.styleOf.onScreenOnly) == [true]
+-- The griefer is never chosen by itself, and a table cannot ask for it. Only `charter-sim` can.
+#guard (List.range 200).all fun i => (Persona.pick (UInt64.ofNat i) 6).all (·.style != "griefer")
+#guard (Persona.pick 7 1 ["griefer"]).all (·.style != "griefer")
+#guard (Persona.pick 7 2 ["griefer"] "" Persona.allStyles).map (·.style) == ["griefer", "griefer"]
+-- A pack can name its own cast. Other games keep the usual names.
+#guard (Persona.pick 7 4 [] "slime-parliament").all fun p =>
+  (((Persona.casts.lookup "slime-parliament").getD []).map (·.1)).contains p.name
+#guard (Persona.pick 7 4 [] "island") == Persona.pick 7 4
+-- A brief goes over a seat's persona, keeps what it leaves out, and survives the log.
+#guard match Persona.parseBriefs "[{\"name\":\"Nim\",\"goal\":\"ruin Pim\"}]" with
+  | .ok b =>
+    let ps := Persona.withBriefs (Persona.pick 7 2) b
+    let p := ps.headD default
+    p.name == "Nim" && p.goal == "ruin Pim" && p.voice == ((Persona.pick 7 2).headD default).voice &&
+      Persona.ofJson? (Persona.toJson' p) == some p && ps.getLast? == (Persona.pick 7 2).getLast?
+  | .error _ => false
+#guard (Persona.parseBriefs "[{\"style\":\"nobody\"}]").toOption.isNone
+#guard (Persona.parseBriefs "{\"name\":\"not a list\"}").toOption.isNone
+-- An ordinary persona writes the same log as before.
+#guard ((Persona.toJson' ((Persona.pick 7 1).headD default)).getObjVal? "goal").toOption.isNone
 
 -- A seat that has read no rules gets the form of an answer, and no rules.
 #guard !(rulesFor "form\n## The rules\nsecret" true).contains 's'

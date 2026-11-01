@@ -199,7 +199,9 @@ def rulesFor (rulesFile : String) (onScreenOnly : Bool) : String :=
   else rulesFile
 
 def personaText (p : Persona.Persona) (seat : Nat) : String :=
-  s!"You are {p.name}, {p.voice}. You sit in seat {seat}. Talk like this person at all times.\n\n{p.styleOf.play}"
+  let goal := if p.goal.isEmpty then "" else
+    s!"\n\nYour private goal. No other seat can see this. It is for you alone, and it matters more to you than anything above: {p.goal}"
+  s!"You are {p.name}, {p.voice}. You sit in seat {seat}. Talk like this person at all times.\n\n{p.styleOf.play}{goal}"
 
 /-- The request body. The fixed parts come first and are cached: the rules and the game's facts for
 every seat, then the persona for this seat. Nothing that changes goes in the system message. -/

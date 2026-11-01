@@ -119,6 +119,8 @@ structure Ctx where
   /-- Tables to stop driving, such as one that ran out of time, or one with Claude seats that has just
   come back from a restart and has nobody at it yet. -/
   stopped : IO.Ref (Std.HashSet String)
+  /-- Stop driving a table once this round has ended. `charter-sim --stop-round` sets it. -/
+  stopRound : Option Nat := none
   /-- The API refused the key or the model, so asking again cannot help. The message says why. -/
   fatal : IO.Ref (Option String)
   /-- Run no drivers at all: this process only shows saved games. -/
@@ -197,12 +199,19 @@ def commitRaw (ctx : Ctx) (code : String) (mk : Entry → Except String Json) : 
 def findEntry (ctx : Ctx) (code : String) : IO (Option Entry) :=
   ctx.table.atomically do return (← get).get? code
 
+/-- Has this running game finished the round it was told to stop at? -/
+def Ctx.pastStopRound (ctx : Ctx) (g : Game.Game) : Bool :=
+  match ctx.stopRound, g.state with
+  | some n, some s => s.phase != .ended && n < s.round
+  | _, _ => false
+
 /-- Is this table waiting for someone? A table pauses when it has people and none of them has been here
 for a while, or has never been here since the server started. While it waits, no seat acts and no clock
 runs. Friends can stop for an evening and come back. This changes when events are sent, and it changes
 no rule, and pausing goes in no log. A table with no people does not pause this way. -/
 def isPaused (ctx : Ctx) (code : String) (g : Game.Game) : IO Bool := do
   if (← ctx.stopped.get).contains code then return true
+  if ctx.pastStopRound g then return true
   if ctx.awayMs == 0 || g.humanSeats.isEmpty then return false
   match (← ctx.lastHuman.get).get? code with
   | some t => return (← IO.monoMsNow) - t ≥ ctx.awayMs
