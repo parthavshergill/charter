@@ -5,6 +5,8 @@ import Charter.Games.SlimeParliamentWords
 import Charter.Games.AIBubbleWords
 import Charter.Games.StrikeTheEarthWords
 import Charter.Games.PirateRepublicWords
+import Charter.Games.Omerta.Look
+import Charter.Games.OmertaWords
 import Charter.Scene.OfState
 import Charter.Scene.LookCheck
 import Server.GameFacts
@@ -152,10 +154,25 @@ def strikeSpec : GameSpec :=
     foundingWords := Games.StrikeTheEarth.foundingWords
     guide := "You lead a dwarf clan under a doomed mountain. Stone, ore, fungus and ember are the goods. In setup you place a hall and a tunnel for free, twice, so place both each time: ending a setup turn early gives up the rest, and a new hall must touch your own tunnel. A farm, gate, shaft or epitaph stands on a hall, and not on a workshop. Renown is the score: each is worth 1 point while you hold it, and most pieces are worth 0 points. So a hall or workshop that falls costs you no points, and a law may even pay you for it. An epitaph is the only piece with points. It costs 2 renown and 1 danger, and no hex pays danger, so you buy it from the bank. The bank also sells renown at its rate. Danger is the danger in the treasury. It is shared, it only rises unless a law lowers it, and the founding laws read it. A law cannot name who proposed it or who voted for it, but a law can pay whoever passes a test, so a reckless law can carry its own reward. Any seat can propose a law that ends the game: (law \"The fort falls\" (end-game)). If a majority passes it, the game ends at once and the most points wins." }
 
+def omertaSpec : GameSpec :=
+  { id := "omerta"
+    name := "Omertà"
+    blurb := "A crime family runs rackets and swears to keep quiet. The first to talk takes the reward."
+    G := Games.Omerta.game
+    valid := Games.Omerta.game_valid
+    layout :=
+      { tiles := Games.Omerta.tiles, spots := Games.Omerta.spots, edges := Games.Omerta.edges
+        links := Games.Omerta.links, theme := Games.Omerta.theme, word := "the city" }
+    minSeats := 3
+    maxSeats := 4
+    meshFolder := "packs/omerta/meshes"
+    foundingWords := Games.Omerta.foundingWords
+    guide := "You are in a crime family that shares one city. Wine, cement and fish come from the map. Cash is worth 1 point each, and it pays for a club. A front stands on a corner. A racket goes in the back room of one of your fronts, one per front. In setup you place a front, a street and a racket, twice, all free. A club replaces a front, and costs cement, cash and 1 dirt. At each round's end each racket pays its owner 2 cash, and each seat that runs a racket and holds no dirt gets 1 dirt, so nobody holds more than 1. That is the only way to get dirt: the bank never sells it, so a racket built this round gives no dirt until the round ends. The reward is the cash in the treasury. On every roll it grows by 1 for every 6 rackets running in the city, and from round 5 by twice that. To talk, declare dirt on your turn, any number from 1, while you hold some dirt. At the next roll you take the whole reward. If you are the last seat of the round, you are paid at the round's end instead, and you get only half. When you talk you give up all your dirt, all your rackets close, and you get no take or dirt at that round's end. Every other seat that runs a racket loses its newest one. A declaration cannot be taken back after your turn, so later seats in the round see it. Talking is legal at any time, and promises not to talk bind nobody: swear, bargain, pay for silence with a deal, or threaten. A law cannot name a seat, but the table can pass laws about the situation, such as who holds no dirt." }
+
 instance : Inhabited GameSpec := ⟨islandSpec⟩
 
 /-- Every game this server can run. The first is the default. -/
-def gameSpecs : List GameSpec := [islandSpec, notCatanSpec, slimeSpec, bubbleSpec, strikeSpec, pirateSpec]
+def gameSpecs : List GameSpec := [islandSpec, notCatanSpec, slimeSpec, bubbleSpec, strikeSpec, pirateSpec, omertaSpec]
 
 /-- The game with this id. A log entry with no id is from before there was a choice: it is the Island. -/
 def specOf? (id : Option String) : Option GameSpec :=
