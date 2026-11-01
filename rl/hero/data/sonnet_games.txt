@@ -1,0 +1,26 @@
+# Games against three Sonnet seats: code, arm (restricted = Sonnet has only the bot's moves; full = the whole game).
+# Every game in this list counts, finished or not; unfinished games are reported as such, never dropped.
+BCDHX restricted
+YVFQS restricted
+PJUXZ restricted
+QRYYQ restricted
+YQGBG restricted
+GUTUS restricted
+SNBEM restricted
+WNACY restricted
+VPCYN restricted
+BHJUA restricted
+YUZSF restricted
+RTPVH restricted
+HEVPH restricted
+UAWCR restricted
+NDSBB restricted
+WBXVU restricted
+YFMRJ restricted
+UDDCS restricted
+HBRFH restricted
+NSYWU restricted
+CGTAC full
+BKEVK full
+HYKBA full
+TVCPT full
