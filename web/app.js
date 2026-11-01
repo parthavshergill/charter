@@ -71,13 +71,32 @@ async function lobby() {
   const name = h("input", { class: "input", placeholder: "Your name", "aria-label": "Your name", value: store.get("charter.name") || "" });
   const joinCode = h("input", { class: "input", placeholder: "Code", "aria-label": "Table code", maxlength: 5, value: params.get("join") || "" });
   const err = h("div", { class: "errline", role: "status" });
-  const seg = h("div", { class: "seg" }, h("span", { class: "smallcaps lbl" }, "Seats"), [2, 3, 4].map(n =>
-    h("button", { class: n === seats ? "on" : "", "aria-pressed": n === seats ? "true" : "false", onclick: e => { seats = n; seg.querySelectorAll("button").forEach(b => { const on = b === e.currentTarget; b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); }); } }, String(n))));
-  let game = "island";
-  const gameSeg = h("div", { class: "seg" }, h("span", { class: "smallcaps lbl" }, "World"));
-  api("/api/defs").then(defs => {
-    gameSeg.append(...defs.map(d => h("button", { class: d.id === game ? "on" : "", "aria-pressed": d.id === game ? "true" : "false", onclick: e => { game = d.id; gameSeg.querySelectorAll("button").forEach(b => { const on = b === e.currentTarget; b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); }); } }, d.name)));
-  });
+  const seatButtons = [2, 3, 4].map(n =>
+    h("button", { "data-n": n, onclick: () => { seats = n; showSeats(); } }, String(n)));
+  const seg = h("div", { class: "seg" }, h("span", { class: "smallcaps lbl" }, "Seats"), seatButtons);
+  // The games come from the server's list. The first is the base game, and it is the default.
+  let game = null, defs = [];
+  const showSeats = () => {
+    const d = defs.find(x => x.id === game);
+    const fits = n => !d || (d.minSeats <= n && n <= d.maxSeats);
+    if (!fits(seats)) seats = Math.min(Math.max(seats, d.minSeats), d.maxSeats);
+    for (const b of seatButtons) {
+      const n = Number(b.dataset.n);
+      b.classList.toggle("on", n === seats);
+      b.setAttribute("aria-pressed", n === seats);
+      b.disabled = !fits(n);
+      b.title = fits(n) ? "" : `${d.name} has ${d.minSeats} to ${d.maxSeats} seats`;
+    }
+  };
+  showSeats();
+  const packList = h("div", { class: "packs", role: "group", "aria-label": "World" });
+  const packNote = h("p", { class: "packnote" });
+  const showPacks = () => {
+    fill(packList, h("span", { class: "smallcaps lbl" }, "World"), defs.map(d =>
+      h("button", { class: "pack" + (d.id === game ? " on" : ""), "aria-pressed": d.id === game ? "true" : "false", onclick: () => { game = d.id; showPacks(); showSeats(); } }, d.name)));
+    packNote.textContent = defs.find(d => d.id === game)?.blurb || "";
+  };
+  api("/api/defs").then(list => { defs = list; game = list[0]?.id ?? null; showPacks(); showSeats(); });
   const nameOk = () => {
     const v = name.value.trim();
     if (!v) { err.textContent = "A player needs a name."; name.focus(); return false; }
@@ -96,10 +115,10 @@ async function lobby() {
     h("h1", {}, "Charter"), h("div", { class: "rule" }),
     h("p", { class: "sub" }, "Settle an island. Rewrite its rules. The constitution holds."),
     h("label", { class: "field" }, name),
-    seg, gameSeg,
+    seg, packList, packNote,
     h("button", { class: "act gold", onclick: async () => {
       if (!nameOk()) return;
-      const r = await api("/api/games", { seats, game });
+      const r = await api("/api/games", { seats, game: game ?? undefined });
       if (!r.ok) { err.textContent = r.error; return; }
       await join(r.code);
     } }, "Found a table"),
@@ -223,7 +242,7 @@ function showPickMenu(moves, cx, cy) {
 function tipFor(id) {
   const v = G.view; if (!v || !id) return null;
   if (id === 8999) {
-    const held = Object.entries(v.treasury || {}).filter(([, n]) => n > 0);
+    const held = Object.entries(v.treasury || {}).filter(([r, n]) => n > 0 && v.resources.includes(r));
     return [h("h4", {}, "The treasury"), held.length ? h("div", { class: "row" }, held.map(([r, n]) => h("span", {}, String(n), " ", resIcon(r, "res small")))) : h("div", {}, "Empty. Only a law can fill it or pay it out.")];
   }
   if (id >= 9000) {
@@ -360,11 +379,20 @@ function afterView(prev, v) {
   const newLaw = trackDecisions(v);
   trackProposals(prev, v);
   renderAll();
+  showFoundingLaws(prev, v);
   if (!newLaw) refreshScene();
   else if (!G.player) refreshScene();
   animateChanges(prev, v);
   if (G.dock?.t === "draft" && G.draft?.outcome === "ready") refreshDraftReview();
   if (v.phase === "lobby" && prev?.phase !== "lobby") refreshScene();
+}
+/** A pack's founding laws are the first thing a seated player reads at its table, once. */
+function showFoundingLaws(prev, v) {
+  if (v.you == null || G.replay || v.phase !== "setup" || !(v.laws || []).length || G.dock) return;
+  const key = `charter.founding.${v.code}`;
+  if (store.get(key)) return;
+  store.set(key, "1");
+  openDock({ t: "laws" });
 }
 function renderAll() {
   if (!G.view) return;
@@ -388,7 +416,7 @@ function renderHouses() {
   fill(U.houses, v.seats.map(s => {
     const cloth = bannerCloth(s.seat);
     cloth.append(h("span", { class: "score" }, String(s.points)));
-    const held = Object.entries(s.hand || {}).filter(([, n]) => n > 0);
+    const held = Object.entries(s.hand || {}).filter(([r, n]) => n > 0 && v.resources.includes(r));
     const built = Object.entries(s.pieces || {}).filter(([, n]) => n > 0);
     const drafting = (v.drafting || []).includes(s.seat);
     return h("div", { class: "banner" + (v.turn === s.seat && v.phase !== "ended" ? " turn" : "") + (s.seat === v.you ? " you" : ""), tabindex: 0, "aria-label": `${s.name}, ${plural(s.points, "point")}` },
@@ -407,9 +435,11 @@ function renderHerald() {
   if (v.phase === "lobby") { fill(U.herald); return; }
   const last = U.herald.querySelector(".die");
   const die = v.lastRoll != null ? h("div", { class: "die" + (G.prevRoll !== v.rollsMade ? " hit" : ""), title: "The last roll" }, String(v.lastRoll)) : null;
+  // A counter in the treasury is something still in effect, such as an alarm after a 7.
+  const marks = (v.marksUp || []).map(m => h("div", { class: "upmark", title: m.note, "aria-label": m.note }, resIcon(m.res, "res")));
   void last;
   G.prevRoll = v.rollsMade;
-  fill(U.herald, h("div", { class: "tab" }, v.phase === "setup" ? "The founding" : v.phase === "ended" ? "The end" : `Round ${v.round}`), die, U.clock);
+  fill(U.herald, h("div", { class: "tab" }, v.phase === "setup" ? "The founding" : v.phase === "ended" ? "The end" : `Round ${v.round}`), die, marks, U.clock);
 }
 /** The time left in this turn, quietly. It comes from the server, which keeps the real clock. */
 function renderClock() {
@@ -444,13 +474,19 @@ function endTurn() {
   if (G.dock?.t === "trade") closeDock();
   postMove(end.move);
 }
+/** A good no hex pays, such as a laurel, stays off the screen until someone holds it. */
+function goodsInPlay(v) {
+  const paid = new Set((v.board?.tiles || []).map(t => t.res));
+  return (v.resources || []).filter(r => paid.has(r) || (v.seats || []).some(s => s.hand?.[r] > 0));
+}
 function renderLedge() {
   const v = G.view, U = G.ui;
   const seated = v.you != null && v.phase !== "lobby" && v.phase !== "ended";
   U.ledge.hidden = !seated;
   if (!seated) return;
   const hand = seat(v.you)?.hand || {};
-  fill(U.hand, (v.resources || []).map(r => {
+  const inPlay = goodsInPlay(v);
+  fill(U.hand, inPlay.map(r => {
     const n = hand[r] || 0;
     return h("div", { class: "rcard" + (n ? "" : " none"), "data-res": r, title: n ? `${n} ${r}` : "" }, resIcon(r), h("b", {}, String(n)));
   }));
@@ -461,6 +497,8 @@ function renderLedge() {
   const tools = [];
   if (building) {
     (v.pieceDefs || []).forEach((d, i) => {
+      // A piece paid for in a good that is not in play yet is not an option yet.
+      if (d.cost.some(x => !inPlay.includes(x.res))) return;
       const enabled = d.spots > 0, sel = G.selected === d.name, made = d.made;
       const why = !enabled && d.short?.length ? `Need ${costText(d.short)}` : !enabled ? (d.owned >= d.limit ? `All ${d.limit} built` : "No place for one") : `${capital(d.name)}: ${costText(d.cost)}. ${plural(d.spots, "place")}.`;
       tools.push(h("button", { class: "tool" + (sel ? " selected" : ""), disabled: !enabled, title: why, "aria-pressed": sel ? "true" : "false", "aria-label": why,
@@ -473,6 +511,7 @@ function renderLedge() {
     tools.push(h("button", { class: "tool sep" + (G.dock?.t === "trade" ? " selected" : ""), title: "Trade with the bank or the table (T)", onclick: () => toggleDock({ t: "trade" }) }, uiIcon("trade"), h("span", { class: "nm" }, "Trade")));
   }
   fill(U.tray, tools);
+  U.tray.classList.toggle("many", tools.length > 5);
   U.endTurn.hidden = !end;
   fill(U.endTurn, "End turn");
   U.endTurn.title = "End your turn (E)";
@@ -546,6 +585,7 @@ function renderMenu() {
   if (!G.menu || !v) return;
   fill(U.menu,
     h("div", {}, h("div", { class: "smallcaps" }, "Table"), h("div", { class: "code" }, v.code)),
+    v.game?.name ? h("div", {}, h("strong", {}, v.game.name), `. ${v.game.blurb}`) : null,
     h("div", {}, `First to ${v.target ?? 10} points, within ${v.rounds ?? 30} rounds.`),
     !G.replay && v.phase !== "lobby" && v.seats.every(x => x.kind !== "human") ? h("a", { class: "link", href: `/?game=${v.code}&replay=1` }, "Replay from the start") : null,
     G.player ? h("button", { class: "link", style: { textAlign: "left" }, onclick: () => { G.use3d = !G.use3d; applyMode(); renderMenu(); } }, G.use3d ? "Use the 2D board" : "Use the 3D table") : null,
@@ -681,12 +721,13 @@ function lawsDoc() {
   const laws = v.laws || [], deals = v.deals || [];
   return h("div", {},
     h("h2", {}, "In force"),
+    v.game?.blurb && (v.laws || []).some(l => l.by == null) ? h("p", { class: "note-line" }, `${v.game.name}: ${v.game.blurb}`) : null,
     !laws.length && !deals.length ? h("p", { class: "empty" }, "Only the constitution.") : null,
-    laws.map(l => h("details", { class: "lawrow", "data-pick": l.pick, open: G.openLaws?.has(l.id) ? true : null, ontoggle: e => { (G.openLaws ||= new Set())[e.currentTarget.open ? "add" : "delete"](l.id); } },
+    laws.map(l => h("details", { class: "lawrow" + (l.by == null ? " founding" : ""), "data-pick": l.pick, open: G.openLaws?.has(l.id) ? true : null, ontoggle: e => { (G.openLaws ||= new Set())[e.currentTarget.open ? "add" : "delete"](l.id); } },
       h("summary", {},
         h("div", { class: "head" }, h("span", { class: "ttl" }, l.title), h("span", { class: "num" }, `Law ${l.id}`)),
         h("p", { class: "english" }, l.english)),
-      l.by != null ? h("div", { class: "meta" }, `${nameOf(l.by)} proposed it in round ${l.round}. ${l.votes.filter(x => x.yes).length} yes, ${l.votes.filter(x => !x.yes).length} no.`) : null,
+      l.by != null ? h("div", { class: "meta" }, `${nameOf(l.by)} proposed it in round ${l.round}. ${l.votes.filter(x => x.yes).length} yes, ${l.votes.filter(x => !x.yes).length} no.`) : h("div", { class: "meta" }, "In force from the founding. A majority can repeal it."),
       h("pre", { class: "sexp" }, l.text))),
     deals.map(d => h("details", { class: "lawrow" },
       h("summary", {},
@@ -1005,7 +1046,7 @@ function renderTrade() {
   for (const m of trades) { if (!byGive.has(m.move.give)) byGive.set(m.move.give, []); byGive.get(m.move.give).push(m); }
   const others = v.seats.filter(s => s.seat !== v.you);
   const pick = (key, label) => h("div", { class: "pickrow" }, h("span", { class: "lbl" }, label),
-    v.resources.map(r => h("button", { class: f[key] === r ? "on" : "", title: capital(r), "aria-label": r, onclick: () => { f[key] = r; renderTrade(); } }, resIcon(r, "res"))),
+    goodsInPlay(v).map(r => h("button", { class: f[key] === r ? "on" : "", title: capital(r), "aria-label": r, onclick: () => { f[key] = r; renderTrade(); } }, resIcon(r, "res"))),
     h("input", { class: "num", type: "number", min: 1, value: f[key + "N"], "aria-label": `${label} amount`, onchange: e => { f[key + "N"] = Number(e.target.value) || 1; } }));
   const repeat = Number(f.rounds) > 1;
   const canOffer = f.give && f.get && f.give !== f.get || (f.give && f.get && repeat);
@@ -1247,6 +1288,7 @@ function gathering(v) {
   return h("div", { class: "titlepage vellum" },
     h("div", { class: "smallcaps" }, "The table"),
     h("div", { class: "bigcode", title: invite }, v.code),
+    h("p", { class: "packnote" }, h("b", {}, v.game?.name), `. ${v.game?.blurb || ""}`),
     h("button", { class: "link", onclick: e => { navigator.clipboard?.writeText(invite); e.currentTarget.textContent = "Copied"; } }, "Copy the invitation"),
     h("div", { class: "seats" }, slots),
     v.you == null ? h("p", { class: "note-line" }, "You are watching. Join from the title page.") : null,

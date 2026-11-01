@@ -62,6 +62,9 @@ structure Theme where
   linkModel : PieceKind → Nat → List Part
   /-- Pieces on the edge of the map get a pier and boats. -/
   harbours : Bool
+  /-- The model of a piece this game has its own look for, by kind and seat. Such a piece is known by
+  its shape, so it has no name over it. Other pieces, such as those laws make, do. -/
+  ownModel : PieceKind → Nat → Option (List Part) := fun _ _ => none
 
 instance : Inhabited Theme :=
   ⟨{ tableColor := 0, ground := fun _ => 0, decor := fun _ _ _ _ => [], growth := fun _ _ _ _ _ => []
@@ -370,10 +373,13 @@ def spotCmds (inp : Input) (j : Nat) (b : SpotPiece) : List Cmd :=
   let (body, offset) : List Part × (Float × Float) := match b.shape with
     | .settlement => (inp.theme.smallModel seed b.owner inp.round, (0, 0))
     | .city => (inp.theme.largeModel seed b.owner inp.round, (0, 0))
-    | .custom k true => (lawPieceModel k b.owner, (0.2 * Float.cos turnOf, 0.2 * Float.sin turnOf))
-    | .custom k false => (lawPieceModel k b.owner, (0, 0))
+    | .custom k true =>
+      ((inp.theme.ownModel k b.owner).getD (lawPieceModel k b.owner), (0.2 * Float.cos turnOf, 0.2 * Float.sin turnOf))
+    | .custom k false => ((inp.theme.ownModel k b.owner).getD (lawPieceModel k b.owner), (0, 0))
   let name : List Cmd := match b.shape with
-    | .custom k _ => [.label k (vec3 (x + offset.1) (top + 0.5) (z + offset.2)) (F32.ofFloat 0.09) 0xFFF6E0 0]
+    | .custom k _ =>
+      if (inp.theme.ownModel k b.owner).isSome then []
+      else [.label k (vec3 (x + offset.1) (top + 0.5) (z + offset.2)) (F32.ofFloat 0.09) 0xFFF6E0 0]
     | _ => []
   let port : List Cmd := match coastDir inp b.v, b.shape with
     | some (dx, dz), .settlement =>

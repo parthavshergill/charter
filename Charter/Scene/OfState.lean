@@ -24,6 +24,11 @@ structure Layout where
 
 variable {G : GameDef}
 
+/-- A resource no piece and no law fee costs. Nobody wants it for itself, so it is a counter that laws
+read, such as Not Catan's alarm. It is not money, so it adds nothing to the treasury's pile. -/
+def markRes (G : GameDef) (r : Res) : Bool :=
+  !(G.pieces.any fun d => d.cost.any (·.1 == r)) && !(G.lawFee.any (·.1 == r))
+
 /-- How many outcomes of the dice give each total, for totals from 0 up. -/
 def diceWays (G : GameDef) : List Nat :=
   let oneDie (ways : List Nat) : List Nat :=
@@ -122,7 +127,7 @@ def ofState (L : Layout) (s : State G) (viewer : Option Nat) (show_ : MarkerFilt
     markers := markers
     roll := s.lastRoll
     round := if s.phase == .setup then 0 else s.round
-    treasuryTotal := (G.resources.map fun r => s.balance .treasury r.name).sum
+    treasuryTotal := (G.resources.map fun r => if markRes G r.name then 0 else s.balance .treasury r.name).sum
     laws := s.laws.map fun x => (x.1, monumentOf x.2) }
 
 /-- The scene as bytes for the browser's player. -/

@@ -89,7 +89,7 @@ def pieceDefJson (s : State G) (you : Option Nat) (legal : List Move) (d : Piece
 
 /-- What a corner pays: the hexes it touches, likeliest first in the order of the map. -/
 def yieldsOf (G : GameDef) (v : Nat) : Json :=
-  Json.arr ((G.map.regions.filter (·.spots.contains v)).map fun r =>
+  Json.arr (((paidRegions G).filter (·.spots.contains v)).map fun r =>
     Json.mkObj [("res", r.res), ("number", toJson r.number),
       ("pips", toJson (Scene.chanceOf G r.number))]).toArray
 
@@ -187,9 +187,9 @@ def offerJson (s : State G) (you : Option Nat) (o : Offer) : Json :=
         | some y => accepted s (.move y (.cancel o.id))
         | none => false)) ]
 
-/-- The sample laws are written for the Island's pieces and resources. Other games have none yet. -/
+/-- The sample laws are written for the Island's pieces and resources. A game with those can use them. -/
 def samplesJson (g : Game) : Json :=
-  if g.spec.id != islandSpec.id then Json.arr #[] else
+  if !g.spec.samples then Json.arr #[] else
   Json.arr (Rules.sampleLaws.filterMap fun (id, text) =>
     match g.parse text with
     | .ok (.law L) => some (Json.mkObj [("id", id), ("title", L.title), ("english", Text.lawText L), ("text", text)])
@@ -229,11 +229,11 @@ def view (g : Game) (code : String) (you : Option Nat) (drafting : List Nat := [
   let showPersona := you.isNone && g.openToSpectators
   let common : List (String × Json) :=
     [ ("code", code), ("version", toJson g.events), ("you", toJson you)
-    , ("game", Json.mkObj [("id", g.spec.id), ("name", G.name), ("word", g.spec.layout.word)])
+    , ("game", Json.mkObj [("id", g.spec.id), ("name", g.spec.name), ("blurb", g.spec.blurb), ("word", g.spec.layout.word)])
     , ("started", toJson g.room.started), ("maxSeats", toJson g.room.maxSeats)
     , ("minSeats", toJson g.room.minSeats), ("filled", toJson g.room.filled)
     , ("board", boardJson g.spec)
-    , ("resources", toJson (G.resources.map (·.name)))
+    , ("resources", toJson (goodsOf G))
     , ("seatColors", toJson (Scene.seatColors.map colorHex))
     , ("drafting", toJson drafting)
     , ("fingerprint", commitmentOf g.serverSeed)
@@ -243,13 +243,19 @@ def view (g : Game) (code : String) (you : Option Nat) (drafting : List Nat := [
     Json.mkObj (common ++
       [ ("phase", toJson "lobby"), ("seats", Json.arr ((List.range g.room.filled).map (seatJson g none showPersona)).toArray) ])
   | some s =>
+    let isCounterTrade : Move → Bool
+      | .bankTrade a b => markRes G a || markRes G b
+      | _ => false
     let legal := match you with
-      | some y => Engine.legalMoves G s y
+      | some y => (Engine.legalMoves G s y).filter (!isCounterTrade ·)
       | none => []
     Json.mkObj (common ++
       [ ("phase", toJson (phaseText s.phase)), ("round", toJson s.round), ("rounds", toJson G.rounds)
       , ("turn", toJson s.currentSeat), ("lastRoll", toJson s.lastRoll)
       , ("rollsMade", toJson s.rollsMade)
+      , ("marksUp", Json.arr (((G.resources.map (·.name)).filter fun (r : String) =>
+          markRes G r && decide (0 < s.balance .treasury r)).map fun r =>
+            Json.mkObj [("res", Json.str r), ("note", Json.str g.spec.upNote)]).toArray)
       , ("target", toJson G.targetPoints), ("bankRate", toJson s.rules.bankRate)
       , ("fee", feeJson s you)
       , ("prompt", promptOf g s you legal)

@@ -145,6 +145,21 @@ def fraction : Nat → Option String
   | 4 => some "a quarter of"
   | _ => none
 
+/-- The terms of a sum, flattened. -/
+def sumTerms : Expr → List Expr
+  | .add a b => sumTerms a ++ sumTerms b
+  | e => [e]
+
+/-- Three or more goods of one party added up, as a list: its party and the goods. -/
+def holdingsSum (e : Expr) : Option (Party × List Res) :=
+  match sumTerms e with
+  | .holding p (.lit r) :: rest =>
+    let others := rest.filterMap fun
+      | .holding q (.lit x) => if q == p then some x else none
+      | _ => none
+    if others.length == rest.length && 2 ≤ rest.length then some (p, r :: others) else none
+  | _ => none
+
 def exprText (c : Ctx) : Expr → String
   | .lit n => toString n
   | .harvestedAmount =>
@@ -166,7 +181,12 @@ def exprText (c : Ctx) : Expr → String
     if !c.bound p then missingParty p
     else if isSeatParty p then s!"{possessive c p} {pluralWord k}"
     else s!"0 ({noun c p} owns no pieces)"
-  | .add a b => s!"{wrapIn isAdd a (exprText c a)} plus {wrapIn isAdd b (exprText c b)}"
+  | e@(.add a b) =>
+    match holdingsSum e with
+    | some (p, rs) =>
+      if c.bound p then s!"{possessive c p} {andList rs} together"
+      else s!"{wrapIn isAdd a (exprText c a)} plus {wrapIn isAdd b (exprText c b)}"
+    | none => s!"{wrapIn isAdd a (exprText c a)} plus {wrapIn isAdd b (exprText c b)}"
   | .sub a b =>
     if isQuantity a then s!"{exprText c a} above {wrap b (exprText c b)}"
     else s!"{wrap a (exprText c a)} minus {wrap b (exprText c b)}, stopping at 0"
@@ -354,6 +374,7 @@ def sentText (c : Ctx) : Cond → String
     | none =>
       let isWord (e : Expr) := if isPluralExpr e then "are" else "is"
       match cond with
+      | .lt (.lit n) b => s!"{exprText c b} {isWord b} more than {n}"
       | .lt a b => s!"{exprText c a} {isWord a} less than {exprText c b}"
       | .le a b => s!"{exprText c a} {isWord a} at most {exprText c b}"
       | .eq a b => s!"{exprText c a} {isWord a} equal to {exprText c b}"
@@ -570,8 +591,21 @@ structure Phrase where
 /-- An amount that ends in "rounded down" needs a comma before the words that follow it. -/
 def closeAmount (a : String) : String := if a.endsWith "rounded down" then a ++ "," else a
 
+/-- "half of their timber, rounded down" and so on, as one phrase, if every amount reads that way. -/
+def halves (amounts : List String) : Option String :=
+  let head := "half of their "
+  let tail := ", rounded down"
+  if amounts.length < 2 || !amounts.all (fun a => a.startsWith head && a.endsWith tail) then none
+  else
+    let names := amounts.map fun a => ((a.drop head.length).dropEnd tail.length).toString
+    some s!"half of their {andList names}, each rounded down,"
+
 def Phrase.render (plural : Bool) (p : Phrase) : String :=
-  s!"{if plural then p.verb else p.verb ++ "s"} {andList (p.amounts.map closeAmount)} {p.tail}"
+  let amounts := match p.amounts.reverse with
+    | [] => []
+    | last :: rest => (closeAmount last :: rest).reverse
+  let what := (halves p.amounts).getD (andList amounts)
+  s!"{if plural then p.verb else p.verb ++ "s"} {what} {p.tail}"
 
 /-- Join phrases that share a verb and a tail. -/
 def joinPhrases (plural : Bool) (ps : List Phrase) : String :=

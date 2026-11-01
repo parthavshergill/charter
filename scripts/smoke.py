@@ -192,6 +192,41 @@ def bots_only(srv, seats, game="island", small="settlement"):
     raise SystemExit(f"FAILED: {seats} bots did not finish")
 
 
+def extension_pack(srv):
+    """Not Catan: a pack with founding laws. Its laws are in force from the first view, its seats are
+    limited, a counter stays off the screen, and bots play it to the end. Returns a table to check after
+    a restart."""
+    defs = {d["id"]: d for d in srv.get("/api/defs")}
+    check(list(defs) == ["island", "belt", "not-catan"], "the lobby lists the base game first, then the packs")
+    check(all(d["name"] and d["blurb"] for d in defs.values()), "each pack has a name and a sentence")
+    check(defs["not-catan"]["minSeats"] == 3 and defs["not-catan"]["maxSeats"] == 4, "a pack says how many seats it supports")
+    for n in (2, 5):
+        check(srv.post("/api/games", {"seats": n, "game": "not-catan"})["ok"] is False, f"Not Catan refuses a table of {n}")
+    t = srv.post("/api/games", {"seats": 3, "game": "not-catan"})["code"]
+    token = srv.post(f"/api/games/{t}/join", {"name": "Mara", "nonce": 1})["token"]
+    srv.post(f"/api/games/{t}/bot", {})
+    check(srv.post(f"/api/games/{t}/start", {"token": token})["ok"] is False, "Not Catan cannot start with 2 of its 3 seats")
+    srv.post(f"/api/games/{t}/bot", {})
+    v = srv.get(f"/api/games/{t}/view?token={token}")
+    check(v["game"]["name"] == "Not Catan" and v["game"]["blurb"], "the view names the pack")
+    check(len(v["laws"]) == 7 and all(l["english"] and l["by"] is None for l in v["laws"]), "founding laws are in force from the start, with their sentences")
+    check([l["id"] for l in v["laws"]] == list(range(7)), "founding laws take the first ids")
+    check(sum(l["text"].startswith("In force from the founding") for l in v["chronicle"]) == 7, "the chronicle states each founding law")
+    check("alarm" not in v["resources"] and "laurel" in v["resources"], "a counter is off the screen, and a good a piece costs is on it")
+    check(all(y["res"] != "alarm" for m in v["legalMoves"] for y in m.get("yields", [])), "a corner does not show the counter")
+    check(len(v["board"]["tiles"]) == 19 and sum(1 for x in v["board"]["tiles"] if x["res"] is None) == 1, "the board has 19 hexes and one desert")
+    scene = srv.raw(f"/api/games/{t}/scene?token={token}")
+    picks = [x["pick"] for x in v["legalMoves"] if x["pick"] is not None]
+    SCENES.append((scene, picks, ["Law 0", "Law 6"]))
+    code = None
+    for n in (3, 4):
+        code, end = bots_only(srv, n, "not-catan", "settlement")
+        check(end["target"] == 10 and end["bankRate"] == 4, "the pack keeps its target and bank rate")
+        check(end["bank"].get("timber", 0) + sum(s["hand"]["timber"] for s in end["seats"]) + end["treasury"].get("timber", 0) == 19, "19 timber are in the game, wherever they are")
+        check(sum(s["hand"].get("alarm", 0) for s in end["seats"]) == 0, "no hand keeps the counter")
+    return code
+
+
 def second_game(srv):
     """The Belt is a different game: other resources, pieces, map and dice. Bots play it to the end at
     each table size, and its scenes draw. Returns a table to check after a restart."""
@@ -576,6 +611,7 @@ def main():
         for n in (2, 3):
             bots_only(srv, n)
         belt = second_game(srv)
+        pack = extension_pack(srv)
         claude_table = claude_with_no_key(srv)
         talk_and_replay(srv, code, token, v)
         table3 = refusals_and_embargo(srv)
@@ -594,6 +630,7 @@ def main():
             err_text = f.read()
         check(not any(o in codes for o in old) and code in codes and table3 in codes, "a saved game that no longer replays is left out, and the others load")
         check(belt in codes and claude_table in codes, "tables of other games and with other seats load")
+        check(pack in codes and srv.get(f"/api/games/{pack}/view")["game"]["id"] == "not-catan", "a pack's table replays from its log after a restart")
         check(srv.get(f"/api/games/{belt}/view")["game"]["id"] == "belt", "a replay from the log runs the game named in the log")
         check(srv.get(f"/api/games/{code}/talk")["lines"][-1]["text"] == "Good game.", "talk survives a restart")
         check(all(f"[{o}] this saved game was not loaded" in err_text for o in old), "the server says which saved games it left out, and why")
