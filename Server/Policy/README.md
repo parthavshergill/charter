@@ -6,9 +6,10 @@ setting, bot seats play the rule-based bot of `Server/BotCore.lean`, as before. 
 ## Files
 
 - `Layout.lean`, `Obs.lean`: what the network reads, and its actions. A copy of the training harness's
-  `rl/lean/CharterRL/` (branch `rl-harness`, layout version 1), cut to what one decision needs.
-- `Net.lean`: the network in plain Lean (entity encoder, one MinGRU layer, linear decoder, pointer decoder), and
-  the reader of the weights file. No GPU, no Python, no new library.
+  `rl/lean/CharterRL/` (branch `rl-harness` at `89a3a51`, layout version 2, the layout of `entity2`'s candidates),
+  cut to what one decision needs.
+- `Net.lean`: the network in plain Lean (entity encoder, MinGRU, linear decoder, pointer decoder over the rows of
+  `places` and over bank trades), and the reader of the weights file. No GPU, no Python, no new library.
 - `Bot.lean`: one decision, the seat's memory, and the switch `CHARTER_BOT`.
 - `Server/Player.lean`: `trained` is one more player beside `human` and `bot`. It gets a `Situation` and answers
   with events; the engine has the final word, as for the others.
@@ -22,7 +23,7 @@ setting, bot seats play the rule-based bot of `Server/BotCore.lean`, as before. 
 python3 scripts/policy_weights.py CKPT.bin --out Server/Policy/policy.chpw --gru-state carry
 ```
 
-`CKPT.bin.json` must sit beside the checkpoint. The file is a 176-byte header (sizes, action offsets and the state
+`CKPT.bin.json` must sit beside the checkpoint. The file is a header (sizes, action offsets and the state
 rule) and then the checkpoint's floats, unchanged. The server refuses a file whose layout or sizes do not match,
 and says why. `--gru-state` is needed when the meta has no `gru_state`; see below.
 
@@ -46,12 +47,10 @@ and says why. `--gru-state` is needed when the meta has no `gru_state`; see belo
 
 ## Limits, plainly
 
-Layout version 1 has fixed sizes: 8 resources, 60 spots, 84 links, 24 tiles, 16 laws in force, 1 kind of link
-piece, 8 kinds of spot piece, 6 seats. A game past these is refused when a bot is added, with the reason. So
-**this network does not play every game that passes `G.Valid`**. Layout version 2 (on `rl-harness`) lifts the
-limits to the engine's own, but no entity checkpoint uses it yet.
-
-A law that adds a ninth kind of spot piece mid-game gives that kind no row: the bot cannot build it.
+Layout version 2's limits are the engine's own (16 resources, 16 kinds of piece, 100 spots, 48 laws, 6 seats), so
+every game that passes `G.Valid` fits. When more than 128 placements are legal at once, only the first 128 in the
+harness's order have a row, as in training; end turn is always on offer. A checkpoint of another layout is refused
+when the server starts.
 
 ## Checks
 

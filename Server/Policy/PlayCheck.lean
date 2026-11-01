@@ -38,7 +38,8 @@ structure Result where
   error : Option String
 
 /-- Play one game. `policySeats` play by `net`; the others by the current bot. -/
-def playOne (net : Net) (spec : GameSpec) (seats seed : Nat) (policySeats : List Nat) : IO Result := do
+def playOne (net : Net) (spec : GameSpec) (seats seed : Nat) (policySeats : List Nat)
+    (record : Option IO.FS.Handle := none) : IO Result := do
   let base : Result := { game := spec.id, seats, policySeats, ended := false, winner := none, byTarget := false
                          points := [], rounds := 0, decisions := 0, decisionNs := 0, error := none }
   let .ok g0 := PreviewCheck.newTable spec seats seed | return { base with error := some "the table did not start" }
@@ -47,6 +48,8 @@ def playOne (net : Net) (spec : GameSpec) (seats seed : Nat) (policySeats : List
   let mut ns := 0
   let mut err : Option String := none
   let mut mem : Memory := {}
+  let mut lastTurn : Option Nat := none
+  if let some h := record then h.putStrLn "reset"
   let mut differs := 0
   for _ in [0:20000] do
     let some s := g.state | break
@@ -59,6 +62,11 @@ def playOne (net : Net) (spec : GameSpec) (seats seed : Nat) (policySeats : List
         | .ok evs =>
           let t1 ← IO.monoNanosNow
           if s.currentSeat == some seat then
+            if let some h := record then
+              if seat == policySeats.headD 0 then
+                if lastTurn != some s.turnsTaken then h.putStrLn "turn"
+                lastTurn := some s.turnsTaken
+                h.putStrLn (" ".intercalate ((observationFor g s seat).toList.map toString))
             decisions := decisions + 1
             ns := ns + (t1 - t0)
             -- The move it plays carries the state; count where a zero state would have chosen another move.
@@ -104,7 +112,7 @@ def Result.line (r : Result) : String :=
 
 def main (args : List String) : IO UInt32 := do
   let some path := args.head? | do
-    IO.eprintln "usage: charter-policy-check WEIGHTS [GAMES] [--vs-hand]"
+    IO.eprintln "usage: charter-policy-check WEIGHTS [GAMES] [--vs-hand] [--record OBS.txt]"
     return 2
   let net ← match ← loadNet path with
     | .ok n => pure n
@@ -113,10 +121,16 @@ def main (args : List String) : IO UInt32 := do
   let vsHand := args.contains "--vs-hand"
   let games := ((args.drop 1).head?.bind String.toNat?).getD 4
   let mut ok := true
+  let recordPath := match args.dropWhile (· != "--record") with
+    | _ :: p :: _ => some p
+    | _ => none
+  let record ← recordPath.mapM fun p => IO.FS.Handle.mk p .write
   if !vsHand then
     for spec in gameSpecs do
       for seats in [2, 4, 6].filter fun n => spec.minSeats ≤ n && n ≤ spec.maxSeats do
-        let r ← playOne net spec seats (100 + seats) (List.range seats)
+        -- Record seat 0's observations in the 4-seat game of each world (or its first), for the differential test.
+        let rec_ := if seats == 4 || (seats == spec.maxSeats && spec.maxSeats < 4) then record else none
+        let r ← playOne net spec seats (100 + seats) (List.range seats) rec_
         IO.println r.line
         (← IO.getStdout).flush
         if r.error.isSome || !r.ended then ok := false

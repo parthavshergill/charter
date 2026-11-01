@@ -14,13 +14,17 @@ All numbers are little-endian.
 2. Eleven unsigned 32-bit integers, in this order:
    format version (2; version 1 files have no item 5), layout version, `E` (size of one table row
    after encoding), `hidden`, `layers`, `act_size` (number of actions),
-   `pointer` (0, 1 or 2), `act_spot`, `act_link`, `act_bank` (where the
-   pointer scores go in the action list), `ntables`.
+   `pointer` (0 none; 1 and 2 layout 1: spots by kind, links, and with 2
+   bank trades; 3 layout 2: rows of `places`, and bank trades), `act_spot`
+   (the first place action, for pointer 3), `act_link`, `act_bank` (where
+   the pointer scores go in the action list), `ntables`.
 3. For each table: three unsigned 32-bit integers (offset, rows, width).
    The table's values sit at `obs[offset .. offset + rows*width]`, one row
    after another. Column 0 of a row is 1 for a real row and 0 for padding.
 4. Four unsigned 32-bit integers: the table numbers of the `kinds`,
    `spots`, `links` and `resources` tables (used by the pointer scores).
+   For pointer 3 the `spots` slot holds the `places` table, and the `links`
+   slot repeats it (layout 2 has no links table).
 5. One unsigned 32-bit integer: the state rule, how the recurrent state
    moves between one seat's decisions (`StateRule`): 0 `carry`, 1 `turn`,
    2 `zero`. It must match how the checkpoint was trained.
@@ -31,7 +35,7 @@ All numbers are little-endian.
    - `out`, `hidden x (ntables*E)`;
    - `decoder`, `(act_size+1) x hidden` (the last row is the value head; it
      is not used here);
-   - if `pointer > 0`: `ptr`, `(2E if pointer = 1, else 4E) x hidden`;
+   - if `pointer > 0`: `ptr`, `(2E, 4E or 3E for pointer 1, 2 or 3) x hidden`;
    - one MinGRU block per layer, `(3*hidden) x hidden`.
 
 So converting a PufferLib checkpoint is: header bytes, then the `.bin` bytes.
@@ -137,7 +141,7 @@ def Net.obsSize (n : Net) : Nat :=
 
 /-- Number of rows in the pointer block: 0, `2E` or `4E`. -/
 def ptrRows (pointer e : Nat) : Nat :=
-  if pointer == 0 then 0 else if pointer == 1 then 2 * e else 4 * e
+  if pointer == 0 then 0 else if pointer == 1 then 2 * e else if pointer == 2 then 4 * e else 3 * e
 
 /-- Parse a weights file. Fails with a message if the magic, version, sizes
 or table numbers are wrong. -/
@@ -150,7 +154,7 @@ def Net.read (b : ByteArray) : Except String Net := do
   if h 0 != 2 then throw s!"weights file: format version {h 0}, expected 2 (it records the state rule)"
   let e := h 2; let hid := h 3; let layers := h 4; let act := h 5
   let pointer := h 6; let nt := h 10
-  if pointer > 2 then throw s!"weights file: pointer must be 0, 1 or 2, got {pointer}"
+  if pointer > 3 then throw s!"weights file: pointer must be 0, 1, 2 or 3, got {pointer}"
   if e == 0 || hid == 0 || nt == 0 then throw "weights file: E, hidden and ntables must be positive"
   let headerBytes := 4 + 4 * (11 + 3 * nt + 5)
   if b.size < headerBytes then
@@ -174,11 +178,15 @@ def Net.read (b : ByteArray) : Except String Net := do
       throw "weights file: pointer table number out of range"
     let tk := tables[kinds]!; let ts := tables[spots]!; let tl := tables[links]!
     let tr := tables[res]!
-    if tk.rows == 0 then throw "weights file: kinds table has no rows"
-    if h 7 + (tk.rows - 1) * ts.rows > act then throw "weights file: spot scores run past act_size"
-    if h 8 + tl.rows > act then throw "weights file: link scores run past act_size"
-    if pointer == 2 && h 9 + tr.rows * tr.rows > act then
-      throw "weights file: bank scores run past act_size"
+    if pointer == 3 then
+      if h 7 + ts.rows > act then throw "weights file: place scores run past act_size"
+      if h 9 + tr.rows * tr.rows > act then throw "weights file: bank scores run past act_size"
+    else
+      if tk.rows == 0 then throw "weights file: kinds table has no rows"
+      if h 7 + (tk.rows - 1) * ts.rows > act then throw "weights file: spot scores run past act_size"
+      if h 8 + tl.rows > act then throw "weights file: link scores run past act_size"
+      if pointer == 2 && h 9 + tr.rows * tr.rows > act then
+        throw "weights file: bank scores run past act_size"
   -- Check the payload size, then read the blocks.
   let pr := ptrRows pointer e
   let inSizes := tables.map (fun t => e * t.width)
@@ -288,6 +296,31 @@ def Net.addPointer (n : Net) (keep : Array FloatArray) (h : FloatArray)
     (logits : FloatArray) : FloatArray := Id.run do
   let e := n.E
   let q := matVec n.ptr (ptrRows n.pointer e) n.hidden h
+  if n.pointer == 3 then
+    -- Layout 2: one score per row of `places` (its table number is in the `spots` slot), and bank trades.
+    let rp := keep[n.spotsIdx]!; let np := n.tables[n.spotsIdx]!.rows
+    let rr := keep[n.resourcesIdx]!; let nr := n.tables[n.resourcesIdx]!.rows
+    let mut out := logits
+    for p in [0:np] do
+      let mut s := 0.0
+      for i in [0:e] do
+        s := s + rp[p * e + i]! * q[i]!
+      let a := n.actSpot + p
+      out := out.set! a (out[a]! + s)
+    let mut give := FloatArray.emptyWithCapacity nr
+    let mut get := FloatArray.emptyWithCapacity nr
+    for i in [0:nr] do
+      let mut a := 0.0
+      let mut b := 0.0
+      for j in [0:e] do
+        a := a + rr[i * e + j]! * q[e + j]!
+        b := b + rr[i * e + j]! * q[2 * e + j]!
+      give := give.push a; get := get.push b
+    for i in [0:nr] do
+      for j in [0:nr] do
+        let a := n.actBank + i * nr + j
+        out := out.set! a (out[a]! + (give[i]! + get[j]!))
+    return out
   let rk := keep[n.kindsIdx]!; let rs := keep[n.spotsIdx]!; let rl := keep[n.linksIdx]!
   let nk := n.tables[n.kindsIdx]!.rows; let ns := n.tables[n.spotsIdx]!.rows
   let nl := n.tables[n.linksIdx]!.rows

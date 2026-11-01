@@ -27,7 +27,17 @@ V1_TABLES = [
     ("links", 2657, 84, 15), ("laws", 3917, 16, 27), ("proposal", 4349, 1, 85),
 ]
 V1 = dict(layout_version=1, act_size=695, act_spot=215, act_link=131, act_bank=3,
-          tables=V1_TABLES)
+          tables=V1_TABLES, pointer_tables=("kinds", "spots", "links", "resources"))
+
+# Layout version 2 (harness 89a3a51, rl/layout.json): no tiles or links table; a placement is a row of `places`.
+V2_TABLES = [
+    ("global", 0, 1, 21), ("seats", 21, 6, 10), ("resources", 81, 16, 27), ("kinds", 513, 16, 36),
+    ("spots", 1089, 100, 45), ("laws", 5589, 48, 27), ("proposal", 6885, 1, 100), ("places", 6985, 128, 35),
+]
+# act_spot holds the first place action; the pointer's spots slot holds `places`.
+V2 = dict(layout_version=2, act_size=515, act_spot=387, act_link=387, act_bank=3,
+          tables=V2_TABLES, pointer_tables=("kinds", "places", "places", "resources"))
+LAYOUTS = {1: V1, 2: V2}
 
 
 def pad8(n):
@@ -37,15 +47,15 @@ def pad8(n):
 STATE_RULES = {"carry": 0, "turn": 1, "zero": 2}
 
 
-def header_bytes(layout, E, hidden, layers, pointer, state_rule):
+def header_bytes(layout, E, hidden, layers, pointer, state_rule, act_size=None):
     """The weights-file header (magic + UInt32s) for this layout and model."""
     tables = layout["tables"]
     names = [t[0] for t in tables]
-    vals = [2, layout["layout_version"], E, hidden, layers, layout["act_size"], pointer,
+    vals = [2, layout["layout_version"], E, hidden, layers, act_size or layout["act_size"], pointer,
             layout["act_spot"], layout["act_link"], layout["act_bank"], len(tables)]
     for _, off, rows, width in tables:
         vals += [off, rows, width]
-    vals += [names.index(n) for n in ("kinds", "spots", "links", "resources")]
+    vals += [names.index(n) for n in layout["pointer_tables"]]
     vals += [STATE_RULES[state_rule]]
     return b"CHPW" + struct.pack("<%dI" % len(vals), *vals)
 
@@ -55,7 +65,7 @@ def block_shapes(widths, E, hidden, layers, act_size, pointer):
     shapes = [(E, w) for w in widths]
     shapes += [(hidden, len(widths) * E), (act_size + 1, hidden)]
     if pointer:
-        shapes.append(((2 if pointer == 1 else 4) * E, hidden))
+        shapes.append(({1: 2, 2: 4, 3: 3}[pointer] * E, hidden))
     shapes += [(3 * hidden, hidden)] * layers
     return shapes
 
@@ -120,7 +130,18 @@ def forward(net, obs, state):
         x, s2 = mingru_step(W, x, s)
         new_state.append(s2)
     logits = (net["decoder"] @ x)[:-1]
-    if net["pointer"]:
+    if net["pointer"] == 3:   # layout 2: rows of places, and bank trades (entity_numpy.pointer_scores)
+        _, pi, _, ri = net["idx"]
+        rp, rr = keep[pi], keep[ri]
+        q = net["ptr"] @ x
+        out = np.zeros(net["act"])
+        a = net["act_spot"]
+        out[a:a + rp.shape[0]] = rp @ q[:E]
+        bank = (rr @ q[E:2 * E])[:, None] + (rr @ q[2 * E:])[None, :]
+        a = net["act_bank"]
+        out[a:a + bank.size] = bank.reshape(-1)
+        logits = logits + out
+    elif net["pointer"]:
         ki, si, li, ri = net["idx"]
         rk, rs, rl = keep[ki], keep[si], keep[li]
         q = net["ptr"] @ x
@@ -141,22 +162,25 @@ def forward(net, obs, state):
 
 # ---- commands ----
 
-def make_synthetic(out, E=32, hidden=128, layers=1, pointer=2, seed=1234, scale=0.1, state_rule="carry"):
+def make_synthetic(out, E=32, hidden=128, layers=1, pointer=3, seed=1234, scale=0.1, state_rule="carry", layout=None):
+    layout = layout or V2
+    act = layout["act_size"] + 1   # the trainer's decoder also scores the no-op
     rng = np.random.default_rng(seed)
     payload = bytearray()
-    widths = [t[3] for t in V1["tables"]]
-    for r, c in block_shapes(widths, E, hidden, layers, V1["act_size"], pointer):
+    widths = [t[3] for t in layout["tables"]]
+    for r, c in block_shapes(widths, E, hidden, layers, act, pointer):
         a = (rng.standard_normal(r * c) * scale).astype("<f4")
         a = np.concatenate([a, np.zeros(pad8(r * c) - r * c, dtype="<f4")])
         payload += a.tobytes()
-    data = header_bytes(V1, E, hidden, layers, pointer, state_rule) + bytes(payload)
+    data = header_bytes(layout, E, hidden, layers, pointer, state_rule, act) + bytes(payload)
     open(out, "wb").write(data)
     print("wrote %s (%d bytes)" % (out, len(data)))
 
 
-def make_obs(out, n, seed=99):
+def make_obs(out, n, seed=99, layout=None):
+    layout = layout or V2
     rng = np.random.default_rng(seed)
-    size = sum(t[2] * t[3] for t in V1["tables"])
+    size = sum(t[2] * t[3] for t in layout["tables"])
     lines = []
     for i in range(n):
         if i == n // 2:
@@ -164,7 +188,7 @@ def make_obs(out, n, seed=99):
         elif i % 3 == 0:
             lines.append("turn")
         obs = np.zeros(size)
-        for _, off, rows, width in V1["tables"]:
+        for _, off, rows, width in layout["tables"]:
             nreal = rng.integers(1, rows + 1)
             for r in range(nreal):
                 row = rng.random(width)
