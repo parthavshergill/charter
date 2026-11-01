@@ -2,7 +2,7 @@
 
 Charter's promises were written before its engine, and then attacked by reviewers who did not write them. Those reviewers were independent and read-only: they were models that had not written the code, and they could report problems but not change anything. This file records what they found and what changed.
 
-All ten commandments and the five supporting promises are now proved, and `make audit` checks those proofs. A review asks a different question: does the statement say enough? A proof only covers what its statement says.
+All ten commandments and the six supporting promises are now proved, and `make audit` checks those proofs. A review asks a different question: does the statement say enough? A proof only covers what its statement says.
 
 ## The rule language on one card
 
@@ -346,7 +346,6 @@ The griefer in `make sim` ran on an older build, so it did not try this.
 No theorem covers these. Tests check them, on the cases tried.
 
 - That the hash in `Charter/Sha256.lean` is the real SHA-256.
-- The exact entries of a bank trade and a setup placement. Commandment V limits what these can take from a seat.
 - `legalMoves`, which the screen uses.
 - That every seat can place its setup pieces. On the Island, a road can be blocked at 4 seats, and the game goes on without it.
 - That the screen shows the preview's result, and the preview's build cases.
