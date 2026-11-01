@@ -24,6 +24,7 @@ import os
 import shlex
 import subprocess
 import sys
+import threading
 import time
 
 import modal
@@ -163,12 +164,62 @@ def test(quick: bool = False):
     return results
 
 
+def checkpoints(out):
+    return sorted((os.path.join(dp, f) for dp, _, fs in os.walk(f"{out}/ckpt") for f in fs if f.endswith(".bin")),
+                  key=lambda c: (os.path.basename(c), c))
+
+
+def write_metas(out, run, train_args, move_rows, encoder, meta_extra):
+    """A JSON meta next to every checkpoint that has none, so eval can read any of them."""
+    hidden, layers = 128, 1
+    for tok in train_args.split():
+        if tok.startswith("--policy.hidden_size="):
+            hidden = int(tok.split("=")[1])
+        if tok.startswith("--policy.num_layers="):
+            layers = int(tok.split("=")[1])
+    obs = 7122 if move_rows else 4434
+    cks = checkpoints(out)
+    for c in cks:
+        if os.path.exists(c + ".json"):
+            continue
+        meta = {"name": f"{run}/{os.path.basename(c)}", "format": f"puffer-{encoder}", "encoder": encoder,
+                "obs_size": obs, "act_size": 696, "hidden": hidden, "layers": layers,
+                "settings": {"vote_mode": "bot", "move_rows": move_rows}}
+        meta.update(json.loads(meta_extra) if meta_extra else {})
+        json.dump(meta, open(c + ".json", "w"))
+    return cks
+
+
 @app.function(gpu=GPU, cpu=8, memory=16384, timeout=4 * 3600, volumes={VOL: vol})
 def train(run: str, train_args: str = "", seconds: int = 600, move_rows: bool = False, patch: bool = True,
-          encoder: str = "flat", meta_extra: str = ""):
-    """Build the trainer and train for at most `seconds`. Writes /vol/<run>/: train.log, ckpt/, meta.json."""
+          encoder: str = "flat", meta_extra: str = "", resume: str = "", commit_every: int = 600):
+    """Build the trainer and train for at most `seconds`. Writes /vol/<run>/: train.log, ckpt/, meta.json.
+
+    Every `commit_every` seconds the checkpoints get their metas and the volume is committed, so a job that is
+    stopped loses at most that much. `resume` warm-starts from a checkpoint: a path on the volume, or `last` for this
+    run's newest one (its log goes to train-<n>.log)."""
     out = f"{VOL}/{run}"
     os.makedirs(out, exist_ok=True)
+    vol.reload()
+    if resume:
+        path = checkpoints(out)[-1] if resume == "last" else (resume if resume.startswith("/") else f"{VOL}/{resume}")
+        train_args = f"{train_args} --base.warm_start_path={path}"
+        print(f"resume from {path}", flush=True)
+    logname = "train.log"
+    n = 1
+    while os.path.exists(f"{out}/{logname}"):
+        n += 1
+        logname = f"train-{n}.log"
+    stop = threading.Event()
+
+    def keep_committing():
+        while not stop.wait(commit_every):
+            try:
+                write_metas(out, run, train_args, move_rows, encoder, meta_extra)
+                vol.commit()
+                print(f"[commit] {len(checkpoints(out))} checkpoints", flush=True)
+            except Exception as e:  # noqa: BLE001
+                print(f"[commit] failed: {e}", flush=True)
     t0 = time.time()
     sh("ln -sf /usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1 /usr/lib/x86_64-linux-gnu/libnvidia-ml.so; "
        "nvidia-smi --query-gpu=name,driver_version --format=csv,noheader")
@@ -179,24 +230,14 @@ def train(run: str, train_args: str = "", seconds: int = 600, move_rows: bool = 
     args = (f"train --headless --base.checkpoint_dir={out}/ckpt --base.log_dir={out}/logs "
             + (" --env.move_rows=1" if move_rows else "") + f" {train_args}")
     t1 = time.time()
+    threading.Thread(target=keep_committing, daemon=True).start()
+    open(f"{out}/args.txt", "a").write(args + "\n")
     code, _ = sh(f"cd {PUFFER} && timeout --kill-after=20 {seconds} ./puffer {args} 2>&1 | tr '\\r' '\\n' | "
-                 f"sed 's/\\x1b\\[[0-9;?]*[A-Za-z]//g' > {out}/train.log; echo exit ${{PIPESTATUS[0]}}")
+                 f"sed 's/\\x1b\\[[0-9;?]*[A-Za-z]//g' > {out}/{logname}; echo exit ${{PIPESTATUS[0]}}")
+    stop.set()
     train_s = time.time() - t1
-    _, tail = sh(f"grep -E 'bot_eval|ssert|Abort|rror|missing' {out}/train.log | head -20; tail -40 {out}/train.log")
-    ckpts = sorted(os.path.join(dp, f) for dp, _, fs in os.walk(f"{out}/ckpt") for f in fs if f.endswith(".bin"))
-    hidden, layers = 128, 1
-    for tok in train_args.split():
-        if tok.startswith("--policy.hidden_size="):
-            hidden = int(tok.split("=")[1])
-        if tok.startswith("--policy.num_layers="):
-            layers = int(tok.split("=")[1])
-    obs = 7122 if move_rows else 4434
-    for c in ckpts[-1:] + ckpts[:1]:
-        meta = {"name": f"{run}/{os.path.basename(c)}", "format": f"puffer-{encoder}", "encoder": encoder,
-                "obs_size": obs, "act_size": 696, "hidden": hidden, "layers": layers,
-                "settings": {"vote_mode": "bot", "move_rows": move_rows}}
-        meta.update(json.loads(meta_extra) if meta_extra else {})
-        json.dump(meta, open(c + ".json", "w"))
+    _, tail = sh(f"grep -E 'bot_eval|ssert|Abort|rror|missing' {out}/{logname} | head -20; tail -40 {out}/{logname}")
+    ckpts = write_metas(out, run, train_args, move_rows, encoder, meta_extra)
     vol.commit()
     return {"build_seconds": round(build_s), "train_seconds": round(train_s), "checkpoints": len(ckpts),
             "first": ckpts[0] if ckpts else None, "last": ckpts[-1] if ckpts else None, "tail": tail[-6000:]}
@@ -210,6 +251,16 @@ def evaluate(subjects: list, out: str, games: int = 200, quick: bool = False):
                     f"--jobs 8 --out {out} {'--quick' if quick else ''}")
     vol.commit()
     return {"exit": code, "report": open(f"{out}/report.md").read() if os.path.exists(f"{out}/report.md") else text[-4000:]}
+
+
+@app.function(cpu=2, memory=4096, timeout=3600, volumes={VOL: vol})
+def play_games(subject: str, out: str, n: int = 2, opponents: str = "hand,random", sets: str = "train,held"):
+    """Play and write out a few full games of one subject (rl/eval/games.py)."""
+    vol.reload()
+    code, text = sh(f"cd {SRC}/.. && python3 rl/eval/games.py {shlex.quote(subject)} --out {out} --games {n} "
+                    f"--opponents {opponents} --sets {sets}")
+    vol.commit()
+    return {"exit": code, "md": open(f"{out}/games.md").read() if os.path.exists(f"{out}/games.md") else text[-4000:]}
 
 
 # ---- Money -------------------------------------------------------------------------------------------------
@@ -245,7 +296,8 @@ def guard(max_dollars, gpu, cpu, gib, want_seconds):
 @app.local_entrypoint()
 def main(action: str = "test", run: str = "smoke", minutes: float = 10, max_dollars: float = 1.0,
          train_args: str = "", games: int = 200, subjects: str = "", quick: bool = False, move_rows: bool = False,
-         no_patch: bool = False, encoder: str = "flat", meta_extra: str = ""):
+         no_patch: bool = False, encoder: str = "flat", meta_extra: str = "", resume: str = "", spawn: bool = False,
+         out: str = "", opponents: str = "hand,random", sets: str = "train,held"):
     if action == "test":
         total = guard(max_dollars, None, 4, 8, 1500)
         print(json.dumps(test.with_options(timeout=total).remote(quick), indent=1))
@@ -255,15 +307,27 @@ def main(action: str = "test", run: str = "smoke", minutes: float = 10, max_doll
         seconds = total - 600
         if seconds < 60:
             sys.exit("[money] too little money for a useful run")
-        r = train.with_options(timeout=total).remote(run, train_args, seconds, move_rows, not no_patch, encoder,
-                                                            meta_extra)
+        fn = train.with_options(timeout=total)
+        targs = (run, train_args, seconds, move_rows, not no_patch, encoder, meta_extra, resume)
+        if spawn:
+            # With `modal run --detach`, the job keeps going after this client exits.
+            call = fn.spawn(*targs)
+            print(f"[spawned] {run}: call {call.object_id}, at most {total} s")
+            return
+        r = fn.remote(*targs)
         print(json.dumps(r, indent=1))
     elif action == "eval":
         total = guard(max_dollars, None, 8, 8, 3 * 3600)
         evaluate_ = evaluate.with_options(timeout=total)
         subs = subjects.split(",") if subjects else ["random", "hand"]
         r = evaluate_.remote([s if s in ("random", "hand") or s.startswith("/") else f"{VOL}/{s}" for s in subs],
-                            f"{VOL}/{run}/eval", games, quick)
+                            f"{VOL}/{run}/{out or 'eval'}", games, quick)
         print(r["report"])
+    elif action == "games":
+        total = guard(max_dollars, None, 2, 4, 3600)
+        s = subjects
+        r = play_games.with_options(timeout=total).remote(s if s in ("random", "hand") or s.startswith("/") else f"{VOL}/{s}",
+                                                     f"{VOL}/{run}/{out or 'games'}", games, opponents, sets)
+        print(r["md"])
     else:
         sys.exit(f"unknown action {action}")

@@ -39,6 +39,7 @@ struct Log {
     float episode_return, episode_length, win_seat0, win_seat1, win_seat2, win_seat3;
     float points, points_share, rounds, decisions, invalid_rate, laws_proposed, laws_passed;
     float hist_score, hist_n;
+    float bot_score, bot_n;
     float n;
 };
 
@@ -50,6 +51,8 @@ struct Env {
     int num_agents;
     unsigned int rng;
     int bot_policy;
+    float bot_mix;         // share of games where bots (bot_policy) take every seat but agent 0's
+    int bot_game;          // this game is one of them
     int num_games;
     void* games[MAX_GAMES];
     int current;
@@ -123,6 +126,9 @@ static void add_rewards(Env* env) {
     float r[REWARD_SEATS];
     charter_rewards(G(env), r, REWARD_SEATS);
     for (int i = 0; i < env->num_agents; i++) {
+        if (env->seat_of[i] < 0) {
+            continue;
+        }
         float x = r[env->seat_of[i]];
         env->agents[i].rewards[0] += x;
         env->returns[i] += x;
@@ -156,7 +162,10 @@ static void finish(Env* env) {
     l->invalid_rate += env->moves ? (float)env->invalid / env->moves : 0.0f;
     l->laws_proposed += info[5];
     l->laws_passed += info[6];
-    if (env->tag > 0) {
+    if (env->bot_game) {
+        l->bot_score += won;
+        l->bot_n += 1.0f;
+    } else if (env->tag > 0) {
         l->hist_score += won;
         l->hist_n += 1.0f;
         env->boundary_reached = 1;
@@ -188,7 +197,14 @@ static void start_game(Env* env) {
         env->agent_at[s] = -1;
         env->random_seat[s] = 0;
     }
+    // With bot_mix, some games put bots in every seat but agent 0's; the other agents sit out and only wait.
+    env->bot_game = env->num_agents > 1 && env->bot_mix > 0
+        && (float)rand_r(&env->rng) / ((float)RAND_MAX + 1.0f) < env->bot_mix;
     for (int i = 0; i < env->num_agents; i++) {
+        if (env->bot_game && i > 0) {
+            env->seat_of[i] = -1;
+            continue;
+        }
         env->seat_of[i] = perm[i];
         env->agent_at[perm[i]] = i;
     }
@@ -292,6 +308,7 @@ void puf_init(Env* env, Dict* kwargs) {
     assert(charter_base_size() == CHARTER_BASE_OBS && charter_full_size() == CHARTER_FULL_OBS);
     env->num_agents = (int)dict_get(kwargs, "num_agents");
     env->bot_policy = (int)opt_num(kwargs, "bot_policy", BOT_HAND);
+    env->bot_mix = (float)opt_num(kwargs, "bot_mix", 0.0);
     assert(env->num_agents == 1 || env->num_agents == SEATS);
     int move_rows = (int)opt_num(kwargs, "move_rows", 0);
 #ifdef CHARTER_MOVE_ROWS
@@ -350,4 +367,6 @@ void puf_log(Log* log, Dict* out) {
     dict_set(out, "laws_passed", log->laws_passed);
     dict_set(out, "hist_score", log->hist_score);
     dict_set(out, "hist_n", log->hist_n);
+    dict_set(out, "bot_score", log->bot_n > 0 ? log->bot_score / log->bot_n : 0.0f);
+    dict_set(out, "bot_n", log->bot_n);
 }
