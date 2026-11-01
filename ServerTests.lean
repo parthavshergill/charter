@@ -471,6 +471,7 @@ section Games
 #guard bubbleSpec.meshHashes.all fun h => meshFolderOf h == some bubbleSpec.meshFolder
 #guard strikeSpec.meshHashes.all fun h => meshFolderOf h == some strikeSpec.meshFolder
 #guard pirateSpec.meshHashes.all fun h => meshFolderOf h == some pirateSpec.meshFolder
+#guard omertaSpec.meshHashes.all fun h => meshFolderOf h == some omertaSpec.meshFolder
 #guard islandSpec.meshHashes.isEmpty && notCatanSpec.meshHashes.isEmpty
 
 -- A game with no counter has all its resources on the screen, so old games read as they did.
@@ -669,9 +670,10 @@ def lawOf (text : String) : Law :=
 #guard (packWords bubbleSpec).length == 4
 #guard (packWords strikeSpec).length == 4
 #guard (packWords pirateSpec).length == 4
+#guard (packWords omertaSpec).length == 3
 #guard (packWords islandSpec).isEmpty
 #eval show IO Unit from do
-  let problems := packProblems notCatanSpec ++ packProblems slimeSpec ++ packProblems bubbleSpec ++ packProblems strikeSpec ++ packProblems pirateSpec
+  let problems := packProblems notCatanSpec ++ packProblems slimeSpec ++ packProblems bubbleSpec ++ packProblems strikeSpec ++ packProblems pirateSpec ++ packProblems omertaSpec
   if !problems.isEmpty then throw (IO.userError ("\n".intercalate problems))
 
 /-- A law that changed after its words were written has no words. -/

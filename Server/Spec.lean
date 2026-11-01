@@ -6,6 +6,7 @@ import Charter.Games.AIBubbleWords
 import Charter.Games.StrikeTheEarthWords
 import Charter.Games.PirateRepublicWords
 import Charter.Games.Omerta.Look
+import Charter.Games.OmertaWords
 import Charter.Scene.OfState
 import Charter.Scene.LookCheck
 import Server.GameFacts
@@ -164,6 +165,8 @@ def omertaSpec : GameSpec :=
         links := Games.Omerta.links, theme := Games.Omerta.theme, word := "the city" }
     minSeats := 3
     maxSeats := 4
+    meshFolder := "packs/omerta/meshes"
+    foundingWords := Games.Omerta.foundingWords
     guide := "You are in a crime family that shares one city. Wine, cement and fish come from the map. Cash is worth 1 point each, and it pays for a club. A front stands on a corner. A racket goes in the back room of one of your fronts, one per front. A club replaces a front, and costs cement, cash and 1 dirt. At each round's end each racket pays its owner 2 cash. The reward is the cash in the treasury. On every roll it grows by 1 for every 3 rackets running in the city. Building a racket gives you 1 dirt, and that is the only way to get dirt: the bank never sells it. To talk, declare dirt on your turn, any number from 1, while you hold some dirt. At the next roll, or at the round's end if you are the last seat of the round, you take the whole reward, you give up all your dirt, and all your rackets close. Every other seat that runs a racket loses its newest one, and nobody is paid for rackets at a round's end where someone talks. A declaration cannot be taken back after your turn, so later seats in the round see it. Talking is legal at any time, and promises not to talk bind nobody: swear, bargain, pay for silence with a deal, or threaten. A law cannot name a seat, but the table can pass laws about the situation, such as who holds no dirt." }
 
 instance : Inhabited GameSpec := ⟨islandSpec⟩
