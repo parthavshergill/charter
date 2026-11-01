@@ -101,6 +101,9 @@ def load_policy(path, meta):
         z = np.load(path)
         enc, dec = z["encoder"], z["decoder"]
         grus = [z[f"gru{i}"] for i in range(meta["layers"])]
+    elif fmt in ("puffer-entity", "npz-entity"):
+        from entity.entity_numpy import load_entity  # rl/entity: the entity encoder's own forward
+        return load_entity(path, meta)
     else:
         raise ValueError(f"unknown policy format {fmt}")
     return FlatNet(enc.astype(np.float32), dec.astype(np.float32), [g.astype(np.float32) for g in grus],
