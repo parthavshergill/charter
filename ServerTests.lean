@@ -6,6 +6,7 @@ import Server.Text
 import Server.Seat
 import Server.Suggest
 import Server.Describe
+import Server.GenericCheck
 
 /-!
 # Tests of the deal sentences, the clerk's memory and the descriptions
