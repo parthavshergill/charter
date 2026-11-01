@@ -1,0 +1,21 @@
+diff --git a/src/pufferl.cu b/src/pufferl.cu
+index 14be4eb2..d7ddae0a 100644
+--- a/src/pufferl.cu
++++ b/src/pufferl.cu
+@@ -1504,6 +1504,16 @@ static void train_epoch_gpu(PuffeRL* pufferl, RolloutBuf src, int slot,
+     int total_minibatches = hypers->replay_ratio * batch_size / hypers->minibatch_size;
+     int n_rows = (int)rollouts->observations.shape[0];
+     int Nmb = (int)pufferl->train_buf.mb_advantages.shape[0];
++    // Charter patch: train only on the learner's rows. With one buffer they come first, before policy_layout[1];
++    // the rows after it hold frozen seats' actions, which are not the learner's to imitate.
++    if (pufferl->vec->buffers == 1 && pufferl->vec->num_policies > 1) {
++        int own = pufferl->vec->policy_layout[1];
++        if (own >= Nmb && own < n_rows) {
++            n_rows = own - own % Nmb;
++            total_minibatches = (int)(hypers->replay_ratio * n_rows * hypers->horizon / hypers->minibatch_size);
++            if (total_minibatches < 1) total_minibatches = 1;
++        }
++    }
+     int Tmb = (int)pufferl->train_buf.mb_advantages.shape[1];
+     constexpr int ADV_THREADS = 64;
+     int adv_grid = (Nmb + ADV_THREADS - 1) / ADV_THREADS;
