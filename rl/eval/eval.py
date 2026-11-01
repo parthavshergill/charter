@@ -37,6 +37,8 @@ HELD_OUT = ["slime-parliament", "ai-bubble", "strike-the-earth", "pirate-republi
 SEATS = 4
 OPPONENTS = ["hand", "random"]
 PHASES = ["whole", "setup", "play"]
+NOTE_WEAK = ("`hand` is a weak opponent on some held-out games: in the builder's run, random players beat three `hand` "
+             "bots in 69% of Pirate Republic games and matched them on Strike the Earth. Read held-out results by game.")
 NOTE_SAME = ("`fair`, `closed` and `hand` play identically when nobody makes offers, and no seat here makes "
              "offers, so only `hand` is shown. It stands for all three.")
 
@@ -185,12 +187,21 @@ def report(subject, meta_settings, results, seconds):
                         "| opponents | games | win % | 95% interval | win % by seat 0/1/2/3 | points |",
                         "|---|---|---|---|---|---|"] + rows + [""]
     out += [f"Refused actions: {refused}. Games that did not end: {unended}.", ""]
+    out += ["**By game, whole game, with laws** (win %, 95% interval, points)", "",
+            "| game | " + " | ".join(OPPONENTS) + " |", "|---|" + "---|" * len(OPPONENTS)]
     for g in TRAIN + HELD_OUT:
-        sel = [r for r in results if r["game"] == g and r["phase"] == "whole" and r["laws"]]
-        if sel:
-            w = sum(r["wins"] for r in sel)
-            n = sum(r["games"] for r in sel)
-            out.append(f"- {g}, whole game, with laws: {pct(w / n)}% of {n} games")
+        cells = []
+        for opp in OPPONENTS:
+            sel = [r for r in results if r["game"] == g and r["opponent"] == opp and r["phase"] == "whole" and r["laws"]]
+            w, n = sum(r["wins"] for r in sel), sum(r["games"] for r in sel)
+            if n:
+                lo, hi = wilson(w, n)
+                pts = sum(r["points"] * r["games"] for r in sel) / n
+                cells.append(f"{pct(w / n)} ({pct(lo)} to {pct(hi)}), {pts:.1f}")
+            else:
+                cells.append("")
+        out.append(f"| {g}{' (held out)' if g in HELD_OUT else ''} | " + " | ".join(cells) + " |")
+    out.append("")
     return "\n".join(out) + "\n"
 
 
@@ -204,7 +215,7 @@ def main():
     args = ap.parse_args()
     n = max(SEATS, args.games - args.games % SEATS)
     os.makedirs(args.out, exist_ok=True)
-    text = ["# Charter eval", "", NOTE_SAME, "",
+    text = ["# Charter eval", "", NOTE_SAME, "", NOTE_WEAK, "",
             f"Each table has {n} games, with the subject at each seat in {n // SEATS} of them. "
             "Phases: `whole`, the subject plays all of it; `setup`, the subject places the opening pieces and "
             "`hand` plays on; `play`, `hand` places them and the subject plays on.", ""]

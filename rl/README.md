@@ -98,3 +98,7 @@ rates with 95% Wilson intervals, by seat, and points. Subjects: `random`, `hand`
   doubles the speed). Per-move rows cost about 2.3x (6.1k to 2.7k decisions/s on Island).
 - A linear decoder has one fixed output per action, so spot and link numbering on held-out maps differs from training.
 - The pool holds only `hand`, whose strength relied on offers, which this env has no action for.
+- `hand` is weak on some held-out games: random players beat three `hand` bots in 69% of Pirate Republic games and
+  matched them on Strike the Earth (200 games each). Read held-out results by game; the report has a table for it.
+- Trainer speed on Modal (T4, 8 CPUs, 2048 agents, flat 128, one MinGRU layer): about 56k SPS, with the env 67% of
+  each epoch. Most of an agent's rows are waiting rows (3 of 4 in self-play).
