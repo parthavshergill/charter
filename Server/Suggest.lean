@@ -86,6 +86,8 @@ def publicFacts (g : Game) (s : State g.spec.G) (seat : Nat) : String :=
     else s!"This seat cannot pay it now: it needs {bundleWords short} more."
   let deals := if s.deals.isEmpty then "none" else
     "\n".intercalate (s.deals.map fun d => s!"- until round {d.lastRound}: {Text.dealLine g.nameOf d.deal}")
+  let unpaid := (Scene.rollsOf G).filter fun r => !G.map.regions.any (·.number == r)
+  let unpaidWords := if unpaid.isEmpty then "" else s!"No hex pays on {Text.orList (unpaid.map toString)}. "
   let offers := if s.offers.isEmpty then "none" else
     "\n".intercalate (s.offers.map fun o =>
       let to := match o.to with
@@ -94,6 +96,7 @@ def publicFacts (g : Game) (s : State g.spec.G) (seat : Nat) : String :=
       s!"- {g.nameOf o.src} offers {bundleWords o.give} to {to}, for {bundleWords o.get}")
   Clerk.neutralize s!"The bank holds: {", ".intercalate bank}.
 A law costs its proposer {bundleWords G.lawFee}. A deal costs nothing to propose. {fee}
+{unpaidWords}Each turn starts with a roll, and `on-roll` laws run on every one.
 
 What each seat harvests today:
 {"\n".intercalate collects}

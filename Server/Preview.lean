@@ -12,7 +12,8 @@ from the functions the commandments state:
 
 * **The next turn change** comes from `Engine.predictNextTurn`, which is the code `step` runs. Commandment
   X says it is exact if the law passes and the turn then ends. On a last turn its entries are the round's
-  end and then the roll's harvest, so a roll's case is what comes after the round's end.
+  end and then the whole roll, so a roll's case is what comes after the round's end. That includes the
+  laws that react to the roll.
 * **A build** comes from the entries commandment VII states: the cost first, and then the laws reacting
   to it, from the books with the cost paid. So a law that reads holdings sees what the builder has left.
 

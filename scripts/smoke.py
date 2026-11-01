@@ -372,6 +372,11 @@ REFUSED_LAWS = [
     ('(law "x" (on-round-end (transfer bank treasury grain (/ 4 0))))', "divide by zero"),
     ('(law "x" (set-bank-rate 3) (set-bank-rate 5))', "same rule twice"),
     ('(law "x" (on-round-end (for-each-player true ' + "(transfer bank each grain 1) " * 22 + ')))', "too many payments"),
+    ('(law "x" (on-roll (transfer each treasury grain 1)))', "does not exist where this rule runs"),
+    ('(law "x" (on-roll (transfer actor treasury res 1)))', "does not exist where this rule runs"),
+    ('(law "x" (on-roll (transfer bank bank grain 1)))', "moves nothing"),
+    ('(law "x" (on-roll (transfer bank treasury grain (/ rolled 0))))', "divide by zero"),
+    ('(law "x" (on-roll (for-each-player true ' + "(transfer bank each grain 1) " * 22 + ')))', "too many payments"),
 ]
 
 
@@ -393,6 +398,38 @@ def end_turn_until(srv, code, tokens, ok):
 
 def held(v, seat):
     return [k for k, n in v["seats"][seat]["hand"].items() if n > 0]
+
+
+def a_roll_law_fires(srv):
+    """Two people pass a law that pays the bank's grain on every roll, and it pays on the next one, to
+    the seat whose turn that roll starts. The chronicle says so, and the read-back is plain."""
+    code = srv.post("/api/games", {"seats": 2})["code"]
+    tokens = [srv.post(f"/api/games/{code}/join", {"name": n, "nonce": 7})["token"] for n in ("Mara", "Ada")]
+    # The Island's law fee is 1 grain and 1 wool.
+    v = end_turn_until(srv, code, tokens, lambda v: v["phase"] == "actions" and all(v["seats"][v["turn"]]["hand"][k] >= 1 for k in ("grain", "wool")))
+    a = v["turn"]
+    b = 1 - a
+    law = '(law "Roller gift" (on-roll (transfer bank actor grain 1)))'
+    r = srv.post(f"/api/games/{code}/propose", {"token": tokens[a], "text": law})
+    check(r["ok"], "a law that reacts to the roll can be proposed")
+    vs = srv.get(f"/api/games/{code}/view?token={tokens[b]}")
+    p = vs["proposals"][-1]
+    check(p["english"].startswith("Each time the dice roll, the player whose turn starts gets 1 grain from the bank."), "the read-back of a roll law is plain")
+    check(srv.post(f"/api/games/{code}/vote", {"token": tokens[a], "id": p["id"], "yes": True})["ok"], "the proposer votes for it")
+    check(srv.post(f"/api/games/{code}/vote", {"token": tokens[b], "id": p["id"], "yes": True})["ok"], "the other seat votes for it")
+    before = srv.get(f"/api/games/{code}/view?token={tokens[a]}")
+    check(len(before["laws"]) == 1, "the roll law is in force")
+    grain = before["seats"][b]["hand"]["grain"]
+    lines = len(before["chronicle"])
+    check(srv.post(f"/api/games/{code}/move", {"token": tokens[a], "move": {"t": "endTurn"}})["ok"], "the turn ends")
+    after = srv.get(f"/api/games/{code}/view?token={tokens[a]}")
+    check(after["turn"] == b and after["seats"][b]["hand"]["grain"] > grain, "the next roll pays the seat whose turn it starts")
+    text = " ".join(l["text"] for l in after["chronicle"][lines:])
+    roll = after["lastRoll"]
+    name = ["Mara", "Ada"][b]
+    article = "an" if roll in (8, 11) else "a"
+    check(f"By law, on {article} {roll}, the bank paid {name} 1 grain." in text, "the chronicle shows the law's payment, as one line")
+    check(any(l["major"] and l["text"].startswith("By law, on") for l in after["chronicle"][lines:]), "that line is one the screen tells")
 
 
 def refusals_and_embargo(srv):
@@ -578,6 +615,7 @@ def main():
         belt = second_game(srv)
         claude_table = claude_with_no_key(srv)
         talk_and_replay(srv, code, token, v)
+        a_roll_law_fires(srv)
         table3 = refusals_and_embargo(srv)
         check(v["serverSeed"] is not None, "the seed is revealed at the end")
         check(srv.post(f"/api/games/{code}/move", {"token": token, "move": {"t": "endTurn"}})["ok"] is False, "nothing happens after the end")
