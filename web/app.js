@@ -2,14 +2,14 @@
 // comes from `view.legalMoves` or from text the engine then accepts or rejects, and every cost, reason
 // and deal statement is written by Lean. A law's description is Claude's or a pack's words, and the law's
 // source below it is what counts. What is here is presentation: what to show, when, and where.
-import { renderBoard2D } from "./board2d.js";
+import { renderBoard2D, SCALE } from "./board2d.js";
 import { resIcon, uiIcon, pieceIcon, shield, chargeOf, waxSeal } from "./icons.js";
+import { reduced, anim, morphKids, spawn, middleOf, thump } from "./feel.js";
 import { applyLook } from "./look.js";
 import { CONSTITUTION } from "./constitution.js";
 
 const app = document.getElementById("app");
 const params = new URLSearchParams(location.search);
-const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 const DEFAULT_COLORS = ["#b5281f", "#2257ae", "#e39a1b", "#1c8560", "#6f42a8", "#c4507f"];
 const seatColor = i => (G.view?.seatColors || DEFAULT_COLORS)[i % 6];
 const manyOf = w => w.endsWith("y") ? `${w.slice(0, -1)}ies` : `${w}s`;
@@ -284,6 +284,7 @@ const G = {
   seenProposals: null, stampsSeen: new Set(), seenDecisions: null, moment: null,
   prev: null, holdScene: false, draft: null, draftPolling: null, errTimer: null, captionTimer: null,
   talk: [], talkCount: -1, talkSeen: 0, talkAll: false,
+  inFlight: {},         // cards of each good on their way to the hand, not yet counted there
   replay: null,         // {at, total, playing, marks, timer}: watching a game from its log
 };
 const you = () => G.view?.you;
@@ -333,7 +334,7 @@ function updateInsets() {
   const dockOpen = !!G.dock;
   const dockW = dockOpen ? (innerWidth <= 860 ? 300 : 372) : 0;
   document.documentElement.style.setProperty("--dockw", `${dockW}px`);
-  const ledge = innerWidth <= 860 ? 84 : 96;
+  const ledge = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--ledge"));
   const lobby = G.view?.phase === "lobby";
   G.player.setInsets(lobby ? { l: Math.min(innerWidth * .46, 480), r: 16, t: 16, b: 16 } : { l: 0, r: 52 + dockW, t: 44, b: ledge + 8 });
 }
@@ -425,7 +426,7 @@ async function gameScreen(code) {
     canvas, svg,
     houses: h("div", { class: "houses" }),
     herald: h("div", { class: "herald" }),
-    clock: h("div", { class: "clock", hidden: true }),
+    clock: h("div", { "data-key": "clock", class: "clock", hidden: true }),
     caption: h("div", { class: "caption", role: "status" }),
     ledge: h("div", { class: "ledge" }),
     declared: h("div", { class: "declared vellum", hidden: true }),
@@ -549,13 +550,13 @@ function bannerCloth(s) {
 function renderHouses() {
   const v = G.view, U = G.ui;
   if (v.phase === "lobby") { fill(U.houses); return; }
-  fill(U.houses, v.seats.map(s => {
+  morphKids(U.houses, v.seats.map(s => {
     const cloth = bannerCloth(s.seat);
     cloth.append(h("span", { class: "score" }, String(s.points)));
     const held = Object.entries(s.hand || {}).filter(([r, n]) => n > 0 && v.resources.includes(r));
     const built = Object.entries(s.pieces || {}).filter(([, n]) => n > 0);
     const drafting = (v.drafting || []).includes(s.seat);
-    return h("div", { class: "banner" + (v.turn === s.seat && v.phase !== "ended" ? " turn" : "") + (s.seat === v.you ? " you" : ""), tabindex: 0, "aria-label": `${s.name}, ${plural(s.points, "point")}` },
+    return h("div", { "data-key": s.seat, class: "banner" + (v.turn === s.seat && v.phase !== "ended" ? " turn" : "") + (v.winner === s.seat ? " won" : "") + (s.seat === v.you ? " you" : ""), tabindex: 0, "aria-label": `${s.name}, ${plural(s.points, "point")}` },
       cloth,
       drafting ? h("span", { class: "quillmark", title: "Drafting a rule" }, uiIcon("quill")) : null,
       h("span", { class: "name" }, s.seat === v.you ? "You" : s.name.replace(/^Bot /, "")),
@@ -585,11 +586,8 @@ function renderHerald() {
   const v = G.view, U = G.ui;
   renderDeclared();
   if (v.phase === "lobby") { fill(U.herald); return; }
-  const last = U.herald.querySelector(".die");
-  const die = v.lastRoll != null ? h("div", { class: "die" + (G.prevRoll !== v.rollsMade ? " hit" : ""), title: "The last roll" }, String(v.lastRoll)) : null;
-  void last;
-  G.prevRoll = v.rollsMade;
-  fill(U.herald, h("div", { class: "tab" }, v.phase === "setup" ? "The founding" : v.phase === "ended" ? "The end" : `Round ${v.round}`), die, U.clock);
+  const die = v.lastRoll != null ? h("div", { "data-key": "die", class: "die", title: "The last roll" }, String(v.lastRoll)) : null;
+  morphKids(U.herald, [h("div", { "data-key": "tab", class: "tab" }, v.phase === "setup" ? "The founding" : v.phase === "ended" ? "The end" : `Round ${v.round}`), die, U.clock]);
 }
 /** The time left in this turn, quietly. It comes from the server, which keeps the real clock. */
 function renderClock() {
@@ -634,14 +632,10 @@ function renderLedge() {
   const seated = v.you != null && v.phase !== "lobby" && v.phase !== "ended";
   U.ledge.hidden = !seated;
   if (!seated) return;
-  const hand = seat(v.you)?.hand || {};
   const inPlay = goodsInPlay(v);
-  fill(U.hand, inPlay.map(r => {
-    const n = hand[r] || 0;
-    return h("div", { class: "rcard" + (n ? "" : " none"), "data-res": r, title: n ? `${n} ${r}` : "" }, resIcon(r), h("b", {}, String(n)));
-  }));
+  renderHand();
   // A game can have 16 goods, and the hand was drawn for five. Past six, the cards shrink into two rows.
-  U.hand.classList.toggle("many", inPlay.length > 6);
+  U.hand.classList.toggle("many", goodsInPlay(v).length > 6);
   const moves = v.legalMoves || [];
   const end = moves.find(m => m.move.t === "endTurn");
   const mine = v.turn === v.you;
@@ -653,17 +647,17 @@ function renderLedge() {
       if (d.cost.some(x => !inPlay.includes(x.res))) return;
       const enabled = d.spots > 0, sel = G.selected === d.name, made = d.made;
       const why = !enabled && d.short?.length ? `Need ${costText(d.short)}` : !enabled ? (d.owned >= d.limit ? `All ${d.limit} built` : "No place for one") : `${capital(d.name)}: ${costText(d.cost)}. ${plural(d.spots, "place")}.`;
-      tools.push(h("button", { class: "tool" + (sel ? " selected" : ""), disabled: !enabled, title: why, "aria-pressed": sel ? "true" : "false", "aria-label": why,
-        onclick: () => selectPiece(d.name) },
+      tools.push(h("button", { "data-key": d.name, class: "tool" + (sel ? " selected" : ""), disabled: !enabled, title: why, "aria-pressed": sel ? "true" : "false", "aria-label": why,
+        onclick: () => selectPiece(d.name), onpointerenter: e => { if (e.pointerType === "mouse") previewCost(d.name); }, onpointerleave: () => previewCost(null), onfocus: () => previewCost(d.name), onblur: () => previewCost(null) },
         pieceIcon(made ? "made" : d.name),
         h("span", { class: "nm" }, capital(d.name)),
-        !enabled && d.short?.length ? h("span", { class: "need" }, d.short.slice(0, 2).map(x => h("span", {}, `${x.n}`, resIcon(x.res, "res")))) : null));
+        !enabled && d.short?.length ? h("span", { class: "need" }, d.short.map(x => h("span", {}, `${x.n}`, resIcon(x.res, "res")))) : null));
       void i;
     });
-    tools.push(h("button", { class: "tool sep" + (G.dock?.t === "trade" ? " selected" : ""), title: "Trade with the bank or the table (T)", onclick: () => toggleDock({ t: "trade" }) }, uiIcon("trade"), h("span", { class: "nm" }, "Trade")));
-    if (v.declarations?.inUse) tools.push(h("button", { class: "tool" + (G.dock?.t === "declare" ? " selected" : ""), title: "Declare a public number. A law reads these.", onclick: () => toggleDock({ t: "declare" }) }, uiIcon("declare"), h("span", { class: "nm" }, "Declare")));
+    tools.push(h("button", { "data-key": "trade", class: "tool sep" + (G.dock?.t === "trade" ? " selected" : ""), title: "Trade with the bank or the table (T)", onclick: () => toggleDock({ t: "trade" }) }, uiIcon("trade"), h("span", { class: "nm" }, "Trade")));
+    if (v.declarations?.inUse) tools.push(h("button", { "data-key": "declare", class: "tool" + (G.dock?.t === "declare" ? " selected" : ""), title: "Declare a public number. A law reads these.", onclick: () => toggleDock({ t: "declare" }) }, uiIcon("declare"), h("span", { class: "nm" }, "Declare")));
   }
-  fill(U.tray, tools);
+  morphKids(U.tray, tools);
   U.tray.classList.toggle("many", tools.length > 5);
   U.endTurn.hidden = !end;
   fill(U.endTurn, "End turn");
@@ -672,6 +666,26 @@ function renderLedge() {
   const placedAll = v.phase === "setup" && !moves.some(m => m.move.t === "place");
   const nothingBuildable = v.phase === "actions" && !moves.some(m => m.move.t === "place") && !G.selected;
   U.endTurn.classList.toggle("gold", !!end && !G.dock && (placedAll || nothingBuildable));
+}
+/** The hand, as a fan of stacks. A card on its way here does not count until it lands. The cards a piece
+ *  would take rise while that piece is pointed at or being placed. */
+function renderHand() {
+  const v = G.view, U = G.ui, hand = seat(v.you)?.hand || {}, inPlay = goodsInPlay(v);
+  const building = v.turn === v.you && v.phase === "actions";
+  if (!building) G.pointedPiece = null; // a pointer on a tool that went away tells nobody it left
+  const piece = (v.pieceDefs || []).find(d => d.name === (G.selected || G.pointedPiece) && d.spots > 0);
+  morphKids(U.hand, inPlay.map((r, i) => {
+    const n = hand[r] || 0, shown = Math.max(0, n - (G.inFlight[r] || 0));
+    const pay = piece?.cost.find(x => x.res === r)?.n;
+    const fan = i - (inPlay.length - 1) / 2;
+    return h("div", { "data-key": r, class: "rcard" + (shown ? "" : " none") + (pay ? " pays" : ""), "data-res": r, "data-depth": Math.min(shown, 4), "data-pay": pay ? `−${pay}` : null, title: `${n} ${r}`,
+      style: `--fan:${fan};--dip:${(fan * fan * .7).toFixed(1)}px` }, resIcon(r), h("b", {}, String(shown)));
+  }));
+}
+function previewCost(name) {
+  if (G.pointedPiece === name || (!name && !G.pointedPiece)) return;
+  G.pointedPiece = name;
+  if (G.view) renderHand();
 }
 function selectPiece(k) {
   G.selected = G.selected === k ? null : k;
@@ -1054,6 +1068,7 @@ async function gotoEvent(n, smooth) {
   if (!smooth) {
     G.seenDecisions = null; G.seenProposals = null; G.endShown = false;
     (G.momentTimers || []).forEach(clearTimeout);
+    G.inFlight = {};
     G.moment = null; G.holdScene = false; document.querySelectorAll(".flying").forEach(x => x.remove());
     if (G.dock?.t === "moment" || G.dock?.t === "vote" || G.dock?.t === "end") G.dock = null;
     G.talk = [];
@@ -1114,6 +1129,7 @@ function trackProposals(prev, v) {
     G.dock = next ? { t: "vote", id: next.id } : null;
   }
 }
+const SEAL_FALL_MS = 240; // when the seal in .sealmark.fresh meets the page, in app.css
 function startMoment(d) {
   // A new outcome replaces one still on screen.
   (G.momentTimers || []).forEach(clearTimeout);
@@ -1126,7 +1142,7 @@ function startMoment(d) {
     G.holdScene = true;
     const seal = reduced() ? 200 : 900, carry = reduced() ? 400 : 2000;
     G.momentTimers = [
-      setTimeout(() => { if (G.moment) G.moment.sealed = true; renderDock(); }, seal),
+      setTimeout(() => { if (G.moment) G.moment.sealed = true; renderDock(); thump(G.ui.dock, 3, SEAL_FALL_MS); }, seal),
       setTimeout(() => carryToMonument(d), carry)];
   } else {
     G.holdScene = false;
@@ -1136,6 +1152,9 @@ function startMoment(d) {
 function momentDoc(m) {
   if (!m) return null;
   const d = m.d;
+  // This document is drawn again on every poll. Its outcome and its seal land only the first time.
+  const landing = (m.sealed ? "sealed" : "open") !== m.told;
+  m.told = m.sealed ? "sealed" : "open";
   const votes = new Map(d.votes.map(x => [x.seat, x.yes]));
   const lines = G.view.seats.map(s => {
     const has = votes.has(s.seat), key = `${d.id}:${s.seat}`, fresh = has && !G.stampsSeen.has(key);
@@ -1150,8 +1169,8 @@ function momentDoc(m) {
     describedOf(d.description),
     sourceOf(d.text),
     h("div", { class: "signatures" }, lines),
-    h("div", { class: "outcome " + (passed ? "passed" : "failed") }, passed ? (m.sealed ? `Enacted, ${yes} to ${no}.` : `${yes} to ${no}.`) : "It did not take effect."),
-    passed && m.sealed ? h("div", { class: "sealmark" }, waxSeal()) : null);
+    h("div", { class: "outcome " + (passed ? "passed" : "failed") + (landing && (m.sealed || !passed) ? " fresh" : "") }, passed ? (m.sealed ? `Enacted, ${yes} to ${no}.` : `${yes} to ${no}.`) : "It did not take effect."),
+    passed && m.sealed ? h("div", { class: "sealmark" + (landing ? " fresh" : "") }, waxSeal()) : null);
 }
 function carryToMonument(d) {
   const sheet = G.ui.dock;
@@ -1165,9 +1184,8 @@ function carryToMonument(d) {
       setTimeout(() => {
         const at = G.player?.screenOf?.(d.pick);
         if (at && !reduced()) {
-          const r = h("div", { class: "ripple", style: { left: `${at.x}px`, top: `${at.y}px` } });
-          document.body.append(r);
-          setTimeout(() => r.remove(), 950);
+          spawn(h("div", { class: "ripple law", style: { left: `${at.x}px`, top: `${at.y}px` } }), 950);
+          thump(G.ui.canvas, 3);
         }
         caption(`"${d.title}" stands in the square.`);
       }, 320);
@@ -1202,60 +1220,212 @@ function endMoment() {
 }
 
 // ---------------------------------------------------------------- what changed: feedback in the world
+// This runs once per real change, comparing the last view with the new one. The new view is already on
+// the screen and its moves can already be made. These motions only tell the eye what happened.
+const DIE_MS = 360;      // a roll tumbles this long, and then the harvest flies
+const FLIGHT_MS = 620;   // a card's way from the table to its seat
+const CARD_GAP_MS = 70;  // between one card and the next
+const LAND_MS = 300;     // a new piece's fall in the 3D table, from the view until it meets the board
+const MANY_CARDS = 4;    // a payout this big is a payday
+
+const boardEl = () => G.use3d ? G.ui.canvas : G.ui.svg;
+/** Where a point on the board is on the screen, on either board. */
+function boardPoint(at, height = 0.35) {
+  if (G.use3d) return G.player?.worldToScreen(at.x, height, at.y);
+  const m = G.ui.svg.getScreenCTM();
+  return m && { x: m.a * at.x * SCALE + m.e, y: m.d * at.y * SCALE + m.f };
+}
+const squareOf = v => (v.board?.tiles || []).find(t => !t.res) || v.board?.tiles?.[0];
+const cardOf = r => G.ui.ledge.hidden ? null : G.ui.hand.querySelector(`[data-key="${CSS.escape(r)}"]`);
+const bannerOf = s => G.ui.houses.querySelector(`[data-key="${s}"]`);
+
 function animateChanges(prev, v) {
   if (!prev || prev.phase === "lobby" || !v.seats) return;
+  const lines = (v.chronicle || []).slice((prev.chronicle || []).length);
+  const byLaw = lines.filter(l => l.kind === "money" && l.text.startsWith("By law"));
   // A caption for what the other seats just did, so their turns can be watched without the log.
-  const fresh = (v.chronicle || []).slice((prev.chronicle || []).length).filter(l => l.major && l.actor !== v.you && l.kind !== "law");
-  if (fresh.length) caption(fresh[fresh.length - 1].text);
-  // A ring where someone else just built, so the eye finds it.
-  if (G.player && !reduced() && !G.holdScene && (v.pieces || []).length > (prev.pieces || []).length) {
-    const was = new Set((prev.pieces || []).map(p => JSON.stringify(p)));
-    for (const p of v.pieces) {
-      if (was.has(JSON.stringify(p)) || p.owner === v.you) continue;
-      const at = p.spot != null ? v.board.spots[p.spot] : p.link ? { x: (v.board.spots[p.link[0]].x + v.board.spots[p.link[1]].x) / 2, y: (v.board.spots[p.link[0]].y + v.board.spots[p.link[1]].y) / 2 } : null;
-      if (!at) continue;
-      setTimeout(() => {
-        const sp = G.player.worldToScreen(at.x, 0.35, at.y);
-        const r = h("div", { class: "ripple small", style: { left: `${sp.x}px`, top: `${sp.y}px` } });
-        document.body.append(r);
-        setTimeout(() => r.remove(), 750);
-      }, 180);
+  // What a law just did always gets one: otherwise the cards seem to move by themselves.
+  const told = lines.filter(l => l.major && l.actor !== v.you && l.kind !== "law");
+  if (byLaw.length) caption(byLaw[0].text + (byLaw.length > 1 ? ` And ${byLaw.length - 1} more.` : ""));
+  else if (told.length) caption(told[told.length - 1].text);
+
+  const rolled = v.rollsMade !== prev.rollsMade;
+  const hit = rolled ? (v.board?.tiles || []).filter(t => t.number === v.lastRoll) : [];
+  const changes = v.seats.flatMap(s => {
+    const was = prev.seats?.find(x => x.seat === s.seat);
+    return !was?.hand ? [] : v.resources.map(r => ({ seat: s.seat, r, d: (s.hand[r] || 0) - (was.hand[r] || 0) })).filter(c => c.d);
+  });
+  const gained = changes.filter(c => c.seat === v.you && c.d > 0).reduce((a, c) => a + c.d, 0);
+
+  if (rolled) rollDie(!hit.length, gained >= MANY_CARDS);
+  if (rolled && !reduced()) for (const t of hit) setTimeout(() => ring(boardPoint(t), "small"), DIE_MS);
+  if (byLaw.length) lawFires(v, rolled ? DIE_MS : 0);
+
+  // Pieces. The ring finds where someone built. Your own piece has some weight.
+  const was = new Set((prev.pieces || []).map(p => JSON.stringify(p)));
+  const built = (v.pieces || []).filter(p => !was.has(JSON.stringify(p))).map(p => ({ ...p, at: pieceAt(p, v) }));
+  const mineBuilt = built.find(p => p.owner === v.you && p.at);
+  if (!G.holdScene && !reduced()) for (const p of built) {
+    if (!p.at) continue;
+    setTimeout(() => {
+      ring(boardPoint(p.at), "small");
+      if (p.owner === v.you) thump(boardEl(), (v.pieceDefs || []).find(d => d.name === p.kind)?.points ? 3 : 1.5);
+    }, LAND_MS);
+  }
+
+  // Cards. Those that come from the table fly. A trade drops them in from above the hand.
+  let wait = rolled ? DIE_MS : byLaw.length ? 120 : 0;
+  for (const { seat: s, r, d } of changes) {
+    const earned = rolled || byLaw.length;
+    const tile = hit.find(t => t.res === r);
+    const from = () => earned ? boardPoint(tile || squareOf(v)) : null;
+    if (s === v.you && cardOf(r)) {
+      if (d < 0) takeCards(r, -d, mineBuilt && boardPoint(mineBuilt.at));
+      else wait += payCards(r, d, from(), wait) * CARD_GAP_MS;
+    } else if (d > 0 && earned && !reduced()) {
+      const banner = bannerOf(s);
+      if (banner) flight(h("div", { class: "flight chip" }, resIcon(r, "res small"), `+${d}`), from(), middleOf(banner), wait);
     }
   }
-  const rolled = v.rollsMade !== prev.rollsMade;
+  if (gained >= MANY_CARDS && !reduced()) setTimeout(() => thump(G.ui.hand, 4), wait + FLIGHT_MS);
+
+  // Scores, then what is yours to do.
   for (const s of v.seats) {
     const was = prev.seats?.find(x => x.seat === s.seat);
-    if (!was?.hand) continue;
-    for (const r of v.resources) {
-      const d = (s.hand[r] || 0) - (was.hand[r] || 0);
-      if (!d) continue;
-      if (rolled && d > 0) fly(r, d, s.seat, v);
-      else if (s.seat === v.you) markCard(r, d);
-    }
+    if (was && was.points !== s.points) scoreMoved(s.seat, s.points - was.points);
+  }
+  const yourTurn = v.turn === v.you && v.phase !== "ended";
+  if (yourTurn && prev.turn !== v.you) yourMove();
+  else if (yourTurn) for (const d of v.pieceDefs || []) {
+    // Something you could not build, you now can.
+    if (d.spots > 0 && !(prev.pieceDefs || []).find(x => x.name === d.name)?.spots)
+      anim(G.ui.tray.querySelector(`[data-key="${CSS.escape(d.name)}"]`), [{ scale: 1.12, boxShadow: "0 0 0 3px var(--gold)" }, { scale: 1, boxShadow: "0 0 0 0 var(--gold)" }], { duration: 520 });
+  }
+  if (v.winner != null && prev.winner == null) thump(boardEl(), 4);
+}
+
+function pieceAt(p, v) {
+  const spots = v.board?.spots || [];
+  if (p.spot != null) return spots[p.spot];
+  const [a, b] = (p.link || []).map(i => spots[i]);
+  return a && b ? { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } : null;
+}
+function ring(at, kind = "") {
+  if (at) spawn(h("div", { class: `ripple ${kind}`, style: { left: `${at.x}px`, top: `${at.y}px` } }), 950);
+}
+
+/** The die tumbles, and its number settles on the true one. A number no hex pays lands harder, as does a payday. */
+function rollDie(hard, payday) {
+  const die = G.ui.herald.querySelector(".die");
+  if (!die || reduced()) return;
+  clearInterval(G.dieTimer);
+  let flips = 0;
+  G.dieTimer = setInterval(() => {
+    if (++flips < 6) die.textContent = String(2 + Math.floor(Math.random() * 11));
+    else { clearInterval(G.dieTimer); die.textContent = String(G.view.lastRoll); }
+  }, DIE_MS / 6);
+  const drop = hard || payday ? 1.3 : 1;
+  die.animate([
+    { translate: "0 -40px", rotate: "-200deg", scale: .8 },
+    { translate: "0 -14px", rotate: "-40deg", scale: 1, offset: .62 },
+    { translate: `0 ${5 * drop}px`, rotate: "4deg", scale: `${1 + .14 * drop} ${1 - .12 * drop}`, offset: .82 },
+    { translate: "0 0", rotate: "0deg", scale: 1 },
+  ], { duration: DIE_MS * 1.3, easing: "cubic-bezier(.3,.2,.6,1)" });
+  if (hard) {
+    die.animate([{ background: "var(--ink)", color: "var(--vellum)" }, { background: "var(--ink)", color: "var(--vellum)", offset: .6 }, { background: "var(--vellum)", color: "var(--ink)" }], { duration: 1100, delay: DIE_MS });
+    thump(boardEl(), 3, DIE_MS);
   }
 }
-function markCard(r, d) {
-  const c = G.ui.hand.querySelector(`[data-res="${r}"]`);
-  if (!c) return;
-  const m = h("span", { class: "delta " + (d > 0 ? "up" : "") }, `${d > 0 ? "+" : "−"}${Math.abs(d)}`);
-  c.append(m);
-  setTimeout(() => m.remove(), 2300);
+
+/** A law just moved goods: its seal strikes the square, where the laws stand. */
+function lawFires(v, delay) {
+  if (reduced() || !squareOf(v)) return;
+  setTimeout(() => {
+    const at = boardPoint(squareOf(v), 0.4);
+    if (!at) return;
+    ring(at, "law small");
+    anim(spawn(h("div", { class: "lawfire", style: { left: `${at.x}px`, top: `${at.y}px` } }, waxSeal("fired")), 900),
+      [{ scale: 2.2, opacity: 0 }, { scale: 1, opacity: 1, offset: .22 }, { scale: 1, opacity: 1, offset: .72 }, { scale: 1, opacity: 0 }], { duration: 900 });
+  }, delay);
 }
-/** A harvest flies from the hexes that paid it to the seat that earned it. */
-function fly(r, n, s, v) {
-  if (reduced() || !G.player) { if (s === v.you) markCard(r, n); return; }
-  const tile = (v.board?.tiles || []).find(t => t.res === r && t.number === v.lastRoll);
-  const from = tile ? G.player.worldToScreen(tile.x, 0.35, tile.y) : { x: innerWidth / 2, y: innerHeight / 2 };
-  let target = null;
-  if (s === v.you) target = G.ui.hand.querySelector(`[data-res="${r}"]`);
-  if (!target) target = [...G.ui.houses.children][v.seats.findIndex(x => x.seat === s)];
-  if (!target) return;
-  const t = target.getBoundingClientRect();
-  const f = h("div", { class: "flight", style: { left: `${from.x}px`, top: `${from.y}px` } }, resIcon(r, "res small"), `+${n}`);
-  document.body.append(f);
-  const dx = t.left + t.width / 2 - from.x, dy = t.top + t.height / 2 - from.y;
-  f.animate([{ transform: "translate(-50%,-50%) scale(.7)", opacity: 0 }, { transform: "translate(-50%,-60%) scale(1.15)", opacity: 1, offset: .22 }, { transform: `translate(calc(${dx}px - 50%), calc(${dy}px - 50%)) scale(.85)`, opacity: 1 }],
-    { duration: 950, easing: "cubic-bezier(.45,0,.3,1)" }).onfinish = () => { f.remove(); if (s === v.you) markCard(r, n); };
+
+/** Something flies over the table to where it belongs, in a short arc. */
+function flight(node, from, to, delay, landed) {
+  if (!from || !to) { landed?.(); return; }
+  const dx = to.x - from.x, dy = to.y - from.y, lift = Math.min(70, Math.hypot(dx, dy) * .16);
+  Object.assign(node.style, { left: `${from.x}px`, top: `${from.y}px` });
+  spawn(node, delay + FLIGHT_MS).animate([
+    { transform: "translate(-50%,-50%) scale(.5) rotate(-10deg)", opacity: 0 },
+    { transform: `translate(calc(-50% + ${dx * .42}px), calc(-50% + ${dy * .42 - lift}px)) scale(1.1) rotate(-4deg)`, opacity: 1, offset: .42 },
+    { transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) scale(.92)`, opacity: 1 },
+  ], { duration: FLIGHT_MS, delay, fill: "both", easing: "cubic-bezier(.35,.1,.45,1)" });
+  setTimeout(() => landed?.(), delay + FLIGHT_MS);
+}
+const looseCard = r => h("div", { class: "flight card" }, resIcon(r));
+
+/** Cards land in the hand one at a time, and the count goes up as each one lands. Past a few, the last one
+ *  stands for the rest. Returns how many flew. Without motion, the hand has already changed. */
+function payCards(r, n, from, delay) {
+  const card = cardOf(r);
+  if (reduced()) { markCard(card, `+${n}`, true); return 0; }
+  const start = from || { x: middleOf(card).x, y: card.getBoundingClientRect().top - 90 };
+  const flying = Math.min(n, 4);
+  G.inFlight[r] = (G.inFlight[r] || 0) + n;
+  renderHand();
+  for (let i = 0; i < flying; i++) {
+    flight(looseCard(r), start, middleOf(card), delay + i * CARD_GAP_MS, () => {
+      const last = i === flying - 1;
+      G.inFlight[r] = Math.max(0, (G.inFlight[r] || 0) - (last ? n - flying + 1 : 1));
+      renderHand();
+      anim(cardOf(r), [{ translate: "0 -7px", scale: 1.07 }, { translate: "0 2px", scale: .99, offset: .55 }, { translate: "0 0", scale: 1 }], { duration: 200 });
+      if (last) markCard(cardOf(r), `+${n}`, true);
+    });
+  }
+  return flying;
+}
+/** Cards leave the hand: toward the piece they paid for, or just up and away. */
+function takeCards(r, n, toward) {
+  const card = cardOf(r);
+  markCard(card, `−${n}`, false);
+  if (reduced()) return;
+  const from = card.getBoundingClientRect(), mid = middleOf(card);
+  for (let i = 0; i < Math.min(n, 3); i++) {
+    const c = looseCard(r);
+    Object.assign(c.style, { left: `${mid.x}px`, top: `${mid.y}px`, width: `${from.width}px`, height: `${from.height}px` });
+    const dx = toward ? toward.x - mid.x : (i - 1) * 10, dy = toward ? toward.y - mid.y : -70;
+    spawn(c, 460 + i * CARD_GAP_MS).animate([
+      { transform: "translate(-50%,-50%)", opacity: 1 },
+      { transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) scale(.4) rotate(${toward ? 8 : -8}deg)`, opacity: .15 },
+    ], { duration: 440, delay: i * CARD_GAP_MS, fill: "both", easing: "cubic-bezier(.4,0,.7,.6)" });
+  }
+}
+/** A small tag beside a card or a banner, which says how much just changed. */
+function markCard(el, text, up, below) {
+  if (!el) return;
+  const r = el.getBoundingClientRect();
+  const tag = spawn(h("span", { class: "delta" + (up ? " up" : ""), style: { left: `${r.right}px`, top: `${below ? r.bottom + 12 : r.top}px` } }, text), 1400);
+  anim(tag, [{ translate: "-50% -30%", opacity: 0 }, { translate: "-50% -70%", opacity: 1, offset: .12 }, { translate: "-50% -70%", opacity: 1, offset: .75 }, { translate: "-50% -110%", opacity: 0 }], { duration: 1400, easing: "ease-out" });
+}
+
+function scoreMoved(s, d) {
+  const b = bannerOf(s);
+  if (!b) return;
+  markCard(b.querySelector(".cloth"), `${d > 0 ? "+" : "−"}${Math.abs(d)}`, d > 0, true);
+  thump(b.querySelector(".cloth"), 8);
+  anim(b.querySelector(".score"), [{ scale: 1 }, { scale: 1.45, offset: .3 }, { scale: 1 }], { duration: 460 });
+}
+
+/** It has become your turn. The line that says what to do, or a pennant if none shows, and your tools come up. */
+function yourMove() {
+  const U = G.ui;
+  anim(U.ledge, { transform: ["scaleX(0)", "scaleX(1)"], opacity: [1, 1, 0] }, { pseudoElement: "::before", duration: 760 });
+  [...U.tray.children].forEach((t, i) => anim(t, [{ translate: "0 18px", opacity: 0 }, { translate: "0 0", opacity: 1 }], { duration: 240, delay: i * 30, fill: "backwards" }));
+  if (!U.prompt.hidden) { anim(U.prompt, [{ scale: ".5 1", opacity: 0 }, { scale: "1.05 1", opacity: 1, offset: .6 }, { scale: 1, opacity: 1 }], { duration: 300 }); return; }
+  const pennant = spawn(h("div", { class: "pennant" + (G.dock ? " dock-open" : "") }, "Your move"), 1200);
+  anim(pennant, [
+    { scale: ".3 1", opacity: 0 }, { scale: "1.06 1", opacity: 1, offset: .18 }, { scale: 1, opacity: 1, offset: .26 },
+    { scale: 1, opacity: 1, offset: .78 }, { scale: 1, opacity: 0 },
+  ], { duration: 1200, easing: "ease-out" });
 }
 
 // ---------------------------------------------------------------- the trade sheet
@@ -1433,7 +1603,9 @@ function renderDraft() {
     return;
   }
   if (d.outcome === "refused") {
-    fill(U.draftBody, h("div", { class: "refusal" }, h("div", { class: "stampword" }, "REFUSED"), h("p", {}, d.reason)));
+    const landing = G.refusedShown !== d.id;
+    G.refusedShown = d.id;
+    fill(U.draftBody, h("div", { class: "refusal" }, h("div", { class: "stampword" + (landing ? " fresh" : "") }, "REFUSED"), h("p", {}, d.reason)));
     return;
   }
   if (d.outcome === "failed") {
@@ -1521,7 +1693,11 @@ function proclamation(v) {
   const pieces = s => Object.entries(s.pieces || {}).filter(([k, n]) => n > 0 && !(v.look?.quietPieces || []).includes(k)).map(([k, n]) => plural(n, k))
     .concat(s.tokenPoints ? [`${plural(s.tokenPoints, "point")} from what they held`] : []).join(", ");
   const nLaws = (v.laws || []).length;
+  // The result is sealed, and the seal lands only the first time it is drawn.
+  const landing = !G.endSealed;
+  G.endSealed = true;
   return h("div", { class: "proclaim" },
+    h("div", { class: "sealmark" + (landing ? " fresh" : "") }, waxSeal()),
     h("div", { class: "smallcaps" }, v.round >= v.rounds && w?.points < v.target ? `All ${v.rounds} rounds played` : `Round ${v.round}`),
     h("h2", {}, v.winner === v.you ? `${capital(v.game?.word || "the island")} is yours.` : `${capital(v.game?.word || "the island")} is ${w?.name}'s.`),
     order.map(s => h("div", { class: "standing" }, shield(s.seat, seatColor(s.seat)), h("span", {}, nameOf(s.seat)), h("span", { class: "fine" }, pieces(s)), h("b", {}, String(s.points)))),
