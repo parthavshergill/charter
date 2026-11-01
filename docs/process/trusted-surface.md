@@ -119,4 +119,19 @@ All ten commandments rest on the same 134 definitions: the data types of a game,
 2. It runs `leanchecker` on the spec, the engine, the proofs and the constitution, which replays them through the kernel.
 3. It scans `Charter` for banned constructs, such as `sorry`, `axiom`, `native_decide` and `unsafe`.
 
-**Comparator has not been run.** It needs a Linux sandbox, and the project has deferred it. `make audit` does not replace it.
+### Comparator
+
+`bash scripts/comparator.sh` runs Lean's Comparator, `lake comparator`, inside its bubblewrap sandbox. Comparator needs Linux, so the script uses a Docker container. `make audit` and CI do not run it. It and `make audit` do not replace each other.
+
+Comparator accepted 22 theorems, which `comparator.json` lists: the ten commandments, the six supporting promises, and the six witnesses in `Charter/Proofs/Witness.lean` and `Charter/Proofs/IslandWitness.lean`. With `--paranoid`, the five other checkers that ship with Lean accepted them too. A later change needs a new run.
+
+For those theorems, Comparator checks three things:
+
+1. Each statement is the same term as in `Comparator/Challenge.lean`, a generated file that states them with no proofs.
+2. Their proofs rest on no axiom other than `propext`, `Classical.choice` and `Quot.sound`.
+3. The kernel accepts them, and everything they use, from an export of the sandboxed build.
+
+Two limits apply:
+
+- **The definitions are shared.** The challenge imports the same words, named parts and engine as the proofs. So a changed definition changes both sides, and Comparator shows no difference. A reader must still review the definitions. `scripts/statement_lock.sh` guards the words and named parts. It does not guard the engine, the Island, HexGrid or SHA-256.
+- **It judges only those 22 theorems.** `Constitution/Examples.lean`, `Charter/EngineTests.lean` and other theorems that those 22 do not use are outside it. `make audit` covers the theorems in `Charter` modules.
