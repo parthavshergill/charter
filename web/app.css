@@ -602,7 +602,7 @@ svg.seal { position: absolute; left: 50%; top: 100%; width: 52px; height: 52px; 
 }
 
 /* ---------- a phone upright: the board has the screen, the rail runs along the foot, and the dock is a sheet ---------- */
-@media (max-width: 600px) and (orientation: portrait) {
+@media (max-width: 760px) and (orientation: portrait) {
   /* --ledge is everything at the foot of the screen, measured in updateInsets in app.js. */
   :root { --rail: 0px; --nav: 50px; --ledge: calc(var(--nav) + var(--safe-b)); }
   .rail { top: auto; left: 0; right: 0; bottom: 0; width: auto; height: calc(var(--nav) + var(--safe-b)); padding: 0 var(--safe-r) var(--safe-b) var(--safe-l); flex-direction: row; gap: 0; overflow-x: auto; scrollbar-width: none; box-shadow: 0 -1px 0 var(--brass); }
@@ -674,7 +674,7 @@ svg.seal { position: absolute; left: 50%; top: 100%; width: 52px; height: 52px; 
   .replaybar .scrub { flex: 1 1 100%; order: 9; }
   .stage svg.board2d { inset: var(--crown) 0 var(--ledge) 0; width: 100%; height: calc(100% - var(--crown) - var(--ledge)); }
 
-  .scroll { left: var(--s3); width: calc(100vw - 24px); max-width: none; max-height: calc(100dvh - 44px); }
+  .scroll { left: max(var(--s3), calc(50vw - 220px)); width: min(440px, calc(100vw - 24px)); max-width: none; max-height: calc(100dvh - 44px); }
   .titlepage { padding: var(--s5) var(--s4) 34px; }
   .seats { flex-wrap: wrap; justify-content: center; }
   .conseq .who b { min-width: 52px; }

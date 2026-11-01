@@ -33,7 +33,7 @@ const fill = (n, ...kids) => n.replaceChildren(...kids.flat(9).filter(k => k != 
 /** A finger, not a mouse. Hover does not exist, and a keyboard is not there until it is asked for. */
 const touch = () => matchMedia("(pointer: coarse)").matches;
 /** The narrow layout: the rail along the foot of the screen, and the dock a sheet that rises from it. */
-const narrow = () => matchMedia("(max-width: 600px) and (orientation: portrait)").matches;
+const narrow = () => matchMedia("(max-width: 760px) and (orientation: portrait)").matches;
 /** A phone on its side: the rail and the dock stay at the right, and the ledge is one thin row. */
 const short = () => matchMedia("(max-height: 500px) and (orientation: landscape)").matches;
 // The seat token goes in a header, not the address, so it stays out of anything that logs addresses.
@@ -401,7 +401,8 @@ function footHeight() {
 }
 function updateInsets() {
   const root = document.documentElement, roomy = !narrow() && !short();
-  const dockW = !G.dock || !roomy ? 0 : (innerWidth <= 860 ? 300 : 372);
+  // A narrow window has no room to spare: the dock lies over the board, and the board keeps its size.
+  const dockW = !G.dock || !roomy || innerWidth < 800 ? 0 : (innerWidth <= 860 ? 300 : 372);
   root.style.setProperty("--dockw", `${dockW}px`);
   // On a phone what the ledge holds sets its height, and the rest of the interface sits on top of it.
   if (roomy) root.style.removeProperty("--ledge"); else if (!document.body.classList.contains("kb")) root.style.setProperty("--ledge", `${footHeight()}px`);
@@ -629,6 +630,24 @@ function applyMode() {
 /** The things a tap can do on a phone that a pointer does by hovering. */
 function bindTouch() {
   const U = G.ui;
+  // Pulling the sheet's top edge down puts it away.
+  let pull = null;
+  U.grab.addEventListener("pointerdown", e => { U.grab.setPointerCapture(e.pointerId); pull = { y: e.clientY, t: performance.now(), dy: 0 }; U.dock.classList.add("pulled"); });
+  U.grab.addEventListener("pointermove", e => {
+    if (!pull) return;
+    pull.dy = Math.max(0, e.clientY - pull.y);
+    U.dock.style.transform = `translateY(${pull.dy}px)`;
+  });
+  const letGo = e => {
+    if (!pull) return;
+    const fast = pull.dy / Math.max(1, performance.now() - pull.t) > .6, far = pull.dy > Math.min(110, U.dock.offsetHeight / 3);
+    U.dock.classList.remove("pulled");
+    U.dock.style.transform = "";
+    if (e.type === "pointerup" && pull.dy > 8 && (fast || far)) closeDock(true);
+    pull = null;
+  };
+  U.grab.addEventListener("pointerup", letGo);
+  U.grab.addEventListener("pointercancel", letGo);
   if (!touch()) return;
   // A tap on nothing in particular closes what a tap opened.
   addEventListener("pointerdown", e => {
@@ -654,24 +673,6 @@ function bindTouch() {
     const off = [...U.tray.children].find(t => { const r = t.getBoundingClientRect(); return t.disabled && e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom; });
     if (off) tipAt([h("h4", {}, off.querySelector(".nm")?.textContent), h("div", { class: "row" }, off.title)], e.clientX, e.clientY);
   });
-  // Pulling the sheet's top edge down puts it away.
-  let pull = null;
-  U.grab.addEventListener("pointerdown", e => { U.grab.setPointerCapture(e.pointerId); pull = { y: e.clientY, t: performance.now(), dy: 0 }; U.dock.classList.add("pulled"); });
-  U.grab.addEventListener("pointermove", e => {
-    if (!pull) return;
-    pull.dy = Math.max(0, e.clientY - pull.y);
-    U.dock.style.transform = `translateY(${pull.dy}px)`;
-  });
-  const letGo = e => {
-    if (!pull) return;
-    const fast = pull.dy / Math.max(1, performance.now() - pull.t) > .6, far = pull.dy > Math.min(110, U.dock.offsetHeight / 3);
-    U.dock.classList.remove("pulled");
-    U.dock.style.transform = "";
-    if (e.type === "pointerup" && pull.dy > 8 && (fast || far)) closeDock(true);
-    pull = null;
-  };
-  U.grab.addEventListener("pointerup", letGo);
-  U.grab.addEventListener("pointercancel", letGo);
 }
 
 async function poll() {
