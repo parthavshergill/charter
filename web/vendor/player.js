@@ -385,7 +385,10 @@ export class GpuPlayer {
   // the page was hidden or had nothing to draw. Scenery falling into place at the start is not judged.
   _watchPace(rawMs, landing) {
     const p = this._pace;
-    if (!this._drewLast || rawMs > 400 || landing > 60 || document.hidden) { p.sum = 0; p.n = 0; return; }
+    if (rawMs > 400 || landing > 60 || document.hidden) { p.sum = 0; p.n = 0; return; }
+    // The time since the last frame counts only if that frame drew something. A frame with nothing to draw
+    // says nothing about the pace, and must not throw away what has been counted.
+    if (!this._drewLast) return;
     p.sum += rawMs; p.n++;
     if (p.n < PACE_FRAMES) return;
     const mean = p.sum / p.n;

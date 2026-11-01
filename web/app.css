@@ -651,7 +651,7 @@ svg.seal { position: absolute; left: 50%; top: 100%; width: 52px; height: 52px; 
   .herald .tab { padding: 6px var(--s2) var(--s2); font-size: 12px; }
   .herald .die { min-width: 36px; padding: 2px var(--s2) 6px; font-size: 20px; }
   .herald .clock { padding: 6px var(--s1); font-size: 12px; }
-  .caption { position: fixed; left: var(--s2); right: var(--s2); top: calc(var(--crown) + var(--safe-t) + var(--s1)); max-width: none; font-size: 14px; text-align: center; }
+  .caption { position: fixed; left: var(--s2); right: var(--s2); top: calc(var(--crown) + var(--safe-t) + var(--s1)); max-width: none; font-size: 14px; text-align: center; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
 
   /* The sheet. It sits on the foot of the screen, and on the keyboard when that is open. */
   .dock { top: auto; left: 0; right: 0; bottom: var(--ledge); width: auto; max-height: calc(100dvh - var(--ledge) - var(--safe-t) - 40px); transform: translateY(calc(100% + var(--ledge) + var(--s4))); }
@@ -739,7 +739,7 @@ svg.seal { position: absolute; left: 50%; top: 100%; width: 52px; height: 52px; 
   .slips { top: 80px; left: calc(var(--s2) + var(--safe-l)); }
   .menu { right: calc(var(--rail) + var(--safe-r) + var(--s1)); bottom: var(--s1); max-height: calc(100dvh - var(--s2)); overflow-y: auto; }
   .replaybar { right: calc(var(--rail) + var(--safe-r)); height: 48px; }
-  .caption { font-size: 14px; }
+  .caption { font-size: 14px; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
   .scroll { left: calc(var(--s3) + var(--safe-l)); width: min(400px, calc(100vw - 24px - var(--safe-l) - var(--safe-r))); max-height: calc(100dvh - 36px); }
   .stage svg.board2d { inset: 0 calc(var(--rail) + var(--safe-r)) var(--ledge) 0; width: calc(100% - var(--rail) - var(--safe-r)); height: calc(100% - var(--ledge)); }
 }
