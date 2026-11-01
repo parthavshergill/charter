@@ -7,12 +7,11 @@ import Charter.Games.HillAndChill.Meshes
 # Hill and Chill
 
 Friends share a house on a hill, and every night they try to go out to dinner. Each round a seat can
-declare that it is down, which commits it and costs it a ride. Dinner only happens if more than half the
+declare that it is down, which commits it and costs it a ride and its share of the bill. Dinner only happens if more than half the
 table is down. A seat that is not down is a "could be down", and that pays a little clout every round,
-whatever happens. If too few commit, the ones who did pay a no-show fee. The memories of a dinner are
-shared by whoever came, so a table of exactly enough is best for them, and the last friend to answer
-often does best by saying "could be down". So nobody eats unless the table can trust each other, and the
-table talk is the group chat. All friends at any table are invented.
+whatever happens. If too few commit, the ones who did pay the bill anyway, as a no-show fee. And if
+everyone is down, nobody can agree on a place, so that falls through too. So somebody has to flake for
+anybody to eat, nobody eats unless the table can trust each other, and the table talk is the group chat. All friends at any table are invented.
 
 The look uses mesh files. `packs/hill-and-chill/gen.py` makes them and writes `Meshes.lean`.
 -/
@@ -64,11 +63,12 @@ def tableSize : Expr := .totalOver .yes (.lit 1)
 /-- How many seats must be down for dinner: more than half the table. -/
 def needed : Expr := .add (.div tableSize 2) (.lit 1)
 
-/-- Dinner happens when enough seats are down. -/
-def dinnerOn : Cond := .le needed downCount
+/-- Dinner happens when enough seats are down, but not all of them: when the whole house is down, nobody
+can agree on a place. -/
+def dinnerOn : Cond := .and (.le needed downCount) (.lt downCount tableSize)
 
 /-- What each diner gets: 3 lore for each seat that was needed, shared by everyone who came. So a table
-of exactly enough gets 3 each, and one more guest leaves less for everyone. -/
+of exactly enough gets 3 each, and at a large table one more guest leaves less for everyone. -/
 def share : Expr := .divBy (.mul (.lit 3) needed) downCount
 
 /-! ## The founding laws -/
@@ -82,21 +82,22 @@ def lawMaybe : Law :=
       , .onRoundEnd [.forEach (.not isDown) [pay .treasury .each "clout" (.lit 1)]]
       , .setWorth "clout" 1 ] }
 
-/-- **Dinner.** Each seat holds one down card, so that it can declare down. At the round's end, if more
-than half the table is down, dinner happens: each of them pays 1 gas for the ride and shares the lore,
-3 for each seat that was needed. If not, each of them pays the ride anyway, and 1 cash as a no-show fee,
-which the restaurant keeps in the treasury. A seat with no gas gets a ride, so it pays no gas. The house
-keeps the lore in the treasury, so the bank cannot sell it. -/
+/-- **Dinner.** Each seat holds one down card, so that it can declare down. At the round's end each seat
+that is down pays the ride and its share of the bill, 1 gas and 1 cash, as far as it can, whether or not
+dinner happens. The restaurant keeps the cash in the treasury: if too few came, it is the no-show fee.
+If more than half the table is down, but not all of it, dinner happens, and they share the lore, 3 for
+each seat that was needed. If everyone is down, nobody can agree on a place, and dinner falls through.
+The house keeps the lore in the treasury, so the bank cannot sell it. -/
 def lawDinner : Law :=
-  { title := "Dinner happens only if more than half the table is down"
+  { title := "Dinner happens if more than half the table is down, but not everyone"
     clauses :=
       [ .onRoll
           [ pay .bank .treasury "lore" (held .bank "lore")
           , .forEach (.eq (held .each "down") (.lit 0)) [pay .bank .each "down" (.lit 1)]
           , .forEach (.lt (.lit 1) (held .each "down")) [pay .each .bank "down" (.sub (held .each "down") (.lit 1))] ]
       , .onRoundEnd
-          [ .when (.not dinnerOn) [.forEach isDown [pay .each .bank "gas" (.lit 1), pay .each .treasury "cash" (.lit 1)]]
-          , .when dinnerOn [.forEach isDown [pay .each .bank "gas" (.lit 1), pay .treasury .each "lore" share]] ]
+          [ .forEach isDown [pay .each .bank "gas" (.lit 1), pay .each .treasury "cash" (.lit 1)]
+          , .when dinnerOn [.forEach isDown [pay .treasury .each "lore" share]] ]
       , .setWorth "lore" 1 ] }
 
 /-- **Hosting.** A potluck feeds everyone, not only the host. -/

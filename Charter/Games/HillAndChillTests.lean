@@ -62,16 +62,17 @@ def after (ps : List Seat) (r : Res) (s : St := table) : List Nat :=
 
 /-! ## Dinner happens -/
 
--- Three of four are down: more than half. Each of them pays 1 gas and gets 3 lore. Seat 3 could be down,
--- keeps its gas, and gets 1 clout.
+-- Three of four are down: more than half. Each of them pays 1 gas and 1 cash and gets 3 lore. Seat 3
+-- could be down, keeps its goods, and gets 1 clout.
 #guard after [0, 1, 2] "lore" == [3, 3, 3, 0]
 #guard after [0, 1, 2] "gas" == [1, 1, 1, 2]
 #guard after [0, 1, 2] "clout" == [0, 0, 0, 1]
-#guard after [0, 1, 2] "cash" == [2, 2, 2, 2]
+#guard after [0, 1, 2] "cash" == [1, 1, 1, 2]
 
--- Everyone is down: everyone eats, but the 9 lore are shared four ways, 2 each. So one more guest costs
--- the other three a lore each, and nobody gets clout.
-#guard after [0, 1, 2, 3] "lore" == [2, 2, 2, 2]
+-- Everyone is down: nobody can agree on a place. Everyone pays the ride and the bill, nobody eats, and
+-- nobody gets clout.
+#guard after [0, 1, 2, 3] "lore" == [0, 0, 0, 0]
+#guard after [0, 1, 2, 3] "cash" == [1, 1, 1, 1]
 #guard after [0, 1, 2, 3] "clout" == [0, 0, 0, 0]
 
 /-! ## Dinner falls through -/
@@ -90,14 +91,15 @@ def after (ps : List Seat) (r : Res) (s : St := table) : List Nat :=
 #guard after [] "clout" == [1, 1, 1, 1]
 #guard after [] "gas" == [2, 2, 2, 2]
 
-/-! ## No gas, no problem: someone gives you a ride -/
+/-! ## Short of goods: a seat pays what it has -/
 
 /-- Seat 2 has no gas. -/
 def noRide : St := { table with books := (table.books.postAll [⟨.player 2, .bank, "gas", 2, .trade⟩]).getD table.books }
 
--- Seat 2 says down with no gas. It still counts, dinner happens, and it pays no gas for the ride.
+-- Seat 2 says down with no gas. It still counts, dinner happens, and it pays only the cash.
 #guard after [0, 1, 2] "lore" noRide == [3, 3, 3, 0]
 #guard after [0, 1, 2] "gas" noRide == [1, 1, 0, 2]
+#guard after [0, 1, 2] "cash" noRide == [1, 1, 1, 2]
 
 -- When dinner falls through, a seat with no gas still pays the no-show fee.
 #guard after [1, 2] "cash" noRide == [2, 1, 1, 2]
