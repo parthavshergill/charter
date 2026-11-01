@@ -27,8 +27,8 @@ def hexes : List Hex :=
   , ⟨1, -2⟩, ⟨-1, 2⟩, ⟨3, -2⟩, ⟨-3, 2⟩, ⟨3, -1⟩, ⟨-3, 1⟩ ]
 
 def tileResources : List Res :=
-  [ "oats", "dew", "rot", "spores", "dew", "oats", "spores", "rot"
-  , "oats", "rot", "dew", "spores", "rot", "oats", "spores", "dew" ]
+  [ "oatmeal", "dew", "rot", "pollen", "dew", "oatmeal", "pollen", "rot"
+  , "oatmeal", "rot", "dew", "pollen", "rot", "oatmeal", "pollen", "dew" ]
 
 def tileNumbers : List Nat :=
   [ 6, 8, 5, 9, 10, 4, 3, 11
@@ -52,23 +52,23 @@ def held (p : Party) (r : Res) : Expr := .holding p (.lit r)
 
 /-- A puffball bursts when it is built, and everyone breathes it in. -/
 def lawPuffball : Law :=
-  { title := "A new puffball bursts, and every mould gets a spore"
-    clauses := [.onBuild "puffball" [.forEach .yes [.transfer .bank .each (.lit "spores") (.lit 1)]]] }
+  { title := "A new puffball bursts, and every mould gets pollen"
+    clauses := [.onBuild "puffball" [.forEach .yes [.transfer .bank .each (.lit "pollen") (.lit 1)]]] }
 
 /-- Getting fat has a price. -/
 def lawSwelling : Law :=
   { title := "A swelling mould feeds every mould behind it"
-    clauses := [.onBuild "swelling" [.forEach (.lt (.points .each) (.points .actor)) [.transfer .actor .each (.lit "oats") (.lit 1)]]] }
+    clauses := [.onBuild "swelling" [.forEach (.lt (.points .each) (.points .actor)) [.transfer .actor .each (.lit "oatmeal") (.lit 1)]]] }
 
 /-- No mould can sit on the water for ever. -/
 def lawDew : Law :=
   { title := "Hoarded dew evaporates at the end of each round"
     clauses := [.onRoundEnd [.forEach (.lt (.lit 5) (held .each "dew")) [.transfer .each .treasury (.lit "dew") (.div (held .each "dew") 2)]]] }
 
-/-- Good rot makes spores. -/
+/-- Good rot makes pollen. -/
 def lawRot : Law :=
-  { title := "Where rot is harvested, a spore comes with it"
-    clauses := [.onHarvest [.when (.harvestedIs "rot") [.transfer .bank .actor (.lit "spores") (.lit 1)]]] }
+  { title := "Where rot is harvested, pollen comes with it"
+    clauses := [.onHarvest [.when (.harvestedIs "rot") [.transfer .bank .actor (.lit "pollen") (.lit 1)]]] }
 
 def foundingLaws : List Law := [lawPuffball, lawSwelling, lawDew, lawRot]
 
@@ -76,15 +76,15 @@ def foundingLaws : List Law := [lawPuffball, lawSwelling, lawDew, lawRot]
 
 def game : GameDef where
   name := "Slime Parliament"
-  resources := [⟨"oats", 22⟩, ⟨"dew", 22⟩, ⟨"rot", 22⟩, ⟨"spores", 22⟩]
+  resources := [⟨"oatmeal", 22⟩, ⟨"dew", 22⟩, ⟨"rot", 22⟩, ⟨"pollen", 22⟩]
   pieces :=
-    [ { name := "tendril", cost := [("oats", 1), ("dew", 1)], points := 0
+    [ { name := "tendril", cost := [("oatmeal", 1), ("dew", 1)], points := 0
         placement := .link, yield := 0, limit := 15 }
-    , { name := "node", cost := [("oats", 1), ("dew", 1), ("rot", 1)], points := 1
+    , { name := "node", cost := [("oatmeal", 1), ("dew", 1), ("rot", 1)], points := 1
         placement := .spot, yield := 1, limit := 6 }
-    , { name := "swelling", cost := [("oats", 2), ("rot", 2)], points := 2
+    , { name := "swelling", cost := [("oatmeal", 2), ("rot", 2)], points := 2
         placement := .upgrade "node", yield := 2, limit := 4 }
-    , { name := "puffball", cost := [("spores", 3), ("oats", 1)], points := 1
+    , { name := "puffball", cost := [("pollen", 3), ("oatmeal", 1)], points := 1
         placement := .attach "node", yield := 0, limit := 2 } ]
   map :=
     { spotCount := spots.length
@@ -95,7 +95,7 @@ def game : GameDef where
   targetPoints := 10
   rounds := 24
   bankRate := 3
-  lawFee := [("spores", 1)]
+  lawFee := [("pollen", 1)]
   setupPieces := ["node", "tendril"]
   foundingLaws := foundingLaws
 
@@ -154,10 +154,10 @@ def madeModel (name : String) (s : Nat) : List Part :=
   [m id 0 0 0 (seat s)] ++ tell s 0.3
 
 def tileMesh : Option Res → UInt32
-  | some "oats" => tileOats
+  | some "oatmeal" => tileOats
   | some "dew" => tileDew
   | some "rot" => tileRot
-  | some "spores" => tileSpores
+  | some "pollen" => tileSpores
   | _ => tileChamber
 
 def tileTop (res : Option Res) (seed : Nat) : List Part :=
@@ -170,10 +170,10 @@ def decor (res : Option Res) (seed : Nat) (keep : Float → Float → Bool) (_cu
   let at_ (n : Nat) (lowOk : Bool) (f : Float → Float → Nat → List Part) : List Part :=
     ((scatter seed n 0.42 0.74).filter fun (x, z, _) => keep x z && (lowOk || !hidesToken x z)).flatMap fun (x, z, i) => f x z i
   match res with
-  | some "oats" => at_ 7 true fun x z i => [m oat x 0 z 0xFFFFFF (0.8 + 0.5 * rnd seed i) (6.28 * rnd seed (i + 9))]
+  | some "oatmeal" => at_ 7 true fun x z i => [m oat x 0 z 0xFFFFFF (0.8 + 0.5 * rnd seed i) (6.28 * rnd seed (i + 9))]
   | some "dew" => at_ 6 true fun x z i => [m drop x (-0.005) z 0xFFFFFF (0.7 + 0.7 * rnd seed i)]
   | some "rot" => at_ 5 false fun x z i => [m toadstool x 0 z 0xFFFFFF (0.8 + 0.6 * rnd seed i) (6.28 * rnd seed (i + 9))]
-  | some "spores" => at_ 6 false fun x z i => [m sporeling x 0 z 0xFFFFFF (0.8 + 0.5 * rnd seed i) (6.28 * rnd seed (i + 9))]
+  | some "pollen" => at_ 6 false fun x z i => [m sporeling x 0 z 0xFFFFFF (0.8 + 0.5 * rnd seed i) (6.28 * rnd seed (i + 9))]
   | _ => []
 
 /-- A law's fruiting body, by what the law is about. -/
@@ -203,7 +203,7 @@ def surround : List Cmd :=
   [ (box 0 0 0 90 0.003 90 0x141A10).at 0 0 0
   , (m log 0 0 0 0xFFFFFF 1 (pi / 4.0)).at 0 0 0 ] ++ leaves ++ shrooms
 
-/-- The treasury is a stump with a heap of oats on it. -/
+/-- The treasury is a stump with a heap of oatmeal on it. -/
 def reserve (total : Nat) : List Part :=
   let heap := (List.range (min total 40)).map fun i =>
     let a := 2.399963 * i.toFloat
@@ -214,10 +214,10 @@ def reserve (total : Nat) : List Part :=
 def theme : Theme :=
   { tableColor := 0x10140C
     ground := fun
-      | some "oats" => 0x7C8C46
+      | some "oatmeal" => 0x7C8C46
       | some "dew" => 0x2B6C74
       | some "rot" => 0x4A2A30
-      | some "spores" => 0xC47F26
+      | some "pollen" => 0xC47F26
       | _ => 0xAA8656
     decor := decor
     growth := fun _ _ _ _ _ => []
@@ -242,10 +242,10 @@ def theme : Theme :=
     roadside := fun _ => []
     treasury := reserve
     flat := fun
-      | some "oats" => 0x8FA24E
+      | some "oatmeal" => 0x8FA24E
       | some "dew" => 0x3B8C95
       | some "rot" => 0x6A3B44
-      | some "spores" => 0xE29A2E
+      | some "pollen" => 0xE29A2E
       | _ => 0xC6A06A
     look :=
       { tagline := "Ooze along the log. Outvote the other moulds. The constitution holds."
@@ -260,14 +260,14 @@ def theme : Theme :=
         marks := []
         quietPieces := ["tendril"]
         icons :=
-          [ ("oats", [ { d := "M4 13c0-5 5-8 10-7 4 1 6 4 6 7s-4 6-9 6-7-2-7-6z", fill := "#d9c583", stroke := "#7a6a38", width := 1.4 }
+          [ ("oatmeal", [ { d := "M4 13c0-5 5-8 10-7 4 1 6 4 6 7s-4 6-9 6-7-2-7-6z", fill := "#d9c583", stroke := "#7a6a38", width := 1.4 }
                      , { d := "M8 14c2-3 5-4 8-4", stroke := "#7a6a38", width := 1.4 } ])
           , ("dew", [ { d := "M12 2.500c3 4.500 6.500 8 6.500 12a6.500 6.500 0 0 1-13 0c0-4 3.500-7.500 6.500-12z", fill := "#6cc3cf", stroke := "#1f4f58", width := 1.4 }
                     , { d := "M9 15a3 3 0 0 0 2.500 3", stroke := "#e6fbff", width := 1.6 } ])
           , ("rot", [ { d := "M3.500 12a8.500 7.500 0 0 1 17 0c0 1-1 1.500-2 1.500H5.500c-1 0-2-.500-2-1.500z", fill := "#6b3c58", stroke := "#2c1a20", width := 1.4 }
                     , { d := "M10 13.500h4l.800 7h-5.600z", fill := "#c9bba6", stroke := "#2c1a20", width := 1.2 }
                     , { d := "M8 8.500a1.300 1.300 0 1 0 .010 0zM14.500 7a1.300 1.300 0 1 0 .010 0z", fill := "#e9dcf0" } ])
-          , ("spores", [ { d := "M8 5a3.500 3.500 0 1 0 .010 0zM16.500 7a3 3 0 1 0 .010 0zM11 14a4 4 0 1 0 .010 0z", fill := "#f08a24", stroke := "#7c4210", width := 1.3 } ])
+          , ("pollen", [ { d := "M8 5a3.500 3.500 0 1 0 .010 0zM16.500 7a3 3 0 1 0 .010 0zM11 14a4 4 0 1 0 .010 0z", fill := "#f08a24", stroke := "#7c4210", width := 1.3 } ])
           , ("tendril", [ { d := "M3 20C8 18 8 13 12 12s5-5 9-8M12 12c-2-2-2-4-1-7M12 12c2 2 5 2 7 4", stroke := "currentColor", width := 2.6 } ])
           , ("node", [ { d := "M3 19c0-8 4-13 9-13s9 5 9 13c0 1-1 1.500-2 1.500H5c-1 0-2-.500-2-1.500z", fill := "currentColor" }
                      , { d := "M9 11a2 2 0 1 0 .010 0zM15 11a2 2 0 1 0 .010 0z", fill := "#000000", opacity := 0.55 } ])

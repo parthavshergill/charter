@@ -717,6 +717,12 @@ section Games
 #guard (islandSpec.minSeats, islandSpec.maxSeats) == (minSeats, maxSeats)
 #guard (notCatanSpec.minSeats, notCatanSpec.maxSeats) == (3, 4)
 
+-- New packs go at the end of the list, and only a pack's own mesh files can be served.
+#guard gameSpecs.map (·.id) == ["island", "belt", "not-catan", "slime-parliament"]
+#guard (meshFolderOf "no-such-hash").isNone
+#guard slimeSpec.meshHashes.all fun h => meshFolderOf h == some slimeSpec.meshFolder
+#guard islandSpec.meshHashes.isEmpty && beltSpec.meshHashes.isEmpty && notCatanSpec.meshHashes.isEmpty
+
 -- A game with no counter has all its resources on the screen, so old games read as they did.
 #guard islandSpec.G.resources.map (·.name) == goodsOf islandSpec.G
 #guard beltSpec.G.resources.map (·.name) == goodsOf beltSpec.G

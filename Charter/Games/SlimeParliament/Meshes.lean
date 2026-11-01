@@ -40,14 +40,14 @@ def stump : UInt32 := 131
 
 /-- Every mesh file: its id, its hash, its colour, how it moves and what stands in for it. -/
 def defs : List Cmd :=
-  [ .defineMeshFile 100 "714ab3927e95ea85ba7f94838cea2b4fa5fed537d1f002eb34e4dd9a3f3cea27" 0xD0D0D0 { pulse := 0.045, sway := 0, glow := 0.12 } (.sphere 0.15)
-  , .defineMeshFile 101 "72651d7507aace04f0be319c1df432938035eb25bee16f2dde3505e19dc26f36" 0xE2DCCB { pulse := 0.045, sway := 0, glow := 0 } (.sphere 0.001)
-  , .defineMeshFile 102 "536640f432b1aef9af3c6f92c3098871b85d35b1788a60f46af750ddea09d967" 0xD6D6D6 { pulse := 0.055, sway := 0, glow := 0.14 } (.sphere 0.26)
-  , .defineMeshFile 103 "123135e2659a9886f6c6cc8fa5675ab9a5d6eb520e13fa41cf4262057213ce0c" 0xE9E2D0 { pulse := 0.055, sway := 0, glow := 0 } (.sphere 0.001)
-  , .defineMeshFile 104 "8fbfc2d81cb5fc0115d7ac30510ad3a991150ccbec69c7f5c23aea721fb34780" 0xDFD9C8 { pulse := 0.055, sway := 0, glow := 0 } (.sphere 0.001)
+  [ .defineMeshFile 100 "714ab3927e95ea85ba7f94838cea2b4fa5fed537d1f002eb34e4dd9a3f3cea27" 0xD0D0D0 { pulse := 0.09, sway := 0, glow := 0.12 } (.sphere 0.15)
+  , .defineMeshFile 101 "72651d7507aace04f0be319c1df432938035eb25bee16f2dde3505e19dc26f36" 0xE2DCCB { pulse := 0.09, sway := 0, glow := 0 } (.sphere 0.001)
+  , .defineMeshFile 102 "536640f432b1aef9af3c6f92c3098871b85d35b1788a60f46af750ddea09d967" 0xD6D6D6 { pulse := 0.07, sway := 0, glow := 0.14 } (.sphere 0.26)
+  , .defineMeshFile 103 "123135e2659a9886f6c6cc8fa5675ab9a5d6eb520e13fa41cf4262057213ce0c" 0xE9E2D0 { pulse := 0.07, sway := 0, glow := 0 } (.sphere 0.001)
+  , .defineMeshFile 104 "8fbfc2d81cb5fc0115d7ac30510ad3a991150ccbec69c7f5c23aea721fb34780" 0xDFD9C8 { pulse := 0.07, sway := 0, glow := 0 } (.sphere 0.001)
   , .defineMeshFile 105 "cdf8709c041a97897089d660cb6a05e0939b43bdf9032a17df4616ef9830fe45" 0xC5C5C5 { pulse := 0, sway := 0.02, glow := 0 } (.cylinder 0.08 0.1)
   , .defineMeshFile 106 "6a1f0e41aa99289fb00019cd54c3118c698897da71f2c5ba473a7f185c084a76" 0xEDE6D3 { pulse := 0, sway := 0.02, glow := 0 } (.sphere 0.08)
-  , .defineMeshFile 107 "0a7be58e97fbfb525705a58626f9f63b830a72e0f949c3c5c6684c06c5b8c3c1" 0xD2D2D2 { pulse := 0.05, sway := 0, glow := 0.12 } (.box 0.9 0.05 0.1)
+  , .defineMeshFile 107 "0a7be58e97fbfb525705a58626f9f63b830a72e0f949c3c5c6684c06c5b8c3c1" 0xD2D2D2 { pulse := 0.09, sway := 0, glow := 0.12 } (.box 0.9 0.05 0.1)
   , .defineMeshFile 108 "db27d4c7f1884cc44ab21136fe6a525e34740b253d0616342a037b90da39e68e" 0x5B7436 { pulse := 0, sway := 0, glow := 0 } (.hexPrism 0.96 0.15)
   , .defineMeshFile 109 "39498f382ce50506d75bb50f62046397f6b27f61d7005e69a0e2fe62f0f91866" 0x2B6870 { pulse := 0, sway := 0, glow := 0 } (.hexPrism 0.96 0.15)
   , .defineMeshFile 110 "721b6b92b500c7624175bce32ebb6ac92e19f1bc9fbfafc84b5387f3c11b5cd7" 0x41242A { pulse := 0, sway := 0, glow := 0 } (.hexPrism 0.96 0.15)

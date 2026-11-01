@@ -561,7 +561,7 @@ export class GpuPlayer {
       else m.emissive.copy(color).multiplyScalar(0.28 * it.hover);
       if (it.motion && !this.still) {
         const wave = Math.sin(now * 0.0017 + it.phase), mo = it.motion;
-        if (mo.pulse) o.scale.multiplyScalar(1 + mo.pulse * wave);
+        if (mo.pulse) { const w = mo.pulse * wave; o.scale.x *= 1 - 0.6 * w; o.scale.y *= 1 + w; o.scale.z *= 1 - 0.6 * w; }
         if (mo.sway) { o.rotation.x = mo.sway * wave; o.rotation.z = mo.sway * Math.cos(now * 0.0013 + it.phase); }
         if (mo.glow) { const g = mo.glow * (0.5 + 0.5 * wave); m.emissive.r += color.r * mo.tint.r * g; m.emissive.g += color.g * mo.tint.g * g; m.emissive.b += color.b * mo.tint.b * g; }
       }

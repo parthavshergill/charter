@@ -6,7 +6,7 @@ It starts its own server on a free port with a temporary data folder, and stops 
 It uses only moves the server lists as legal. It also restarts the server to check that the game
 replays from its log, and checks each scene stream when Node is available.
 """
-import json, os, shutil, socket, sqlite3, subprocess, sys, tempfile, time, urllib.error, urllib.request
+import hashlib, json, os, shutil, socket, sqlite3, subprocess, sys, tempfile, time, urllib.error, urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BIN = os.path.join(ROOT, ".lake", "build", "bin", "charter-server")
@@ -252,6 +252,32 @@ def second_game(srv):
     check(r["ok"] is False and "helium, alloy, ice and crystal" in r["error"] if "error" in r else False, "a law in the Belt cannot name the Island's resources")
     r = srv.post(f"/api/games/{t}/check", {"token": token, "text": '(law "x" (set-cost lane (bundle (ice 1))))'})
     check(r["ok"] is True and not r["problems"], "a law in the Belt can name its own resources")
+    return code
+
+
+def slime_pack(srv):
+    """A reskin: its look reaches the browser as data, its mesh files come by hash, and bots play it to the end."""
+    d = next(x for x in srv.get("/api/defs") if x["id"] == "slime-parliament")
+    check("oatmeal" in d["look"]["icons"] and d["look"]["tokens"]["vellum"].startswith("#"), "a pack's icons and colours are in the list of games")
+    check(srv.raw("/api/defs/slime-parliament/scene")[:4] == b"GPC1", "a pack has a backdrop for the title page")
+    mesh_dir = os.path.join(ROOT, "packs", "slime-parliament", "meshes")
+    names = sorted(os.listdir(mesh_dir))
+    check(names and all(hashlib.sha256(open(os.path.join(mesh_dir, n), "rb").read()).hexdigest() + ".mesh" == n for n in names), "each mesh file is named by its hash")
+    with urllib.request.urlopen(f"http://127.0.0.1:{srv.port}/assets/{names[0]}", timeout=60) as r:
+        check("immutable" in r.headers["Cache-Control"] and r.read()[:4] == b"GPM1", "a mesh file is served at a path made from its hash, and can be kept for ever")
+    for bad in ("0" * 64 + ".mesh", "..%2f..%2fMakefile", names[0][:-5]):
+        try:
+            srv.raw(f"/assets/{bad}")
+            check(False, f"no mesh file is served for {bad}")
+        except urllib.error.HTTPError as e:
+            check(e.code == 404, f"no mesh file is served for {bad}")
+    code = None
+    for n in (2, 4):
+        code, v = bots_only(srv, n, "slime-parliament", "node")
+        check(v["game"]["id"] == "slime-parliament" and v["resources"] == ["oatmeal", "dew", "rot", "pollen"], "the view says which game this is")
+        check(v["look"]["icons"] and "tendril" in v["look"]["quietPieces"], "the view carries the pack's look")
+        check(len(v["laws"]) >= 4, "the founding laws stand")
+        SCENES.append((srv.raw(f"/api/games/{code}/scene"), [], ["Law 0"]))
     return code
 
 
@@ -612,6 +638,7 @@ def main():
             bots_only(srv, n)
         belt = second_game(srv)
         pack = extension_pack(srv)
+        slime_pack(srv)
         claude_table = claude_with_no_key(srv)
         talk_and_replay(srv, code, token, v)
         table3 = refusals_and_embargo(srv)

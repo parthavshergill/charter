@@ -70,7 +70,7 @@ inductive Prim
   deriving DecidableEq, BEq, Repr, Inhabited
 
 /-- A small repeating motion of every instance of a mesh file. Zero is still.
-`pulse` is the change in size as a fraction, `sway` is the tilt in radians, and `glow` is
+`pulse` is the change in height as a fraction, `sway` is the tilt in radians, and `glow` is
 the added light from 0 to 1. The player runs it. The stream does not change over time. -/
 structure Motion where
   pulse : F32 := 0

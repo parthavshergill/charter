@@ -30,6 +30,8 @@ A pack is one new file and one entry here, and nothing else changes:
 
 A pack's name and sentence are what a player reads when choosing it, so keep the sentence short and
 plain. `Server/PreviewCheck.lean` plays every pack with bots, and `ServerTests.lean` checks its layout.
+The build check at the end of this file names anything a pack lacks a look for. A pack's look is its
+`Theme`, in Lean. `docs/process/reskins.md` says how to make a new one.
 -/
 
 namespace CharterServer
@@ -104,7 +106,7 @@ def notCatanSpec : GameSpec :=
 def slimeSpec : GameSpec :=
   { id := "slime-parliament"
     name := "Slime Parliament"
-    blurb := "Rival slime moulds spread along a damp log and pass laws about oats. Towns pulse, and the big ones wear wigs."
+    blurb := "Rival slime moulds spread along a damp log and pass laws about oatmeal. The biggest wear wigs."
     G := Games.SlimeParliament.game
     valid := Games.SlimeParliament.game_valid
     layout :=
@@ -113,7 +115,7 @@ def slimeSpec : GameSpec :=
     minSeats := 2
     maxSeats := 4
     meshFolder := "packs/slime-parliament/meshes"
-    guide := "You are a slime mould on a damp log. Oats, dew, rot and spores are the goods. A tendril costs oats and dew. A node costs oats, dew and rot. A swelling replaces a node. A puffball attaches to a node, costs spores, and gives every seat a spore. The founding laws say more." }
+    guide := "You are a slime mould on a damp log. Oatmeal, dew, rot and pollen are the goods. A tendril costs oatmeal and dew. A node costs oatmeal, dew and rot. A swelling replaces a node. A puffball attaches to a node, costs pollen and oatmeal, and gives every seat pollen. The founding laws say more." }
 
 instance : Inhabited GameSpec := ⟨islandSpec⟩
 

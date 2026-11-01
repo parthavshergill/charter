@@ -92,9 +92,9 @@ prim := u8 kind, f32 args...
   the file is missing or bad, it draws `standIn` in the color `tint`. A missing file is not an
   error in the stream. Draws are the same as for a primitive, and the draw's color multiplies the
   file's vertex colors, so a file that is white takes the draw's color. Flat shading stays on.
-- `pulse`, `sway` and `glow` make every instance of the mesh move by itself: size by the fraction
-  `pulse`, a tilt of `sway` radians about its base, and up to `glow` of added light in the color
-  `tint`. All zero means still. Reduced motion turns them off.
+- `pulse`, `sway` and `glow` make every instance of the mesh move by itself: height by the fraction
+  `pulse`, with the width going the other way, a tilt of `sway` radians about its base, and up to
+  `glow` of added light in the draw's color. All zero means still. Reduced motion turns them off.
 - `draw` places one instance. `pick ≠ 0` makes it pickable: hover highlights it
   and a click calls `onPick(pick)`. Several objects may share a pick id.
 - `label` draws camera-facing text centered at `pos`, `size` world units tall.

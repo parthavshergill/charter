@@ -161,19 +161,19 @@ def eyes(h, spread, out, r, look=0.):
 def backbencher():
     body = blend(.07, egg(0, .085, 0, .165, .135, .165, WHITE), egg(0, -.02, 0, .22, .09, .22, (.82, .82, .82)),
                  ball(.1, .03, -.13, .06, WHITE), ball(-.14, .03, .07, .055, WHITE))
-    mesh("node_body", veined(rough(body, .008, 19.)), (.3, .26), .046, (.045, 0, .12), ".sphere 0.15")
-    mesh("node_eyes", eyes(.15, .062, .115, .044, .3), (.26, .24), .021, (.045, 0, 0), BARE, floor=.05)
+    mesh("node_body", veined(rough(body, .008, 19.)), (.3, .26), .046, (.09, 0, .12), ".sphere 0.15")
+    mesh("node_eyes", eyes(.15, .062, .115, .044, .3), (.26, .24), .021, (.09, 0, 0), BARE, floor=.05)
 
 def speaker_of_the_house():
     lobes = [ball(.21 * cos(a), .1, .21 * sin(a), .12, WHITE) for a in (.5, 1.9, 3.3, 4.6, 5.7)]
     body = blend(.09, egg(0, .17, 0, .25, .22, .25, WHITE), egg(0, -.02, 0, .35, .1, .35, (.8, .8, .8)), *lobes)
-    mesh("swell_body", veined(rough(body, .012, 15.)), (.46, .46), .055, (.055, 0, .14), ".sphere 0.26")
+    mesh("swell_body", veined(rough(body, .012, 15.)), (.46, .46), .055, (.07, 0, .14), ".sphere 0.26")
     rx, rz = RIGHT
     cap = egg(-.03, .35, -.03, .19, .1, .19, WHITE)
     lappets = [rod((s * .2 * rx - .02, .34, s * .2 * rz - .02), (s * .25 * rx, .1, s * .25 * rz), .055, .07, WHITE) for s in (-1, 1)]
     rolled = lambda x, y, z, c: mix(C(0xFBF6E6), C(0xA89C82), sstep(.2, .8, sin(y * 62)) * sstep(.43, .36, y))
-    mesh("swell_wig", paint(blend(.03, cap, *lappets), rolled), (.36, .48), .03, (.055, 0, 0), BARE, floor=.03)
-    mesh("swell_eyes", eyes(.235, .085, .2, .052, .3), (.34, .34), .019, (.055, 0, 0), BARE, floor=.12)
+    mesh("swell_wig", paint(blend(.03, cap, *lappets), rolled), (.36, .48), .03, (.07, 0, 0), BARE, floor=.03)
+    mesh("swell_eyes", eyes(.235, .085, .2, .052, .3), (.34, .34), .019, (.07, 0, 0), BARE, floor=.12)
 
 def puffball():
     mesh("puff_body", veined(blend(.05, egg(0, -.01, 0, .1, .06, .1, (.8, .8, .8)), rod((0, 0, 0), (0, .09, 0), .06, .05, WHITE))), (.16, .14), .03, (0, .02, 0), ".cylinder 0.08 0.1")
@@ -190,7 +190,7 @@ def tendril():
     knots = [ball(-.38, .03, .05, .07, WHITE), ball(.06, .034, .04, .066, WHITE), ball(.3, .02, -.055, .06, WHITE)]
     vein = blend(.03, path(pts, .042, .042, WHITE), *knots, *stubs, ridge)
     mesh("tendril", paint(vein, lambda x, y, z, c: mix(c, (.68, .68, .68), sstep(.4, .9, abs(wave(x * .6, y, z * 2, 22.))))),
-         (.62, .1), .048, (.05, 0, .12), ".box 0.9 0.05 0.1", lo=(-.62, -.1, -.2), hi=(.62, .1, .2))
+         (.62, .1), .048, (.09, 0, .12), ".box 0.9 0.05 0.1", lo=(-.62, -.1, -.2), hi=(.62, .1, .2))
 
 # ---- the log's skin: each resource's tile is a low patch with a wobbly edge. The middle stays flat.
 def patch(surface, colour, seed, edge=.95, wob=.075):
