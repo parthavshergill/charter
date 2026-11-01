@@ -1510,13 +1510,16 @@ def afterSetupForced : List Event := List.replicate 4 .forceEndTurn
 def eightDealsARound (round : Nat) : List Event :=
   startEmptyDeals 1 (round * maxActiveDeals) maxActiveDeals ++ [.forceEndTurn, .forceEndTurn]
 
--- A game can start 64 deals. Ids are below 64, so the last signature of the 65th is rejected.
-def sixtyFourDeals : List Event :=
-  afterSetupForced ++ (List.range 8).flatMap eightDealsARound
+-- A game can start 128 deals. Ids are below 128, so the last signature of the 129th is rejected. Tiny
+-- Settlers is too short for that many, so this game has more rounds.
+def longSettlers : GameDef := { tinySettlers with name := "Long Settlers", rounds := 30 }
 
-#guard after (settlers2 sixtyFourDeals) fun s =>
-  s.dealsStarted == maxDealsPerGame && s.deals.isEmpty && s.round == 9
-#guard rejects (settlers2 (sixtyFourDeals ++ [.propose 0 (.deal (emptyDeal 1)), .sign 0 64])) (.sign 1 64)
+def allTheDeals : List Event :=
+  afterSetupForced ++ (List.range 16).flatMap eightDealsARound
+
+#guard after (play longSettlers 2 42 allTheDeals) fun s =>
+  s.dealsStarted == maxDealsPerGame && s.deals.isEmpty && s.round == 17
+#guard rejects (play longSettlers 2 42 (allTheDeals ++ [.propose 0 (.deal (emptyDeal 1)), .sign 0 128])) (.sign 1 128)
 
 /-! ### The order of a round's end -/
 

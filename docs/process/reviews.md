@@ -4,6 +4,17 @@ Charter's promises were written before its engine, and then attacked by reviewer
 
 All ten commandments and the five supporting promises are now proved, and `make audit` checks those proofs. A review asks a different question: does the statement say enough? A proof only covers what its statement says.
 
+## The rule language on one card
+
+| | |
+|---|---|
+| WHEN | harvest, build, round end, roll, now |
+| WHO | the actor, each seat, the treasury, the bank. Never one named seat |
+| READ | holdings, points, pieces, roll, round, totals, declarations |
+| TEST | compare, and, or, not |
+| DO | move tokens or pieces |
+| CHANGE | cost, points, bank rate, new piece, repeal, what a resource is worth, end the game |
+
 ## Building the engine against the first draft
 
 The first engine and its tests found problems in the draft spec.
@@ -284,6 +295,12 @@ Statements changed. `AskedForByLaw` has a third case, a law's `now` clause at th
 A law can end the game the moment it passes. It uses the same `endGame` path as a seat reaching the target, so deals refund, and most points wins with ties settled as before. `the_winner_earned_it` gains one case, `MajorityEndedTheGame`, and it keeps the statement that the winner has the most points. Commandment IX still holds: the game has ended, and no event is accepted after that. `PhaseChangesOnlyByTurnOrWin` gains the same case.
 
 The law stays in the laws in force, so the ended state shows what ended it. A founding law cannot do this, as there would be no game. `a_majority_can_end_the_game` plays this, and `an_unearned_end_is_rejected` rejects an end with no reason.
+
+## Small things
+
+`maxDealsPerGame` went from 64 to 128, in step with games that can run twice as long.
+
+`make smoke` could fail by chance. A test needed certain cards in hand, and it ended turns with no building until a seat had them, so a table's rounds could run out first. A test that hits this now tries a fresh table, up to 8 times. Each table runs all of that test's checks, and a check that fails still stops the run.
 
 ## How the checks work
 

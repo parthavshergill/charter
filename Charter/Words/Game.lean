@@ -59,7 +59,7 @@ def maxOpenPerSeat : Nat := 2
 /-- The most deals that can run at once. -/
 def maxActiveDeals : Nat := 8
 /-- Deals get an id only when they start. Ids are below this number. -/
-def maxDealsPerGame : Nat := 64
+def maxDealsPerGame : Nat := 128
 
 /-! ## A game definition -/
 

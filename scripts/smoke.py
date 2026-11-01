@@ -444,12 +444,31 @@ REFUSED_LAWS = [
 ]
 
 
+class TableRanOut(Exception):
+    """The rounds ran out before the table reached the state a test needs. The dice decide that."""
+
+
+def on_fresh_tables(test):
+    """Run a test that needs certain cards in hand. If a table's rounds run out first, try a new table. A test
+    still fails if any of its checks fail, and also if no table reaches the state it needs."""
+    def run(srv):
+        for _ in range(8):
+            try:
+                return test(srv)
+            except TableRanOut:
+                continue
+        raise SystemExit(f"FAILED: {test.__name__}: no table reached the state this test needs")
+    return run
+
+
 def end_turn_until(srv, code, tokens, ok):
     """Play turns with no building until `ok` holds for the view, and return that view."""
     for _ in range(400):
         v = srv.get(f"/api/games/{code}/view?token={tokens[0]}")
         if ok(v):
             return v
+        if v["phase"] == "ended":
+            raise TableRanOut()
         seat = v["turn"]
         vs = srv.get(f"/api/games/{code}/view?token={tokens[seat]}")
         place = [m for m in vs["legalMoves"] if m["move"]["t"] == "place"]
@@ -464,6 +483,7 @@ def held(v, seat):
     return [k for k, n in v["seats"][seat]["hand"].items() if n > 0]
 
 
+@on_fresh_tables
 def a_roll_law_fires(srv):
     """Two people pass a law that pays the bank's grain on every roll, and it pays on the next one, to
     the seat whose turn that roll starts. The chronicle says so."""
@@ -495,6 +515,7 @@ def a_roll_law_fires(srv):
     check(any(l["major"] and l["text"].startswith("By law, on") for l in after["chronicle"][lines:]), "that line is one the screen tells")
 
 
+@on_fresh_tables
 def refusals_and_embargo(srv):
     """Three people at a table. The propose route refuses bad laws. Then one seat signs a promise not to
     trade with a seat that does not sign. Those two cannot trade, whichever offers. The seat that did
