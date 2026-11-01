@@ -13,5 +13,8 @@ for RUN in ws-v2-champ v2-mix v2-fix; do
   done
 done
 python3 "$HERE/collect.py" "$DIR"/*/e* > "$HERE/data/eval.csv"
-grep -H "Can it play" "$DIR"/*/e*/report.md | sed 's/^/  /' > "$HERE/data/can_play.txt" || true
+# run, steps, then eval's "can it play" sentence
+for R in "$DIR"/*/e*/report.md; do
+  E=$(dirname "$R"); echo "$(basename "$(dirname "$E")") $(basename "$E" | sed 's/^e0*//;s/^$/0/') $(grep -o 'PASS: [^.]*\|FAIL: [^.]*' "$R")"
+done > "$HERE/data/can_play.txt"
 wc -l "$HERE/data/eval.csv"

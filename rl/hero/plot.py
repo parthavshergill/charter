@@ -32,8 +32,8 @@ THEMES = {
     "dark": {"bg": "#1a1a19", "ink": "#f0efec", "ink2": "#c3c2b7", "muted": "#8f8e86", "grid": "#33332f",
              "random": "#199e70", "hand": "#3987e5", "champion-closed": "#d95926", "sonnet": "#9085e9"},
 }
-LABEL = {"random": "vs 3 random players", "hand": "vs 3 of our rule-based bots",
-         "champion-closed": "vs 3 evolved champions*"}
+LABEL = {"random": "vs 3 random players", "hand": "vs 3 rule-based bots",
+         "champion-closed": "vs 3 evolved rivals*"}
 
 
 def wilson(w, n, z=1.96):
@@ -77,12 +77,16 @@ def load_sonnet():
             for r in csv.DictReader(open(path)) if int(r["games"]) > 0]
 
 
-def can_play_line():
+def can_play_line(run, steps):
+    """Eval's can-it-play result for one checkpoint: (PASS or FAIL, games, ended, refused), or None."""
     path = os.path.join(HERE, "data", "can_play.txt")
     if not os.path.exists(path):
         return None
-    m = re.findall(r"(PASS|FAIL): (\d+) games, (\d+) ended, (\d+) refused", open(path).read())
-    return m[-1] if m else None
+    for line in open(path):
+        m = re.match(r"(\S+) (\d+) (PASS|FAIL): (\d+) games, (\d+) ended, (\d+) refused", line)
+        if m and m.group(1) == run and int(m.group(2)) == steps:
+            return m.group(3, 4, 5, 6)
+    return None
 
 
 def draw(theme_name, rows, sonnet, out_paths):
@@ -91,7 +95,7 @@ def draw(theme_name, rows, sonnet, out_paths):
                          "axes.labelcolor": t["ink2"], "xtick.color": t["ink2"], "ytick.color": t["ink2"],
                          "axes.edgecolor": t["grid"], "svg.fonttype": "none"})
     fig = plt.figure(figsize=(16, 9), facecolor=t["bg"])
-    gs = fig.add_gridspec(1, 2, width_ratios=[2.15, 1], left=0.065, right=0.975, top=0.80, bottom=0.24, wspace=0.22)
+    gs = fig.add_gridspec(1, 2, width_ratios=[2.15, 1], left=0.065, right=0.975, top=0.80, bottom=0.24, wspace=0.33)
     ax = fig.add_subplot(gs[0])
     bx = fig.add_subplot(gs[1])
     for a in (ax, bx):
@@ -108,14 +112,18 @@ def draw(theme_name, rows, sonnet, out_paths):
     ax.axhline(25, color=t["ink2"], lw=1.5, ls=(0, (4, 3)), zorder=1)
     ax.text(0.5, 26.3, "equal player: 25%", color=t["ink2"], fontsize=14, ha="left", va="bottom")
 
-    # from-scratch PPO, same network
-    for o in ("random", "hand"):
-        s = series(rows, SCRATCH_RUN, o, TRAIN)
+    # from-scratch PPO, same network, a separate run: grey dotted lines
+    scratch = {o: series(rows, SCRATCH_RUN, o, TRAIN) for o in ("random", "hand")}
+    for o, s in scratch.items():
         if s:
-            ax.plot([p[0] / M for p in s], [100 * p[1] for p in s], color=t[o], lw=1.6, ls=(0, (1.5, 2.5)),
-                    alpha=0.9, zorder=2)
-            x, y = s[-1][0] / M, 100 * s[-1][1]
-            ax.text(x + 0.8, y, "same, PPO from scratch", color=t["ink2"], fontsize=12, va="center")
+            ax.plot([p[0] / M for p in s], [100 * p[1] for p in s], color=t["muted"], lw=2, ls=(0, (1, 2.2)),
+                    zorder=2, dash_capstyle="round")
+    if scratch["random"] and scratch["hand"]:
+        r, h = scratch["random"][-1], scratch["hand"][-1]
+        ax.annotate(f"dotted: the same network trained with PPO from scratch\n(a separate run): "
+                    f"{100 * r[1]:.0f}% vs random, {100 * h[1]:.0f}% vs rule-based bots",
+                    xy=(r[0] / M * 0.62, 100 * scratch["random"][-2][1] + 0.5), xytext=(14, 55), color=t["ink2"],
+                    fontsize=12.5, arrowprops=dict(arrowstyle="-", color=t["muted"], lw=1))
 
     # the main run
     ends = []
@@ -154,9 +162,9 @@ def draw(theme_name, rows, sonnet, out_paths):
                     f"{name}\n({n} games, wide bars)", color=t["sonnet"], fontsize=12, va="center")
 
     ax.annotate("start: imitation of\nour rule-based bot", xy=(0, 100 * main["hand"][0][1]) if main["hand"] else (0, 10),
-                xytext=(3.0, 48), color=t["ink2"], fontsize=12,
+                xytext=(1.5, 36), color=t["ink2"], fontsize=12,
                 arrowprops=dict(arrowstyle="-", color=t["muted"], lw=1))
-    ax.set_xlim(-1.5, last_x + 27)
+    ax.set_xlim(-1.5, last_x * 1.42)
     ax.set_ylim(0, 102)
     ax.set_yticks([0, 25, 50, 75, 100])
     ax.set_yticklabels(["0%", "25%", "50%", "75%", "100%"])
@@ -194,7 +202,7 @@ def draw(theme_name, rows, sonnet, out_paths):
     bx.set_xticklabels(["0", "25%", "50", "100"])
     bx.set_xlabel("win rate vs 3 rule-based bots")
     bx.set_title("Worlds it never trained on", loc="left", fontsize=15, color=t["ink2"], pad=10)
-    cp = can_play_line()
+    cp = can_play_line(MAIN_RUN, best)
     if cp:
         status, games, ended, refused = cp
         bx.text(-0.02, -0.17, f"Can it play any world? {games} made-up worlds,\n"
@@ -208,7 +216,7 @@ def draw(theme_name, rows, sonnet, out_paths):
                  "against our rule-based bot", fontsize=26, fontweight="bold", color=t["ink"])
     fig.text(0.065, 0.875, "Warm-started from our rule-based bot, then trained with PPO against itself and an evolved "
              "rival. 95% intervals; 800 games per point.", fontsize=15, color=t["ink2"])
-    foot = ("* Evolved champion: made by evolutionary program synthesis [read: Claude keeps rewriting the bot and we "
+    foot = ("* Evolved rival: our best bot from evolutionary program synthesis [read: Claude keeps rewriting the bot and we "
             "keep whatever wins]; shown with trading off, since the bot can't trade.\n"
             "The bot never proposes laws, talks or trades with players; it votes by the rule-based bot's rule. "
             "Wins on 10-round worlds come at the round limit and don't count as strength.")
