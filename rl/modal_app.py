@@ -172,6 +172,7 @@ def train(run: str, train_args: str = "", seconds: int = 600, move_rows: bool = 
     t0 = time.time()
     sh("ln -sf /usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1 /usr/lib/x86_64-linux-gnu/libnvidia-ml.so; "
        "nvidia-smi --query-gpu=name,driver_version --format=csv,noheader")
+    os.environ["CHARTER_ENTITY_DIM"] = str((json.loads(meta_extra) if meta_extra else {}).get("entity_dim", 32))
     code, text = build_puffer(move_rows, patch=patch, encoder=encoder)
     if code != 0:
         return {"build": code, "tail": text[-2000:]}
