@@ -45,3 +45,26 @@ root = "Server.Measure"
 [[lean_exe]]
 name = "charter-contact"
 root = "Server.ContactSheet"
+
+[[lean_lib]]
+name = "Evolved"
+
+[[lean_exe]]
+name = "charter-arena"
+root = "Server.Arena"
+
+# The training environment. It is not a default target, and the server does not import it. See rl/README.md.
+[[lean_lib]]
+name = "CharterRL"
+srcDir = "rl/lean"
+
+[[lean_exe]]
+name = "charter-rl-check"
+srcDir = "rl/lean"
+root = "CharterRL.CheckMain"
+
+[[lean_exe]]
+name = "charter-rl-shared"
+srcDir = "rl/lean"
+root = "CharterRL.Capi"
+moreLinkArgs = ["-shared", "rl/build/capi.o"]
