@@ -49,16 +49,20 @@ def founder : UInt32 := 140
 def founderEyes : UInt32 := 141
 def wall : UInt32 := 142
 def ground : UInt32 := 143
-def river0 : UInt32 := 144
-def fall0 : UInt32 := 145
-def river1 : UInt32 := 146
-def fall1 : UInt32 := 147
-def cutFace : UInt32 := 148
-def magma : UInt32 := 149
-def niche : UInt32 := 150
-def riftRim : UInt32 := 151
-def riftCore : UInt32 := 152
-def shard : UInt32 := 153
+def farLeft : UInt32 := 144
+def farRight : UInt32 := 145
+def river0 : UInt32 := 146
+def fall0 : UInt32 := 147
+def river1 : UInt32 := 148
+def fall1 : UInt32 := 149
+def cutFace : UInt32 := 150
+def cutLeft : UInt32 := 151
+def cutRight : UInt32 := 152
+def magma : UInt32 := 153
+def niche : UInt32 := 154
+def riftRim : UInt32 := 155
+def riftCore : UInt32 := 156
+def shard : UInt32 := 157
 
 /-- Every mesh file: its id, its hash, its colour, how it moves and what stands in for it. -/
 def defs : List Cmd :=
@@ -106,20 +110,24 @@ def defs : List Cmd :=
   , .defineMeshFile 141 "80fc8117308b68abe6307c4de5bc300130600bddf922bc9a03e238462ecaeb9e" 0xFFD27A { pulse := 0, sway := 0, glow := 0.9 } (.sphere 0.001)
   , .defineMeshFile 142 "eefe04d74200dfcb582409e4403121dc2643f5e615c3e16814e5dcb547ae6df7" 0x312A2D { pulse := 0, sway := 0, glow := 0 } (.sphere 0.001)
   , .defineMeshFile 143 "d3a301cbe341d576cd11b846169349b23dc34270e653ca3d1093205ca915f3b3" 0x282023 { pulse := 0, sway := 0, glow := 0 } (.sphere 0.001)
-  , .defineMeshFile 144 "0166c5e762bf3c1923010074d0be4ff323b08ce3bfd2b285c923b4caa1112533" 0xFF8236 { pulse := 0, sway := 0, glow := 0.55 } (.sphere 0.001)
-  , .defineMeshFile 145 "d53e36ff7f18c9a22af757b7568cedb96d69b896f995402a50751453a1a96075" 0xFF8236 { pulse := 0, sway := 0, glow := 0.55 } (.sphere 0.001)
-  , .defineMeshFile 146 "13ead30efa3fa5c8e0a2c735e7746c7b961241be9136e0a9a019c2a32f7a2dc0" 0xFF8236 { pulse := 0, sway := 0, glow := 0.55 } (.sphere 0.001)
-  , .defineMeshFile 147 "95af095faae83ad334a76421a5b71279010ae67932091820c95de836cd9d7f64" 0xFF8236 { pulse := 0, sway := 0, glow := 0.55 } (.sphere 0.001)
-  , .defineMeshFile 148 "c055d3da3faf3475a1243abafa623cf315b453bd35e39de4f23825ffd3e02148" 0x492C23 { pulse := 0, sway := 0, glow := 0 } (.sphere 0.001)
-  , .defineMeshFile 149 "9c083014ba2946632b090018dceb526c304b83b4046d253634a71d7f09fbcba1" 0xFF621B { pulse := 0, sway := 0, glow := 0.4 } (.sphere 0.001)
-  , .defineMeshFile 150 "9f9f4cf9902358b6c5702df258b57fc2ee2d2380e064fa993ba38afc42f39ae8" 0xA99578 { pulse := 0, sway := 0, glow := 0 } (.sphere 0.001)
-  , .defineMeshFile 151 "aa623cca4faee78e967b29fa82b041b352dbef611771b5b35b232b6d64ce1deb" 0x33201F { pulse := 0, sway := 0, glow := 0 } (.cylinder 0.7 0.2)
-  , .defineMeshFile 152 "17ef2b37f0028811af30b14be26f303a92e11fcfff8e14819ccbec11091726b7" 0xFF8135 { pulse := 0, sway := 0, glow := 0.75 } (.cylinder 0.4 0.1)
-  , .defineMeshFile 153 "3e8f16a1bbe0094afcb8f8c703dd81ef96b3db4c34b68ab8f6be704c93b2645f" 0xFF8136 { pulse := 0.05, sway := 0, glow := 0.55 } (.cone 0.03 0.25) ]
+  , .defineMeshFile 144 "1c0019e3d4cda2c3926acbe1d53acba9cfa80639d9d41d838d4b5fac6d43a43b" 0x2F2A2E { pulse := 0, sway := 0, glow := 0 } (.sphere 0.001)
+  , .defineMeshFile 145 "f7b79fb5da00999b1afb0a25821199ba8f5bb8eac36c9f2be510389e88b47784" 0x2E292E { pulse := 0, sway := 0, glow := 0 } (.sphere 0.001)
+  , .defineMeshFile 146 "0166c5e762bf3c1923010074d0be4ff323b08ce3bfd2b285c923b4caa1112533" 0xFF8236 { pulse := 0, sway := 0, glow := 0.55 } (.sphere 0.001)
+  , .defineMeshFile 147 "d53e36ff7f18c9a22af757b7568cedb96d69b896f995402a50751453a1a96075" 0xFF8236 { pulse := 0, sway := 0, glow := 0.55 } (.sphere 0.001)
+  , .defineMeshFile 148 "13ead30efa3fa5c8e0a2c735e7746c7b961241be9136e0a9a019c2a32f7a2dc0" 0xFF8236 { pulse := 0, sway := 0, glow := 0.55 } (.sphere 0.001)
+  , .defineMeshFile 149 "95af095faae83ad334a76421a5b71279010ae67932091820c95de836cd9d7f64" 0xFF8236 { pulse := 0, sway := 0, glow := 0.55 } (.sphere 0.001)
+  , .defineMeshFile 150 "c055d3da3faf3475a1243abafa623cf315b453bd35e39de4f23825ffd3e02148" 0x492C23 { pulse := 0, sway := 0, glow := 0 } (.sphere 0.001)
+  , .defineMeshFile 151 "b4f11e5aaba2fa66d41687c4d6ab92f7ae9dd6a918338c938d6523d525421993" 0x4C3025 { pulse := 0, sway := 0, glow := 0 } (.sphere 0.001)
+  , .defineMeshFile 152 "6b41924de2ea96621ecaf814379b3140baba67652b4d72c8964c5e6f59363d5e" 0x4B2F25 { pulse := 0, sway := 0, glow := 0 } (.sphere 0.001)
+  , .defineMeshFile 153 "6cd0c69faa2ba6c9c6ef54af61a8d4659210f022e52e510c876daa12a941941e" 0xFF631B { pulse := 0, sway := 0, glow := 0.4 } (.sphere 0.001)
+  , .defineMeshFile 154 "9f9f4cf9902358b6c5702df258b57fc2ee2d2380e064fa993ba38afc42f39ae8" 0xA99578 { pulse := 0, sway := 0, glow := 0 } (.sphere 0.001)
+  , .defineMeshFile 155 "aa623cca4faee78e967b29fa82b041b352dbef611771b5b35b232b6d64ce1deb" 0x33201F { pulse := 0, sway := 0, glow := 0 } (.cylinder 0.7 0.2)
+  , .defineMeshFile 156 "17ef2b37f0028811af30b14be26f303a92e11fcfff8e14819ccbec11091726b7" 0xFF8135 { pulse := 0, sway := 0, glow := 0.75 } (.cylinder 0.4 0.1)
+  , .defineMeshFile 157 "3e8f16a1bbe0094afcb8f8c703dd81ef96b3db4c34b68ab8f6be704c93b2645f" 0xFF8136 { pulse := 0.05, sway := 0, glow := 0.55 } (.cone 0.03 0.25) ]
 
 /-- How many triangles each mesh has, by id. -/
 def triangles : List (UInt32 × Nat) :=
-  [ (100, 464), (101, 312), (102, 156), (103, 680), (104, 440), (105, 220), (106, 204), (107, 126), (108, 432), (109, 416), (110, 304), (111, 960), (112, 168), (113, 184), (114, 600), (115, 232), (116, 1356), (117, 1338), (118, 1334), (119, 1350), (120, 1048), (121, 1340), (122, 1600), (123, 164), (124, 222), (125, 372), (126, 242), (127, 242), (128, 238), (129, 332), (130, 260), (131, 680), (132, 632), (133, 724), (134, 956), (135, 780), (136, 860), (137, 588), (138, 664), (139, 580), (140, 3552), (141, 392), (142, 11136), (143, 8600), (144, 440), (145, 104), (146, 440), (147, 104), (148, 11880), (149, 1440), (150, 980), (151, 1970), (152, 1424), (153, 132) ]
+  [ (100, 464), (101, 312), (102, 156), (103, 680), (104, 440), (105, 220), (106, 204), (107, 126), (108, 432), (109, 416), (110, 304), (111, 960), (112, 168), (113, 184), (114, 600), (115, 232), (116, 1356), (117, 1338), (118, 1334), (119, 1350), (120, 1048), (121, 1340), (122, 1600), (123, 164), (124, 222), (125, 372), (126, 242), (127, 242), (128, 238), (129, 332), (130, 260), (131, 680), (132, 632), (133, 724), (134, 956), (135, 780), (136, 860), (137, 588), (138, 664), (139, 580), (140, 3552), (141, 392), (142, 11136), (143, 8600), (144, 1360), (145, 1360), (146, 440), (147, 104), (148, 440), (149, 104), (150, 11880), (151, 960), (152, 960), (153, 1680), (154, 980), (155, 1970), (156, 1424), (157, 132) ]
 
 /-- Where the lit halls stand on the back wall: x, y, z and size. -/
 def niches : List (Float × Float × Float × Float) :=

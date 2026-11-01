@@ -250,7 +250,7 @@ def onTable (a b : Float) : Float × Float := (0.7071 * (a + b), 0.7071 * (a - b
 over the edge, lit halls in the back wall, and braziers around the map. -/
 def surround : List Cmd :=
   let still : List Part :=
-    [ m wall 0 0 0, m ground 0 0 0, m cutFace 0 0 0, m magma 0 0 0, m river0 0 0 0, m river1 0 0 0, m fall0 0 0 0, m fall1 0 0 0 ]
+    [ m wall 0 0 0, m ground 0 0 0, m farLeft 0 0 0, m farRight 0 0 0, m cutFace 0 0 0, m cutLeft 0 0 0, m cutRight 0 0 0, m magma 0 0 0, m river0 0 0 0, m river1 0 0 0, m fall0 0 0 0, m fall1 0 0 0 ]
   let halls := niches.map fun (x, y, z, k) => m niche x y z 0xFFFFFF k
   let fires := braziers.flatMap fun (x, z) =>
     [m brazierBody x 0.12 z 0xFFFFFF 1.3, m brazierFire x 0.12 z 0xFFFFFF 1.3]

@@ -437,9 +437,9 @@ BRAZIERS = [(-4.0, 0.0), (-2.3, 2.6), (-2.2, -3.2), (0.2, -5.0), (0.7, 4.7), (4.
 def warmth(a, b):
     return max(sstep(1.25, .1, sqrt((a - p) ** 2 + (b - q) ** 2)) for p, q in BRAZIERS)
 
-def sheet(name, nu, nv, a0, a1):
+def sheet(name, nu, nv, a0, a1, b0=-14.5, b1=14.5):
     def fn(u, v):
-        b = -14.5 + 29 * u
+        b = b0 + (b1 - b0) * u
         a = a0 + (min(a1, front(b)) - a0) * v
         h, rise = ground_height(a, b)
         d = river_dist(a, b)
@@ -453,6 +453,9 @@ def sheet(name, nu, nv, a0, a1):
 def ground():
     sheet("wall", 96, 58, -9.5, -2.2)
     sheet("ground", 86, 50, -2.3, 9.)
+    # A wide window sees past the sides, so the mountain goes on there, in less detail.
+    sheet("far_left", 20, 34, -9.5, 9., -34., -14.3)
+    sheet("far_right", 20, 34, -9.5, 9., 14.3, 34.)
 
 def rivers():
     for k, pts in enumerate(RIVERS):
@@ -486,9 +489,9 @@ def slope(v): return .11 * (1 - v) ** 1.5 + .004
 
 def cut_face():
     """The mountain cut open: bands of rock, veins of ore, and the magma's light rising from below. Here
-    `depth` runs from 0 at the map's edge to 1 where the magma starts."""
-    def fn(u, v):
-        b = -14.5 + 29 * u
+    `v` runs from 0 at the map's edge to 1 where the magma starts."""
+    def face(u, v, b0=-14.5, b1=14.5):
+        b = b0 + (b1 - b0) * u
         layer = v + .035 * sin(b * .55 + 1.) + .018 * sin(b * 1.7) + .012 * wave(b, v * 8, 0, 3.1, 2.)
         bands = [(.1, 0x3A3644), (.2, 0x211E28), (.3, 0x423B40), (.4, 0x191620), (.52, 0x332A2E), (.64, 0x1A1419), (.76, 0x2A1E1C), (.88, 0x180F10), (9., 0x180F10)]
         c = C(bands[-1][1])
@@ -507,14 +510,16 @@ def cut_face():
         x, z = world(a, b)
         y = slope(v) + .012 * wave(b, v * 9, 0, 6., 3.) * (1 - v)
         return x, max(y, .003), z, c
-    grid("cut_face", 110, 54, fn, (0, 1, 0), stand=BARE)
+    grid("cut_face", 110, 54, face, (0, 1, 0), stand=BARE)
+    grid("cut_left", 20, 24, lambda u, v: face(u, v, -34., -14.3), (0, 1, 0), stand=BARE)
+    grid("cut_right", 20, 24, lambda u, v: face(u, v, 14.3, 34.), (0, 1, 0), stand=BARE)
     def pool(u, v):
-        b = -14.5 + 29 * u
+        b = -34 + 68 * u
         a = front(b) - .1 + BAND + 8 * v - .05
         x, z = world(a, b)
         hot = sstep(-.4, .5, wave(a, 0, b, 1.5, 1.)) * sstep(.45, .8, abs(wave(a, 0, b, 3.3, 4.)))
         return x, .006, z, mix(LAVA, FLAME, hot)
-    grid("magma", 60, 12, pool, (0, 1, 0), (0, 0, .4), BARE)
+    grid("magma", 70, 12, pool, (0, 1, 0), (0, 0, .4), BARE)
 
 # Halls cut into the mountain's back wall, all lit. They stand only where the wall faces the viewer and
 # nothing nearer hides them, spaced out, in a fixed order.
