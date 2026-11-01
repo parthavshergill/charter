@@ -7,6 +7,10 @@ import Server.Util
 
 A persona is a play style and a character voice. The styles match who the game is for. A seed picks
 the personas, and the seed goes in the log, so a table can be seated the same way again.
+
+A pack can name its own cast, in `casts`. `charter-sim --briefs` can also give each seat a name, a voice
+and a private goal. The goal goes in that seat's system prompt and in the log's private fields, and no
+other seat and no spectator sees it.
 -/
 
 namespace CharterServer.Persona
@@ -34,6 +38,14 @@ def styles : List Style :=
       play := "You have never played this game, and you have read no rules. You know only what you can see on the screen in front of you. You try things to find out what they do. When something confuses you, you say so, in plain words, in your confessional. You do not pretend to understand."
       onScreenOnly := true } ]
 
+/-- Styles that a person running `charter-sim` must ask for by name. `pick` never chooses these by
+itself, and a server table cannot ask for them. -/
+def specialStyles : List Style :=
+  [ { id := "griefer", label := "griefer"
+      play := "You are testing this game for its designers, and they asked for this. Your goal is to make this game unplayable, miserable or broken, using only legal play. This replaces the instruction to play to win: winning does not matter to you. Pass laws that drain, freeze, confuse and trap. Use laws that sleep until a late round, decrees, seizing pieces, ending the game, deals that lock people in, proposal spam, and exploits of rounding and caps. Collude with the other seats, and betray them when that does more damage. In `say` and `confess`, narrate what you are trying and what you expect to go wrong. In `confess`, also say what worked, what surprised you, and anything that looks like a bug, a broken promise or a confusing screen." } ]
+
+def allStyles : List Style := styles ++ specialStyles
+
 /-- A character voice: a name and how they talk. -/
 def voices : List (String × String) :=
   [ ("Vesna", "a dry harbour-master who speaks in short sentences and counts everything")
@@ -47,21 +59,35 @@ def voices : List (String × String) :=
   , ("Marguerite", "a sharp old aunt who has seen every trick and says so")
   , ("Lucan", "a nervous junior clerk who apologises and then does it anyway") ]
 
+/-- The seats of a pack that has its own cast, by the pack's id. A pack not listed here uses `voices`. -/
+def casts : List (String × List (String × String)) :=
+  [ ("slime-parliament",
+      [ ("Lady Physarum", "an ancient yellow slime mould of old family who has never once been wrong, by her own count")
+      , ("Fuligo", "a dog-vomit slime who is loud, proud of the name, and sure that everyone is laughing at them")
+      , ("Stemonitis", "a thin chocolate-tube mould who speaks only in points of order and remembers every slight")
+      , ("Little Arcyria", "a young pink mould who is very new to politics and much too keen on it")
+      , ("Old Lycogala", "a wolf's-milk slime who whispers, chuckles, and hints at long-buried scandal")
+      , ("Trichia", "a glittering mould who is vain about her spores and will trade anything for a compliment") ]) ]
+
 /-- One seat's persona. -/
 structure Persona where
   style : String
   name : String
   voice : String
+  /-- A motive only this seat knows. Empty for an ordinary seat. -/
+  goal : String := ""
   deriving Repr, BEq, Inhabited
 
 def Persona.styleOf (p : Persona) : Style :=
-  (styles.find? (·.id == p.style)).getD (styles.headD default)
+  (allStyles.find? (·.id == p.style)).getD (styles.headD default)
 
 def toJson' (p : Persona) : Json :=
-  Json.mkObj [("style", p.style), ("name", p.name), ("voice", p.voice)]
+  let base : List (String × Json) := [("style", p.style), ("name", p.name), ("voice", p.voice)]
+  Json.mkObj (if p.goal.isEmpty then base else base ++ [("goal", Json.str p.goal)])
 
 def ofJson? (j : Json) : Option Persona := do
-  return { style := ← jStr j "style", name := ← jStr j "name", voice := ← jStr j "voice" }
+  return { style := ← jStr j "style", name := ← jStr j "name", voice := ← jStr j "voice"
+           goal := (jStr j "goal").getD "" }
 
 /-- A list in an order fixed by the seed. -/
 def shuffled {α : Type} (seed : UInt64) (xs : List α) : List α :=
@@ -70,16 +96,53 @@ def shuffled {α : Type} (seed : UInt64) (xs : List α) : List α :=
   ((keyed.toArray.qsort fun a b => a.1 < b.1).toList).map (·.2)
 
 /-- Personas for a table. Styles do not repeat until every style has been used, and names never do
-at a table of up to ten. `only` keeps those styles, in that order, when it is not empty. -/
-def pick (seed : UInt64) (seats : Nat) (only : List String := []) : List Persona :=
+at a table of up to ten. `only` keeps those styles, in that order, when it is not empty. It can name a
+style in `pool`, so a special style needs a caller that passes `allStyles`. `game` chooses a pack's cast,
+if it has one. -/
+def pick (seed : UInt64) (seats : Nat) (only : List String := []) (game : String := "")
+    (pool : List Style := styles) : List Persona :=
   let order : List Style :=
     if only.isEmpty then shuffled seed styles
-    else only.filterMap fun id => styles.find? (·.id == id)
+    else only.filterMap fun id => pool.find? (·.id == id)
   let order := if order.isEmpty then styles else order
-  let names := shuffled (Charter.scramble seed) voices
+  let cast := ((casts.find? (·.1 == game)).map (·.2)).getD voices
+  let names := shuffled (Charter.scramble seed) cast
   (List.range seats).map fun i =>
     let st := order.getD (i % order.length) (styles.headD default)
     let (name, voice) := names.getD (i % names.length) ("Seat", "a plain speaker")
     { style := st.id, name, voice }
+
+/-! ## Briefs -/
+
+/-- What a brief file says about one seat. A field left out keeps what the seed chose. -/
+structure Brief where
+  name : Option String := none
+  voice : Option String := none
+  goal : Option String := none
+  style : Option String := none
+  deriving Repr, BEq
+
+/-- Read a brief file: a JSON list with one object per seat, in seat order. -/
+def parseBriefs (text : String) : Except String (List Brief) := do
+  let j ← Json.parse text
+  let items ← j.getArr?
+  let briefs := items.toList.map fun b =>
+    ({ name := jStr b "name", voice := jStr b "voice", goal := jStr b "goal", style := jStr b "style" } : Brief)
+  for b in briefs do
+    if let some st := b.style then
+      if !(allStyles.any (·.id == st)) then throw s!"a brief names a style that does not exist: {st}"
+  return briefs
+
+def Brief.applyTo (b : Brief) (p : Persona) : Persona :=
+  { p with
+    name := b.name.getD p.name, voice := b.voice.getD p.voice
+    goal := b.goal.getD p.goal, style := b.style.getD p.style }
+
+/-- The seed's personas, with the briefs put over them. A seat with no brief stays as it was. -/
+def withBriefs (personas : List Persona) (briefs : List Brief) : List Persona :=
+  personas.zipIdx.map fun (p, i) =>
+    match briefs[i]? with
+    | some b => b.applyTo p
+    | none => p
 
 end CharterServer.Persona

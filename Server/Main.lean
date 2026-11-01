@@ -86,7 +86,7 @@ def handleClaude (ctx : Ctx) (req : Req) (code : String) (body : Json) : Context
   let mk : Entry → Except String Json := fun e =>
     let used := e.game.room.occupants.map (·.name)
     let usedStyles := e.game.personas.toList.filterMap (·.map (·.style))
-    let choices := Persona.pick (UInt64.ofNat seed) 10 only
+    let choices := Persona.pick (UInt64.ofNat seed) 10 only e.game.spec.id
     let unused := choices.filter fun p => !used.contains p.name
     let fresh := unused.filter fun p => !usedStyles.contains p.style
     match (fresh ++ unused).head? with

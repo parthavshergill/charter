@@ -10,7 +10,9 @@
 # make spectate     opens a finished run in the browser, as a spectator.
 #
 # make sim GAMES=1 SEATS=4 [GAME=island|belt|not-catan] [SEED=n] [PERSONAS=trader,schemer,...] [KINDS=claude,bot]
-#          [MAX_MINUTES=360] [RESUME=results/<run>]
+#          [MAX_MINUTES=360] [RESUME=results/<run>] [STOP_ROUND=n] [BRIEFS=path.json] [OUT=results]
+# STOP_ROUND stops a game when that round has ended. BRIEFS gives each seat a name, a voice and a private
+# goal: see Persona.parseBriefs. PERSONAS=griefer asks for the griefer, which is never chosen otherwise.
 # It needs an API key for Claude seats: ANTHROPIC_API_KEY, or CHARTER_ENV_FILE naming a file with it.
 # Results go to results/<run>/, which git ignores.
 #
@@ -54,7 +56,8 @@ measure:
 
 sim: install
 	.lake/build/bin/charter-sim --games $(GAMES) --seats $(SEATS) --game $(GAME) --kinds $(KINDS) --max-minutes $(MAX_MINUTES) \
-	  $(if $(SEED),--seed $(SEED)) $(if $(PERSONAS),--personas $(PERSONAS)) $(if $(RESUME),--resume $(RESUME))
+	  $(if $(SEED),--seed $(SEED)) $(if $(PERSONAS),--personas $(PERSONAS)) $(if $(RESUME),--resume $(RESUME)) \
+	  $(if $(STOP_ROUND),--stop-round $(STOP_ROUND)) $(if $(BRIEFS),--briefs $(BRIEFS)) $(if $(OUT),--out $(OUT))
 
 spectate: install
 	@test -n "$(RESULTS)" || { echo "say which run: make spectate RESULTS=results/<run>"; exit 1; }
