@@ -165,25 +165,17 @@ def test(quick: bool = False):
 
 @app.function(gpu=GPU, cpu=8, memory=16384, timeout=4 * 3600, volumes={VOL: vol})
 def train(run: str, train_args: str = "", seconds: int = 600, move_rows: bool = False, patch: bool = True,
-          encoder: str = "flat", meta_extra: str = ""):
-    """Build the trainer and train for at most `seconds`. Writes /vol/<run>/: train.log, ckpt/, meta.json."""
+          encoder: str = "flat", meta_extra: str = "", resume: bool = False):
+    """Build the trainer and train for at most `seconds`. Writes /vol/<run>/: train.log, ckpt/, meta.json.
+
+    Every checkpoint gets its JSON meta within a minute of being written, so a run that dies can still be evaluated.
+    With `resume`, attempt k writes to ckpt/a<k>/ and its log to train.a<k>.log. It loads the newest checkpoint of the
+    last attempt as a warm start (patch 0002), and cuts `--train.total_timesteps` by the steps done so far. The
+    optimizer state and the learning-rate schedule start afresh, and the self-play pool restarts from that
+    checkpoint. A meta's `steps` counts steps over all attempts."""
     out = f"{VOL}/{run}"
     os.makedirs(out, exist_ok=True)
     t0 = time.time()
-    sh("ln -sf /usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1 /usr/lib/x86_64-linux-gnu/libnvidia-ml.so; "
-       "nvidia-smi --query-gpu=name,driver_version --format=csv,noheader")
-    code, text = build_puffer(move_rows, patch=patch, encoder=encoder)
-    if code != 0:
-        return {"build": code, "tail": text[-2000:]}
-    build_s = time.time() - t0
-    args = (f"train --headless --base.checkpoint_dir={out}/ckpt --base.log_dir={out}/logs "
-            + (" --env.move_rows=1" if move_rows else "") + f" {train_args}")
-    t1 = time.time()
-    code, _ = sh(f"cd {PUFFER} && timeout --kill-after=20 {seconds} ./puffer {args} 2>&1 | tr '\\r' '\\n' | "
-                 f"sed 's/\\x1b\\[[0-9;?]*[A-Za-z]//g' > {out}/train.log; echo exit ${{PIPESTATUS[0]}}")
-    train_s = time.time() - t1
-    _, tail = sh(f"grep -E 'bot_eval|ssert|Abort|rror|missing' {out}/train.log | head -20; tail -40 {out}/train.log")
-    ckpts = sorted(os.path.join(dp, f) for dp, _, fs in os.walk(f"{out}/ckpt") for f in fs if f.endswith(".bin"))
     hidden, layers = 128, 1
     for tok in train_args.split():
         if tok.startswith("--policy.hidden_size="):
@@ -191,12 +183,75 @@ def train(run: str, train_args: str = "", seconds: int = 600, move_rows: bool = 
         if tok.startswith("--policy.num_layers="):
             layers = int(tok.split("=")[1])
     obs = 7122 if move_rows else 4434
-    for c in ckpts[-1:] + ckpts[:1]:
+    base_steps, ckpt_dir, log = 0, f"{out}/ckpt", f"{out}/train.log"
+    if resume:
+        vol.reload()
+        attempts = json.load(open(f"{out}/attempts.json")) if os.path.exists(f"{out}/attempts.json") else []
+        if attempts:
+            last = attempts[-1]
+            done = sorted((os.path.join(dp, f) for dp, _, fs in os.walk(last["dir"]) for f in fs if f.endswith(".bin")),
+                          key=lambda c: int(os.path.basename(c)[:-4]))
+            if done:
+                base_steps = last["base_steps"] + int(os.path.basename(done[-1])[:-4])
+                train_args += f" --base.warm_start_path={done[-1]}"
+                print(f"[resume] from {done[-1]}: {base_steps} steps so far")
+            else:
+                base_steps = last["base_steps"]
+                if last.get("warm"):
+                    train_args += f" --base.warm_start_path={last['warm']}"
+        toks = train_args.split()
+        for i, tok in enumerate(toks):
+            if tok.startswith("--train.total_timesteps=") and base_steps:
+                left = int(tok.split("=")[1].replace("_", "")) - base_steps
+                if left < 2_000_000:
+                    return {"resume": "nothing left to train", "steps": base_steps}
+                toks[i] = f"--train.total_timesteps={left}"
+        train_args = " ".join(toks)
+        k = len(attempts)
+        ckpt_dir, log = f"{out}/ckpt/a{k}", f"{out}/train.a{k}.log"
+        warm = [t.split("=", 1)[1] for t in toks if t.startswith("--base.warm_start_path=")]
+        attempts.append({"dir": ckpt_dir, "base_steps": base_steps, "warm": warm[-1] if warm else None,
+                         "args": train_args, "started": time.time()})
+        json.dump(attempts, open(f"{out}/attempts.json", "w"), indent=1)
+        vol.commit()
+
+    def meta_for(c):
         meta = {"name": f"{run}/{os.path.basename(c)}", "format": f"puffer-{encoder}", "encoder": encoder,
                 "obs_size": obs, "act_size": 696, "hidden": hidden, "layers": layers,
-                "settings": {"vote_mode": "bot", "move_rows": move_rows}}
+                "steps": base_steps + int(os.path.basename(c)[:-4]),
+                "settings": {"vote_mode": "bot", "move_rows": move_rows}, "train_args": train_args}
         meta.update(json.loads(meta_extra) if meta_extra else {})
-        json.dump(meta, open(c + ".json", "w"))
+        return meta
+
+    import threading
+    stop = threading.Event()
+
+    def write_metas():
+        while not stop.wait(60):
+            for dp, _, fs in os.walk(ckpt_dir):
+                for f in fs:
+                    c = os.path.join(dp, f)
+                    if f.endswith(".bin") and not os.path.exists(c + ".json"):
+                        json.dump(meta_for(c), open(c + ".json", "w"))
+    threading.Thread(target=write_metas, daemon=True).start()
+    sh("ln -sf /usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1 /usr/lib/x86_64-linux-gnu/libnvidia-ml.so; "
+       "nvidia-smi --query-gpu=name,driver_version --format=csv,noheader")
+    code, text = build_puffer(move_rows, patch=patch, encoder=encoder)
+    if code != 0:
+        return {"build": code, "tail": text[-2000:]}
+    build_s = time.time() - t0
+    args = (f"train --headless --base.checkpoint_dir={ckpt_dir} --base.log_dir={out}/logs "
+            + (" --env.move_rows=1" if move_rows else "") + f" {train_args}")
+    t1 = time.time()
+    code, _ = sh(f"cd {PUFFER} && timeout --kill-after=20 {seconds} ./puffer {args} 2>&1 | tr '\\r' '\\n' | "
+                 f"sed 's/\\x1b\\[[0-9;?]*[A-Za-z]//g' > {log}; echo exit ${{PIPESTATUS[0]}}")
+    train_s = time.time() - t1
+    stop.set()
+    _, tail = sh(f"grep -E 'bot_eval|ssert|Abort|rror|missing' {log} | head -20; tail -40 {log}")
+    ckpts = sorted((os.path.join(dp, f) for dp, _, fs in os.walk(ckpt_dir) for f in fs if f.endswith(".bin")),
+                   key=lambda c: int(os.path.basename(c)[:-4]))
+    for c in ckpts:
+        json.dump(meta_for(c), open(c + ".json", "w"))
     vol.commit()
     return {"build_seconds": round(build_s), "train_seconds": round(train_s), "checkpoints": len(ckpts),
             "first": ckpts[0] if ckpts else None, "last": ckpts[-1] if ckpts else None, "tail": tail[-6000:]}
@@ -210,6 +265,15 @@ def evaluate(subjects: list, out: str, games: int = 200, quick: bool = False):
                     f"--jobs 8 --out {out} {'--quick' if quick else ''}")
     vol.commit()
     return {"exit": code, "report": open(f"{out}/report.md").read() if os.path.exists(f"{out}/report.md") else text[-4000:]}
+
+
+@app.function(cpu=2, memory=4096, timeout=1800, volumes={VOL: vol})
+def read_games(subject: str, out: str, args: str = ""):
+    """Play a few full games with `subject` and write what happened in each (rl/arch/attention/read_games.py)."""
+    vol.reload()
+    code, text = sh(f"cd {SRC}/.. && python3 rl/arch/attention/read_games.py {shlex.quote(subject)} --out {out} {args}")
+    vol.commit()
+    return text[-60000:]
 
 
 # ---- Money -------------------------------------------------------------------------------------------------
@@ -245,18 +309,20 @@ def guard(max_dollars, gpu, cpu, gib, want_seconds):
 @app.local_entrypoint()
 def main(action: str = "test", run: str = "smoke", minutes: float = 10, max_dollars: float = 1.0,
          train_args: str = "", games: int = 200, subjects: str = "", quick: bool = False, move_rows: bool = False,
-         no_patch: bool = False, encoder: str = "flat", meta_extra: str = ""):
+         no_patch: bool = False, encoder: str = "flat", meta_extra: str = "", cpus: int = 8, resume: bool = False):
     if action == "test":
         total = guard(max_dollars, None, 4, 8, 1500)
         print(json.dumps(test.with_options(timeout=total).remote(quick), indent=1))
     elif action == "train":
         # The whole job, build and start included, stops at `total`. Training gets all but 10 minutes of it.
-        total = guard(max_dollars, GPU, 8, 16, int(minutes * 60) + 600)
+        # `--cpus N` gives the job N CPUs; pass `--vec.num_threads=N` in the train args to use them.
+        mem = max(16, 2 * cpus)
+        total = guard(max_dollars, GPU, cpus, mem, int(minutes * 60) + 600)
         seconds = total - 600
         if seconds < 60:
             sys.exit("[money] too little money for a useful run")
-        r = train.with_options(timeout=total).remote(run, train_args, seconds, move_rows, not no_patch, encoder,
-                                                            meta_extra)
+        r = train.with_options(timeout=total, cpu=cpus, memory=mem * 1024).remote(
+            run, train_args, seconds, move_rows, not no_patch, encoder, meta_extra, resume)
         print(json.dumps(r, indent=1))
     elif action == "eval":
         total = guard(max_dollars, None, 8, 8, 3 * 3600)
@@ -265,5 +331,10 @@ def main(action: str = "test", run: str = "smoke", minutes: float = 10, max_doll
         r = evaluate_.remote([s if s in ("random", "hand") or s.startswith("/") else f"{VOL}/{s}" for s in subs],
                             f"{VOL}/{run}/eval", games, quick)
         print(r["report"])
+    elif action == "games":
+        # --subjects is one policy path on the volume; --train-args here are read_games.py's own arguments.
+        total = guard(max_dollars, None, 2, 4, 1800)
+        s = subjects if subjects in ("random", "hand") or subjects.startswith("/") else f"{VOL}/{subjects}"
+        print(read_games.with_options(timeout=total).remote(s, f"{VOL}/{run}/games", train_args))
     else:
         sys.exit(f"unknown action {action}")
