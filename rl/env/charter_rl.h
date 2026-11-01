@@ -31,6 +31,8 @@ int charter_over(void* game);      // 1 when the game is over
 int charter_refused(void* game);   // 1 when the last step was refused
 int charter_voting(void* game);    // 1 when the deciding seat is voting
 int charter_seats(void* game);
+int charter_min_seats(void* game);  // the fewest and most seats this game allows
+int charter_max_seats(void* game);
 // Each copies at most cap numbers and returns how many there are.
 int charter_obs(void* game, float* out, int cap);
 int charter_mask(void* game, uint8_t* out, int cap);
@@ -38,6 +40,11 @@ int charter_rewards(void* game, float* out, int cap);  // one per seat, maxSeats
 int charter_info(void* game, float* out, int cap);
 // What a named strategy (hand, fair, closed) would do now, as an action, or -1.
 int charter_suggest(void* game, const char* name);
+// The game so far as a server log (one JSON event per line), for a game made with "record": true. code is the table's
+// code and names the seats' names, "a,b,c,d". On an error the text starts with "error: ". Returns the full length.
+int charter_saved_log(void* game, const char* code, const char* names, char* out, int cap);
+// After each event of that log: [round, 1 if in setup, laws in force, points of each seat], one JSON list a line.
+int charter_saved_state(void* game, char* out, int cap);
 
 int charter_obs_size(void* game);
 int charter_act_size(void);

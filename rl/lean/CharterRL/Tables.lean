@@ -2,6 +2,7 @@ import Server.ArenaPlay
 import Server.LawLibrary
 import Server.Rules
 import Evolved.Pool
+import CharterRL.Champion
 import CharterRL.Layout
 
 /-!
@@ -117,6 +118,8 @@ structure Tables where
   linkFrom : Array (List (Nat × Nat))
   /-- The laws this game's environment can put to a vote. -/
   library : Array Law
+  /-- Each law of `library` as written, for saved games. -/
+  libraryText : Array String := #[]
   /-- Some law can read a declared number, so declaring can matter. -/
   declares : Bool
 
@@ -132,14 +135,14 @@ def declaresIn (G : GameDef) (library : Array Law) : Bool :=
   G.foundingLaws.any Law.readsDeclared || library.any Law.readsDeclared
 
 /-- The tables of a game, from its definition and layout. -/
-def Tables.make (id : String) (G : GameDef) (minSeats maxSeats : Nat) (library : Array Law)
+def Tables.make (id : String) (G : GameDef) (minSeats maxSeats : Nat) (library : Array (Law × String))
     (spotXY : Array (Float × Float)) : Tables :=
   let links := G.map.links.toArray
   let high := G.map.spotCount
   let linkFrom := links.foldl (fun (acc : Nat × Array (List (Nat × Nat))) l =>
       (acc.1 + 1, acc.2.modify l.1 (· ++ [(l.2, acc.1)]))) (0, Array.replicate high []) |>.2
-  { id, G, minSeats, maxSeats, board := Board.of G, spotXY, links, linkFrom, library
-    declares := declaresIn G library }
+  { id, G, minSeats, maxSeats, board := Board.of G, spotXY, links, linkFrom, library := library.map (·.1)
+    libraryText := library.map (·.2), declares := declaresIn G (library.map (·.1)) }
 
 /-- Spots' places on the board, from -1 to 1. -/
 def normalised (points : List (Float × Float)) : Array (Float × Float) :=
@@ -147,12 +150,12 @@ def normalised (points : List (Float × Float)) : Array (Float × Float) :=
   let top := if top == 0 then 1 else top
   points.toArray.map fun p => (p.1 / top, p.2 / top)
 
-/-- The laws of a game's list that read correctly. -/
-def libraryOf (spec : GameSpec) : Array Law :=
+/-- The laws of a game's list that read correctly, with their text. -/
+def libraryOf (spec : GameSpec) : Array (Law × String) :=
   let names := spec.G.resources.map (·.name)
   ((PreviewCheck.lawsFor spec).filterMap fun text =>
     match Rules.parseProposal text names with
-    | .ok (.law L) => some L
+    | .ok (.law L) => some (L, text)
     | _ => none).toArray
 
 def Tables.ofSpec (spec : GameSpec) : Tables :=
@@ -165,16 +168,14 @@ def allTables : Array Tables := gameSpecs.toArray.map Tables.ofSpec
 /-- The training games and the held-out games, in `rl/games.json`. -/
 def tablesOf? (id : String) : Option Tables := allTables.find? (·.id == id)
 
-/-- Why this game does not fit the layout, if it does not. -/
+/-- Why this game does not fit the layout, if it does not. The layout's limits are the engine's, so a game that
+passes `G.Valid` always fits; this says why a game that does not pass would fail here. -/
 def Tables.problems (T : Tables) : List String :=
   let G := T.G
-  let linkKinds := (G.pieces.filter fun d => match d.placement with | .link => true | _ => false).length
+  (if G.checks then [] else ["the game does not pass G.checks"]) ++
   (if G.resources.length ≤ maxRes then [] else [s!"{G.resources.length} resources, and the limit is {maxRes}"]) ++
-  (if linkKinds ≤ maxLinkKinds then [] else [s!"{linkKinds} kinds of link piece, and the limit is {maxLinkKinds}"]) ++
-  (if G.pieces.length - linkKinds ≤ maxSpotKinds then [] else [s!"{G.pieces.length - linkKinds} kinds of spot piece, and the limit is {maxSpotKinds}"]) ++
+  (if G.pieces.length ≤ maxKinds then [] else [s!"{G.pieces.length} kinds of piece, and the limit is {maxKinds}"]) ++
   (if G.map.spotCount ≤ maxSpots then [] else [s!"{G.map.spotCount} spots, and the limit is {maxSpots}"]) ++
-  (if G.map.links.length ≤ maxLinks then [] else [s!"{G.map.links.length} links, and the limit is {maxLinks}"]) ++
-  (if G.map.regions.length ≤ maxTiles then [] else [s!"{G.map.regions.length} tiles, and the limit is {maxTiles}"]) ++
   (if G.foundingLaws.length ≤ maxLaws then [] else [s!"{G.foundingLaws.length} founding laws, and the limit is {maxLaws}"])
 
 /-! ## Opponents -/
@@ -187,11 +188,19 @@ structure Opponent where
   deriving Inhabited
 
 /-- `fair` accepts an offer only if it helps its next build and counts what it pays. `closed` refuses every offer.
-Both are the hand bot's code, and the weights are those of the evolution runs. -/
+Both are the hand bot's code, and the weights are those of the evolution runs.
+
+`champion` is the best strategy of the earlier evolution run (`g10w44`, `rl/opponents/night2_champion.lean`), with its
+weights. It makes offers and accepts them. `champion-closed` is the same code making and accepting none. Both are for
+training and evaluation only: `CharterRL.Champion` is in the training library, which the server does not import. -/
 def opponents : List Opponent :=
   (Evolved.pool.map fun st => { name := st.name, strategy := st, weights := .default }) ++
   [ { name := "fair", strategy := hand, weights := { acceptGoods := 1, acceptNeed := 1, acceptMargin := 1 } }
-  , { name := "closed", strategy := hand, weights := { acceptMargin := 10 } } ]
+  , { name := "closed", strategy := hand, weights := { acceptMargin := 10 } }
+  , { name := "champion", strategy := Champion.strategy, weights := Champion.weights }
+  , { name := "champion-closed", strategy := Champion.strategy, weights := Champion.closedWeights }
+  -- The champion as written, slower. Only for the test that `champion` decides the same.
+  , { name := "champion-ref", strategy := ChampionRef.strategy, weights := ChampionRef.weights } ]
 
 /-- What plays a seat. `none` is the caller. `setup` plays until the setup turns are over, and `play` after. -/
 structure SeatPlan where
@@ -237,6 +246,8 @@ structure Settings where
   rewardStanding : Float := 0.25
   /-- A small reward for each point gained, as a share of the target. Off by default. -/
   shapingPoints : Float := 0.0
+  /-- Keep every event of the game, in the server's log format, for `Env.savedLog`. Off in training. -/
+  record : Bool := false
   deriving Inhabited
 
 /-! ## One game's rows -/
@@ -256,15 +267,13 @@ structure Episode where
 def Episode.resRow? (ep : Episode) (r : Res) : Option Nat := ep.rowRes.findIdx? (· == r)
 def Episode.kindRow? (ep : Episode) (k : PieceKind) : Option Nat := ep.rowKind.findIdx? (· == k)
 
-/-- Rows for pieces that do not have one yet: a link piece in the link rows, and any other in the spot rows. -/
+/-- Rows for pieces that do not have one yet: the first empty row. A game has at most `maxKinds` kinds, counting
+those laws add, so there is always one. -/
 def Episode.seat (ep : Episode) (pieces : List PieceDef) : Episode :=
   { ep with rowKind := pieces.foldl (fun rows d =>
       if rows.contains d.name then rows else
-      let isLink := match d.placement with | .link => true | _ => false
-      let start := if isLink then 0 else maxLinkKinds
-      let stop := if isLink then maxLinkKinds else maxKinds
-      match (List.range (stop - start)).find? (fun i => rows.getD (start + i) "x" == "") with
-      | some i => rows.setIfInBounds (start + i) d.name
+      match (List.range maxKinds).find? (fun i => rows.getD i "x" == "") with
+      | some i => rows.setIfInBounds i d.name
       | none => rows) ep.rowKind }
 
 /-- A number fixed by a seed and an index. It uses nothing of the game's dice. -/
@@ -281,23 +290,20 @@ def shuffled {α : Type} (xs : Array α) (seed : Nat) : Array α := Id.run do
     i := i - 1
   return a
 
-/-- The rows of a game: the resources in some order, and its pieces in some order within the link and spot rows. -/
+/-- The rows of a game: the resources in some order, and its pieces in some order. -/
 def Episode.make (G : GameDef) (order : SlotOrder) (seed : Nat) : Episode :=
   let names := (G.resources.map (·.name)).toArray
-  let isLink (d : PieceDef) : Bool := match d.placement with | .link => true | _ => false
-  let linkKinds := (G.pieces.filter isLink).toArray
-  let spotKinds := (G.pieces.filter (!isLink ·)).toArray
-  let (rowRes, linkKinds, spotKinds) := match order with
-    | .game => (names, linkKinds, spotKinds)
-    | .shuffled => (shuffled names (seed + 1), shuffled linkKinds (seed + 2), shuffled spotKinds (seed + 3))
+  let kinds := G.pieces.toArray
+  let (rowRes, kinds) := match order with
+    | .game => (names, kinds)
+    | .shuffled => (shuffled names (seed + 1), shuffled kinds (seed + 2))
   let empty : Array String := Array.replicate maxKinds ""
   let ep : Episode := { rowRes, rowKind := empty, spotRes := #[], tileRes := #[] }
   let rowRes' := fun (r : Res) => (rowRes.findIdx? (· == r)).getD 0
   let pay := paidRegions G
   let spotRes := (List.range G.map.spotCount).toArray.map fun v =>
     (pay.filter fun (t : Region) => t.spots.contains v).map fun (t : Region) => (rowRes' t.res, pips G t.number)
-  ({ ep with spotRes, tileRes := (G.map.regions.map fun (t : Region) => rowRes' t.res).toArray }).seat
-    (linkKinds.toList ++ spotKinds.toList)
+  ({ ep with spotRes, tileRes := (G.map.regions.map fun (t : Region) => rowRes' t.res).toArray }).seat kinds.toList
 
 /-! ## Maps -/
 

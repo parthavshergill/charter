@@ -67,14 +67,15 @@ image = (
     )
     .pip_install("numpy==2.2.6")
     .env({"PATH": f"{LEAN}/bin:/usr/local/cuda/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
-          "CUDA_HOME": "/usr/local/cuda", "CHARTER_RL_LIB": f"{REPO}/rl/build/libcharter_rl.so"})
+          "CUDA_HOME": "/usr/local/cuda", "CHARTER_RL_LIB": f"{REPO}/rl/build/libcharter_rl.so",
+          "CHARTER_RL_LOGS": f"{REPO}/.lake/build/bin/charter-rl-logs"})
 )
 for part in ["Charter", "Server", "Evolved", "packages", "forks", "rl/lean", "rl/env"]:
     image = image.add_local_dir(os.path.join(ROOT, part), f"{REPO}/{part}", copy=True, ignore=IGNORE)
 for part in ["Charter.lean", "lakefile.toml", "lake-manifest.json", "lean-toolchain"]:
     image = image.add_local_file(os.path.join(ROOT, part), f"{REPO}/{part}", copy=True)
 image = image.run_commands(
-    f"cd {REPO} && lake build CharterRL.Capi charter-rl-check 2>&1 | tail -3",
+    f"cd {REPO} && lake build CharterRL.Capi charter-rl-check charter-rl-logs 2>&1 | tail -3",
     f"cd {REPO} && rl/env/build.sh 2>&1 | tail -2",
 ).add_local_dir(HERE, SRC, ignore=IGNORE + ["lean/**"])
 
@@ -206,7 +207,8 @@ def _train(run, train_args="", seconds=600, move_rows=False, patch=True, encoder
             hidden = int(tok.split("=")[1])
         if tok.startswith("--policy.num_layers="):
             layers = int(tok.split("=")[1])
-    obs = 7122 if move_rows else 4434
+    layout = json.load(open(f"{SRC}/layout.json"))
+    obs = layout["full_size"] if move_rows else layout["base_size"]
     base_steps, ckpt_dir, log = 0, f"{out}/ckpt", f"{out}/train.log"
     if resume:
         if not built:   # train_many reloads once, before its runs open files
@@ -242,7 +244,7 @@ def _train(run, train_args="", seconds=600, move_rows=False, patch=True, encoder
 
     def meta_for(c):
         meta = {"name": f"{run}/{os.path.basename(c)}", "format": f"puffer-{encoder}", "encoder": encoder,
-                "obs_size": obs, "act_size": 696, "hidden": hidden, "layers": layers,
+                "layout": layout["version"], "obs_size": obs, "act_size": layout["act_size"] + 1, "hidden": hidden, "layers": layers,
                 "steps": base_steps + int(os.path.basename(c)[:-4]),
                 "settings": {"vote_mode": "bot", "move_rows": move_rows}, "train_args": train_args}
         meta.update(json.loads(meta_extra) if meta_extra else {})
@@ -292,22 +294,15 @@ def _train(run, train_args="", seconds=600, move_rows=False, patch=True, encoder
 
 
 @app.function(cpu=8, memory=8192, timeout=3 * 3600, volumes={VOL: vol})
-def evaluate(subjects: list, out: str, games: int = 200, quick: bool = False):
-    """Run rl/eval on these subjects (`random`, `hand`, or policy paths on the volume) and save the report."""
+def evaluate(subjects: list, out: str, games: int = 200, quick: bool = False, opponents: str = "", logs: int = 2):
+    """Run rl/eval on these subjects (`random`, `hand`, `champion`, or policy paths on the volume) and save the report,
+    with `logs` saved games per table in `out/games/`."""
     vol.reload()
+    opp = f"--opponents {shlex.quote(opponents)}" if opponents else ""
     code, text = sh(f"cd {SRC}/.. && python3 rl/eval/eval.py {' '.join(map(shlex.quote, subjects))} --games {games} "
-                    f"--jobs 8 --out {out} {'--quick' if quick else ''}")
+                    f"--jobs 8 --out {out} {'--quick' if quick else ''} {opp} --logs {logs}")
     vol.commit()
     return {"exit": code, "report": open(f"{out}/report.md").read() if os.path.exists(f"{out}/report.md") else text[-4000:]}
-
-
-@app.function(cpu=2, memory=4096, timeout=1800, volumes={VOL: vol})
-def read_games(subject: str, out: str, args: str = ""):
-    """Play a few full games with `subject` and write what happened in each (rl/arch/attention/read_games.py)."""
-    vol.reload()
-    code, text = sh(f"cd {SRC}/.. && python3 rl/arch/attention/read_games.py {shlex.quote(subject)} --out {out} {args}")
-    vol.commit()
-    return text[-60000:]
 
 
 @app.function(cpu=8, memory=16384, timeout=3600, volumes={VOL: vol})
@@ -316,7 +311,7 @@ def bc_attention(out: str, games: int = 400, args: str = ""):
     os.makedirs(out, exist_ok=True)
     data = f"{out}/hand.npz"
     if not os.path.exists(data):
-        sh(f"cd {SRC}/.. && python3 rl/imitation/collect.py --games {games} --out {data}")
+        sh(f"cd {SRC}/.. && python3 rl/imitation/collect.py --games {games} --seats 2-6 --out {data}")
     sh("pip install -q torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu 2>&1 | tail -1")
     code, text = sh(f"cd {SRC}/.. && python3 rl/arch/attention/bc_attention.py {data} --out {out}/bc.bin {args}")
     vol.commit()
@@ -356,7 +351,9 @@ def guard(max_dollars, gpu, cpu, gib, want_seconds):
 @app.local_entrypoint()
 def main(action: str = "test", run: str = "smoke", minutes: float = 10, max_dollars: float = 1.0,
          train_args: str = "", games: int = 200, subjects: str = "", quick: bool = False, move_rows: bool = False,
-         no_patch: bool = False, encoder: str = "flat", meta_extra: str = "", cpus: int = 8, resume: bool = False):
+         no_patch: bool = False, encoder: str = "flat", meta_extra: str = "", opponents: str = "", logs: int = 2,
+         eval_name: str = "eval", cpus: int = 8,
+         resume: bool = False):
     if action == "test":
         total = guard(max_dollars, None, 4, 8, 1500)
         print(json.dumps(test.with_options(timeout=total).remote(quick), indent=1))
@@ -387,16 +384,12 @@ def main(action: str = "test", run: str = "smoke", minutes: float = 10, max_doll
         total = guard(max_dollars, None, 8, 8, 3 * 3600)
         evaluate_ = evaluate.with_options(timeout=total)
         subs = subjects.split(",") if subjects else ["random", "hand"]
-        r = evaluate_.remote([s if s in ("random", "hand") or s.startswith("/") else f"{VOL}/{s}" for s in subs],
-                            f"{VOL}/{run}/eval", games, quick)
+        bots = ("random", "hand", "champion", "champion-closed")
+        r = evaluate_.remote([s if s in bots or s.startswith("/") else f"{VOL}/{s}" for s in subs],
+                            f"{VOL}/{run}/{eval_name}", games, quick, opponents, logs)
         print(r["report"])
     elif action == "bc":
         total = guard(max_dollars, None, 8, 16, 3600)
         print(bc_attention.with_options(timeout=total).remote(f"{VOL}/{run}", games, train_args))
-    elif action == "games":
-        # --subjects is one policy path on the volume; --train-args here are read_games.py's own arguments.
-        total = guard(max_dollars, None, 2, 4, 1800)
-        s = subjects if subjects in ("random", "hand") or subjects.startswith("/") else f"{VOL}/{subjects}"
-        print(read_games.with_options(timeout=total).remote(s, f"{VOL}/{run}/games", train_args))
     else:
         sys.exit(f"unknown action {action}")

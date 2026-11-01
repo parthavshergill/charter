@@ -162,7 +162,7 @@ def main() -> int:
     # The NumPy forward rl/eval uses, read from a checkpoint laid out as PufferLib writes it.
     import attention_np
     ckpt = a.build_dir / "fake_ckpt.bin"
-    act = 696
+    act = json.load(open(a.layout))["act_size"] + 1
     dec = rng.normal(size=(act + 1, HIDDEN)).astype(np.float32)
     gru = rng.normal(size=(3 * HIDDEN, HIDDEN)).astype(np.float32)
     blocks = [P[n].numpy().astype(np.float32) for n, _ in R.param_shapes(plan, HIDDEN)] + [dec, gru]

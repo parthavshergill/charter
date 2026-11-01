@@ -86,6 +86,26 @@ def suggest (e : Env) (name : String) : Int32 :=
   | some a => Int32.ofNat a
   | none => -1
 
+/-- The game so far as a server log, one JSON event per line, with this table code and these seat names
+(`a,b,c,d`). An error starts with `error: `. -/
+@[export charter_rl_saved_log]
+def savedLog (e : Env) (code names : String) : String :=
+  match e.savedLog code (names.splitOn ",") with
+  | .ok text => text
+  | .error msg => s!"error: {msg}"
+
+/-- After each event of the saved log: round, setup, laws in force, and each seat's points, one JSON list a line. -/
+@[export charter_rl_saved_state]
+def savedState (e : Env) : String := e.savedState
+
+/-- The fewest seats this game can have. -/
+@[export charter_rl_min_seats]
+def minSeatsC (e : Env) : UInt32 := UInt32.ofNat e.T.minSeats
+
+/-- The most seats this game can have. -/
+@[export charter_rl_max_seats]
+def maxSeatsC (e : Env) : UInt32 := UInt32.ofNat e.T.maxSeats
+
 /-- How many seats this game has. -/
 @[export charter_rl_seats]
 def seats (e : Env) : UInt32 := UInt32.ofNat e.lineup.size
