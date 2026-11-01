@@ -4,6 +4,7 @@
 // source below it is what counts. What is here is presentation: what to show, when, and where.
 import { renderBoard2D } from "./board2d.js";
 import { resIcon, uiIcon, pieceIcon, shield, chargeOf, waxSeal } from "./icons.js";
+import { applyLook } from "./look.js";
 
 const app = document.getElementById("app");
 const params = new URLSearchParams(location.search);
@@ -123,6 +124,15 @@ async function lobby() {
   showSeats();
   const packList = h("div", { class: "packs", role: "group", "aria-label": "World" });
   const packNote = h("p", { class: "packnote" });
+  // The chosen game's line and empty board. The base game is first, so the sheet starts with its line.
+  const tagline = h("p", { class: "sub" }, "Settle an island. Rewrite its rules. The constitution holds.");
+  let stagePlayer = null, stageShown = null, stageLoad = null;
+  const showBackdrop = d => {
+    if (!stagePlayer) return null;
+    if (stageShown === d.id) return stageLoad;
+    stageShown = d.id;
+    return (stageLoad = api(`/api/defs/${d.id}/scene`).then(buf => { if (stageShown === d.id && buf.byteLength > 4) stagePlayer.render(buf); }));
+  };
   // The row shows the first three games, and the chosen game if it is further along.
   // Every game after the first three is on the Library's shelf.
   const libraryLink = h("button", { class: "link library", onclick: () => turnTo(true) }, "Library");
@@ -131,9 +141,11 @@ async function lobby() {
     fill(packList, h("span", { class: "smallcaps lbl" }, "World"), row.map(d =>
       h("button", { class: "pack" + (d.id === game ? " on" : ""), "aria-pressed": d.id === game ? "true" : "false", onclick: () => { game = d.id; showPacks(); showSeats(); packList.querySelector(".pack.on").focus(); } }, d.name)), libraryLink);
     packNote.textContent = defs.find(d => d.id === game)?.blurb || "";
+    const d = defs.find(x => x.id === game);
+    if (d) { applyLook(d.look); tagline.textContent = d.look.tagline; showBackdrop(d); }
   };
   showPacks();
-  api("/api/defs").then(list => { defs = list; game = list[0]?.id ?? null; showPacks(); showSeats(); });
+  const defsLoaded = api("/api/defs").then(list => { defs = list; game = list[0]?.id ?? null; showPacks(); showSeats(); });
   const seatRange = d => d.minSeats === d.maxSeats ? plural(d.minSeats, "seat") : `${d.minSeats} to ${d.maxSeats} seats`;
   // One row of the shelf. A picture can go after .shelftext later: the row leaves no gap without one.
   const shelfRow = d => h("button", { class: "shelfrow" + (d.id === game ? " on" : ""), "aria-pressed": d.id === game ? "true" : "false", onclick: () => { game = d.id; showPacks(); showSeats(); turnTo(false, () => packList.querySelector(".pack.on")); } },
@@ -189,7 +201,7 @@ async function lobby() {
   const tables = h("div", { class: "tablelist" });
   const form = h("div", {},
     h("h1", {}, "Charter"),
-    h("p", { class: "sub" }, "Settle an island. Rewrite its rules. The constitution holds."),
+    tagline,
     h("div", { class: "numerals", "aria-hidden": "true" }, ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"].map(n => h("span", {}, n))),
     h("label", { class: "field signature" }, name, h("span", { class: "signlabel" }, "Sign your name")),
     seg, packList, packNote,
@@ -214,8 +226,10 @@ async function lobby() {
   loadPlayer(stage.querySelector("canvas")).then(async p => {
     if (!p) { release(); return; }
     p.setInsets({ l: innerWidth <= 560 ? 16 : Math.min(innerWidth * .46, 480), r: 16, t: 16, b: 16 });
-    const buf = await api("/api/island");
-    if (buf.byteLength > 4) p.render(buf);
+    stagePlayer = p;
+    await defsLoaded;
+    const d = defs.find(x => x.id === game);
+    if (d) await showBackdrop(d);
     release();
   });
   // Only the tables this browser holds a seat at. No route lists every table, because a code is what
@@ -484,6 +498,7 @@ function showFoundingLaws(prev, v) {
 }
 function renderAll() {
   if (!G.view) return;
+  applyLook(G.view.look);
   renderHouses(); renderHerald(); renderLedge(); renderPrompt(); renderSlips(); renderRail(); renderDock(); renderCenter();
   if (!G.use3d) renderBoard2D(G.ui.svg, G.view, seatColor, onPick);
   updateInsets();
@@ -1421,7 +1436,7 @@ function gathering(v) {
 function proclamation(v) {
   const w = seat(v.winner);
   const order = [...v.seats].sort((a, b) => b.points - a.points);
-  const pieces = s => Object.entries(s.pieces || {}).filter(([k, n]) => n > 0 && k !== "road").map(([k, n]) => plural(n, k)).join(", ");
+  const pieces = s => Object.entries(s.pieces || {}).filter(([k, n]) => n > 0 && !(v.look?.quietPieces || []).includes(k)).map(([k, n]) => plural(n, k)).join(", ");
   const nLaws = (v.laws || []).length;
   return h("div", { class: "proclaim" },
     h("div", { class: "smallcaps" }, v.round >= v.rounds && w?.points < v.target ? `All ${v.rounds} rounds played` : `Round ${v.round}`),

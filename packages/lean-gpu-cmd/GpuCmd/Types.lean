@@ -69,6 +69,15 @@ inductive Prim
   | pyramid (r h : F32)
   deriving DecidableEq, BEq, Repr, Inhabited
 
+/-- A small repeating motion of every instance of a mesh file. Zero is still.
+`pulse` is the change in height as a fraction, `sway` is the tilt in radians, and `glow` is
+the added light from 0 to 1. The player runs it. The stream does not change over time. -/
+structure Motion where
+  pulse : F32 := 0
+  sway : F32 := 0
+  glow : F32 := 0
+  deriving DecidableEq, BEq, Repr, Inhabited
+
 /-- One scene command. Colors are `0xTTRRGGBB`: `TT` is transparency
 (`0x00` opaque, `0xFF` invisible); plain `0xRRGGBB` is opaque. -/
 inductive Cmd
@@ -81,6 +90,9 @@ inductive Cmd
   | label (text : String) (pos : Vec3) (size : F32) (rgb : UInt32) (pick : UInt32)
   /-- Outline / glow every object (mesh or label) with this pick id. -/
   | highlight (pick : UInt32) (rgb : UInt32)
+  /-- Bind a mesh id to a triangle mesh file, named by the lower-case hex of its SHA-256. The
+  player draws `standIn` in the color `tint` until the file loads, and for good if it cannot. -/
+  | defineMeshFile (id : UInt32) (sha256 : String) (tint : UInt32) (motion : Motion) (standIn : Prim)
   deriving DecidableEq, BEq, Repr, Inhabited
 
 /-- Color with a transparency byte: `alpha = 1` opaque, `alpha = 0` invisible. -/

@@ -10,7 +10,8 @@ def sample : List Cmd :=
    .draw 7 { pos := vec3 1.5 0 (-2), rotY := 0.5, scale := vec3 1 2 1 } 0x80FF0000 42,
    .label "Grüße · 6 ⚑" (vec3 0 1 0) 0.5 0xFFFFFF 3,
    .label (String.ofList (List.replicate 300 'x')) (vec3 0 0 0) 1 0 0,
-   .highlight 42 0xFFD700]
+   .highlight 42 0xFFD700,
+   .defineMeshFile 20 "ab" 0x445566 { pulse := 0.5, sway := 0.25, glow := 1 } (.sphere 0.5)]
 
 -- round trip (also proved as `decode_encode`)
 #guard decode (encode sample) == some sample
@@ -36,6 +37,7 @@ def sample : List Cmd :=
 #guard (cmdBytes (.camera (vec3 0 0 0) (vec3 0 0 0) 1)).length == 29
 #guard (cmdBytes (.light (vec3 0 0 0) 1)).length == 17
 #guard (cmdBytes (.label "" (vec3 0 0 0) 1 0 0)).length == 26
+#guard (cmdBytes (.defineMeshFile 1 "" 0 {} (.sphere 1))).length == 27
 -- rejection: bad magic, truncation, unknown opcode, invalid UTF-8
 #guard decode ⟨#[0x47, 0x50, 0x43, 0x32]⟩ == none
 #guard decode ⟨#[0x47, 0x50, 0x43, 0x31, 1, 0, 0]⟩ == none
