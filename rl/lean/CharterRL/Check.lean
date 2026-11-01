@@ -53,6 +53,11 @@ structure MaskCount where
   declareNotOffered : Nat := 0
   /-- Not offered on purpose: a move by the voting seat while a vote is due. -/
   moveWhileVoting : Nat := 0
+  /-- Placements the engine accepts, checked against `places`: all of them, by trying every kind on every spot and
+  link. -/
+  placements : Nat := 0
+  /-- Legal placements past the last row of `places`. Counted apart: a turn then still has end turn. -/
+  placeOverflow : Nat := 0
   firstError : String := ""
   deriving Inhabited
 
@@ -64,10 +69,10 @@ def rawEvents (e : Env) (a : Nat) : List (Event × Bool) :=
   let T := { e.T with declares := true }
   match e.decision with
   | .none => []
-  | .turn seat => ((decode T e.ep (.turn seat) a).map fun ev => (ev, false)).toList
+  | .turn seat => ((decode T e.ep e.places (.turn seat) a).map fun ev => (ev, false)).toList
   | .vote seat id L =>
-    ((decode T e.ep (.vote seat id L) a).map fun ev => (ev, false)).toList ++
-    ((decode T e.ep (.turn seat) a).map fun ev => (ev, true)).toList
+    ((decode T e.ep e.places (.vote seat id L) a).map fun ev => (ev, false)).toList ++
+    ((decode T e.ep e.places (.turn seat) a).map fun ev => (ev, true)).toList
 
 def isDeclare : Event → Bool
   | .move _ (.declare ..) => true
@@ -95,11 +100,26 @@ def checkMask (c : MaskCount) (e : Env) (mask : ByteArray) : MaskCount := Id.run
       else
         c := { c with missing := c.missing + 1
                       firstError := if c.firstError == "" then s!"action {a} is not offered and the engine accepts it" else c.firstError }
+  -- Every placement the engine accepts has a row, or is past the last row.
+  if let .turn seat := e.decision then
+    let kinds := s.rules.pieces.map (·.name)
+    let spots := (List.range e.G.map.spotCount).map Loc.spot
+    let links := e.T.links.toList.map Loc.link
+    for k in kinds do
+      for loc in spots ++ links do
+        let m := Move.place k loc
+        if (Engine.step e.G s (.move seat m)).toOption.isSome then
+          c := { c with placements := c.placements + 1 }
+          match e.places.findIdx? (· == m) with
+          | some i => if maxPlaceRows ≤ i then c := { c with placeOverflow := c.placeOverflow + 1 }
+          | Option.none =>
+            c := { c with missing := c.missing + 1
+                          firstError := if c.firstError == "" then s!"placement {repr m} is legal and has no row" else c.firstError }
   return c
 
 /-- Play `games` games of random legal actions and check every decision's mask, as `maskFn` makes it. -/
 def maskTest (T : Tables) (settings : Settings) (seats games : Nat) (maskFn : Env → ByteArray)
-    (maxDecisions : Nat := 400) : MaskCount := Id.run do
+    (maxDecisions : Nat := 400) (alter : Env → Env := id) : MaskCount := Id.run do
   let mut c : MaskCount := {}
   for g in [0:games] do
     let some e0 := (Env.start T settings (callers seats) (1000 + g)).toOption | continue
@@ -107,8 +127,8 @@ def maskTest (T : Tables) (settings : Settings) (seats games : Nat) (maskFn : En
     let mut r : Rng := ⟨UInt64.ofNat (77 + g)⟩
     for _ in [0:maxDecisions] do
       if e.decision.seat?.isNone then break
-      let mask := maskFn e
-      c := checkMask c e mask
+      let mask := maskFn (alter e)
+      c := checkMask c (alter e) mask
       let (a, r') := pick r e.mask
       r := r'
       match a with
@@ -125,6 +145,71 @@ def maskDropLast (e : Env) : ByteArray :=
   match (List.range m.size).reverse.find? (m.get! · == 1) with
   | some a => if a == actEnd then m else m.set! a 0
   | none => m
+
+/-! ## Can it play: made-up games at any seat count -/
+
+/-- What playing a game to its end found. -/
+structure PlayCount where
+  games : Nat := 0
+  ended : Nat := 0
+  decisions : Nat := 0
+  /-- A decision with no action on offer. Commandment IX says there is always a legal action. -/
+  noAction : Nat := 0
+  /-- An offered action that `Env.step` refused. -/
+  refused : Nat := 0
+  /-- The game stopped with nothing to decide, and is not over. -/
+  stuck : Nat := 0
+  /-- The most legal placements seen at one decision, and the decisions with more than there are rows for. -/
+  mostPlaces : Nat := 0
+  overflow : Nat := 0
+  mask : MaskCount := {}
+  firstError : String := ""
+  deriving Inhabited
+
+def PlayCount.errors (c : PlayCount) : Nat := c.noAction + c.refused + c.stuck + (c.games - c.ended) + c.mask.errors
+
+/-- Play `games` games of this game at this seat count with random legal actions, all seats callers, to the end.
+The mask is checked against the engine at the first `maskChecks` decisions of each game. -/
+def playTest (T : Tables) (settings : Settings) (seats games : Nat) (maskChecks : Nat := 30)
+    (maxDecisions : Nat := 20000) : PlayCount := Id.run do
+  let mut c : PlayCount := {}
+  for g in [0:games] do
+    match Env.start T settings (callers seats) (2000 + g) with
+    | .error err =>
+      c := { c with games := c.games + 1, firstError := if c.firstError == "" then err else c.firstError }
+    | .ok e0 =>
+      c := { c with games := c.games + 1 }
+      let mut e := e0
+      let mut r : Rng := ⟨UInt64.ofNat (55 + g)⟩
+      let mut n := 0
+      for _ in [0:maxDecisions] do
+        if e.decision.seat?.isNone then break
+        n := n + 1
+        c := { c with decisions := c.decisions + 1, mostPlaces := max c.mostPlaces e.places.size
+                      overflow := c.overflow + (if e.places.size > maxPlaceRows then 1 else 0) }
+        if n ≤ maskChecks then c := { c with mask := checkMask c.mask e e.mask }
+        let (a, r') := pick r e.mask
+        r := r'
+        match a with
+        | none =>
+          c := { c with noAction := c.noAction + 1
+                        firstError := if c.firstError == "" then s!"no action on offer at decision {n}" else c.firstError }
+          break
+        | some a =>
+          let e' := e.step a
+          if e'.refused then
+            c := { c with refused := c.refused + 1
+                          firstError := if c.firstError == "" then s!"action {a} was refused" else c.firstError }
+            break
+          e := e'
+      if e.play.state.phase == .ended then c := { c with ended := c.ended + 1 }
+      else if e.decision.seat?.isNone then
+        c := { c with stuck := c.stuck + 1
+                      firstError := if c.firstError == "" then s!"stuck after {n} decisions, round {e.play.state.round}" else c.firstError }
+  return c
+
+/-- Seeded error 3: the last legal placement is left out of `places`, so it has no row. -/
+def placesDropLast (e : Env) : Env := { e with places := e.places.pop }
 
 /-! ## Determinism, the seed, renaming -/
 
@@ -264,7 +349,7 @@ def renamedEnv (T : Tables) (settings : Settings) (seats seed : Nat) (leak : Boo
   let ep := if leak then e'.ep else ep
   let G := e'.G
   let base := template T' ep G seats settings.moveRows
-  let e'' : Env := { e' with ep, base, lawsSeen := [] }
+  let e'' : Env := ({ e' with ep, base, lawsSeen := [] } : Env).await e'.decision
   return e''
 
 /-! ## Running them -/

@@ -18,7 +18,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 LAYOUT = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "layout.json")))
-ENTITY_TABLES = ["seats", "resources", "kinds", "tiles", "spots", "links", "laws"]
+ENTITY_TABLES = ["seats", "resources", "kinds", "spots", "laws", "places"]
 SINGLE_TABLES = ["global", "proposal"]
 
 
