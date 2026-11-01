@@ -11,7 +11,7 @@ Ten promises, called the commandments. They hold for every valid game and every 
 This is the file to read and argue with. Each promise is a theorem about `Engine.step`, the code that
 really runs. If a promise is not written here, it is not made.
 
-All ten are proved, and `make audit` checks them. Comparator has not been run.
+All ten are proved. `make audit` checks them, and they pass Comparator.
 
 How to read them:
 
