@@ -72,6 +72,23 @@ There are no accounts, so an IP address stands for a person, and friends sharing
 
 A backup API key is not built. It would go in `Formalize.settings` in `Server/Formalize.lean`, which chooses the key, and `failureOf` in the same file names the errors that would switch to it.
 
+## What a browser keeps
+
+The page at `/` names a version of the web files in its `<base>`: `/v/<name>/`. The name is a hash of everything in `web/`, so a change to any file gives every file a new address, and a restart with the same files gives the same one.
+
+- **The page** is sent with `no-cache` and an `ETag`. A browser asks each visit, and if nothing has changed the answer is a few hundred bytes.
+- **Everything under `/v/<name>/`** is sent with `immutable`, for a year. A return visit does not ask for these files at all.
+- **Mesh files** under `/assets/` are named by their own hash, and are kept the same way.
+- **Everything under `/api/`** is sent with `no-store`. A scene carries `X-Scene-Tag`, and a page that sends that tag back as `?have=` gets `204` if the picture has not changed.
+
+After a deploy, the server has only the new name. A page that is still open and asks for a file under the old name gets `404`, never a new file under an old name, and it reloads itself once. So a page cannot run with a mix of old and new files.
+
+The server does not compress. Cloudflare compresses what it sends on the way out, by type: text, JSON, and `application/x-protobuf`, which is the type scenes are sent as for that reason. To see it work after a deploy, look for `content-encoding: br` here:
+
+```
+curl -sD- -o/dev/null -H 'Accept-Encoding: br' https://<your address>/api/defs/island/scene
+```
+
 ## What happens when people leave
 
 - **A table with people** pauses when none of its people has had the page open for 3 minutes. Bots and Claude seats stop, and no turn timer runs. When someone returns, the table goes on and the current turn gets a whole new deadline. If even one person is there, the timer still ends the turn of an idle seat.

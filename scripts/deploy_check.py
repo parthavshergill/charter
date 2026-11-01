@@ -6,7 +6,7 @@ it makes no real calls.
 The stand-in for R2 answers as `cloudflare/src/index.ts` does. It starts its own servers on free ports
 and stops them at the end.
 """
-import glob, http.server, json, os, shutil, signal, socket, sqlite3, subprocess, sys, tempfile, threading, time, urllib.error, urllib.parse, urllib.request
+import glob, http.server, json, os, re, shutil, signal, socket, sqlite3, subprocess, sys, tempfile, threading, time, urllib.error, urllib.parse, urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BIN = os.path.join(ROOT, ".lake", "build", "bin", "charter-server")
@@ -241,6 +241,127 @@ def public_surface(api, root):
     srv = Server(tempfile.mkdtemp(dir=root), api, CHARTER_BIND="0.0.0.0")
     try:
         check("http://0.0.0.0:" in srv.logs(), "the bind address can be set")
+    finally:
+        srv.stop()
+
+
+def http_get(port, path, headers=None):
+    """The status, the headers and the body, for any answer."""
+    r = urllib.request.Request(f"http://127.0.0.1:{port}{path}", headers=headers or {})
+    try:
+        with urllib.request.urlopen(r, timeout=30) as resp:
+            return resp.status, resp.headers, resp.read()
+    except urllib.error.HTTPError as e:
+        return e.code, e.headers, e.read()
+
+
+def build_of(page):
+    m = re.search(rb'<base href="/v/([0-9a-f]+)/">', page)
+    return m.group(1).decode() if m else None
+
+
+def files_a_build_loads(port, build):
+    """Every file the page loads, followed from its first two files through imports and stylesheets. All of
+    them must be relative, so that all of them stay in the build's folder."""
+    todo, seen = ["app.js", "app.css"], {}
+    while todo:
+        name = todo.pop()
+        if name in seen:
+            continue
+        status, headers, body = http_get(port, f"/v/{build}/{name}")
+        seen[name] = (status, headers.get("Cache-Control"), body)
+        here = os.path.dirname(name)
+        text = body.decode("utf-8", "replace")
+        if name.endswith(".js") and "three.module" not in name:
+            refs = re.findall(r"""(?:from\s*|import\s*\(\s*|import\s+)["'](\./[^"']+)["']""", text)
+            todo += [os.path.normpath(os.path.join(here, r)) for r in refs]
+        if name.endswith(".css"):
+            refs = re.findall(r"""url\((fonts/[^)]+)\)""", text)
+            todo += [os.path.normpath(os.path.join(here, r)) for r in refs]
+    return seen
+
+
+def static_files(api, root):
+    """Files a browser may keep, what it must never keep, and what happens when a deploy changes the files."""
+    site = tempfile.mkdtemp(dir=root)
+    shutil.copytree(os.path.join(ROOT, "web"), os.path.join(site, "web"))
+    shutil.copytree(os.path.join(ROOT, "packs"), os.path.join(site, "packs"))
+    os.makedirs(os.path.join(site, "Server"))
+    for f in ("formalizer.md", "describer.md", "player_rules.md"):
+        shutil.copy(os.path.join(ROOT, "Server", f), os.path.join(site, "Server", f))
+    with open(os.path.join(site, "web", ".hidden"), "w") as f:
+        f.write("not for anyone")
+    data = tempfile.mkdtemp(dir=root)
+    srv = Server(data, api, CHARTER_ROOT=site)
+    try:
+        status, h, page = http_get(srv.port, "/")
+        build = build_of(page)
+        check(status == 200 and build is not None, "the page names one build's folder for all its files")
+        check(h["Cache-Control"] == "no-cache" and h["ETag"] == f'"{build}"', "a browser asks again for the page on each visit")
+        status, h, body = http_get(srv.port, "/", {"If-None-Match": f'"{build}"'})
+        check(status == 304 and not body, "a browser with this page gets a short answer")
+        # Cloudflare marks an ETag as weak when it compresses a response, and the browser sends that back.
+        status, _, _ = http_get(srv.port, "/?game=ABCDE", {"If-None-Match": f'W/"{build}"'})
+        check(status == 304, "the mark that compression adds to an ETag still matches")
+        status, _, _ = http_get(srv.port, "/", {"If-None-Match": '"something-else"'})
+        check(status == 200, "a browser with another page gets this one")
+
+        loaded = files_a_build_loads(srv.port, build)
+        check({"app.js", "app.css", "vendor/player.js", "vendor/vendor/three.module.min.js", "fonts/im-fell-english.woff2"} <= set(loaded), "imports and stylesheets lead to the 3D player and the fonts")
+        check(all(st == 200 and "immutable" in (cc or "") and "max-age=31536000" in cc for st, cc, _ in loaded.values()), f"all {len(loaded)} files of a build can be kept for good")
+        with open(os.path.join(site, "web", "app.js"), "rb") as f:
+            check(loaded["app.js"][2] == f.read(), "a build's file is the file on disk")
+
+        status, h, body = http_get(srv.port, "/app.js")
+        check(status == 200 and h["Cache-Control"] == "no-cache" and h["ETag"], "a file at its plain address is checked each time")
+        status, _, _ = http_get(srv.port, "/app.js", {"If-None-Match": h["ETag"]})
+        check(status == 304, "and unchanged, it is not sent again")
+        for bad in (f"/v/{build}/.hidden", f"/v/{build}/../Server/formalizer.md", f"/v/{build}/", "/.hidden", "/../Server/formalizer.md"):
+            status, h, _ = http_get(srv.port, bad)
+            check(status == 404 and h["Cache-Control"] == "no-store", f"{bad.replace(build, '<build>')} is not served")
+
+        # What changes must never be kept.
+        code, tokens = table(srv)
+        through_setup(srv, code, tokens)
+        for path in ("/api/defs", f"/api/games/{code}", f"/api/games/{code}/view", f"/api/games/{code}/talk", f"/api/games/{code}/events", f"/api/games/{code}/scene", "/api/defs/island/scene"):
+            _, h, _ = http_get(srv.port, path, {"X-Charter-Token": tokens[0]})
+            check(h["Cache-Control"] == "no-store", f"{path.replace(code, '<code>')} is never kept")
+        status, h, scene = http_get(srv.port, f"/api/games/{code}/scene", {"X-Charter-Token": tokens[0]})
+        tag = h["X-Scene-Tag"]
+        check(status == 200 and scene[:4] == b"GPC1" and tag, "a scene has a tag for its bytes")
+        check(h["Content-Type"] == "application/x-protobuf", "a scene has a type that the edge compresses")
+        status, h, body = http_get(srv.port, f"/api/games/{code}/scene?have={tag}", {"X-Charter-Token": tokens[0]})
+        check(status == 204 and not body and h["Cache-Control"] == "no-store", "a page that has this scene is not sent it again")
+        status, _, body = http_get(srv.port, f"/api/games/{code}/scene?have=0000000000000000", {"X-Charter-Token": tokens[0]})
+        check(status == 200 and body == scene, "a page with another picture is sent this one")
+    finally:
+        srv.stop()
+
+    # A restart with the same files: every browser's copy stays good.
+    srv = Server(data, api, CHARTER_ROOT=site)
+    try:
+        status, _, _ = http_get(srv.port, "/", {"If-None-Match": f'"{build}"'})
+        check(status == 304, "a restart with the same files keeps the page's name")
+        status, _, _ = http_get(srv.port, f"/v/{build}/app.js")
+        check(status == 200, "and its files")
+    finally:
+        srv.stop()
+
+    # A deploy that changes one file: the old page must not get a mix of old and new files.
+    with open(os.path.join(site, "web", "feel.js"), "a") as f:
+        f.write("\n// a change\n")
+    srv = Server(data, api, CHARTER_ROOT=site)
+    try:
+        _, _, page2 = http_get(srv.port, "/", {"If-None-Match": f'"{build}"'})
+        build2 = build_of(page2)
+        check(build2 is not None and build2 != build, "changing one file gives the whole page a new name")
+        for name in ("feel.js", "app.js", "vendor/player.js"):
+            status, h, _ = http_get(srv.port, f"/v/{build}/{name}")
+            check(status == 404 and h["Cache-Control"] == "no-store", f"an old page asking for {name} gets nothing, not a newer file under the old name")
+        check(all(st == 200 and "immutable" in (cc or "") for st, cc, _ in files_a_build_loads(srv.port, build2).values()), "the new page finds all its files under its own name")
+        with open(os.path.join(ROOT, "web", "index.html")) as f:
+            html = f.read()
+        check('src="app.js" onerror="reloadOnce()"' in html and 'href="app.css" onerror="reloadOnce()"' in html, "a page whose files have gone reloads itself, once")
     finally:
         srv.stop()
 
@@ -640,6 +761,7 @@ def main():
     store = serve(Store)
     try:
         public_surface(api, root)
+        static_files(api, root)
         budgets(api, root)
         description_prices(api, root)
         pausing(api, root)
