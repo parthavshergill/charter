@@ -34,15 +34,19 @@ def pad8(n):
     return (n + 7) // 8 * 8
 
 
-def header_bytes(layout, E, hidden, layers, pointer):
+STATE_RULES = {"carry": 0, "turn": 1, "zero": 2}
+
+
+def header_bytes(layout, E, hidden, layers, pointer, state_rule):
     """The weights-file header (magic + UInt32s) for this layout and model."""
     tables = layout["tables"]
     names = [t[0] for t in tables]
-    vals = [1, layout["layout_version"], E, hidden, layers, layout["act_size"], pointer,
+    vals = [2, layout["layout_version"], E, hidden, layers, layout["act_size"], pointer,
             layout["act_spot"], layout["act_link"], layout["act_bank"], len(tables)]
     for _, off, rows, width in tables:
         vals += [off, rows, width]
     vals += [names.index(n) for n in ("kinds", "spots", "links", "resources")]
+    vals += [STATE_RULES[state_rule]]
     return b"CHPW" + struct.pack("<%dI" % len(vals), *vals)
 
 
@@ -60,12 +64,13 @@ def read_weights(path):
     b = open(path, "rb").read()
     assert b[:4] == b"CHPW", "missing magic"
     h = lambda k: struct.unpack_from("<I", b, 4 + 4 * k)[0]
-    assert h(0) == 1, "format version"
+    assert h(0) == 2, "format version"
     E, hidden, layers, act, pointer = h(2), h(3), h(4), h(5), h(6)
     nt = h(10)
     tables = [(h(11 + 3 * t), h(12 + 3 * t), h(13 + 3 * t)) for t in range(nt)]
     idx = [h(11 + 3 * nt + k) for k in range(4)]
-    pos = 4 + 4 * (11 + 3 * nt + 4)
+    rule = h(11 + 3 * nt + 4)
+    pos = 4 + 4 * (11 + 3 * nt + 5)
     blocks = []
     for r, c in block_shapes([t[2] for t in tables], E, hidden, layers, act, pointer):
         a = np.frombuffer(b, dtype="<f4", count=r * c, offset=pos).astype(np.float64)
@@ -73,7 +78,7 @@ def read_weights(path):
         pos += 4 * pad8(r * c)
     assert pos == len(b), "size mismatch: expected %d bytes, got %d" % (pos, len(b))
     net = dict(E=E, hidden=hidden, layers=layers, act=act, pointer=pointer,
-               act_spot=h(7), act_link=h(8), act_bank=h(9), tables=tables, idx=idx)
+               act_spot=h(7), act_link=h(8), act_bank=h(9), tables=tables, idx=idx, rule=rule)
     net["w_in"] = blocks[:nt]
     net["w_out"], net["decoder"] = blocks[nt], blocks[nt + 1]
     k = nt + 2
@@ -136,7 +141,7 @@ def forward(net, obs, state):
 
 # ---- commands ----
 
-def make_synthetic(out, E=32, hidden=128, layers=1, pointer=2, seed=1234, scale=0.1):
+def make_synthetic(out, E=32, hidden=128, layers=1, pointer=2, seed=1234, scale=0.1, state_rule="carry"):
     rng = np.random.default_rng(seed)
     payload = bytearray()
     widths = [t[3] for t in V1["tables"]]
@@ -144,7 +149,7 @@ def make_synthetic(out, E=32, hidden=128, layers=1, pointer=2, seed=1234, scale=
         a = (rng.standard_normal(r * c) * scale).astype("<f4")
         a = np.concatenate([a, np.zeros(pad8(r * c) - r * c, dtype="<f4")])
         payload += a.tobytes()
-    data = header_bytes(V1, E, hidden, layers, pointer) + bytes(payload)
+    data = header_bytes(V1, E, hidden, layers, pointer, state_rule) + bytes(payload)
     open(out, "wb").write(data)
     print("wrote %s (%d bytes)" % (out, len(data)))
 
@@ -156,6 +161,8 @@ def make_obs(out, n, seed=99):
     for i in range(n):
         if i == n // 2:
             lines.append("reset")
+        elif i % 3 == 0:
+            lines.append("turn")
         obs = np.zeros(size)
         for _, off, rows, width in V1["tables"]:
             nreal = rng.integers(1, rows + 1)
@@ -178,6 +185,12 @@ def expect(weights, obs_path, out):
         if not line or line == "reset":
             state = zero()
             continue
+        if line == "turn":
+            if net["rule"] == 1:   # turn: 0.5 everywhere at each turn start
+                state = [np.full(net["hidden"], 0.5) for _ in range(net["layers"])]
+            continue
+        if net["rule"] == 2:       # zero: zero state at every decision
+            state = zero()
         obs = np.array([float(v) for v in line.split()])
         logits, state = forward(net, obs, state)
         res.append(" ".join(repr(float(v)) for v in logits))
@@ -187,7 +200,7 @@ def expect(weights, obs_path, out):
 
 def main(argv):
     if len(argv) >= 2 and argv[0] == "make-synthetic":
-        make_synthetic(argv[1])
+        make_synthetic(argv[1], state_rule=argv[2] if len(argv) >= 3 else "carry")
     elif len(argv) >= 3 and argv[0] == "make-obs":
         make_obs(argv[1], int(argv[2]))
     elif len(argv) >= 4 and argv[0] == "expect":

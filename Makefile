@@ -85,3 +85,5 @@ policy-check:
 	python3 scripts/policy_diff.py expect .lake/policy/w.chpw .lake/policy/obs.txt .lake/policy/expected.txt
 	.lake/build/bin/charter-policy-diff .lake/policy/w.chpw .lake/policy/obs.txt .lake/policy/expected.txt
 	.lake/build/bin/charter-policy-check .lake/policy/w.chpw
+	lake build charter-server
+	python3 scripts/policy_server_check.py .lake/policy/w.chpw

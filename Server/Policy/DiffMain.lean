@@ -6,7 +6,8 @@ import Server.Policy.Net
 Usage: `policy-diff WEIGHTS OBS.txt EXPECTED.txt`
 
 `OBS.txt` has one observation per line (space-separated numbers); a blank
-line or `reset` sets the recurrent state back to zeros. `EXPECTED.txt` has
+line or `reset` sets the recurrent state back to zeros (a new game); `turn` starts a
+new turn of the seat, and the weights file's state rule says what that does. `EXPECTED.txt` has
 one line of logits per observation, written by
 `scripts/policy_diff.py expect`. Prints the largest absolute and relative
 error over all logits, and the time per forward pass. Exits with code 1 if
@@ -101,6 +102,8 @@ def main (args : List String) : IO UInt32 := do
     let line := raw.trimAscii.toString
     if line.isEmpty || line == "reset" then
       state := net.initState; continue
+    if line == "turn" then
+      state := net.atTurnStart state; continue
     let obs ← match parseLine line with
       | .ok o => pure o | .error e => IO.eprintln e; return 2
     let some expLine := expLines[row]?
@@ -108,7 +111,7 @@ def main (args : List String) : IO UInt32 := do
     let want ← match parseLine expLine with
       | .ok o => pure o | .error e => IO.eprintln e; return 2
     let t0 ← IO.monoNanosNow
-    let (logits, s2) ← match net.forward obs state with
+    let (logits, s2) ← match net.forward obs (net.atDecision state) with
       | .ok r => pure r | .error e => IO.eprintln e; return 2
     -- force the result before stopping the clock
     let _ := logits.size

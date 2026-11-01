@@ -23,7 +23,9 @@ How one decision is made:
 There is no fallback inside this path. A game that does not fit the network's layout is refused when the bot
 joins (`problems`), and the reason is shown.
 
-The recurrent state starts at zero for every decision: see `README` of this folder for why, and what it costs.
+Each seat's recurrent state starts at zero each game and moves between its own decisions by the weights file's
+state rule (`StateRule`: carried, set to 0.5 at each turn start, or zero), which must match how the checkpoint
+was trained. The driver moves it on after each of the seat's moves goes through.
 -/
 
 namespace CharterServer.Policy
@@ -70,9 +72,10 @@ def problems (g : Game) : List String :=
   | some s => problemsOf g.spec.G s.rules.pieces s.laws.length
   | none => problemsOf g.spec.G g.spec.G.pieces g.spec.G.startingLaws.length
 
-/-- The network's move for this seat on its turn, as an event, and how many actions were legal.
-`none` when it is not this seat's turn. -/
-def turnEvent (net : Net) (g : Game) (s : State g.spec.G) (seat : Nat) : Except String (Option (Event × Nat)) := do
+/-- The network's move for this seat on its turn, starting from recurrent state `state`: the event, how many
+actions were legal, and the new state. `none` when it is not this seat's turn. -/
+def turnEventFrom (net : Net) (state : Array FloatArray) (g : Game) (s : State g.spec.G) (seat : Nat) :
+    Except String (Option (Event × Nat × Array FloatArray)) := do
   if s.currentSeat != some seat || s.phase == .ended then return none
   let G := g.spec.G
   let T := tablesOf g s
@@ -83,12 +86,16 @@ def turnEvent (net : Net) (g : Game) (s : State g.spec.G) (seat : Nat) : Except 
   if acts.isEmpty then
     throw s!"seat {seat} has its turn and no legal action has a number in the layout"
   let obs := observe T ep ctx (template T ep G s.turnOrder.length) s d
-  let (logits, _) ← net.forward obs net.initState
+  let (logits, state') ← net.forward obs state
   let some a := net.best logits (acts.map (·.1)).toArray
     | throw "no legal action was scored"
   match acts.find? (·.1 == a) with
-  | some (_, ev) => return some (ev, acts.length)
+  | some (_, ev) => return some (ev, acts.length, state')
   | none => throw s!"action {a} has no event"
+
+/-- The network's move for this seat on its turn, from a zero recurrent state, as the server plays it. -/
+def turnEvent (net : Net) (g : Game) (s : State g.spec.G) (seat : Nat) : Except String (Option (Event × Nat)) := do
+  return (← turnEventFrom net net.initState g s seat).map fun (ev, n, _) => (ev, n)
 
 /-- Is this event a reaction (a vote, a signature or an accepted offer), not a move on the seat's turn? -/
 def isReactionJson (ev : Json) : Bool :=
@@ -97,21 +104,59 @@ def isReactionJson (ev : Json) : Bool :=
   | some "move" => (jField ev "move").bind (jStr · "t") == some "accept"
   | _ => false
 
+/-- Each policy seat's recurrent state after its last move that went through, and the turn it was in
+(`State.turnsTaken`). A seat not here starts from zero. -/
+abbrev Memory := Std.HashMap Nat (Nat × Array FloatArray)
+
+/-- The state this seat decides from now, by the weights file's state rule: carried, set at a new turn, or zero. -/
+def Memory.stateOf (mem : Memory) (net : Net) (s : State G) (seat : Nat) : Array FloatArray :=
+  let st := match mem.get? seat with
+    | some (turn, st) => if turn == s.turnsTaken then st else net.atTurnStart st
+    | none => net.atTurnStart net.initState
+  net.atDecision st
+
 /-- The policy bot's events for this seat, best first: the rule-based bot's reactions, then the network's move.
 An error is a bug to report, not something to play around. -/
-def candidatesWith (net : Net) (g : Game) (seat : Nat) (mayVote : Nat → Bool := fun _ => true) :
+def candidatesWith (net : Net) (mem : Memory) (g : Game) (seat : Nat) (mayVote : Nat → Bool := fun _ => true) :
     Except String (List Json) := do
   let some s := g.state | return []
   let reactions := if s.openProposals.isEmpty && s.offers.isEmpty then [] else
     ((handEvents (Ctx.of g.spec.G) s [seat] mayVote).filterMap eventJson?).filter isReactionJson
-  let move ← turnEvent net g s seat
+  let move ← turnEventFrom net (mem.stateOf net s seat) g s seat
   return reactions ++ ((move.map (·.1)).toList.filterMap eventJson?)
 
 /-- The policy bot's events for this seat. If the network did not load, or a decision fails, the error is
 printed to the server's log as a bug and the seat does nothing; there is no fallback to another bot. -/
-def candidates (g : Game) (seat : Nat) (mayVote : Nat → Bool := fun _ => true) : List Json :=
-  match policyNet.bind fun net => candidatesWith net g seat mayVote with
+def candidates (mem : Memory) (g : Game) (seat : Nat) (mayVote : Nat → Bool := fun _ => true) : List Json :=
+  match policyNet.bind fun net => candidatesWith net mem g seat mayVote with
   | .ok evs => evs
   | .error e => dbgTrace s!"policy bot bug: {e}" fun _ => []
+
+/-- The memory after `ev` went through in game `g` (the game before it): if `ev` is the move the network chose for
+the seat whose turn it was, that seat's state moves on. Votes and other reactions leave it alone, as in training,
+where the network never voted. -/
+def Memory.after (mem : Memory) (net : Net) (g : Game) (ev : Json) : Memory := Id.run do
+  let some s := g.state | return mem
+  let some seat := s.currentSeat | return mem
+  if !g.isBot seat || isReactionJson ev then return mem
+  match turnEventFrom net (mem.stateOf net s seat) g s seat with
+  | .ok (some (mine, _, st)) =>
+    if (eventJson? mine).map (·.compress) == some ev.compress then mem.insert seat (s.turnsTaken, st) else mem
+  | _ => mem
+
+/-- Every table's memory, by table code. It lives as long as the server process: after a restart, a seat's
+state starts again from zero. -/
+initialize memories : IO.Ref (Std.HashMap String Memory) ← IO.mkRef {}
+
+/-- This table's memory. -/
+def memoryOf (code : String) : IO Memory := do
+  return (← memories.get).getD code {}
+
+/-- Record that `ev` went through at table `code`, whose game before it was `g`. -/
+def recordCommit (code : String) (g : Game) (ev : Json) : IO Unit := do
+  if !policyOn then return
+  let .ok net := policyNet | return
+  let mem ← memoryOf code
+  memories.modify (·.insert code (mem.after net g ev))
 
 end CharterServer.Policy

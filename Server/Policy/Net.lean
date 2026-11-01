@@ -12,7 +12,7 @@ All numbers are little-endian.
 
 1. The 4 bytes `CHPW`.
 2. Eleven unsigned 32-bit integers, in this order:
-   format version (must be 1), layout version, `E` (size of one table row
+   format version (2; version 1 files have no item 5), layout version, `E` (size of one table row
    after encoding), `hidden`, `layers`, `act_size` (number of actions),
    `pointer` (0, 1 or 2), `act_spot`, `act_link`, `act_bank` (where the
    pointer scores go in the action list), `ntables`.
@@ -21,7 +21,10 @@ All numbers are little-endian.
    after another. Column 0 of a row is 1 for a real row and 0 for padding.
 4. Four unsigned 32-bit integers: the table numbers of the `kinds`,
    `spots`, `links` and `resources` tables (used by the pointer scores).
-5. The weights: 32-bit floats, exactly as in the PufferLib `.bin` file.
+5. One unsigned 32-bit integer: the state rule, how the recurrent state
+   moves between one seat's decisions (`StateRule`): 0 `carry`, 1 `turn`,
+   2 `zero`. It must match how the checkpoint was trained.
+6. The weights: 32-bit floats, exactly as in the PufferLib `.bin` file.
    Each block is padded with zeros up to a multiple of 8 floats. Blocks, in
    order, all row-major:
    - one input block per table, `E x width`;
@@ -52,6 +55,20 @@ deriving Repr, Inhabited
 /-- A table with 2 rows of 3 values starting at position 5. -/
 example : NetTable := { offset := 5, rows := 2, width := 3 }
 
+/-- How the recurrent state moves between one seat's decisions. Training regimes differ, and the server must use
+the one the checkpoint was trained with:
+- `carry`: the state goes on from the seat's last decision. This is the harness's eval and its games against bots.
+- `turn`: the state is set to 0.5 everywhere at the start of each of the seat's turns, and goes on within a turn.
+  In self-play training, the zero observations of the ticks a seat waits drive its state to 0.5.
+- `zero`: the state is zero at every decision. This is behaviour cloning. -/
+inductive StateRule where
+  | carry | turn | zero
+  deriving BEq, Repr, Inhabited
+
+/-- The rule's name, as the checkpoint's meta writes it. -/
+def StateRule.name : StateRule → String
+  | .carry => "carry" | .turn => "turn" | .zero => "zero"
+
 /-- The parsed weights file: sizes, observation layout and all weights. -/
 structure Net where
   /-- Which observation layout these weights were trained on. -/
@@ -74,6 +91,8 @@ structure Net where
   actBank : Nat
   /-- The observation tables, in order. -/
   tables : Array NetTable
+  /-- How the recurrent state moves between one seat's decisions. -/
+  stateRule : StateRule := .carry
   /-- Table number of the `kinds` table. -/
   kindsIdx : Nat
   /-- Table number of the `spots` table. -/
@@ -128,12 +147,12 @@ def Net.read (b : ByteArray) : Except String Net := do
   if b.extract 0 4 != "CHPW".toUTF8 then
     throw "weights file: missing magic bytes CHPW"
   let h (k : Nat) : Nat := (u32At b (4 + 4 * k)).toNat
-  if h 0 != 1 then throw s!"weights file: format version {h 0}, expected 1"
+  if h 0 != 2 then throw s!"weights file: format version {h 0}, expected 2 (it records the state rule)"
   let e := h 2; let hid := h 3; let layers := h 4; let act := h 5
   let pointer := h 6; let nt := h 10
   if pointer > 2 then throw s!"weights file: pointer must be 0, 1 or 2, got {pointer}"
   if e == 0 || hid == 0 || nt == 0 then throw "weights file: E, hidden and ntables must be positive"
-  let headerBytes := 4 + 4 * (11 + 3 * nt + 4)
+  let headerBytes := 4 + 4 * (11 + 3 * nt + 5)
   if b.size < headerBytes then
     throw s!"weights file: header needs {headerBytes} bytes, got {b.size}"
   let mut tables : Array NetTable := #[]
@@ -141,6 +160,9 @@ def Net.read (b : ByteArray) : Except String Net := do
     tables := tables.push { offset := h (11 + 3*t), rows := h (12 + 3*t), width := h (13 + 3*t) }
   let idx (k : Nat) := h (11 + 3 * nt + k)
   let kinds := idx 0; let spots := idx 1; let links := idx 2; let res := idx 3
+  let stateRule ← match idx 4 with
+    | 0 => pure StateRule.carry | 1 => pure .turn | 2 => pure .zero
+    | k => throw s!"weights file: state rule {k}, expected 0, 1 or 2"
   -- Check the layout.
   let obsSize := tables.foldl (fun acc t => acc + t.rows * t.width) 0
   for t in tables do
@@ -178,11 +200,23 @@ def Net.read (b : ByteArray) : Except String Net := do
   return { layoutVersion := h 1, E := e, hidden := hid, layers, actSize := act, pointer,
            actSpot := h 7, actLink := h 8, actBank := h 9, tables,
            kindsIdx := kinds, spotsIdx := spots, linksIdx := links, resourcesIdx := res,
-           wIn, wOut, decoder := dec, ptr, grus }
+           stateRule, wIn, wOut, decoder := dec, ptr, grus }
 
 /-- The recurrent state at the start of a game: zeros, one vector per layer. -/
 def Net.initState (n : Net) : Array FloatArray :=
   Array.replicate n.layers (FloatArray.mk (Array.replicate n.hidden 0.0))
+
+/-- The state to start a seat's turn from, given its state after its last decision. -/
+def Net.atTurnStart (n : Net) (st : Array FloatArray) : Array FloatArray :=
+  match n.stateRule with
+  | .turn => Array.replicate n.layers (FloatArray.mk (Array.replicate n.hidden 0.5))
+  | _ => st
+
+/-- The state to decide from, given the state the seat holds now. -/
+def Net.atDecision (n : Net) (st : Array FloatArray) : Array FloatArray :=
+  match n.stateRule with
+  | .zero => n.initState
+  | _ => st
 
 /-- The logistic function `1 / (1 + e^(-x))`. -/
 @[inline] def sigmoid (x : Float) : Float := 1.0 / (1.0 + Float.exp (-x))

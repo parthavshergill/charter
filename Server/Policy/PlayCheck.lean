@@ -33,6 +33,8 @@ structure Result where
   rounds : Nat
   decisions : Nat
   decisionNs : Nat
+  /-- Turn decisions where a zero recurrent state would have chosen another move than the carried one. -/
+  stateDiffers : Nat := 0
   error : Option String
 
 /-- Play one game. `policySeats` play by `net`; the others by the current bot. -/
@@ -44,6 +46,8 @@ def playOne (net : Net) (spec : GameSpec) (seats seed : Nat) (policySeats : List
   let mut decisions := 0
   let mut ns := 0
   let mut err : Option String := none
+  let mut mem : Memory := {}
+  let mut differs := 0
   for _ in [0:20000] do
     let some s := g.state | break
     if s.phase == .ended then break
@@ -51,12 +55,17 @@ def playOne (net : Net) (spec : GameSpec) (seats seed : Nat) (policySeats : List
     for seat in List.range seats do
       if policySeats.contains seat then
         let t0 ← IO.monoNanosNow
-        match candidatesWith net g seat with
+        match candidatesWith net mem g seat with
         | .ok evs =>
           let t1 ← IO.monoNanosNow
           if s.currentSeat == some seat then
             decisions := decisions + 1
             ns := ns + (t1 - t0)
+            -- The move it plays carries the state; count where a zero state would have chosen another move.
+            match turnEventFrom net (mem.stateOf net s seat) g s seat, turnEvent net g s seat with
+            | .ok (some (evC, _, _)), .ok (some (evZ, _)) =>
+              if (Bots.eventJson? evC).map (·.compress) != (Bots.eventJson? evZ).map (·.compress) then differs := differs + 1
+            | _, _ => pure ()
           lists := lists ++ [evs]
         | .error e =>
           err := some s!"round {s.round}, seat {seat}: {e}"
@@ -66,6 +75,7 @@ def playOne (net : Net) (spec : GameSpec) (seats seed : Nat) (policySeats : List
     if err.isSome then break
     match (merged lists).find? fun ev => (apply g ev).toOption.isSome with
     | some ev =>
+      if policySeats.any (s.currentSeat == some ·) then mem := mem.after net g ev
       match apply g ev with
       | .ok g' => g := g'
       | .error e => err := some e; break
@@ -80,6 +90,7 @@ def playOne (net : Net) (spec : GameSpec) (seats seed : Nat) (policySeats : List
     | none => false
   let err2 := if err.isNone && !ended then some "the game did not end within the step cap" else err
   return { base with ended, winner := s.winner, byTarget, points, rounds := s.round, decisions, decisionNs := ns
+                     stateDiffers := differs
                      error := err2 }
 
 /-- One line about a game. -/
@@ -88,7 +99,7 @@ def Result.line (r : Result) : String :=
     | some w => s!"seat {w} ({if r.policySeats.contains w then "policy" else "current bot"}) won by {if r.byTarget then "target" else "round limit"}"
     | none => "no winner"
   let ms := if r.decisions == 0 then 0.0 else Float.ofNat r.decisionNs / Float.ofNat r.decisions / 1e6
-  s!"{r.game}, {r.seats} seats, policy {r.policySeats}: {if r.ended then "ended" else "NOT ENDED"} in round {r.rounds}; {who}; points {r.points}; {r.decisions} policy turn decisions, {ms} ms each" ++
+  s!"{r.game}, {r.seats} seats, policy {r.policySeats}: {if r.ended then "ended" else "NOT ENDED"} in round {r.rounds}; {who}; points {r.points}; {r.decisions} policy turn decisions, {ms} ms each; zero state would differ on {r.stateDiffers}" ++
     (match r.error with | some e => s!"; ERROR: {e}" | none => "")
 
 def main (args : List String) : IO UInt32 := do
@@ -98,7 +109,7 @@ def main (args : List String) : IO UInt32 := do
   let net ← match ← loadNet path with
     | .ok n => pure n
     | .error e => do IO.eprintln e; return 2
-  IO.println s!"weights {path}: E {net.E}, hidden {net.hidden}, layers {net.layers}, pointer {net.pointer}"
+  IO.println s!"weights {path}: E {net.E}, hidden {net.hidden}, layers {net.layers}, pointer {net.pointer}, state rule {net.stateRule.name}"
   let vsHand := args.contains "--vs-hand"
   let games := ((args.drop 1).head?.bind String.toNat?).getD 4
   let mut ok := true
@@ -131,6 +142,9 @@ def main (args : List String) : IO UInt32 := do
     for spec in gameSpecs do
       IO.println s!"{spec.id}: {tally (all.filter (·.game == spec.id))}"
     IO.println s!"all worlds: {tally all}"
+    let d := (all.map (·.decisions)).sum
+    let x := (all.map (·.stateDiffers)).sum
+    IO.println s!"recurrent state: a zero state instead would change {x} of {d} policy turn decisions"
   return if ok then 0 else 1
 
 end CharterServer.Policy.PlayCheck
