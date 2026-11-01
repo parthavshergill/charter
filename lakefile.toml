@@ -1,5 +1,5 @@
 name = "charter"
-defaultTargets = ["Charter", "charter-server"]
+defaultTargets = ["Charter", "charter-server", "charter-sim", "ServerTests"]
 
 [[require]]
 name = "hexgrid"
@@ -23,6 +23,13 @@ name = "Charter"
 [[lean_lib]]
 name = "Server"
 
+[[lean_lib]]
+name = "ServerTests"
+
 [[lean_exe]]
 name = "charter-server"
 root = "Server.Main"
+
+[[lean_exe]]
+name = "charter-sim"
+root = "Server.Sim"
