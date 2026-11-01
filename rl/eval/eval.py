@@ -1,14 +1,16 @@
 """One command, one report: how well a policy plays Charter against fixed opponents.
 
-    python3 rl/eval/eval.py SUBJECT [SUBJECT ...] [--games N] [--out DIR] [--jobs J]
+    python3 rl/eval/eval.py SUBJECT [SUBJECT ...] [--games N] [--out DIR] [--jobs J] [--opponents a,b] [--logs K]
 
-A SUBJECT is `random` (a random legal action), `hand` (the hand bot, played by the environment), or a policy file:
-a PufferLib `.bin` checkpoint or an `.npz`, each with a JSON `meta` next to it (`<file>.json`). rl/README.md gives
-the format.
+A SUBJECT is `random` (a random legal action), `hand` (the hand bot), `champion` or `champion-closed` (the earlier
+evolution run's best strategy, played by the environment, with and without offers), or a policy file: a PufferLib
+`.bin` checkpoint or an `.npz`, each with a JSON `meta` next to it (`<file>.json`). rl/README.md gives the format.
 
 Everything is fixed, so two runs and two subjects see the same games:
-- Opponents: three `hand` bots, then three random players. `fair` and `closed` differ from `hand` only in accepting
-  offers, and no seat here makes offers, so they would play exactly the games `hand` plays. They are not run.
+- Opponents: three `hand` bots, three random players, and three `champion` bots. `fair` and `closed` differ from
+  `hand` only in accepting offers, and `hand` makes none, so they would play exactly the games `hand` plays. They are
+  not run. `champion` makes offers and accepts them, among its own seats: the policy has no action for offers.
+  `--opponents` picks others, for example `champion-closed`, which makes and accepts none.
 - Games: training (`island`, `not-catan`) and held out (`slime-parliament`, `ai-bubble`, `strike-the-earth`,
   `pirate-republic`), four seats each.
 - Seeds: game k of a table has its own seed, made from the game's name and k, and the subject sits at seat k mod 4,
@@ -16,12 +18,19 @@ Everything is fixed, so two runs and two subjects see the same games:
 - Phases: `whole` (the subject plays the whole game), `setup` (the subject places the opening pieces, then `hand`
   plays on for it) and `play` (`hand` places the opening pieces, then the subject plays on).
 - Laws: with laws (`law_every` 8) and without (0). Votes follow `vote_mode` from the policy's meta, `bot` otherwise.
+
+Saved games (`--logs K`, default 2): the first K games of every table are kept in `OUT/games/`, each as
+`<code>.jsonl`, the server's event log, which `charter-rl-logs OUT/games` turns into `<code>.db` for
+`make spectate RESULTS=OUT/games`, and as `<code>.md`, a short summary: moves by type, what was built and when,
+trades, votes, and points by round. `OUT/games/index.md` lists them. This script runs `charter-rl-logs` when it can
+find it.
 """
 import argparse
 import hashlib
 import json
 import math
 import os
+import subprocess
 import sys
 import time
 from concurrent.futures import ProcessPoolExecutor
@@ -35,12 +44,14 @@ sys.path.insert(0, os.path.join(HERE, ".."))
 TRAIN = ["island", "not-catan"]
 HELD_OUT = ["slime-parliament", "ai-bubble", "strike-the-earth", "pirate-republic"]
 SEATS = 4
-OPPONENTS = ["hand", "random"]
+OPPONENTS = ["hand", "random", "champion"]
+BOTS = ["hand", "champion", "champion-closed"]   # subjects and opponents the environment plays itself
 PHASES = ["whole", "setup", "play"]
 NOTE_WEAK = ("`hand` is a weak opponent on some held-out games: in the builder's run, random players beat three `hand` "
              "bots in 69% of Pirate Republic games and matched them on Strike the Earth. Read held-out results by game.")
-NOTE_SAME = ("`fair`, `closed` and `hand` play identically when nobody makes offers, and no seat here makes "
-             "offers, so only `hand` is shown. It stands for all three.")
+NOTE_SAME = ("`fair`, `closed` and `hand` play identically when nobody makes offers, and `hand` makes none, "
+             "so only `hand` is shown. It stands for all three. `champion` makes and accepts offers among its own "
+             "seats; the subject cannot make or accept one.")
 
 
 def seed_of(game, k, laws, phase, opponent):
@@ -80,8 +91,8 @@ def load_subject(spec):
     """What `spec` names, as (label, maker, settings). `maker(seed)` gives a fresh player; None means `hand`."""
     if spec == "random":
         return "random", RandomPlayer, {}
-    if spec == "hand":
-        return "hand", None, {}
+    if spec in BOTS:
+        return spec, None, {}
     meta_path = spec + ".json"
     if not os.path.exists(meta_path):
         meta_path = os.path.splitext(spec)[0] + ".json"
@@ -94,29 +105,43 @@ def load_subject(spec):
 
 # ---- Playing -----------------------------------------------------------------------------------------------
 
-def lineup_for(phase, opponent, at):
-    """The environment's lineup with the subject at seat `at`. Random opponents are callers this script plays."""
-    me = {"whole": "caller", "setup": "caller+hand", "play": "hand+caller"}[phase]
-    other = "hand" if opponent == "hand" else "caller"
+def lineup_for(phase, opponent, at, bot=None):
+    """The environment's lineup with the subject at seat `at`. Random opponents are callers this script plays.
+    `bot` names a subject the environment plays itself; `hand` stays a caller that plays the hand bot's suggestion, as
+    before, so its rows compare with earlier reports."""
+    me = bot if bot and bot != "hand" else "caller"
+    me = {"whole": me, "setup": f"{me}+hand", "play": f"hand+{me}"}[phase]
+    other = "caller" if opponent == "random" else opponent
     return [me if s == at else other for s in range(SEATS)]
+
+
+def table_code(game_id, opponent, phase, laws, k):
+    """A table code for a saved game: letters only, fixed by the table and k."""
+    h = hashlib.sha256(f"{game_id}/{opponent}/{phase}/{laws}/{k}".encode()).digest()
+    letters = "ABCDEFGHJKMNPQRSTUVWXYZ"
+    return "".join(letters[b % len(letters)] for b in h[:6])
 
 
 def play_table(task):
     """Play one table of games: one subject, one game, one opponent, one phase, one law setting."""
     from charter import Game
-    spec, game_id, opponent, phase, laws, n, vote_mode, settings = task
+    spec, game_id, opponent, phase, laws, n, vote_mode, settings, logs, log_dir = task
     label, maker, _ = load_subject(spec)
+    bot = spec if spec in BOTS else None
     wins, by_seat, points, rounds, refused, decisions, ended = 0, [0] * SEATS, 0.0, 0.0, 0, 0, 0
     base = {"game": game_id, "lineup": ["caller"] * SEATS, "seed": 1, "vote_mode": vote_mode,
             "law_every": 8 if laws else 0}
     for key in ("slot_order", "move_rows", "random_map", "preview"):
         if key in settings:
             base[key] = settings[key]
-    g = Game(base)
+    plain = Game(base)
+    recorded = Game(dict(base, record=True)) if logs else None
+    saved = []
     for k in range(n):
         at = k % SEATS
         seed = seed_of(game_id, k, laws, phase, opponent)
-        lineup = lineup_for(phase, opponent, at)
+        lineup = lineup_for(phase, opponent, at, bot)
+        g = recorded if k < logs else plain
         g.restart(lineup, seed)
         subject = maker(seed) if maker else None
         others = RandomPlayer(seed + 1)
@@ -138,6 +163,8 @@ def play_table(task):
                 refused += 1
                 g.step(int(g.legal()[0]))
         info = g.info()
+        if k < logs:
+            saved.append(save_game(g, log_dir, label, game_id, opponent, phase, laws, k, at, seed, lineup, info))
         ended += int(info["over"])
         if int(info["winner"]) == at:
             wins += 1
@@ -146,7 +173,138 @@ def play_table(task):
         rounds += info["round"]
     return {"subject": label, "game": game_id, "opponent": opponent, "phase": phase, "laws": laws, "games": n,
             "wins": wins, "wins_by_seat": by_seat, "points": points / n, "rounds": rounds / n,
-            "refused": refused, "decisions": decisions, "ended": ended}
+            "refused": refused, "decisions": decisions, "ended": ended, "saved": saved}
+
+
+# ---- Saved games -------------------------------------------------------------------------------------------
+
+def seat_names(label, lineup, at):
+    names = []
+    for s, who in enumerate(lineup):
+        if s == at:
+            names.append(f"subject {label}")
+        else:
+            names.append(f"{'random' if who == 'caller' else who} {s}")
+    return names
+
+
+def save_game(g, log_dir, label, game_id, opponent, phase, laws, k, at, seed, lineup, info):
+    """Write one game's server log and its summary. Returns a row for the index."""
+    code = table_code(game_id, opponent, phase, laws, k)
+    names = seat_names(label, lineup, at)
+    log = g.saved_log(code, names)
+    state = g.saved_state()
+    sub = os.path.join(log_dir, label.replace("/", "_"))
+    os.makedirs(sub, exist_ok=True)
+    open(os.path.join(sub, f"{code}.jsonl"), "w").write(log)
+    events = [json.loads(l) for l in log.splitlines() if l]
+    text = summary(events, state, names, at, info, game_id, opponent, phase, laws, seed)
+    open(os.path.join(sub, f"{code}.md"), "w").write(text)
+    winner = int(info["winner"])
+    return {"code": code, "dir": os.path.basename(sub), "game": game_id, "opponent": opponent, "phase": phase,
+            "laws": laws, "k": k, "seat": at, "seed": seed, "won": winner == at,
+            "winner": names[winner] if 0 <= winner < len(names) else "nobody",
+            "points": [int(info[f"points{s}"]) for s in range(SEATS)], "rounds": int(info["round"])}
+
+
+def move_kind(m):
+    t = m.get("t", "?")
+    if t == "place":
+        return f"build {m.get('kind', '?')}"
+    return {"bankTrade": "bank trade", "endTurn": "end turn"}.get(t, t)
+
+
+def summary(events, state, names, at, info, game_id, opponent, phase, laws, seed):
+    """A short readable account of one saved game, from its log and the state after each event."""
+    play = events[len(events) - len(state):]   # the game's own events, after create, joins and start
+    seats = len(names)
+    kinds = [{} for _ in range(seats)]
+    builds = [[] for _ in range(seats)]
+    trades = []
+    votes = {}
+    proposals = []
+    laws_before = None
+    for ev, st in zip(play, state):
+        rnd, setup, nlaws = st[0], st[1], st[2]
+        when = "setup" if setup else f"r{rnd}"
+        t = ev.get("t")
+        if t == "move":
+            s, m = ev["seat"], ev["move"]
+            name = move_kind(m)
+            kinds[s][name] = kinds[s].get(name, 0) + 1
+            if m.get("t") == "place":
+                where = m.get("spot", m.get("link", m.get("on", "")))
+                builds[s].append(f"{when} {m.get('kind')} at {where}")
+            elif m.get("t") in ("bankTrade", "offer", "accept"):
+                trades.append(f"{when} {names[s]}: {m.get('t')} {json.dumps({k: v for k, v in m.items() if k != 't'})}")
+        elif t == "propose":
+            proposals.append({"id": None, "by": names[ev["seat"]], "text": ev.get("text", ""), "when": when,
+                              "laws_before": nlaws - 0})
+        elif t == "vote":
+            votes.setdefault(ev["id"], []).append((names[ev["seat"]], ev["yes"], nlaws))
+        laws_before = nlaws
+    out = [f"# {game_id}, against {opponent}, phase `{phase}`, {'with' if laws else 'without'} laws", "",
+           f"Seed {seed}. Subject at seat {at}. Rounds: {int(info['round'])}. "
+           f"Winner: {names[int(info['winner'])] if int(info['winner']) >= 0 else 'nobody'}. "
+           "Points: " + ", ".join(f"{names[s]} {int(info[f'points{s}'])}" for s in range(seats)) + ".", ""]
+    out += ["## Moves by type", "", "| seat | " + " | ".join(["moves"]) + " |", "|---|---|"]
+    for s in range(seats):
+        out.append(f"| {names[s]} | " + ", ".join(f"{k} {v}" for k, v in sorted(kinds[s].items())) + " |")
+    out += ["", "## Points at the end of each round", "", "| round | " + " | ".join(names) + " |",
+            "|---|" + "---|" * seats]
+    last = {}
+    for st in state:
+        if not st[1]:
+            last[st[0]] = st[3:3 + seats]
+    for r in sorted(last):
+        out.append(f"| {r} | " + " | ".join(str(x) for x in last[r]) + " |")
+    out += ["", "## Built", ""]
+    for s in range(seats):
+        out.append(f"- **{names[s]}**: " + ("; ".join(builds[s]) if builds[s] else "nothing"))
+    out += ["", f"## Trades ({len(trades)})", ""] + [f"- {t}" for t in trades[:60]]
+    if len(trades) > 60:
+        out.append(f"- ... and {len(trades) - 60} more")
+    out += ["", f"## Laws proposed ({len(proposals)}) and votes", ""]
+    for i, p in enumerate(proposals):
+        out.append(f"- {p['when']}, {p['by']}: `{p['text']}`")
+    for pid, vs in sorted(votes.items()):
+        yes = [n for n, y, _ in vs if y]
+        no = [n for n, y, _ in vs if not y]
+        passed = vs[-1][2] > vs[0][2] if vs else False
+        out.append(f"- proposal {pid}: yes {yes}, no {no}" + (" (laws in force rose: passed)" if passed else ""))
+    return "\n".join(out) + "\n"
+
+
+def write_index(log_dir, everything):
+    rows = ["# Saved games", "", "Each game has a server log (`.jsonl`) and a summary (`.md`). "
+            "`charter-rl-logs DIR` makes the `.db` files that `make spectate RESULTS=DIR` opens.", "",
+            "| subject | game | opponents | phase | laws | seat | won | winner | points | rounds | summary |",
+            "|---|---|---|---|---|---|---|---|---|---|---|"]
+    for label, results in everything.items():
+        for r in results:
+            for x in r.get("saved", []):
+                rows.append(f"| {label} | {x['game']} | {x['opponent']} | {x['phase']} | {'yes' if x['laws'] else 'no'} "
+                            f"| {x['seat']} | {'yes' if x['won'] else 'no'} | {x['winner']} | "
+                            f"{'/'.join(map(str, x['points']))} | {x['rounds']} | [{x['code']}]({x['dir']}/{x['code']}.md) |")
+    open(os.path.join(log_dir, "index.md"), "w").write("\n".join(rows) + "\n")
+
+
+def make_dbs(log_dir):
+    """Run charter-rl-logs on each subject's folder of saved games, when it is built."""
+    here = os.path.join(HERE, "..", "..", ".lake", "build", "bin", "charter-rl-logs")
+    exe = os.environ.get("CHARTER_RL_LOGS", here)
+    if not os.path.exists(exe):
+        print(f"charter-rl-logs not found at {exe}: the .db files are not made")
+        return None
+    ok = True
+    for d in sorted(os.listdir(log_dir)):
+        p = os.path.join(log_dir, d)
+        if os.path.isdir(p):
+            r = subprocess.run([exe, p], capture_output=True, text=True)
+            last = (r.stdout.strip().splitlines() or [""])[-1]
+            print(f"saved games, {d}: {last}")
+            ok = ok and r.returncode == 0
+    return ok
 
 
 # ---- Report ------------------------------------------------------------------------------------------------
@@ -212,7 +370,12 @@ def main():
     ap.add_argument("--jobs", type=int, default=os.cpu_count())
     ap.add_argument("--out", default="results/eval")
     ap.add_argument("--quick", action="store_true", help="whole games with laws only")
+    ap.add_argument("--opponents", default=",".join(OPPONENTS),
+                    help="comma-separated: hand, random, champion, champion-closed")
+    ap.add_argument("--logs", type=int, default=2, help="games kept per table, with logs and summaries")
     args = ap.parse_args()
+    OPPONENTS[:] = args.opponents.split(",")
+    log_dir = os.path.join(args.out, "games")
     n = max(SEATS, args.games - args.games % SEATS)
     os.makedirs(args.out, exist_ok=True)
     text = ["# Charter eval", "", NOTE_SAME, "", NOTE_WEAK, "",
@@ -225,15 +388,19 @@ def main():
         vote_mode = settings.get("vote_mode", "bot")
         phases = ["whole"] if args.quick else PHASES
         lawset = [True] if args.quick else [True, False]
-        tasks = [(spec, g, o, p, l, n, vote_mode, settings)
+        tasks = [(spec, g, o, p, l, n, vote_mode, settings, min(args.logs, n), log_dir)
                  for g in TRAIN + HELD_OUT for o in OPPONENTS for p in phases for l in lawset
-                 if not (label == "hand" and p != "whole")]
+                 if not (label in BOTS and p != "whole")]
         t0 = time.time()
         with ProcessPoolExecutor(max_workers=args.jobs) as pool:
             results = list(pool.map(play_table, tasks))
         text.append(report(label, settings, results, time.time() - t0))
         everything[label] = results
         print(f"{label}: done in {time.time() - t0:.0f} s", flush=True)
+    if args.logs:
+        write_index(log_dir, everything)
+        text.append(f"Saved games: {log_dir}/index.md." + ("" if make_dbs(log_dir) is not False else
+                                                             " Some saved games did not replay: see the output."))
     open(os.path.join(args.out, "report.md"), "w").write("\n".join(text))
     json.dump(everything, open(os.path.join(args.out, "report.json"), "w"), indent=1)
     print("\n".join(text))

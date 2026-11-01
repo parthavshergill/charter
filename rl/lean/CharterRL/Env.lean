@@ -49,6 +49,13 @@ structure Env where
   proposed : Nat := 0
   passed : Nat := 0
   decisions : Nat := 0
+  /-- Every event so far, in the server's log format, when `settings.record` is on. -/
+  trail : Array Json := #[]
+  /-- After each event of `trail`: the round, 1 if still in setup, the number of laws in force, and each seat's
+  points. For the readable summary of a saved game. -/
+  trailState : Array Json := #[]
+  /-- An event had no log form, so the saved log would not replay. -/
+  trailBroken : Bool := false
 
 instance : Inhabited Env := ⟨
   { T := default, settings := {}, lineup := #[], seed := 0, G := (default : Tables).G, ctx := default,
@@ -64,6 +71,19 @@ private def seatZeros : FloatArray :=
 private def Env.draw (e : Env) : UInt64 × Env :=
   let next := e.draws + 0x9E3779B97F4A7C15
   (scramble next, { e with draws := next })
+
+/-- Keep this event, if the game is being recorded. A proposal's log form needs its text, which `injectLaw` gives. -/
+private def Env.note (e : Env) (ev : Event) (text : Option String := Option.none) : Env :=
+  if !e.settings.record then e else
+  let j := match ev, text with
+    | .propose seat _, some t => some (Json.mkObj [("t", "propose"), ("seat", toJson seat), ("text", t)])
+    | _, _ => eventJson? ev
+  let s := e.play.state
+  let after := Json.arr (#[toJson s.round, toJson (if s.phase == .setup then 1 else 0), toJson s.laws.length]
+    ++ (List.range e.lineup.size).toArray.map fun q => toJson (s.pointsOf q))
+  match j with
+  | some j => { e with trail := e.trail.push j, trailState := e.trailState.push after }
+  | Option.none => { e with trailBroken := true }
 
 /-- Who plays a seat, now. -/
 private def Env.planOf (e : Env) (seat : Nat) : Option Opponent :=
@@ -117,15 +137,16 @@ private def Env.injectLaw (e : Env) : Env :=
   | Option.none => e
   | some seat =>
     let start := y.toNat % lib.size
-    let tries := (List.range lib.size).filterMap fun i => lib[(start + i) % lib.size]?
-    let found := tries.findSome? fun L =>
+    let tries := (List.range lib.size).filterMap fun i => (lib[(start + i) % lib.size]?).map ((start + i) % lib.size, ·)
+    let found := tries.findSome? fun (i, L) =>
       if e.lawFits L then
         match Engine.step e.G s (.propose seat (.law L)) with
-        | .ok s' => some (Event.propose seat (.law L), s')
+        | .ok s' => some (Event.propose seat (.law L), s', i)
         | .error _ => Option.none
       else Option.none
     match found with
-    | some (ev, s') => { e with play := e.play.commit {} e.playTable ev s', proposed := e.proposed + 1 }
+    | some (ev, s', i) =>
+      { e with play := e.play.commit {} e.playTable ev s', proposed := e.proposed + 1 }.note ev e.T.libraryText[i]?
     | Option.none => e
 
 /-- Record each seat's pips the first time the game is in play. -/
@@ -155,10 +176,10 @@ private def Env.castVote (e : Env) (seat id : Nat) (L : Law) : Option Env :=
         (x % 2 == 0, e)
   let s := e.play.state
   match Engine.step e.G s (.vote seat id yes) with
-  | .ok s' => some { e with play := e.play.commit {} e.playTable (.vote seat id yes) s' }
+  | .ok s' => some ({ e with play := e.play.commit {} e.playTable (.vote seat id yes) s' }.note (.vote seat id yes))
   | .error _ =>
     match Engine.step e.G s (.vote seat id false) with
-    | .ok s' => some { e with play := e.play.commit {} e.playTable (.vote seat id false) s' }
+    | .ok s' => some ({ e with play := e.play.commit {} e.playTable (.vote seat id false) s' }.note (.vote seat id false))
     | .error _ => Option.none
 
 /-- Run until a caller must decide or the game ends. A law passing is counted in `syncLaws`, by a new id appearing
@@ -187,7 +208,7 @@ private def Env.settle (e : Env) : Nat → Env
         if (e.planOf seat).isNone then { e with decision := .turn seat } else
         let table := if s.phase == .setup then e.setupTable else e.playTable
         match advance {} table e.play with
-        | some (_, p) => Env.settle { e with play := p } fuel
+        | some (ev, p) => Env.settle ({ e with play := p }.note ev) fuel
         | Option.none => { e with decision := .none }
 
 /-- How many events a game can have, including those the environment adds. -/
@@ -259,10 +280,10 @@ def Env.step (e : Env) (action : Nat) : Env :=
     | .error _ => bad
     | .ok s' =>
       let table := if e.play.state.phase == .setup then e.setupTable else e.playTable
-      let e' := { e with
+      let e' := ({ e with
         play := e.play.commit {} table ev s'
         refused := false
-        decisions := e.decisions + 1 }
+        decisions := e.decisions + 1 } : Env).note ev
       (Env.settle e' e'.fuel).reckon
 
 /-- The numbers for the seat that must decide. -/
@@ -290,6 +311,33 @@ def Env.suggest (e : Env) (name : String) : Option Nat := do
     let moves := wants.filter fun | .move .. => true | _ => false
     let (chosen : Event) ← (moves.find? fun ev => (Engine.step e.G s ev).toOption.isSome)
     encode e.T e.ep e.decision chosen
+
+/-! ## The game as a server log
+
+`make spectate` replays a folder of server logs. This is one game's log, one JSON event per line: the table's
+creation, with the seed the dice come from and the dealt map, a join per seat with its nonce, the start, and then
+every event of the game. The server's `Game.create` and `Game.apply` replay it through `Engine.step` from the same
+start as `startOf`. `names` names the seats. -/
+
+/-- The game so far as a server log, or why it cannot be one. -/
+def Env.savedLog (e : Env) (code : String) (names : List String) : Except String String := do
+  if !e.settings.record then throw "this game was not recorded: set record to true"
+  if e.trailBroken then throw "an event of this game has no log form"
+  let seats := e.lineup.size
+  let deal := e.G.map.regions.map fun r => (r.res, r.number)
+  let create := Json.mkObj
+    [ ("t", "create"), ("code", code), ("seats", toJson seats), ("game", e.T.id)
+    , ("_serverSeed", toJson (Arena.derive e.seed 0)), ("_map", toJson deal), ("_rlSeed", toJson e.seed) ]
+  let joins := (List.range seats).map fun i =>
+    Json.mkObj
+      [ ("t", "join"), ("name", names.getD i s!"Seat {i}"), ("kind", "bot")
+      , ("_token", toString (Arena.derive e.seed (100 + i))), ("nonce", toJson (Arena.derive e.seed (200 + i))) ]
+  let lines := [create] ++ joins ++ [Json.mkObj [("t", "start")]] ++ e.trail.toList
+  return "\n".intercalate (lines.map (·.compress)) ++ "\n"
+
+/-- After each event of the saved log: `[round, setup, laws in force, points of seat 0, 1, ...]`, one line each. -/
+def Env.savedState (e : Env) : String :=
+  "\n".intercalate (e.trailState.toList.map (·.compress)) ++ "\n"
 
 /-! ## Numbers about a game, for the caller. `infoNames` is their order. -/
 
@@ -332,7 +380,7 @@ private def readBool (j : Json) (k : String) (dflt : Bool) : Except String Bool 
 /-- The settings of a configuration. An unknown key is an error, so a misspelt switch cannot pass unnoticed. -/
 def readSettings (j : Json) : Except String Settings := do
   let known := ["game", "seats", "lineup", "seed", "law_every", "vote_mode", "move_rows", "preview", "random_map",
-    "slot_order", "reward_win", "reward_standing", "shaping_points"]
+    "slot_order", "reward_win", "reward_standing", "shaping_points", "record"]
   match j.getObj? with
   | .error _ => throw "a configuration must be an object"
   | .ok kvs =>
@@ -364,7 +412,8 @@ def readSettings (j : Json) : Except String Settings := do
       randomMap := ← readBool j "random_map" d.randomMap
       rewardWin := ← readFloat j "reward_win" d.rewardWin
       rewardStanding := ← readFloat j "reward_standing" d.rewardStanding
-      shapingPoints := ← readFloat j "shaping_points" d.shapingPoints }
+      shapingPoints := ← readFloat j "shaping_points" d.shapingPoints
+      record := ← readBool j "record" d.record }
 
 /-- One seat of a lineup: `caller`, a strategy's name, or `first+then` for one thing in setup and another after. -/
 def readSeat (text : String) : Except String SeatPlan := do

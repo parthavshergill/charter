@@ -67,14 +67,15 @@ image = (
     )
     .pip_install("numpy==2.2.6")
     .env({"PATH": f"{LEAN}/bin:/usr/local/cuda/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
-          "CUDA_HOME": "/usr/local/cuda", "CHARTER_RL_LIB": f"{REPO}/rl/build/libcharter_rl.so"})
+          "CUDA_HOME": "/usr/local/cuda", "CHARTER_RL_LIB": f"{REPO}/rl/build/libcharter_rl.so",
+          "CHARTER_RL_LOGS": f"{REPO}/.lake/build/bin/charter-rl-logs"})
 )
 for part in ["Charter", "Server", "Evolved", "packages", "forks", "rl/lean", "rl/env"]:
     image = image.add_local_dir(os.path.join(ROOT, part), f"{REPO}/{part}", copy=True, ignore=IGNORE)
 for part in ["Charter.lean", "lakefile.toml", "lake-manifest.json", "lean-toolchain"]:
     image = image.add_local_file(os.path.join(ROOT, part), f"{REPO}/{part}", copy=True)
 image = image.run_commands(
-    f"cd {REPO} && lake build CharterRL.Capi charter-rl-check 2>&1 | tail -3",
+    f"cd {REPO} && lake build CharterRL.Capi charter-rl-check charter-rl-logs 2>&1 | tail -3",
     f"cd {REPO} && rl/env/build.sh 2>&1 | tail -2",
 ).add_local_dir(HERE, SRC, ignore=IGNORE + ["lean/**"])
 
@@ -205,11 +206,13 @@ def train(run: str, train_args: str = "", seconds: int = 600, move_rows: bool = 
 
 
 @app.function(cpu=8, memory=8192, timeout=3 * 3600, volumes={VOL: vol})
-def evaluate(subjects: list, out: str, games: int = 200, quick: bool = False):
-    """Run rl/eval on these subjects (`random`, `hand`, or policy paths on the volume) and save the report."""
+def evaluate(subjects: list, out: str, games: int = 200, quick: bool = False, opponents: str = "", logs: int = 2):
+    """Run rl/eval on these subjects (`random`, `hand`, `champion`, or policy paths on the volume) and save the report,
+    with `logs` saved games per table in `out/games/`."""
     vol.reload()
+    opp = f"--opponents {shlex.quote(opponents)}" if opponents else ""
     code, text = sh(f"cd {SRC}/.. && python3 rl/eval/eval.py {' '.join(map(shlex.quote, subjects))} --games {games} "
-                    f"--jobs 8 --out {out} {'--quick' if quick else ''}")
+                    f"--jobs 8 --out {out} {'--quick' if quick else ''} {opp} --logs {logs}")
     vol.commit()
     return {"exit": code, "report": open(f"{out}/report.md").read() if os.path.exists(f"{out}/report.md") else text[-4000:]}
 
@@ -247,7 +250,8 @@ def guard(max_dollars, gpu, cpu, gib, want_seconds):
 @app.local_entrypoint()
 def main(action: str = "test", run: str = "smoke", minutes: float = 10, max_dollars: float = 1.0,
          train_args: str = "", games: int = 200, subjects: str = "", quick: bool = False, move_rows: bool = False,
-         no_patch: bool = False, encoder: str = "flat", meta_extra: str = ""):
+         no_patch: bool = False, encoder: str = "flat", meta_extra: str = "", opponents: str = "", logs: int = 2,
+         eval_name: str = "eval"):
     if action == "test":
         total = guard(max_dollars, None, 4, 8, 1500)
         print(json.dumps(test.with_options(timeout=total).remote(quick), indent=1))
@@ -264,8 +268,9 @@ def main(action: str = "test", run: str = "smoke", minutes: float = 10, max_doll
         total = guard(max_dollars, None, 8, 8, 3 * 3600)
         evaluate_ = evaluate.with_options(timeout=total)
         subs = subjects.split(",") if subjects else ["random", "hand"]
-        r = evaluate_.remote([s if s in ("random", "hand") or s.startswith("/") else f"{VOL}/{s}" for s in subs],
-                            f"{VOL}/{run}/eval", games, quick)
+        bots = ("random", "hand", "champion", "champion-closed")
+        r = evaluate_.remote([s if s in bots or s.startswith("/") else f"{VOL}/{s}" for s in subs],
+                            f"{VOL}/{run}/{eval_name}", games, quick, opponents, logs)
         print(r["report"])
     else:
         sys.exit(f"unknown action {action}")

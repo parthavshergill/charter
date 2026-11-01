@@ -2,6 +2,7 @@ import Server.ArenaPlay
 import Server.LawLibrary
 import Server.Rules
 import Evolved.Pool
+import CharterRL.Champion
 import CharterRL.Layout
 
 /-!
@@ -117,6 +118,8 @@ structure Tables where
   linkFrom : Array (List (Nat × Nat))
   /-- The laws this game's environment can put to a vote. -/
   library : Array Law
+  /-- Each law of `library` as written, for saved games. -/
+  libraryText : Array String := #[]
   /-- Some law can read a declared number, so declaring can matter. -/
   declares : Bool
 
@@ -132,14 +135,14 @@ def declaresIn (G : GameDef) (library : Array Law) : Bool :=
   G.foundingLaws.any Law.readsDeclared || library.any Law.readsDeclared
 
 /-- The tables of a game, from its definition and layout. -/
-def Tables.make (id : String) (G : GameDef) (minSeats maxSeats : Nat) (library : Array Law)
+def Tables.make (id : String) (G : GameDef) (minSeats maxSeats : Nat) (library : Array (Law × String))
     (spotXY : Array (Float × Float)) : Tables :=
   let links := G.map.links.toArray
   let high := G.map.spotCount
   let linkFrom := links.foldl (fun (acc : Nat × Array (List (Nat × Nat))) l =>
       (acc.1 + 1, acc.2.modify l.1 (· ++ [(l.2, acc.1)]))) (0, Array.replicate high []) |>.2
-  { id, G, minSeats, maxSeats, board := Board.of G, spotXY, links, linkFrom, library
-    declares := declaresIn G library }
+  { id, G, minSeats, maxSeats, board := Board.of G, spotXY, links, linkFrom, library := library.map (·.1)
+    libraryText := library.map (·.2), declares := declaresIn G (library.map (·.1)) }
 
 /-- Spots' places on the board, from -1 to 1. -/
 def normalised (points : List (Float × Float)) : Array (Float × Float) :=
@@ -147,12 +150,12 @@ def normalised (points : List (Float × Float)) : Array (Float × Float) :=
   let top := if top == 0 then 1 else top
   points.toArray.map fun p => (p.1 / top, p.2 / top)
 
-/-- The laws of a game's list that read correctly. -/
-def libraryOf (spec : GameSpec) : Array Law :=
+/-- The laws of a game's list that read correctly, with their text. -/
+def libraryOf (spec : GameSpec) : Array (Law × String) :=
   let names := spec.G.resources.map (·.name)
   ((PreviewCheck.lawsFor spec).filterMap fun text =>
     match Rules.parseProposal text names with
-    | .ok (.law L) => some L
+    | .ok (.law L) => some (L, text)
     | _ => none).toArray
 
 def Tables.ofSpec (spec : GameSpec) : Tables :=
@@ -187,11 +190,17 @@ structure Opponent where
   deriving Inhabited
 
 /-- `fair` accepts an offer only if it helps its next build and counts what it pays. `closed` refuses every offer.
-Both are the hand bot's code, and the weights are those of the evolution runs. -/
+Both are the hand bot's code, and the weights are those of the evolution runs.
+
+`champion` is the best strategy of the earlier evolution run (`g10w44`, `rl/opponents/night2_champion.lean`), with its
+weights. It makes offers and accepts them. `champion-closed` is the same code making and accepting none. Both are for
+training and evaluation only: `CharterRL.Champion` is in the training library, which the server does not import. -/
 def opponents : List Opponent :=
   (Evolved.pool.map fun st => { name := st.name, strategy := st, weights := .default }) ++
   [ { name := "fair", strategy := hand, weights := { acceptGoods := 1, acceptNeed := 1, acceptMargin := 1 } }
-  , { name := "closed", strategy := hand, weights := { acceptMargin := 10 } } ]
+  , { name := "closed", strategy := hand, weights := { acceptMargin := 10 } }
+  , { name := "champion", strategy := Champion.strategy, weights := Champion.weights }
+  , { name := "champion-closed", strategy := Champion.strategy, weights := Champion.closedWeights } ]
 
 /-- What plays a seat. `none` is the caller. `setup` plays until the setup turns are over, and `play` after. -/
 structure SeatPlan where
@@ -237,6 +246,8 @@ structure Settings where
   rewardStanding : Float := 0.25
   /-- A small reward for each point gained, as a share of the target. Off by default. -/
   shapingPoints : Float := 0.0
+  /-- Keep every event of the game, in the server's log format, for `Env.savedLog`. Off in training. -/
+  record : Bool := false
   deriving Inhabited
 
 /-! ## One game's rows -/

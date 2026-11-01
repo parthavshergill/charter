@@ -84,12 +84,22 @@ works for any encoder that has an entry in `ENCODERS`.
   the game's library. Votes: `vote_mode = random` (a coin), `bot` (the hand bot's `lawOk`) or `policy` (votes are
   actions). Under `random` and `bot` the policy never sees a vote.
 - **Bot ladder.** With `num_agents = 1`, bots fill the other seats: `bot_policy` 0 random legal, 1 `hand`, 2 `fair`,
-  3 `closed`. `fair`, `closed` and `hand` play identically when nobody makes offers, and no seat here makes offers,
-  so only 0 and 1 are worth running.
+  3 `closed`, 4 `champion`, 5 `champion-closed`. `fair`, `closed` and `hand` play identically when nobody makes
+  offers, and `hand` makes none, so of those only 0 and 1 are worth running. `eval_bots = 0,1,4`.
+- **Champion.** The best strategy of the earlier evolution run (`g10w44`), with its weights:
+  `rl/opponents/night2_champion.lean` and `.json`. `rl/opponents/gen_champion.py` copies it into
+  `rl/lean/CharterRL/Champion.lean` (do not edit that file; `--check` says if it is stale). It is in the training
+  library only, which the server does not import. `champion` makes offers and accepts them among bot seats (the
+  policy has no action for offers); `champion-closed` makes and accepts none. It costs about 9 times as much time per
+  decision as `hand`.
+- **Training against bots.** `bot_share = p`: in self-play, each game has chance `p` that agents 1 to 3 sit out and
+  `bot_policy` bots take their seats, so agent 0 also plays against, say, `champion` (`bot_policy = 4`). The agents
+  that sit out see only waiting rows, with no reward.
 - **Maps.** `random_map = 1` shuffles resources and numbers between the tiles that pay, each game.
 
 `[env]` keys in `charter.ini`: `games` (comma-separated ids), `vote_mode`, `slot_order`, `move_rows`, `law_every`,
-`random_map`, `preview`, `reward_win`, `reward_standing`, `shaping_points`, `bot_policy`, `distinct_opps`.
+`random_map`, `preview`, `reward_win`, `reward_standing`, `shaping_points`, `bot_policy`, `bot_share`,
+`distinct_opps`. The Lean configuration also takes `record` (keep the game's events for a saved log; eval only).
 
 Games: train on `island`, `not-catan`; hold out `slime-parliament`, `ai-bubble`, `strike-the-earth`,
 `pirate-republic`.
@@ -113,11 +123,25 @@ per game in self-play.
 
 ## Eval
 
-`rl/eval/eval.py SUBJECT...` plays fixed tables: opponents `hand` x3 and random x3; training and held-out games;
+`rl/eval/eval.py SUBJECT...` plays fixed tables: opponents `hand` x3, random x3 and `champion` x3 (`--opponents`
+picks others, such as `champion-closed`); training and held-out games;
 each game its own seed, the subject at seat k mod 4 in game k; phases `whole`, `setup` (subject places the opening
 pieces, `hand` plays on) and `play` (`hand` places them, the subject plays on); with and without laws. It reports win
-rates with 95% Wilson intervals, by seat, and points. Subjects: `random`, `hand`, or a policy file with a JSON meta
-(see `rl/reference/policy.py`). A custom encoder adds its forward there.
+rates with 95% Wilson intervals, by seat, and points. Subjects: `random`, `hand`, `champion`, `champion-closed`, or a
+policy file with a JSON meta (see `rl/reference/policy.py`). A custom encoder adds its forward there.
+
+**Saved games, to read.** `--logs K` (default 2) keeps the first K games of every table in `OUT/games/<subject>/`:
+- `<code>.jsonl`: the server's event log of the game: the table's creation (with the dice's seed and the dealt map),
+  a join per seat, the start, and every event. `charter-rl-logs DIR` replays each through the server's `Game.create`
+  and `Game.apply`, and writes `<code>.db`. Then `make spectate RESULTS=OUT/games/<subject>` shows them; the subject's
+  seat is named `subject ...`. Eval runs `charter-rl-logs` itself when it is built (on Modal it is).
+- `<code>.md`: a short summary: moves by type for each seat, points at the end of each round, what each seat built
+  and when, trades and offers, and laws proposed with each seat's vote.
+- `OUT/games/index.md`: one row per saved game, with the winner, points and a link to its summary.
+
+A dealt map reaches the server through an optional `_map` field of the creation event (`GameSpec.dealt` in
+`Server/Spec.lean`): the same game with its paying tiles' resources and numbers in the logged order. It must pass
+`G.Valid`, like every game. No other log has the field, so live tables do not change.
 
 ## Known limits
 

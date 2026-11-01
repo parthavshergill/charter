@@ -225,4 +225,31 @@ def upgradePiece (G : GameDef) : Option (PieceDef × PieceKind) :=
     | .upgrade k => some (d, k)
     | _ => none
 
+/-! ## A dealt map
+
+The training harness (`rl/`) plays on maps whose paying tiles have their resources and numbers shuffled. Its saved
+games name that deal, so that `make spectate` replays them on the same map. Nothing else uses this. -/
+
+/-- The same game with each paying region given a new resource and number, in the order of `G.map.regions`. The
+shape of the map does not change. `none` if the deal has the wrong length, if the drawing's tiles do not line up with
+the regions, or if the new game does not pass `GameDef.Valid`. -/
+def GameSpec.dealt (spec : GameSpec) (deal : List (Res × Nat)) : Option GameSpec :=
+  let G := spec.G
+  let paying := spec.layout.tiles.filter fun t => t.res.isSome && t.number.isSome
+  let linedUp := paying.length == G.map.regions.length &&
+    (paying.zip G.map.regions).all fun (t, r) => t.res == some r.res && t.number == some r.number
+  if deal.length != G.map.regions.length || !linedUp then none else
+  let regions := (G.map.regions.zip deal).map fun (r, d) => { r with res := d.1, number := d.2 }
+  let G' : GameDef := { G with map := { G.map with regions } }
+  let tiles := (spec.layout.tiles.foldl (fun (acc : List (Res × Nat) × Array Games.TileDef) t =>
+      match t.res, t.number, acc.1 with
+      | some _, some _, d :: rest => (rest, acc.2.push { t with res := some d.1, number := some d.2 })
+      | _, _, _ => (acc.1, acc.2.push t)) (deal, #[])).2.toList
+  if h : G'.Valid then some { spec with G := G', valid := h, layout := { spec.layout with tiles } } else none
+
+-- Dealing a game its own map gives the same regions.
+#guard (islandSpec.dealt (islandSpec.G.map.regions.map fun r => (r.res, r.number))).map
+    (·.G.map.regions.map fun r => (r.res, r.number)) ==
+    some (islandSpec.G.map.regions.map fun r => (r.res, r.number))
+
 end CharterServer

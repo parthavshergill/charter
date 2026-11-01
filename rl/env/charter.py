@@ -32,7 +32,8 @@ def lib():
             "charter_voting": (i, [vp]), "charter_seats": (i, [vp]),
             "charter_obs": (i, [vp, fp, i]), "charter_mask": (i, [vp, bp, i]),
             "charter_rewards": (i, [vp, fp, i]), "charter_info": (i, [vp, fp, i]),
-            "charter_suggest": (i, [vp, cp]), "charter_obs_size": (i, [vp]),
+            "charter_suggest": (i, [vp, cp]), "charter_saved_log": (i, [vp, cp, cp, cp, i]),
+            "charter_saved_state": (i, [vp, cp, i]), "charter_obs_size": (i, [vp]),
             "charter_act_size": (i, []), "charter_base_size": (i, []), "charter_full_size": (i, []),
             "charter_layout": (i, [cp, i]), "charter_info_names": (i, [cp, i]),
             "charter_init": (None, []), "charter_thread_init": (None, []),
@@ -155,3 +156,14 @@ class Game:
 
     def suggest(self, name="hand"):
         return lib().charter_suggest(self._h, name.encode())
+
+    def saved_log(self, code, names):
+        """The game so far as a server log, one JSON event per line. Needs "record": True in the configuration."""
+        text = _text(lib().charter_saved_log, self._h, code.encode(), ",".join(names).encode())
+        if text.startswith("error: "):
+            raise ValueError(text[len("error: "):])
+        return text
+
+    def saved_state(self):
+        """After each event of the saved log: [round, 1 if in setup, laws in force, points of each seat]."""
+        return [json.loads(l) for l in _text(lib().charter_saved_state, self._h).splitlines() if l]
