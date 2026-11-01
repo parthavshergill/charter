@@ -198,7 +198,9 @@ def opponents : List Opponent :=
   [ { name := "fair", strategy := hand, weights := { acceptGoods := 1, acceptNeed := 1, acceptMargin := 1 } }
   , { name := "closed", strategy := hand, weights := { acceptMargin := 10 } }
   , { name := "champion", strategy := Champion.strategy, weights := Champion.weights }
-  , { name := "champion-closed", strategy := Champion.strategy, weights := Champion.closedWeights } ]
+  , { name := "champion-closed", strategy := Champion.strategy, weights := Champion.closedWeights }
+  -- The champion as written, slower. Only for the test that `champion` decides the same.
+  , { name := "champion-ref", strategy := ChampionRef.strategy, weights := ChampionRef.weights } ]
 
 /-- What plays a seat. `none` is the caller. `setup` plays until the setup turns are over, and `play` after. -/
 structure SeatPlan where

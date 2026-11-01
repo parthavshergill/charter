@@ -69,7 +69,9 @@ structure Env where
   decisions : Nat := 0
   /-- The current law's `VoteNets`, once a seat has voted on it. -/
   voteNets : Option VoteNets := Option.none
-  /-- Off only for the test that compares games with and without `voteNets`. -/
+  /-- The open law's `Preview`, for the observations of its voters. -/
+  preview : Option Preview := Option.none
+  /-- Off only for the test that compares games with and without `voteNets` and a shared `preview`. -/
   shareVotes : Bool := true
   /-- Every event so far, in the server's log format, when `settings.record` is on. -/
   trail : Array Json := #[]
@@ -181,7 +183,7 @@ private def Env.noteOpening (e : Env) : Env :=
 /-- The strategies whose vote on a law is exactly `lawOk` under their own weights: the hand bot's family and the
 champion both vote through `reactions`. -/
 private def votesByLawOk (o : Opponent) : Bool :=
-  ["hand", "fair", "closed", "champion", "champion-closed"].contains o.name
+  ["hand", "fair", "closed", "champion", "champion-closed", "champion-ref"].contains o.name
 
 /-- This law's `VoteNets` for this state, worked out afresh. -/
 private def Env.freshNets (e : Env) (id : Nat) (L : Law) : VoteNets × Env :=
@@ -247,7 +249,16 @@ def Env.await (e : Env) (d : Decision) : Env :=
     let free := freeMap e.ctx s
     let reach := reachMap e.ctx s seat
     { e with decision := d, places := placeList e.ctx e.ep s seat free reach, free, reach }
-  | .vote seat _ _ => { e with decision := d, places := #[], free := freeMap e.ctx s, reach := reachMap e.ctx s seat }
+  | .vote seat id L =>
+    let cached := match e.preview with
+      | some p => if e.shareVotes && p.id == id && p.rollsMade == s.rollsMade && p.turnsTaken == s.turnsTaken then some p
+        else Option.none
+      | Option.none => Option.none
+    let preview := if !e.settings.preview then Option.none else
+      match cached with
+      | some p => some p
+      | Option.none => some (previewOf e.ep s s.turnOrder.length id L)
+    { e with decision := d, places := #[], free := freeMap e.ctx s, reach := reachMap e.ctx s seat, preview }
   | .none => { e with decision := d, places := #[], free := #[], reach := #[] }
 
 /-- Run until a caller must decide or the game ends. A law passing is counted in `syncLaws`, by a new id appearing
@@ -357,7 +368,7 @@ def Env.step (e : Env) (action : Nat) : Env :=
 
 /-- The numbers for the seat that must decide. -/
 def Env.observation (e : Env) : FloatArray :=
-  observe e.T e.ep e.ctx e.settings e.base e.play.state e.decision e.places e.free e.reach
+  observe e.T e.ep e.ctx e.settings e.base e.play.state e.decision e.places e.free e.reach e.preview
 
 /-- The actions on offer. -/
 def Env.legalActions (e : Env) : List (Nat × Event) := legal e.T e.ep e.places e.play.state e.decision

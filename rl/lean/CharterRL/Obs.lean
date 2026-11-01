@@ -295,9 +295,63 @@ private def expectedTurn (ep : Episode) (s : State G) (me seats : Nat) (sign : F
     addEntries ep me seats (Engine.predictNextTurn G s r) (sign * ofNat (pips G r) / ofNat (max 1 ways)) acc.1 acc.2)
     (net, myRes)
 
-/-- The columns of the open proposal. -/
-private def writeProposal (a : FloatArray) (ep : Episode) (preview : Bool) (s : State G) (me seats id : Nat) (L : Law) :
-    FloatArray := Id.run do
+/-- What a law would change, for every seat, in the game's own seat order. It is the same for every voter, so it is
+worked out once per law and turn (`Env.await`), and each voter's view reads it in its own order. -/
+structure Preview where
+  id : Nat
+  rollsMade : Nat
+  turnsTaken : Nat
+  /-- Each seat's expected net at the next turn change, with the law less without it. -/
+  net : Array Float
+  /-- The same, by seat and row of `resources`: `seat * maxRes + row`. -/
+  res : Array Float
+  /-- What the law pays each seat now, if it acts at once. -/
+  now : Array Float
+  points : Array Float
+  bank : Float
+  /-- The change in each kind row's total cost. -/
+  cost : Array Float
+  deriving Inhabited
+
+/-- `addEntries` for every seat at once, in the game's seat order. Each number gets the same additions in the same
+order as there, so the floats are the same. -/
+private def addEntriesAll (ep : Episode) (es : List Entry) (sign : Float) (net res : Array Float) :
+    Array Float × Array Float :=
+  es.foldl (fun (acc : Array Float × Array Float) e =>
+    let amount := sign * ofNat e.amount
+    let row := (ep.resRow? e.res).getD 0
+    let (net, res) := acc
+    let (net, res) := match e.dst with
+      | .player q => (net.modify q (· + amount), res.modify (q * maxRes + row) (· + amount))
+      | _ => (net, res)
+    match e.src with
+    | .player q => (net.modify q (· - amount), res.modify (q * maxRes + row) (· - amount))
+    | _ => (net, res)) (net, res)
+
+private def expectedTurnAll (ep : Episode) (s : State G) (sign : Float) (net res : Array Float) :
+    Array Float × Array Float :=
+  let rolls := Scene.rollsOf G
+  let ways := rolls.foldl (fun n r => n + pips G r) 0
+  rolls.foldl (fun (acc : Array Float × Array Float) r =>
+    addEntriesAll ep (Engine.predictNextTurn G s r) (sign * ofNat (pips G r) / ofNat (max 1 ways)) acc.1 acc.2)
+    (net, res)
+
+/-- What this law would change, for every seat. -/
+def previewOf (ep : Episode) (s : State G) (seats id : Nat) (L : Law) : Preview :=
+  let s' := s.withLaw id L
+  let zero (n : Nat) : Array Float := Array.replicate n 0
+  let (net, res) := expectedTurnAll ep s (-1) (zero maxSeats) (zero (maxSeats * maxRes))
+  let (net, res) := expectedTurnAll ep s' 1 net res
+  let (now, _) := addEntriesAll ep (s.decreeEntries L) 1 (zero maxSeats) (zero (maxSeats * maxRes))
+  let total (x : State G) (k : String) : Nat := (x.costOf k).foldl (fun n y => n + y.2) 0
+  { id, rollsMade := s.rollsMade, turnsTaken := s.turnsTaken, net, res, now
+    points := (List.range seats).toArray.map fun q => ofNat (s'.pointsOf q) - ofNat (s.pointsOf q)
+    bank := ofNat s'.rules.bankRate - ofNat s.rules.bankRate
+    cost := ep.rowKind.map fun k => if k == "" then 0 else ofNat (total s' k) - ofNat (total s k) }
+
+/-- The columns of the open proposal. `pv` is its preview, if previews are on. -/
+private def writeProposal (a : FloatArray) (ep : Episode) (pv : Option Preview) (s : State G) (me seats id : Nat)
+    (L : Law) : FloatArray := Id.run do
   let mut a := a
   let w := tProposal
   let at_ (a : FloatArray) (c : Nat) (x : Float) := put a w oProposal 0 c x
@@ -315,26 +369,19 @@ private def writeProposal (a : FloatArray) (ep : Episode) (preview : Bool) (s : 
   a := at_ a qNeeded (ofNat (needed - min needed p.yesCount) / ofNat maxSeats)
   a := at_ a qDeciding (if Engine.isDecidingVote s p me true then 1 else 0)
   a := at_ a qEnds (if L.clauses.any Clause.isEndGame then 1 else 0)
-  if !preview then return a
+  let some pv := pv | return a
   a := at_ a qPreviewed 1
-  let s' := s.withLaw id L
-  let zero (n : Nat) : Array Float := Array.replicate n 0
-  let (net, myRes) := expectedTurn ep s me seats (-1) (zero maxSeats) (zero maxRes)
-  let (net, myRes) := expectedTurn ep s' me seats 1 net myRes
-  let (nowNet, _) := addEntries ep me seats (s.decreeEntries L) 1 (zero maxSeats) (zero maxRes)
   for i in [0:seats] do
     let q := (me + i) % seats
-    a := at_ a (qNet + i) (net[i]! / 4)
-    a := at_ a (qNow + i) (nowNet[i]! / 4)
-    a := at_ a (qPoints + i) ((ofNat (s'.pointsOf q) - ofNat (s.pointsOf q)) / 5)
+    a := at_ a (qNet + i) (pv.net[q]! / 4)
+    a := at_ a (qNow + i) (pv.now[q]! / 4)
+    a := at_ a (qPoints + i) (pv.points[q]! / 5)
   for r in [0:ep.rowRes.size] do
-    a := at_ a (qMyNet + r) (myRes[r]! / 4)
-  a := at_ a qBank ((ofNat s'.rules.bankRate - ofNat s.rules.bankRate) / 8)
+    a := at_ a (qMyNet + r) (pv.res[me * maxRes + r]! / 4)
+  a := at_ a qBank (pv.bank / 8)
   for row in [0:maxKinds] do
-    let k := ep.rowKind[row]!
-    if k != "" then
-      let total (x : State G) : Nat := (x.costOf k).foldl (fun n y => n + y.2) 0
-      a := at_ a (qCost + row) ((ofNat (total s') - ofNat (total s)) / 8)
+    if ep.rowKind[row]! != "" then
+      a := at_ a (qCost + row) (pv.cost[row]! / 8)
   return a
 
 /-- The class of an event, as its column in the table of moves. -/
@@ -463,7 +510,7 @@ private def writePlaces (a : FloatArray) (T : Tables) (ctx : Ctx G) (ep : Episod
 
 /-- The whole observation for the seat that must decide. `base` is the game's template. -/
 def observe (T : Tables) (ep : Episode) (ctx : Ctx G) (settings : Settings) (base : FloatArray) (s : State G)
-    (d : Decision) (places : Array Move) (free reach : Array Bool) : FloatArray := Id.run do
+    (d : Decision) (places : Array Move) (free reach : Array Bool) (pv : Option Preview) : FloatArray := Id.run do
   let some me := d.seat? | return base
   let mut a := base
   let seats := s.turnOrder.length
@@ -610,7 +657,7 @@ def observe (T : Tables) (ep : Episode) (ctx : Ctx G) (settings : Settings) (bas
     a := put a w oKinds row kRoom (if kindCount[row * maxSeats]! < e.limit then 1 else 0)
   -- The open proposal, when this seat is voting on it.
   match d with
-  | .vote _ id L => a := writeProposal a ep settings.preview s me seats id L
+  | .vote _ id L => a := writeProposal a ep (if settings.preview then pv else Option.none) s me seats id L
   | _ => pure ()
   -- The legal placements.
   if let .turn _ := d then

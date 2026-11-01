@@ -127,6 +127,34 @@ def main (args : List String) : IO UInt32 := do
         n := n + k
       | _, _ => report bad false s!"shared votes {id}: the game did not start"
     report bad (diffs == 0 && n > 0) s!"shared votes {id}: {diffs} of {n} decisions differ from lawOk per voter"
+    -- And a preview worked out once per law gives the same observations as one per voter.
+    let mut pd := 0
+    let mut pn := 0
+    for g in [0:(if quick then 2 else 6)] do
+      match Env.start T { policyVotes with lawEvery := 2 } (callers seats) (650 + g),
+            Env.start T { policyVotes with lawEvery := 2 } (callers seats) (650 + g) (shareVotes := false) with
+      | .ok a, .ok b =>
+        let (d, k) := sideBySide a b (750 + g) 1500
+        pd := pd + d
+        pn := pn + k
+      | _, _ => report bad false s!"shared preview {id}: the game did not start"
+    report bad (pd == 0 && pn > 0) s!"shared preview {id}: {pd} of {pn} decisions differ from a preview per voter"
+  -- The fast champion decides as the champion as written does.
+  for id in allIds do
+    let some T := tablesOf? id | continue
+    let seats := min 4 T.maxSeats
+    let byName (n : String) : SeatPlan := let o := (opponents.find? (·.name == n)).get!; { setup := some o, play := some o }
+    let lineup (n : String) : Array SeatPlan := #[{ setup := none, play := none }] ++ Array.replicate (seats - 1) (byName n)
+    let mut diffs := 0
+    let mut n := 0
+    for g in [0:(if quick then 3 else 10)] do
+      match Env.start T policyVotes (lineup "champion") (800 + g), Env.start T policyVotes (lineup "champion-ref") (800 + g) with
+      | .ok a, .ok b =>
+        let (d, k) := sideBySide a b (810 + g) 2000
+        diffs := diffs + d
+        n := n + k
+      | _, _ => report bad false s!"champion {id}: the game did not start"
+    report bad (diffs == 0 && n > 0) s!"champion {id}: {diffs} of {n} decisions differ from the champion as written"
   -- Random maps pass the full checks.
   for id in allIds do
     let some T := tablesOf? id | continue
