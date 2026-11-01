@@ -1,6 +1,7 @@
 // The Charter client. It shows what the server sends and holds no game rules: every move it posts
 // comes from `view.legalMoves` or from text the engine then accepts or rejects, and every cost, reason
-// and rule statement is written by Lean. What is here is presentation: what to show, when, and where.
+// and deal statement is written by Lean. A law's description is Claude's or a pack's words, and the law's
+// source below it is what counts. What is here is presentation: what to show, when, and where.
 import { renderBoard2D } from "./board2d.js";
 import { resIcon, uiIcon, pieceIcon, shield, chargeOf, waxSeal } from "./icons.js";
 
@@ -644,11 +645,9 @@ function flashFocus() {
   G.dock.focus = null;
 }
 
-/** A rule's statement from Lean, a line for each thing it does. What a short payer owes is part of
- *  the rule, so it stays, but it is set smaller than the rule itself. */
+/** A deal's statement from Lean, a line for each thing it does. */
 function statementOf(text) {
-  return h("p", { class: "statement" }, text.split("\n").map(line =>
-    h("span", { class: line.startsWith("A payer who is short") ? "line small" : "line" }, line)));
+  return h("p", { class: "statement" }, text.split("\n").map(line => h("span", { class: "line" }, line)));
 }
 
 /** Consequences: who gains and who pays at this table. Empty cases are not shown. */

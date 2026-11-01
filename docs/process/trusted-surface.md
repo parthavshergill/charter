@@ -86,8 +86,9 @@ All ten commandments rest on the same 121 definitions: the data types of a game,
 ## What no theorem covers
 
 - **The screen.** Nothing proves that it shows the true state, or that it sends what a player chose.
-- **The clerk.** Nothing proves that its sentences match what a law does. Tests check them.
-- **A law's title.** It is free text with no meaning in the game. So the screen must write its read-back of a law from the law's clauses.
+- **A law's description.** It is Claude's words. A pack's founding laws have the pack's own words in its place. No proof and no sentence test stands behind either. They can be wrong. The rule source right below them is what counts, and that is what the screen shows every player and every Claude seat as the binding text.
+- **The clerk.** Nothing proves that the rule it writes is the rule a player asked for. Its `DIFFERENCE` line is its own account of the gap. It says nothing about the description.
+- **A law's title.** It is free text with no meaning in the game. The description call does not see it.
 - **Fair dice.** Nothing proves the rolls are fair. Commandment VIII says only that nobody can change them after the seed is fixed.
 
 ## What is tested but not proved
@@ -98,7 +99,8 @@ All ten commandments rest on the same 121 definitions: the data types of a game,
 - **Every seat can place its setup pieces.** `Charter/EngineTests.lean` checks this for the tiny games. `Charter/Games/IslandTests.lean` checks the settlements for the Island, and shows one way a road can be blocked at 4 seats. A one-time search found no such block at 2 and 3 seats. That search is not kept, so nothing checks that result again.
 - **The preview on the screen.** Commandment X proves `predictNextTurn` is exact. That the screen shows its result is tested only. So are the preview's build cases, which use what commandment VII states.
 - **The promises on real games.** `Charter/EngineTests.lean` runs a checker of the constitution's claims on every step of complete and random games. The file has 445 `#guard`s and `example`s.
-- **The clerk's sentences.** `ServerTests.lean` writes each one out in full, and `make clerk-check` tests its memory and reply handling.
+- **A deal's sentences.** `ServerTests.lean` writes each one out in full.
+- **The clerk and the descriptions, as code.** `make clerk-check` tests the clerk's memory and reply handling. It tests what a description call sends, that a description goes only with the law it was written for, that no client can supply one, and what shows when there is none. The check of what descriptions say was a one-time test, and `docs/process/reviews.md` gives its results.
 - **The whole server.** `make smoke` plays a full game over HTTP, restarts the server, and checks that the game replays from its log.
 
 ## How the proofs are checked

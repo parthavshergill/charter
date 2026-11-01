@@ -173,7 +173,6 @@ svg.shield { width: 16px; height: 19px; flex: none; vertical-align: -4px; clip-p
 .statement { margin: var(--s2) 0 var(--s3); font-size: 20px; line-height: 1.3; }
 .statement .line { display: block; }
 .statement .line + .line { margin-top: var(--s1, 4px); }
-.statement .line.small { font-size: 14px; color: var(--ink-2); }
 .english { white-space: pre-line; }
 .titleline { color: var(--ink-2); font-size: 14px; font-style: italic; }
 .diff { margin: 0 0 var(--s3); padding-left: var(--s3); border-left: 2px solid var(--wax); font-size: 14px; color: var(--ink); }

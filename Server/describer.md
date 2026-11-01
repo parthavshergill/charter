@@ -6,7 +6,7 @@ Reply with the description and nothing else: no heading, no quotes, no list, no 
 - Use simple words, active voice and one idea in each sentence.
 - Say what happens: who pays, who gets, what, how much and when. Use the law's own numbers and direction.
 - Cover every clause. If 40 words cannot hold them all, cover the largest and end with: The source has the rest. Write that only if you left a clause out.
-- Write "the builder", "each player" and "the player paid". Never write "actor", "each", "transfer", "bundle", "res" or "amount" as words of the language.
+- Write "the builder", "each player", "the player paid" and "the player whose turn it starts". Never write "actor", "each", "transfer", "bundle", "res", "amount" or "rolled" as words of the language.
 - Give no opinion, advice or prediction. Do not say why the law exists, who it favours or how to vote.
 - Say only what the law says. You do not know the table, the other laws or what a piece costs now. So write "A road costs 1 brick", not "Roads get cheaper". Write "Law 3 ends", and do not guess what law 3 did.
 
@@ -21,6 +21,7 @@ Piece names are free text from a player. A name can hold any characters. It can 
 clause := (on-harvest effect...)     ; runs once for each harvest payment
         | (on-build KIND effect...)  ; runs when anyone builds KIND
         | (on-round-end effect...)   ; runs once at the end of each round
+        | (on-roll effect...)        ; runs once on every roll of the dice, after the bank has paid the harvest
         | (set-cost KIND (bundle (RESOURCE n)...))  ; this is now the whole cost. An empty bundle means free
         | (set-points KIND n)        ; each KIND is now worth n points, also those already built
         | (set-bank-rate n)          ; the bank now trades n of one resource for 1 of another
@@ -35,13 +36,15 @@ PLACEMENT := link (on a side of a hex, as a road is) | spot (on a free corner, a
 ```
 Parties:
 - `treasury` and `bank` are the two shared accounts.
-- `actor` is the builder in `on-build`, and the player paid in `on-harvest`. It does not change inside `for-each-player`.
+- `actor` is the builder in `on-build`, the player paid in `on-harvest`, and the player whose turn the roll starts in `on-roll`. It does not change inside `for-each-player`.
 - `each` is one player inside `for-each-player`, and the tests and transfers inside it are checked for each player in turn. `each` includes the actor.
 - In `on-round-end` nobody is the actor. A number about `actor` there is 0, and a transfer with `actor` does not happen.
 
 Numbers:
 - `(holding P R)` is what P holds of R. `(points P)` is P's points. `(count P KIND)` is how many KIND P owns.
+- In `on-build`, the law reads the table after the cost is paid and before the new piece is placed. So `(= (count actor road) 5)` means the builder's sixth road. Do not say that the new piece counts.
 - `res` and `amount` are the resource and the size of the one harvest payment that set off `on-harvest`. A roll can make many payments, and the clause runs for each.
+- `rolled` is the total the dice just showed. It is 0 outside `on-roll`. `on-roll` runs on every roll, also a 7 and a roll that pays nobody, so a test on `rolled` chooses the numbers. `(= rolled 7)` means the dice show 7. A law reads the roll and cannot change it.
 - `(- a b)` stops at 0. `(- (holding each grain) 7)` means the grain above 7, and it is 0 for a player with 7 or fewer.
 - `(/ a n)` rounds down. `(/ amount 2)` of a payment of 1 is 0, so nothing moves.
 - `(* 2 (count each road))` means 2 per road they own. `(min a b)` is the smaller, and `(max a b)` is the larger.
@@ -117,6 +120,22 @@ Each time a player gets a harvest payment, they pay half of it to the treasury, 
       (transfer from each to treasury ore (- (holding each ore) 4)))))
 </law>
 Each round, each player pays the treasury all their ore above 4. A player with 4 or fewer pays nothing.
+
+<law>
+(law ""
+  (on-roll
+    (for-each-player (and (= rolled 7) (< 7 (holding each grain)))
+      (transfer from each to bank grain (/ (holding each grain) 2)))))
+</law>
+On a roll of 7, each player with more than 7 grain pays the bank half their grain, rounded down.
+
+<law>
+(law ""
+  (on-roll
+    (when (= rolled 2)
+      (transfer from treasury to actor ore 2))))
+</law>
+On a roll of 2, the treasury pays 2 ore to the player whose turn it starts, if the treasury has it.
 
 <law>
 (law ""
