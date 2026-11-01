@@ -129,6 +129,8 @@ def build_puffer(move_rows=False, out="puffer", patch=True, encoder="flat"):
           else f"cd {PUFFER} && git checkout -q -- src"))
     lib = f"{REPO}/rl/build"
     extra = f"-L{lib} -lcharter_rl -Xlinker=-rpath -Xlinker={lib}" + (" -DCHARTER_MOVE_ROWS" if move_rows else "")
+    if os.environ.get("CHARTER_STALE_WAIT") == "1":  # waiting players keep their last observation (charter.h)
+        extra += " -DCHARTER_STALE_WAIT"
     if encoder != "flat":
         e = encoder_dir(encoder)
         if os.path.isdir(f"{e}/patches"):
@@ -275,6 +277,7 @@ def _train(run, train_args="", seconds=600, move_rows=False, patch=True, encoder
                 except Exception as e:  # noqa: BLE001
                     print(f"[commit] {e}", flush=True)
     threading.Thread(target=write_metas, daemon=True).start()
+    os.environ["CHARTER_STALE_WAIT"] = str((json.loads(meta_extra) if meta_extra else {}).get("stale_wait", 0))
     if not built:
         sh("ln -sf /usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1 /usr/lib/x86_64-linux-gnu/libnvidia-ml.so; "
            "nvidia-smi --query-gpu=name,driver_version --format=csv,noheader")
@@ -304,6 +307,8 @@ def evaluate(subjects: list, out: str, games: int = 200, quick: bool = False, op
     """Run rl/eval on these subjects (`random`, `hand`, `champion`, or policy paths on the volume) and save the report,
     with `logs` saved games per table in `out/games/`."""
     vol.reload()
+    if "turnreset" in out:  # rl/reference/policy.py: reset the GRU state to its waiting fixed point after end turn
+        os.environ["CHARTER_TURN_RESET"] = "1"
     opp = f"--opponents {shlex.quote(opponents)}" if opponents else ""
     code, text = sh(f"cd {SRC}/.. && python3 rl/eval/eval.py {' '.join(map(shlex.quote, subjects))} --games {games} "
                     f"--jobs 8 --out {out} {'--quick' if quick else ''} {opp} --logs {logs}")
