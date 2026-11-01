@@ -253,7 +253,7 @@ abbrev AskedForByLaw (s : State G) (e : Event) (x : Entry) : Prop :=
        x ∈ lawEntries (s.afterPosting (s.costEntries b k)) (.build b k)) ∨
      (EndsTurn s e ∧
        (x ∈ s.roundEndLawEntries ∨
-        x ∈ rollEntries (s.afterPosting s.entriesBeforeRoll) (rollAt G s.seed s.rollsMade))))
+        x ∈ rollEntries s.afterRoundEnd (rollAt G s.seed s.rollsMade))))
 
 /-- Money leaves a seat's own account only for that seat's build, trade or deposit, or for what a law in
 force says. -/
@@ -267,7 +267,7 @@ def MoneyLeavesSeatOnlyFor (s s' : State G) (e : Event) (x : Entry) : Prop :=
 /-- This entry is part of the payout for the dice roll of the turn that is starting. -/
 abbrev IsDicePayout (s : State G) (e : Event) (x : Entry) : Prop :=
   x.reason = .harvest ∧ EndsTurn s e ∧
-    x ∈ harvestEntries (s.afterPosting s.entriesBeforeRoll) (rollAt G s.seed s.rollsMade)
+    x ∈ harvestEntries s.afterRoundEnd (rollAt G s.seed s.rollsMade)
 
 /-- This entry is part of a bank trade at its exact price. -/
 abbrev IsBankTradeAtPrice (s : State G) (e : Event) (x : Entry) : Prop :=
@@ -279,6 +279,23 @@ price, or for what a law in force says. -/
 def MoneyLeavesBankOnlyFor (s : State G) (e : Event) (x : Entry) : Prop :=
   (x.src = .bank ∨ x.src = .treasury) →
     IsDicePayout s e x ∨ IsBankTradeAtPrice s e x ∨ AskedForByLaw s e x
+
+/-- What a step does to the pieces. A turn change leaves exactly what the laws in force say. Any other event
+except placing a piece changes none. -/
+def PiecesKept {G : GameDef} (s s' : State G) (e : Event) : Prop :=
+  (EndsTurn s e → s'.pieces = s.turnPieces (rollAt G s.seed s.rollsMade)) ∧
+  (¬ EndsTurn s e → (∀ p k loc, e ≠ .move p (.place k loc)) → s'.pieces = s.pieces)
+
+/-- What you own leaves you only for a stated reason: your own upgrade, or a law in force that asked for it
+at a turn change. -/
+def PieceLeavesOnlyFor {G : GameDef} (s s' : State G) (e : Event) : Prop :=
+  ∀ x ∈ s.pieces, x ∉ s'.pieces →
+    (∃ k loc, e = .move x.owner (.place k loc)) ∨
+    (EndsTurn s e ∧ ∃ L ∈ s.laws, L.2.clauses.any Clause.movesPieces = true)
+
+/-- A seat that has a piece still has one after any step. A seat with no pieces could never build again. -/
+def SeatsKeepAPiece (s s' : State G) : Prop :=
+  ∀ q, (∃ x ∈ s.pieces, x.owner = q) → ∃ x ∈ s'.pieces, x.owner = q
 
 /-! ## VI. Every deal ends -/
 
@@ -447,7 +464,7 @@ def RollPaysExactly (G : GameDef) : Prop :=
       newEntries s s' = rollEntries s (rollAt G s.seed s.rollsMade)) ∧
     (s.isLastTurn = true →
       newEntries s s' = s.roundEndEntries ++
-        rollEntries (s.afterPosting s.roundEndEntries) (rollAt G s.seed s.rollsMade)) ∧
+        rollEntries s.afterRoundEnd (rollAt G s.seed s.rollsMade)) ∧
     s.nextRoller = s'.currentSeat
 
 /-- A turn change with no roll makes only the round's end entries, if any. -/

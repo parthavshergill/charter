@@ -803,7 +803,7 @@ theorem step_round_le {s s' : State G} {e : Event} (h : Engine.step G s e = .ok 
   · obtain ⟨b, _, hs⟩ := endTurnNow_ok h2
     rw [hs]
     exact startNextTurn_round_ge
-      ({ s with books := b, journal := s.journal ++ turnEntries s (rollAt G s.seed s.rollsMade) } : State G) _
+      ({ s with books := b, journal := s.journal ++ turnEntries s (rollAt G s.seed s.rollsMade), pieces := s.turnPieces (rollAt G s.seed s.rollsMade) } : State G) _
   · exact Nat.le_of_eq (act_frame hb hf).round.symm
 
 theorem KeptInv.step {s s' : State G} {e : Event} (hk : KeptInv s) (hi : IdInv s)

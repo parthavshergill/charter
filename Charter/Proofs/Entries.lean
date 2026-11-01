@@ -1,4 +1,5 @@
 import Charter.Proofs.Books
+import Charter.Proofs.PieceMoves
 
 /-!
 # Every entry the engine writes uses real accounts
@@ -39,6 +40,7 @@ mutual
         subst hx
         exact ⟨party_account_ok h ha, party_account_ok h hb⟩
       · simp at hx
+    | .movePiece .., _, _, x, hx => by simp [Effect.plan] at hx
     | .forEach c body, env, h, x, hx => by
       simp only [Effect.plan, List.mem_flatMap] at hx
       obtain ⟨p, hp, hx⟩ := hx
@@ -303,6 +305,104 @@ theorem entriesBeforeRoll_ok {s : State G} (hd : DealsOk s) :
   · exact roundEndEntries_ok hd x hx
   · simp at hx
 
+/-! ## Pieces a law moves -/
+
+theorem party_seat_ok {T : List Seat} {env : LawEnv} {p : Party} {q : Seat} (h : EnvOk T env)
+    (hp : p.seat env = some q) : q ∈ T := by
+  cases p with
+  | actor => exact h.1 q hp
+  | each => exact h.2 q hp
+  | treasury => cases hp
+  | bank => cases hp
+
+mutual
+  /-- A law sends a piece only to a seat in the game. -/
+  theorem planOrders_ok (s : State G) : ∀ (e : Effect) (env : LawEnv), EnvOk s.turnOrder env →
+      ∀ o ∈ Effect.planOrders s e env, ∀ q, o.dst = some q → q ∈ s.turnOrder
+    | .transfer .., _, _, o, ho => by simp [Effect.planOrders] at ho
+    | .movePiece src dst k, env, h, o, ho => by
+      simp only [Effect.planOrders] at ho
+      split at ho
+      · simp only [List.mem_singleton] at ho
+        subst ho
+        intro q hq
+        cases hq
+      · rename_i b _ hb
+        simp only [List.mem_singleton] at ho
+        subst ho
+        intro q hq
+        simp only [Option.some.injEq] at hq
+        exact hq ▸ party_seat_ok h hb
+      · simp at ho
+    | .forEach c body, env, h, o, ho => by
+      simp only [Effect.planOrders, List.mem_flatMap] at ho
+      obtain ⟨p, hp, ho⟩ := ho
+      split at ho
+      · refine planOrdersAll_ok s body { env with each := some p } ⟨h.1, ?_⟩ o ho
+        intro a ha
+        simp only [Option.some.injEq] at ha
+        exact ha ▸ hp
+      · simp at ho
+    | .when c body, env, h, o, ho => by
+      simp only [Effect.planOrders] at ho
+      split at ho
+      · exact planOrdersAll_ok s body _ h o ho
+      · simp at ho
+
+  theorem planOrdersAll_ok (s : State G) : ∀ (es : List Effect) (env : LawEnv), EnvOk s.turnOrder env →
+      ∀ o ∈ Effect.planOrdersAll s es env, ∀ q, o.dst = some q → q ∈ s.turnOrder
+    | [], _, _, o, ho => by simp [Effect.planOrdersAll] at ho
+    | e :: es, env, h, o, ho => by
+      simp only [Effect.planOrdersAll, List.mem_append] at ho
+      cases ho with
+      | inl ho => exact planOrders_ok s e env h o ho
+      | inr ho => exact planOrdersAll_ok s es env h o ho
+end
+
+theorem lawOrders_ok (s : State G) {t : Trigger} (ht : TriggerOk s.turnOrder t) :
+    ∀ o ∈ lawOrders s t, ∀ q, o.dst = some q → q ∈ s.turnOrder := by
+  intro o ho
+  simp only [lawOrders, List.mem_flatMap] at ho
+  obtain ⟨_, _, _, _, ho⟩ := ho
+  exact planOrdersAll_ok s _ _ (trigger_env_ok ht) o ho
+
+theorem piecesBeforeRoll_ok {s : State G} (hp : PiecesOk s) :
+    ∀ x ∈ s.piecesBeforeRoll, x.owner ∈ s.turnOrder := by
+  unfold State.piecesBeforeRoll
+  split
+  · exact applyOrders_owner hp (lawOrders_ok (s.afterPosting s.duePayments) (t := .roundEnd) trivial)
+  · exact hp
+
+theorem afterRoundEnd_pieces_ok {s : State G} (hp : PiecesOk s) : PiecesOk s.afterRoundEnd :=
+  piecesBeforeRoll_ok hp
+
+/-- After a turn change, every piece's owner is still a seat in the game. -/
+theorem turnPieces_ok {s : State G} (hp : PiecesOk s) (roll : Nat) :
+    ∀ x ∈ s.turnPieces roll, x.owner ∈ s.turnOrder := by
+  unfold State.turnPieces
+  simp only
+  have h0 := piecesBeforeRoll_ok hp
+  split
+  · split
+    · rename_i a ha
+      have hm : a ∈ s.afterRoundEnd.turnOrder := nextRoller_mem ha
+      have := applyOrders_owner (R := s.afterRoundEnd.rules) (T := s.turnOrder) (ps := s.afterRoundEnd.pieces)
+        (orders := lawOrders (s.afterRoundEnd.atRoll.afterPosting (harvestEntries s.afterRoundEnd.atRoll roll))
+          (.roll a roll)) h0 (by
+            intro o ho q hq
+            have hk := lawOrders_ok (s.afterRoundEnd.atRoll.afterPosting (harvestEntries s.afterRoundEnd.atRoll roll))
+              (t := .roll a roll) (by
+                show a ∈ _
+                simp only [State.afterPosting]
+                rw [atRoll_turnOrder]
+                exact hm) o ho q hq
+            simp only [State.afterPosting] at hk
+            rw [atRoll_turnOrder] at hk
+            exact hk)
+      exact this
+    · exact h0
+  · exact h0
+
 theorem turnEntries_ok {s : State G} (hp : PiecesOk s) (hd : DealsOk s) (roll : Nat) :
     ∀ x ∈ turnEntries s roll, EntryOk s.turnOrder x := by
   intro x hx
@@ -311,7 +411,7 @@ theorem turnEntries_ok {s : State G} (hp : PiecesOk s) (hd : DealsOk s) (roll : 
   · simp only [List.mem_append] at hx
     cases hx with
     | inl hx => exact entriesBeforeRoll_ok hd x hx
-    | inr hx => exact rollEntries_ok (s := s.afterPosting _) hp roll x hx
+    | inr hx => exact rollEntries_ok (s := s.afterRoundEnd) (afterRoundEnd_pieces_ok hp) roll x hx
   · exact entriesBeforeRoll_ok hd x hx
 
 end Charter.Proofs

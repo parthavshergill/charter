@@ -245,6 +245,26 @@ The winner still has the most points. `endGame` now chooses the winner after the
 
 A law's preview already flags a win, and the flag reads `pointsOf`, so it covers worth. `a_seat_at_the_target_wins_at_the_next_move` plays a real game. A saved game with no such law replays as before.
 
+## Moving pieces
+
+The card's DO stays one word: move. Moving a piece to the bank destroys it, and moving it to a seat seizes it. The law names a kind, and the order takes that seat's newest piece of that kind, so it never depends on a seat's name.
+
+| Question | Answer |
+|---|---|
+| When can a law do this? | At a round's end or on a roll. `lawProblems` refuses it on a build or a harvest, so VII stays word for word. |
+| Can a seat be wiped out? | No. `applyOrder` does nothing if it would take everything a seat has, and `SeatsKeepAPiece`, now part of V, says a seat with a piece keeps one after any step. A seat with no pieces could never build again, because `reaches` needs one. |
+| What goes with a piece? | What sits on it: the same owner's pieces in that place attached to it, directly or through each other. A road stays, even if unconnected. |
+| What if the receiver is at its limit? | The piece is destroyed. |
+| Is commandment II kept? | Yes, in the same words. `applyOrder_rename` and `turnPieces_rename` are the new cases. Which piece moves depends on the order pieces were placed, and renaming keeps that. |
+| What bounds these moves? | A move counts as 1 in `plannedEntries` and in `Law.reads`, so both payment caps and the reads cap count it. |
+| What does the next roll see? | The pieces after the round's end. `State.afterRoundEnd` replaces `s.afterPosting s.entriesBeforeRoll` in `AskedForByLaw`, `IsDicePayout` and `RollPaysExactly`. It has the same books, and when no law moves a piece, the same pieces. A piece destroyed at a round's end collects nothing on the next roll. |
+
+V now says that what you own leaves you only for a stated reason. `PieceLeavesOnlyFor` names the two reasons: that seat's own upgrade, or a law in force at a turn change. `PiecesKept` gives the exact pieces after a turn change.
+
+One statement gave way. `the_winner_earned_it` said that built points alone at the target end the game at once. A seat can now gain a piece at a turn change, which does not look for a winner. So that clause is gone, and the clause that holds is the one from the worth section: after a move or a vote, a seat at the target has ended the game. `every_other_event_is_exact` said that only placing a piece changes the pieces. It now says that about events that do not end the turn, and `PiecesKept` covers the rest.
+
+The preview and the chronicle say what a seat would lose or lost. The 3D board draws each piece from its owner, so a seized piece changes colour where it stands.
+
 ## How the checks work
 
 - **Axiom audit:** `make audit` fails if any theorem in a `Charter` module rests on an axiom other than `propext`, `Classical.choice` and `Quot.sound`. So a `sorry` fails it. It also replays the proofs through `leanchecker`, and scans for banned constructs.

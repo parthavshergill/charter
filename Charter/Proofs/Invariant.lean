@@ -27,7 +27,6 @@ structure Inv (G : GameDef) (s : State G) : Prop where
   limits : Limits s
   turns : TurnInv s
   events : EventInv s
-  noPending : NoPending s
   ids : IdInv s
   cover : Cover s
   deposits : DepositInv G s
@@ -42,7 +41,7 @@ theorem Inv.start {G : GameDef} (hG : G.Valid) (seats : Nat) (serverSeed : UInt6
     Inv G (initialState G seats serverSeed nonces) :=
   ⟨Core.start G seats serverSeed nonces h1 h2, Limits.start hG seats serverSeed nonces h1 h2,
     TurnInv.start G seats serverSeed nonces h1, EventInv.start G seats serverSeed nonces,
-    NoPending.start hG seats serverSeed nonces, IdInv.start G seats serverSeed nonces,
+    IdInv.start G seats serverSeed nonces,
     Cover.start G seats serverSeed nonces, DepositInv.start G seats serverSeed nonces,
     WinnerInv.start G seats serverSeed nonces, LawPrices.start hG seats serverSeed nonces h1 h2,
     KeptInv.start G seats serverSeed nonces, PlannedInv.start hG seats serverSeed nonces h1 h2,
@@ -51,7 +50,7 @@ theorem Inv.start {G : GameDef} (hG : G.Valid) (seats : Nat) (serverSeed : UInt6
 theorem Inv.step {s s' : State G} {e : Event} (hG : G.Valid) (hs : Inv G s)
     (h : Engine.step G s e = .ok s') : Inv G s' :=
   ⟨hs.core.step h, hs.limits.step h, hs.turns.step hG h,
-    hs.events.step hs.turns hs.core.turnOrder_nodup h, hs.noPending.step h,
+    hs.events.step hs.turns hs.core.turnOrder_nodup h,
     hs.ids.step h, hs.cover.step hs.core hs.ids h,
     hs.deposits.step hs.core hs.ids h,
     hs.winner.step hs.turns (by

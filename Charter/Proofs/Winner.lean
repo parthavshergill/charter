@@ -261,7 +261,7 @@ theorem WinnerInv.step {s s' : State G} {e : Event} (hw : WinnerInv G s) (ht : T
   have he := step_not_ended h
   rcases step_view h with ⟨_, h⟩ | ⟨_, _, s1, hb, hf⟩
   · obtain ⟨b, _, rfl⟩ := endTurnNow_ok h
-    exact WinnerInv.startNextTurn (s := { s with books := b, journal := _ })
+    exact WinnerInv.startNextTurn (s := { s with books := b, journal := _, pieces := _ })
       ⟨hw.1, fun w hx => absurd (Eq.trans (Eq.symm hx) (hw.running he)) (by simp), fun hend => absurd hend he⟩
       ⟨ht.1, ht.2, ht.3⟩ hn he _
   · have f := bodyOf_frame hb

@@ -102,13 +102,19 @@ def parseTransfer (rs : List Res) : SExp → P Effect
       return .transfer (← parseParty f) (← parseParty t) (← parseResRef rs r) (← parseExpr rs e)
   | x => fail "expected (transfer FROM TO RESOURCE AMOUNT)" x
 
+/-- A transfer, or a law moving a piece. -/
+def parseMove (rs : List Res) : SExp → P Effect
+  | .list [.atom "move-piece", f, t, k] =>
+      return .movePiece (← parseParty f) (← parseParty t) (← parseKind k)
+  | x => parseTransfer rs x
+
 /-- An effect at the inner level: a transfer, or an `if` holding transfers. -/
 def parseInnerEffect (rs : List Res) : SExp → P Effect
   | .list (.atom "if" :: c :: body) => do
       let c ← parseCond rs c
-      let b ← body.mapM (parseTransfer rs)
+      let b ← body.mapM (parseMove rs)
       if b.isEmpty then .error "if needs at least one transfer" else return .when c b
-  | x => parseTransfer rs x
+  | x => parseMove rs x
 
 /-- An effect at the top of a clause. -/
 def parseEffect (rs : List Res) : SExp → P Effect
@@ -241,6 +247,7 @@ end
 mutual
   def effectS : Effect → SExp
     | .transfer f t r e => .list [.atom "transfer", partyS f, partyS t, resRefS r, exprS e]
+    | .movePiece f t k => .list [.atom "move-piece", partyS f, partyS t, .atom k]
     | .forEach c body => .list (.atom "for-each-player" :: condS c :: effectsS body)
     | .when c body => .list (.atom "if" :: condS c :: effectsS body)
   def effectsS : List Effect → List SExp

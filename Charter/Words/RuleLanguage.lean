@@ -75,9 +75,12 @@ mutual
     deriving Repr, DecidableEq
 end
 
-/-- What a law can do: move resources, for each seat that passes a test, or if a test passes. -/
+/-- What a law can do: move resources or a piece, for each seat that passes a test, or if a test passes. -/
 inductive Effect where
   | transfer (src dst : Party) (r : ResRef) (amount : Expr)
+  /-- Moves `src`'s newest piece of kind `k`. Moving it to the bank destroys it. Moving it to a seat seizes
+  it. `lawProblems` allows this only at a round's end or on a roll. -/
+  | movePiece (src dst : Party) (k : PieceKind)
   | forEach (c : Cond) (body : List Effect)
   | when (c : Cond) (body : List Effect)
   deriving Repr

@@ -195,7 +195,7 @@ theorem TurnInv.step {s s' : State G} {e : Event} (hG : G.Valid) (ht : TurnInv s
   have he := step_not_ended h
   rcases step_view h with ⟨_, h⟩ | ⟨_, _, s1, hb, hf⟩
   · obtain ⟨b, _, rfl⟩ := endTurnNow_ok h
-    exact TurnInv.startNextTurn (s := { s with books := b, journal := _ }) hG
+    exact TurnInv.startNextTurn (s := { s with books := b, journal := _, pieces := _ }) hG
       ⟨ht.1, ht.2, ht.3⟩ he _
   · have f := act_frame hb hf
     have hlt := ht.lt_max he

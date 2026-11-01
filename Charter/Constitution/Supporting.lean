@@ -12,10 +12,9 @@ namespace Charter
 
 /-- **A winner earned it.** Nobody has more points than the winner, and the winner reached the target
 or the rounds really ran out. A game ends only by one of those two routes, so an ended game always has
-a winner. Points come from what a seat has built and from what it holds that a law says counts. Reaching
-the target with built points alone ends the game at once. After a move or a vote, a seat at the target
-ends the game. A turn change does not look: a seat that reaches the target from a harvest wins at the
-next move or vote by anyone.
+a winner. Points come from what a seat has built and from what it holds that a law says counts. After a move or a
+vote, a seat at the target has ended the game. A turn change does not look: a seat that reaches the target
+from a harvest, or by a law that gives it a piece, wins at the next move or vote by anyone.
 
 Why it matters: the commandments say how a game runs, and this says that its result means something. -/
 theorem the_winner_earned_it (G : GameDef) (hG : G.Valid) (s : State G) (hs : Reachable G s) :
@@ -24,7 +23,6 @@ theorem the_winner_earned_it (G : GameDef) (hG : G.Valid) (s : State G) (hs : Re
       (∀ p ∈ s.turnOrder, s.pointsOf p ≤ s.pointsOf w) ∧
       (G.targetPoints ≤ s.pointsOf w ∨ s.turnsTaken = maxTurns G s.turnOrder.length)) ∧
     (s.phase = .ended → s.winner.isSome = true) ∧
-    ((∃ p ∈ s.turnOrder, G.targetPoints ≤ s.builtPointsOf p) → s.phase = .ended) ∧
     (∀ e s', Engine.step G s e = .ok s' → LooksForWinner e →
       (∃ p ∈ s'.turnOrder, G.targetPoints ≤ s'.pointsOf p) → s'.phase = .ended) :=
   Proofs.the_winner_earned_it G hG s (hs.inv hG)
@@ -51,8 +49,8 @@ a seat. Only the tests check their entries in full.
 An exit and a proposal make no entries. An offer or a cancelled offer makes none either, unless a seat
 is at the target and the game ends, which makes only refunds. A signature makes no entries, unless it is the last, which makes exactly the deal's deposits.
 A vote makes no entries, unless it ends the game, which makes only refunds. Accepting needs an offer
-that exists. A seat can end a turn only when it is the current seat. Only placing a piece changes the
-pieces. Only ending a turn moves the turn or the dice.
+that exists. A seat can end a turn only when it is the current seat. Only placing a piece and a turn change change the
+pieces, and commandment V says how. Only ending a turn moves the turn or the dice.
 
 A declaration changes one number and adds to the sender's action count and the count of events. It
 changes nothing else, unless a seat is at the target and the game ends. `DeclarationsKept` says how declared numbers can change in any step.
@@ -73,7 +71,7 @@ theorem every_other_event_is_exact (G : GameDef) (hG : G.Valid) (s s' : State G)
     (∀ seat id yes, e = .vote seat id yes → NoEntriesUnlessEnded s s') ∧
     (∀ p id, e = .move p (.accept id) → ∃ o, s.offers.find? (·.id == id) = some o) ∧
     (∀ p, e = .move p .endTurn → EndsTurn s e) ∧
-    ((∀ p k loc, e ≠ .move p (.place k loc)) → s'.pieces = s.pieces) ∧
+    (¬ EndsTurn s e → (∀ p k loc, e ≠ .move p (.place k loc)) → s'.pieces = s.pieces) ∧
     (¬ EndsTurn s e →
       s'.turnsTaken = s.turnsTaken ∧ s'.turnIndex = s.turnIndex ∧ s'.round = s.round ∧
       s'.rollsMade = s.rollsMade) ∧

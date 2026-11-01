@@ -29,6 +29,7 @@ mutual
   /-- How many nodes an effect has, counting its numbers and conditions. -/
   def Effect.size : Effect → Nat
     | .transfer _ _ _ amount => amount.size + 1
+    | .movePiece .. => 1
     | .forEach c body => c.size + Effect.sizeAll body + 1
     | .when c body => c.size + Effect.sizeAll body + 1
 
@@ -85,6 +86,7 @@ mutual
   /-- The most entries an effect can ask for, when every condition is true. -/
   def Effect.plannedEntries (seats : Nat) : Effect → Nat
     | .transfer .. => 1
+    | .movePiece .. => 1
     | .forEach _ body => seats * Effect.plannedAll seats body
     | .when _ body => Effect.plannedAll seats body
 
@@ -125,6 +127,7 @@ mutual
   `forEach` reads what is inside it once per seat. -/
   def Effect.reads (seats : Nat) : Effect → Nat
     | .transfer _ _ _ amount => amount.reads seats + 1
+    | .movePiece .. => 1
     | .forEach c body => seats * (c.reads seats + Effect.readsAll seats body) + 1
     | .when c body => c.reads seats + Effect.readsAll seats body + 1
 
@@ -171,6 +174,10 @@ mutual
          else []) ++
         (if src == dst then ["a transfer from an account to itself moves nothing"] else []) ++
         (if amount.dividesByZero then ["a law cannot divide by zero"] else [])
+    | .movePiece src dst _ =>
+        (if (src.seat env).isNone then ["a piece can be moved only from a seat where this rule runs"] else []) ++
+        (if dst == .bank || (dst.seat env).isSome then [] else ["a piece can go only to the bank or a seat"]) ++
+        (if src == dst then ["a move from a seat to itself moves nothing"] else [])
     | .forEach c body =>
         (if c.dividesByZero then ["a law cannot divide by zero"] else []) ++
         Effect.problemsAll { env with each := some 0 } body
@@ -184,6 +191,22 @@ mutual
     | e :: es => Effect.problems env e ++ Effect.problemsAll env es
 end
 
+mutual
+  /-- The kinds of piece this effect moves. -/
+  def Effect.kindsMoved : Effect → List PieceKind
+    | .transfer .. => []
+    | .movePiece _ _ k => [k]
+    | .forEach _ body | .when _ body => Effect.kindsMovedAll body
+
+  /-- The kinds of piece these effects move. -/
+  def Effect.kindsMovedAll : List Effect → List PieceKind
+    | [] => []
+    | e :: es => e.kindsMoved ++ Effect.kindsMovedAll es
+end
+
+/-- This clause can move a piece. -/
+def Clause.movesPieces (c : Clause) : Bool := !(Effect.kindsMovedAll c.effects).isEmpty
+
 /-- Who and what exists where this clause's effects run. -/
 def Clause.env : Clause → LawEnv
   | .onHarvest _ => (Trigger.harvest 0 "" 0).env
@@ -195,6 +218,13 @@ def Clause.env : Clause → LawEnv
 clause applies, and `final` is the rules after the whole law applies. -/
 def Clause.noEffect (G : GameDef) (R final : Rules) (c : Clause) : List String :=
   Effect.problemsAll c.env c.effects ++
+  (match c with
+   | .onHarvest b | .onBuild _ b =>
+     if (Effect.kindsMovedAll b).isEmpty then []
+     else ["a law can move a piece only at a round's end or on a roll"]
+   | _ => []) ++
+  ((Effect.kindsMovedAll c.effects).flatMap fun k =>
+    if (final.piece? k).isSome then [] else [s!"no piece named {k} will exist"]) ++
   match c with
   | .onHarvest b | .onRoundEnd b | .onRoll b =>
       if Effect.plannedAll 2 b == 0 then ["this rule has no effects"] else []

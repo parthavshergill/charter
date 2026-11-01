@@ -419,7 +419,8 @@ theorem endTurnNow_ok {s s' : State G} (h : endTurnNow s = .ok s') :
       s' = startNextTurn
         { s with
           books := b
-          journal := s.journal ++ turnEntries s (rollAt G s.seed s.rollsMade) }
+          journal := s.journal ++ turnEntries s (rollAt G s.seed s.rollsMade)
+          pieces := s.turnPieces (rollAt G s.seed s.rollsMade) }
         (rollAt G s.seed s.rollsMade) := by
   unfold endTurnNow at h
   simp only at h

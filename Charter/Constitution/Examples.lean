@@ -20,6 +20,7 @@ These show that the promises are not empty:
   nobody can pay.
 * A resource can be worth points, and a seat that reaches the target at a turn change wins at the next
   move or vote.
+* A law can take a seat's newest piece, at a round's end or on a roll, and never its last.
 * The promises reject bad steps. Each `..._is_rejected` theorem shows a named part of a commandment
   saying no to a forged step. Next to most is an `example` of the honest step, which it allows.
 
@@ -457,7 +458,7 @@ def sevenGame : State tinySevens :=
 def sevenRoll : Nat := rollAt tinySevens sevenGame.seed sevenGame.rollsMade
 
 /-- The honest entries: on a 7, the law pays exactly what it says. -/
-example : rollEntries (sevenGame.afterPosting sevenGame.entriesBeforeRoll) sevenRoll =
+example : rollEntries sevenGame.afterRoundEnd sevenRoll =
     luckySevenEntries 1 := by
   decide +kernel
 
@@ -467,7 +468,7 @@ example : rollEntries sevenGame 8 = [] := by decide +kernel
 /-- A roll that skips the law's payments. X rejects this: the entries of a roll must be exactly
 `rollEntries`, and those are not empty. -/
 theorem skipped_seven_is_rejected :
-    ([] : List Entry) ≠ rollEntries (sevenGame.afterPosting sevenGame.entriesBeforeRoll) sevenRoll := by
+    ([] : List Entry) ≠ rollEntries sevenGame.afterRoundEnd sevenRoll := by
   decide +kernel
 
 /-- On a 7, a step takes 1 grain from seat 0 for seat 1, and no law asks for it. V rejects this. -/
@@ -476,7 +477,7 @@ theorem forged_seven_payment_is_rejected :
       ⟨.player 0, .player 1, "grain", 1, .lawEffect⟩ := by
   intro h
   have hEnd : ⟨.player 0, .player 1, "grain", 1, .lawEffect⟩ ∉
-      rollEntries (sevenGame.afterPosting sevenGame.entriesBeforeRoll) sevenRoll := by decide +kernel
+      rollEntries sevenGame.afterRoundEnd sevenRoll := by decide +kernel
   have hRound : ⟨.player 0, .player 1, "grain", 1, .lawEffect⟩ ∉
       sevenGame.roundEndLawEntries := by decide +kernel
   rcases h 0 rfl with ⟨hr, _⟩ | ⟨hr, _⟩ | ⟨_, _, hf, _⟩ | ⟨_, h1⟩
@@ -495,7 +496,7 @@ theorem wrong_actor_is_rejected :
     ¬ MoneyLeavesBankOnlyFor sevenGame .forceEndTurn ⟨.bank, .player 0, "timber", 1, .lawEffect⟩ := by
   intro h
   have hEnd : ⟨.bank, .player 0, "timber", 1, .lawEffect⟩ ∉
-      rollEntries (sevenGame.afterPosting sevenGame.entriesBeforeRoll) sevenRoll := by decide +kernel
+      rollEntries sevenGame.afterRoundEnd sevenRoll := by decide +kernel
   have hRound : ⟨.bank, .player 0, "timber", 1, .lawEffect⟩ ∉
       sevenGame.roundEndLawEntries := by decide +kernel
   rcases h (Or.inl rfl) with ⟨hr, _⟩ | ⟨hr, _⟩ | ⟨_, h1⟩
@@ -997,6 +998,118 @@ example : (({ initialState worthGame 2 42 [2] with
       books := fun a r => match a, r with
         | .player 0, "grain" => 3
         | _, _ => 0 } : State worthGame)).pointsOf 0 = 0 := by decide +kernel
+
+/-! ## Moving pieces
+
+A law can take a seat's newest piece of a kind, at a round's end or on a roll. To the bank, it is destroyed.
+To a seat, it is seized. A seat keeps its last piece. -/
+
+/-- A list of pieces: seat 0 has a settlement with a mill on it and another settlement, and seat 1 has one. -/
+def movePieces : List Piece :=
+  [⟨0, "settlement", .spot 0⟩, ⟨0, "mill", .spot 0⟩, ⟨0, "settlement", .spot 3⟩, ⟨1, "settlement", .spot 6⟩]
+
+/-- Rules with a mill that attaches to a settlement, with a limit of 1 for each. -/
+def moveRules : Rules :=
+  { pieces := [ { name := "settlement", cost := [], points := 1, placement := .spot, yield := 1, limit := 2 }
+              , { name := "mill", cost := [], points := 1, placement := .attach "settlement", yield := 1, limit := 1 } ]
+    bankRate := 4, worth := [] }
+
+/-- The bank destroys the newest settlement, and the older one stays. -/
+example : applyOrder moveRules movePieces ⟨0, none, "settlement"⟩ =
+    [⟨0, "settlement", .spot 0⟩, ⟨0, "mill", .spot 0⟩, ⟨1, "settlement", .spot 6⟩] := by decide +kernel
+
+/-- A seizure keeps the piece where it is, and changes its owner. -/
+example : applyOrder moveRules movePieces ⟨0, some 1, "settlement"⟩ =
+    [⟨0, "settlement", .spot 0⟩, ⟨0, "mill", .spot 0⟩, ⟨1, "settlement", .spot 3⟩, ⟨1, "settlement", .spot 6⟩] := by
+  decide +kernel
+
+/-- What sits on a piece goes with it, and the seat's other settlement stays. -/
+example : applyOrder moveRules [⟨0, "settlement", .spot 3⟩, ⟨0, "settlement", .spot 0⟩, ⟨0, "mill", .spot 0⟩]
+      ⟨0, none, "settlement"⟩ = [⟨0, "settlement", .spot 3⟩] := by decide +kernel
+
+/-- A seat at its limit cannot receive a piece, so it is destroyed. -/
+example : applyOrder { moveRules with pieces := [ { name := "settlement", cost := [], points := 1, placement := .spot, yield := 1, limit := 1 } ] }
+      movePieces ⟨0, some 1, "settlement"⟩ =
+    [⟨0, "settlement", .spot 0⟩, ⟨0, "mill", .spot 0⟩, ⟨1, "settlement", .spot 6⟩] := by decide +kernel
+
+/-- A seat keeps its last piece: the order does nothing. Taking the settlement takes the mill on it, and that
+is all the seat has. -/
+example : applyOrder moveRules [⟨0, "settlement", .spot 0⟩, ⟨0, "mill", .spot 0⟩] ⟨0, none, "settlement"⟩ =
+    [⟨0, "settlement", .spot 0⟩, ⟨0, "mill", .spot 0⟩] := by decide +kernel
+
+/-- A step that takes a seat's last piece is rejected. -/
+theorem taking_the_last_piece_is_rejected :
+    ¬ SeatsKeepAPiece
+      ({ initialState tinySettlers 2 42 [2] with pieces := [⟨0, "settlement", .spot 0⟩] } : State tinySettlers)
+      (initialState tinySettlers 2 42 [2]) := by
+  intro h
+  obtain ⟨_, hx, _⟩ := h 0 ⟨⟨0, "settlement", .spot 0⟩, by simp, rfl⟩
+  cases hx
+
+/-- A piece that vanishes at a turn change with no law asking for it is rejected. -/
+theorem a_piece_vanishing_with_no_law_is_rejected :
+    ¬ PieceLeavesOnlyFor
+      ({ initialState tinySettlers 2 42 [2] with pieces := [⟨0, "settlement", .spot 0⟩] } : State tinySettlers)
+      (initialState tinySettlers 2 42 [2]) .forceEndTurn := by
+  intro h
+  rcases h ⟨0, "settlement", .spot 0⟩ (by simp) (by simp [initialState]) with ⟨_, _, he⟩ | ⟨_, L, hL, _⟩
+  · cases he
+  · cases hL
+
+/-- A law that names a build or a harvest is refused, so commandment VII stays as it is. -/
+theorem moving_a_piece_on_a_build_is_rejected :
+    "a law can move a piece only at a round's end or on a roll" ∈
+      lawProblems tinySettlers (initialState tinySettlers 2 42 [2])
+        { title := "x", clauses := [.onBuild "road" [.movePiece .actor .bank "settlement"]] } := by
+  decide +kernel
+
+theorem moving_a_piece_on_a_harvest_is_rejected :
+    "a law can move a piece only at a round's end or on a roll" ∈
+      lawProblems tinySettlers (initialState tinySettlers 2 42 [2])
+        { title := "x", clauses := [.onHarvest [.movePiece .actor .bank "settlement"]] } := by
+  decide +kernel
+
+/-- A roll law takes the roller's newest road when the dice show anything. So in a real game the board changes. -/
+def roadTax : Law :=
+  { title := "Road tax", clauses := [.onRoll [.movePiece .actor .bank "road"]] }
+
+def roadGame : GameDef :=
+  { tinySettlers with name := "Road tax", diceCount := 2, diceSides := 6, foundingLaws := [roadTax] }
+
+theorem roadGame_valid : roadGame.Valid := by decide +kernel
+
+/-- Each seat places a settlement and a road, twice. On the roll that starts seat 0's turn, it loses its newest
+road and keeps everything else. -/
+def roadEvents : List Event :=
+  [ .move 0 (.place "settlement" (.spot 0)), .move 0 (.place "road" (.link (0, 1))), .move 0 .endTurn
+  , .move 1 (.place "settlement" (.spot 5)), .move 1 (.place "road" (.link (5, 6))), .move 1 .endTurn
+  , .move 1 (.place "settlement" (.spot 8)), .move 1 (.place "road" (.link (8, 9))), .move 1 .endTurn
+  , .move 0 (.place "settlement" (.spot 3)), .move 0 (.place "road" (.link (3, 4))) ]
+
+/-- A real game. After the last setup turn ends, seat 0 has lost the road it placed last. -/
+theorem a_law_really_takes_a_piece :
+    ∃ s s', Reachable roadGame s ∧ Engine.step roadGame s (.move 0 .endTurn) = .ok s' ∧
+      ⟨0, "road", .link (3, 4)⟩ ∈ s.pieces ∧ ⟨0, "road", .link (3, 4)⟩ ∉ s'.pieces ∧
+      ⟨0, "road", .link (0, 1)⟩ ∈ s'.pieces := by
+  have hc : (match Engine.replay roadGame 2 42 [2] roadEvents with
+      | .error _ => false
+      | .ok s =>
+        match Engine.step roadGame s (.move 0 .endTurn) with
+        | .error _ => false
+        | .ok s' => s.pieces.contains ⟨0, "road", .link (3, 4)⟩ && !s'.pieces.contains ⟨0, "road", .link (3, 4)⟩ &&
+            s'.pieces.contains ⟨0, "road", .link (0, 1)⟩) = true := by decide +kernel
+  cases hr : Engine.replay roadGame 2 42 [2] roadEvents with
+  | error m => rw [hr] at hc; simp at hc
+  | ok s =>
+    rw [hr] at hc
+    cases hs : Engine.step roadGame s (.move 0 .endTurn) with
+    | error m => simp [hs] at hc
+    | ok s' =>
+      simp only [hs, Bool.and_eq_true, Bool.not_eq_true', List.contains_iff_mem] at hc
+      obtain ⟨⟨h1, h2⟩, h3⟩ := hc
+      exact ⟨s, s', ((X_what_you_vote_on_is_what_runs roadGame roadGame_valid).1 s).mpr
+        ⟨2, 42, [2], _, by decide, by decide, hr⟩, hs, h1,
+        (fun hm => by rw [List.contains_iff_mem.mpr hm] at h2; cases h2), h3⟩
 
 /-- The conditions the theorems assume can be met: this new game is reachable. -/
 example : Reachable tinySettlers (initialState tinySettlers 2 42 [25283273]) :=

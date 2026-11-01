@@ -31,6 +31,7 @@ clause := (on-harvest effect...)     ; runs once for each harvest payment
 effect := (transfer from FROM to TO RESOURCE number)   ; FROM pays TO
         | (when test transfer...)              ; all of these, only if the test holds now
         | (for-each-player test effect...)     ; for every player who passes the test
+        | (move-piece FROM TO KIND)            ; FROM's newest KIND moves. To the bank, it is destroyed. To a player, it is seized. What sits on it goes with it. A player always keeps their last piece, and a player at their limit cannot receive one, so it is destroyed
 PLACEMENT := link (on a side of a hex, as a road is) | spot (on a free corner, as a settlement is)
            | (upgrade KIND) (replaces your KIND) | (attach KIND) (goes on your KIND, which stays)
 (yield n)  ; collects n when a hex it touches pays. (limit n) ; each player can own at most n

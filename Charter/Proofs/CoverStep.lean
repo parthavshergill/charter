@@ -128,7 +128,7 @@ theorem Cover.endTurn {s s' : State G} {e : Event} (hc : Cover s) (hi : IdInv s)
   subst hs
   intro d hd i r
   have hd0 : d ∈ s.deals := List.Sublist.subset (startNextTurn_deals_sublist'
-    ({ s with books := b, journal := s.journal ++ turnEntries s (rollAt G s.seed s.rollsMade) } : State G) _) hd
+    ({ s with books := b, journal := s.journal ++ turnEntries s (rollAt G s.seed s.rollsMade), pieces := s.turnPieces (rollAt G s.seed s.rollsMade) } : State G) _) hd
   have hbal := postAll_balance hb (.deposit d.id i) r
   have hcov := hc d hd0 i r
   simp only [State.balance] at hcov ⊢
@@ -136,7 +136,7 @@ theorem Cover.endTurn {s s' : State G} {e : Event} (hc : Cover s) (hi : IdInv s)
   cases hl : s.isLastTurn with
   | true =>
     obtain ⟨H, hT, hH⟩ := turnEntries_last hl (rollAt G s.seed s.rollsMade)
-    obtain ⟨hround, hlt⟩ := last_turn_survivor (s := { s with books := b, journal := _ }) hl _ hd
+    obtain ⟨hround, hlt⟩ := last_turn_survivor (s := { s with books := b, journal := _, pieces := _ }) hl _ hd
     dsimp only at hround hlt
     have hzero1 : outflow s.roundEndLawEntries (.deposit d.id i) r = 0 := by
       apply outflow_eq_zero'
@@ -151,7 +151,7 @@ theorem Cover.endTurn {s s' : State G} {e : Event} (hc : Cover s) (hi : IdInv s)
       obtain ⟨_, j, _, h3, _⟩ := refundEntries_form hx
       rw [h3] at h1
       injection h1 with h4 _
-      exact closing_gone (s := { s with books := b, journal := _ }) hl hi.deal_nodup hd2 _ d hd h4.symm
+      exact closing_gone (s := { s with books := b, journal := _, pieces := _ }) hl hi.deal_nodup hd2 _ d hd h4.symm
     have hzero3 : outflow H (.deposit d.id i) r = 0 := by
       apply outflow_eq_zero'
       intro x hx h1 _
@@ -170,7 +170,7 @@ theorem Cover.endTurn {s s' : State G} {e : Event} (hc : Cover s) (hi : IdInv s)
     omega
   | false =>
     have hround := startNextTurn_round_notLast (G := G)
-      (s := { s with books := b, journal := s.journal ++ turnEntries s (rollAt G s.seed s.rollsMade) })
+      (s := { s with books := b, journal := s.journal ++ turnEntries s (rollAt G s.seed s.rollsMade), pieces := s.turnPieces (rollAt G s.seed s.rollsMade) })
       hl he (rollAt G s.seed s.rollsMade)
     dsimp only at hround
     have hz : outflow (turnEntries s (rollAt G s.seed s.rollsMade)) (.deposit d.id i) r = 0 := by

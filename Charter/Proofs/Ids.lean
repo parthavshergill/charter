@@ -480,7 +480,7 @@ theorem IdInv.step {s s' : State G} {e : Event} (hi : IdInv s) (h : Engine.step 
     IdInv s' := by
   rcases step_view h with ⟨_, h⟩ | ⟨_, _, s1, hb, hf⟩
   · obtain ⟨b, _, rfl⟩ := endTurnNow_ok h
-    exact IdInv.startNextTurn (s := { s with books := b, journal := _ })
+    exact IdInv.startNextTurn (s := { s with books := b, journal := _, pieces := _ })
       ⟨hi.1, hi.2, hi.3, hi.4, hi.5, hi.6, hi.7, hi.8, hi.9⟩ _
   · have h1 := hi.body hb
     rcases finish_cases hf with rfl | ⟨w, he⟩

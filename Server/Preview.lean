@@ -150,6 +150,21 @@ def ruleNotes (s s' : State G) : List String :=
     if (s'.rules.piece? d.name).isNone then some s!"The {d.name} would no longer exist." else none
   bank ++ worth ++ costs ++ gone
 
+/-- Pieces a law would take or give at the next turn change, for this roll, in words. -/
+def pieceNotes (s s' : State G) (roll : Nat) (names : Nat → String) : List String :=
+  let before := s.turnPieces roll
+  let after := s'.turnPieces roll
+  let gone := after.isEmpty && before.isEmpty
+  if gone then [] else
+  s.turnOrder.flatMap fun p =>
+    (s'.rules.pieces.map (·.name)).filterMap fun k =>
+      let count (ps : List Piece) : Nat := (ps.filter fun x => x.owner == p && x.kind == k).length
+      let a := count before
+      let b := count after
+      if a == b then none
+      else if b < a then some s!"{names p} would lose {a - b} {k} at the next turn change."
+      else some s!"{names p} would gain {b - a} {k} at the next turn change."
+
 def rowJson (r : Row) : Json :=
   Json.mkObj [("seat", toJson r.who), ("res", toJson r.res), ("delta", toJson r.delta)]
 
@@ -177,7 +192,10 @@ def lawPreview (s : State G) (id : Nat) (L : Law) (you : Option Nat) (names : Na
   let declared := if readsDeclared then
       ["These figures hold if declarations stay as they are. A seat can change its own on its turn."]
     else []
-  let notes := refused ++ declared ++ ruleNotes s s' ++ unpaidBuildNotes s s' actor
+  let firstRoll := (Scene.rollsOf G).head?.getD 0
+  -- A round's end law gives the same answer on any roll. Roll laws can depend on it, and those show what they do at this roll.
+  let pieces := if L.clauses.any Clause.movesPieces then pieceNotes s s' firstRoll names else []
+  let notes := refused ++ declared ++ pieces ++ ruleNotes s s' ++ unpaidBuildNotes s s' actor
   Json.mkObj
     [ ("sections", Json.arr (sections.map sectionJson).toArray)
     , ("moreRolls", toJson (rolls.length - min rolls.length 3))

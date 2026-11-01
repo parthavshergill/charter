@@ -93,6 +93,14 @@ mutual
     | .harvestedIs r => (env.harvested.map (·.1)) == some r
 end
 
+/-- A law asks a seat to give up its newest piece of this kind. `dst = none` means the bank, which destroys
+it. -/
+structure PieceOrder where
+  src : Seat
+  dst : Option Seat
+  kind : PieceKind
+  deriving Repr, DecidableEq
+
 mutual
   /-- The transfers an effect asks for, before any shortfall is settled. -/
   def Effect.plan {G : GameDef} (s : State G) : Effect → LawEnv → List Entry
@@ -101,6 +109,7 @@ mutual
         | some a, some b, some x =>
             [{ src := a, dst := b, res := x, amount := amount.eval s env, reason := .lawEffect }]
         | _, _, _ => []
+    | .movePiece .., _ => []
     | .forEach c body, env =>
         s.turnOrder.flatMap fun p =>
           let env' := { env with each := some p }
@@ -111,6 +120,27 @@ mutual
   def Effect.planAll {G : GameDef} (s : State G) : List Effect → LawEnv → List Entry
     | [], _ => []
     | e :: es, env => Effect.plan s e env ++ Effect.planAll s es env
+end
+
+mutual
+  /-- The pieces an effect asks to move. -/
+  def Effect.planOrders {G : GameDef} (s : State G) : Effect → LawEnv → List PieceOrder
+    | .transfer .., _ => []
+    | .movePiece src dst k, env =>
+        match src.seat env, dst, dst.seat env with
+        | some a, .bank, _ => [⟨a, none, k⟩]
+        | some a, _, some b => [⟨a, some b, k⟩]
+        | _, _, _ => []
+    | .forEach c body, env =>
+        s.turnOrder.flatMap fun p =>
+          let env' := { env with each := some p }
+          if c.eval s env' then Effect.planOrdersAll s body env' else []
+    | .when c body, env => if c.eval s env then Effect.planOrdersAll s body env else []
+
+  /-- The pieces a list of effects asks to move, in order. -/
+  def Effect.planOrdersAll {G : GameDef} (s : State G) : List Effect → LawEnv → List PieceOrder
+    | [], _ => []
+    | e :: es, env => Effect.planOrders s e env ++ Effect.planOrdersAll s es env
 end
 
 /-- The bodies of a law that respond to a trigger. -/
@@ -132,9 +162,52 @@ def Trigger.env : Trigger → LawEnv
 def Law.plan {G : GameDef} (s : State G) (t : Trigger) (L : Law) : List Entry :=
   L.clauses.flatMap fun c => Effect.planAll s (c.bodyFor t) t.env
 
+/-- This kind of piece sits on one of these kinds. -/
+def Rules.attachesTo (R : Rules) (k : PieceKind) (onto : List PieceKind) : Bool :=
+  match ((R.piece? k).map (·.placement) : Option Placement) with
+  | some (Placement.attach j) => onto.contains j
+  | _ => false
+
+/-- A piece and what sits on it: the same owner's pieces in the same place, attached to it, directly or
+through each other. -/
+def carriedWith (R : Rules) (ps : List Piece) (x : Piece) : List Piece :=
+  ps.foldl (fun acc y =>
+    if y.owner == x.owner && y.loc == x.loc && !acc.contains y && R.attachesTo y.kind (acc.map (·.kind))
+    then acc ++ [y] else acc) [x]
+
+/-- Where a moved piece ends up. It goes to the seat if that seat is under its limit for that kind, and
+is destroyed otherwise. The bank destroys it. -/
+def landing (R : Rules) (ps : List Piece) (dst : Option Seat) (y : Piece) : Option Piece :=
+  match dst with
+  | some q =>
+    if (ps.filter fun z => z.owner == q && z.kind == y.kind).length <
+        ((R.piece? y.kind).map (·.limit)).getD 0
+    then some { y with owner := q } else none
+  | none => none
+
+/-- Carry out one order. It takes the seat's newest piece of that kind, and what sits on it. A seat always
+keeps its last piece, because a seat with no pieces could never build again. So an order that would take
+everything a seat has does nothing. -/
+def applyOrder (R : Rules) (ps : List Piece) (o : PieceOrder) : List Piece :=
+  if o.dst == some o.src then ps else
+  match (ps.filter fun y => y.owner == o.src && y.kind == o.kind).getLast? with
+  | none => ps
+  | some x =>
+    let going := carriedWith R ps x
+    if (ps.filter fun y => y.owner == o.src && !going.contains y).isEmpty then ps
+    else ps.filterMap fun y => if going.contains y then landing R ps o.dst y else some y
+
+/-- Carry out orders, in order. -/
+def applyOrders (R : Rules) (orders : List PieceOrder) (ps : List Piece) : List Piece :=
+  orders.foldl (applyOrder R) ps
+
 /-- What every law in force does for a trigger, all planned from the same moment. -/
 def lawEntries {G : GameDef} (s : State G) (t : Trigger) : List Entry :=
   settle s (s.laws.flatMap fun x => Law.plan s t x.2)
+
+/-- The pieces every law in force asks to move for a trigger, all planned from the same moment. -/
+def lawOrders {G : GameDef} (s : State G) (t : Trigger) : List PieceOrder :=
+  s.laws.flatMap fun x => x.2.clauses.flatMap fun c => Effect.planOrdersAll s (c.bodyFor t) t.env
 
 /-- What the bank pays out for a roll: each piece on a producing region collects its yield.
 If the bank is short, everyone's payment shrinks in proportion, and it can round down to nothing. -/

@@ -38,6 +38,7 @@ mutual
         subst hx
         exact ⟨rfl, party_account_notDeposit ha, party_account_notDeposit hb⟩
       · simp at hx
+    | .movePiece .., _, x, hx => by simp [Effect.plan] at hx
     | .forEach c body, env, x, hx => by
       simp only [Effect.plan, List.mem_flatMap] at hx
       obtain ⟨p, _, hx⟩ := hx
@@ -221,7 +222,7 @@ theorem closing_gone {s : State G} (hl : s.isLastTurn = true) (hnd : (s.deals.ma
 
 theorem mem_turnEntries {s : State G} {roll : Nat} {x : Entry} (hx : x ∈ turnEntries s roll) :
     (s.isLastTurn = true ∧ x ∈ s.roundEndEntries) ∨
-    x ∈ rollEntries (s.afterPosting s.entriesBeforeRoll) roll := by
+    x ∈ rollEntries s.afterRoundEnd roll := by
   have before : x ∈ s.entriesBeforeRoll → s.isLastTurn = true ∧ x ∈ s.roundEndEntries := by
     intro h
     unfold State.entriesBeforeRoll at h
@@ -259,7 +260,7 @@ def SeatOut (s s' : State G) (e : Event) (x : Entry) (i : Seat) : Prop :=
        x ∈ lawEntries (s.afterPosting (s.costEntries b k)) (.build b k)) ∨
      (EndsTurn s e ∧
        (x ∈ s.roundEndLawEntries ∨
-        x ∈ rollEntries (s.afterPosting s.entriesBeforeRoll)
+        x ∈ rollEntries s.afterRoundEnd
           (rollAt G s.seed s.rollsMade)))))
 
 /-- Everything commandment V says about one entry. -/
@@ -323,23 +324,23 @@ theorem vconj_payment {s s' : State G} {e : Event} {x : Entry} (hx : x ∈ s.due
 /-- A law's entry at a turn change. -/
 theorem vconj_turnLaw {s s' : State G} {e : Event} {x : Entry} (hf : LawForm x) (hend : EndsTurn s e)
     (hx : x ∈ s.roundEndLawEntries ∨
-      x ∈ rollEntries (s.afterPosting s.entriesBeforeRoll) (rollAt G s.seed s.rollsMade)) :
+      x ∈ rollEntries s.afterRoundEnd (rollAt G s.seed s.rollsMade)) :
     VConj s s' e x :=
   vconj_plain hf.2.1 hf.2.2 (by rw [hf.1]; simp) (by rw [hf.1]; simp)
     (fun _ _ => Or.inr (Or.inr (Or.inr ⟨hf.1, Or.inr ⟨hend, hx⟩⟩)))
 
 /-- Every entry of a turn change is allowed. -/
 theorem vconj_turn {s : State G} {e : Event} (hend : EndsTurn s e)
-    (hnd : (s.deals.map (·.id)).Nodup) {b : Books} {j : List Entry} {x : Entry}
+    (hnd : (s.deals.map (·.id)).Nodup) {b : Books} {j : List Entry} {ps : List Piece} {x : Entry}
     (hx : x ∈ turnEntries s (rollAt G s.seed s.rollsMade)) :
-    VConj s (startNextTurn { s with books := b, journal := j } (rollAt G s.seed s.rollsMade)) e x := by
+    VConj s (startNextTurn { s with books := b, journal := j, pieces := ps } (rollAt G s.seed s.rollsMade)) e x := by
   rcases mem_turnEntries hx with ⟨hl, hx⟩ | hx
   · rcases mem_roundEndEntries hx with h | h | ⟨d, hd, h⟩
     · exact vconj_payment h hend hl
     · exact vconj_turnLaw (lawEntries_form _ _ x h) hend (Or.inl h)
     · obtain ⟨hr, i, _, h1, h2⟩ := refundEntries_form h
       exact vconj_refund (closingDeals_mem hd)
-        (closing_gone (s := { s with books := b, journal := j }) hl hnd hd _) hr h1 h2
+        (closing_gone (s := { s with books := b, journal := j, pieces := ps }) hl hnd hd _) hr h1 h2
   · obtain ⟨h1, h2, h3, h4⟩ := rollEntries_form hx
     refine vconj_plain h1 h2 h3 h4 ?_
     intro i hi

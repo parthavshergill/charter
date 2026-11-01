@@ -68,6 +68,28 @@ def roundEndEntries (s : State G) : List Entry :=
 def entriesBeforeRoll (s : State G) : List Entry :=
   if s.isLastTurn then s.roundEndEntries else []
 
+/-- The pieces after the laws act at this round's end. They plan from the same moment as the round's end
+laws' payments. On a turn that does not end a round, nothing changes. -/
+def piecesBeforeRoll (s : State G) : List Piece :=
+  if s.isLastTurn then applyOrders s.rules (lawOrders (s.afterPosting s.duePayments) .roundEnd) s.pieces
+  else s.pieces
+
+/-- What the next roll sees: the round's end entries posted, and the pieces the round's end laws left. -/
+def afterRoundEnd (s : State G) : State G :=
+  { s.afterPosting s.entriesBeforeRoll with pieces := s.piecesBeforeRoll }
+
+/-- The pieces after a turn change, if the dice show `roll`: what the round's end left, and then what the
+laws reacting to the roll do, planned from the moment after the harvest posted. -/
+def turnPieces (s : State G) (roll : Nat) : List Piece :=
+  let x := s.afterRoundEnd
+  if (nextStage s).rolls then
+    match x.nextRoller with
+    | some a =>
+      applyOrders x.rules
+        (lawOrders (x.atRoll.afterPosting (harvestEntries x.atRoll roll)) (.roll a roll)) x.pieces
+    | none => x.pieces
+  else x.pieces
+
 end State
 
 /-! ## Trades and fees -/

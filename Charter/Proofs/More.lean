@@ -335,7 +335,7 @@ theorem rolled_iff {s s' : State G} {e : Event} (h : Engine.step G s e = .ok s')
   · rintro ⟨hend, hr⟩
     obtain ⟨b, _, hs⟩ := step_endsTurn hend h
     rw [hs]
-    exact (startNextTurn_rolled (s := { s with books := b, journal := s.journal ++ turnEntries s (rollAt G s.seed s.rollsMade) })
+    exact (startNextTurn_rolled (s := { s with books := b, journal := s.journal ++ turnEntries s (rollAt G s.seed s.rollsMade), pieces := s.turnPieces (rollAt G s.seed s.rollsMade) })
       hr _).1
   · intro hc
     by_cases hend : EndsTurn s e
@@ -350,7 +350,7 @@ theorem turn_moved_on {s s' : State G} {e : Event} (hend : EndsTurn s e)
     (h : Engine.step G s e = .ok s') : TurnMovedOn s s' := by
   obtain ⟨b, _, hs⟩ := step_endsTurn hend h
   rw [hs]
-  exact startNextTurn_moved ({ s with books := b, journal := s.journal ++ turnEntries s (rollAt G s.seed s.rollsMade) } : State G) _
+  exact startNextTurn_moved ({ s with books := b, journal := s.journal ++ turnEntries s (rollAt G s.seed s.rollsMade), pieces := s.turnPieces (rollAt G s.seed s.rollsMade) } : State G) _
 
 /-! ## Seats, action counts and the phase -/
 
@@ -504,7 +504,7 @@ theorem CurrentSeatInv.step {s s' : State G} {e : Event} (ht : CurrentSeatInv s)
   · obtain ⟨b, _, hs⟩ := endTurnNow_ok h2
     rw [hs]
     exact CurrentSeatInv.startNextTurn
-      (t := { s with books := b, journal := s.journal ++ turnEntries s (rollAt G s.seed s.rollsMade) })
+      (t := { s with books := b, journal := s.journal ++ turnEntries s (rollAt G s.seed s.rollsMade), pieces := s.turnPieces (rollAt G s.seed s.rollsMade) })
       ht he hn _
   · have f := act_frame hb hf
     intro _
@@ -604,12 +604,5 @@ theorem blocked_offer_rejected {s : State G} {p q : Seat} {give get : Bundle}
     cases this
 
 /-! ## Reaching the target ends the game -/
-
-theorem target_ends_game {s : State G} (hn : NoPending s) {p : Seat} (hp : p ∈ s.turnOrder)
-    (ht : G.targetPoints ≤ s.builtPointsOf p) : s.phase = .ended := by
-  by_cases he : s.phase = .ended
-  · exact he
-  · have := hn he p hp
-    omega
 
 end Charter.Proofs

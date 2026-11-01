@@ -337,8 +337,18 @@ def sentences (g : Game) (s s' : State G) (e : Event) : List (Option Nat × Stri
       [((none : Option Nat), "end", s!"The game ended. {g.nameOf w} won with {s'.pointsOf w} points{from_}.", true)]
     | _, _ => []
   let beforeRoll := moneyLines.map fun (k, t, m) => ((none : Option Nat), k, t, m)
+  -- A law can take a piece at a turn change. Tell it, or the board would change with no word.
+  let pieceLines : List (Option Nat × String × String × Bool) :=
+    if s'.turnsTaken == s.turnsTaken then [] else
+    s.turnOrder.flatMap fun p =>
+      (s.pieces.filter (·.owner == p)).filterMap fun x =>
+        if s'.pieces.contains x then none else
+        let seized := s'.pieces.find? fun y => y.loc == x.loc && y.kind == x.kind
+        match seized with
+        | some y => some (none, "build", s!"By law, {g.nameOf y.owner} seized {g.nameOf p}'s {x.kind}.", true)
+        | none => some (none, "build", s!"By law, {g.nameOf p} lost {article x.kind}.", true)
   let (k, t, m) := actionText g s s' e
-  [(actor, k, t, m)] ++ roundLine ++ expired ++ rolled ++ beforeRoll ++ rollLawLine ++ over
+  [(actor, k, t, m)] ++ roundLine ++ expired ++ rolled ++ beforeRoll ++ rollLawLine ++ pieceLines ++ over
 
 /-- Laws that left the open list in this step, with how they ended. -/
 def closedLaws (g : Game) (s s' : State G) (e : Event) : List Decision :=

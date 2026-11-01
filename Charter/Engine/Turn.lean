@@ -22,7 +22,7 @@ variable {G : GameDef}
 /-- Every payment of the turn change, if the dice show `roll`. The roll comes last. -/
 def turnEntries (s : State G) (roll : Nat) : List Entry :=
   let before := s.entriesBeforeRoll
-  if (nextStage s).rolls then before ++ rollEntries (s.afterPosting before) roll else before
+  if (nextStage s).rolls then before ++ rollEntries s.afterRoundEnd roll else before
 
 /-- Start an action turn: the seat's open proposals expire, and the dice roll. -/
 def beginActionTurn (s : State G) (index roll : Nat) : State G :=
@@ -65,7 +65,7 @@ def startNextTurn (s : State G) (roll : Nat) : State G :=
 def endTurnNow (s : State G) : Except String (State G) :=
   let roll := rollAt G s.seed s.rollsMade
   match record s (turnEntries s roll) with
-  | .ok s1 => .ok (startNextTurn s1 roll)
+  | .ok s1 => .ok (startNextTurn { s1 with pieces := s.turnPieces roll } roll)
   | .error m => .error m
 
 /-- Every payment the next turn change will make, if the dice show `roll`. -/

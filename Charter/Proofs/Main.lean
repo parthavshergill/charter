@@ -1,4 +1,5 @@
 import Charter.Proofs.Invariant
+import Charter.Proofs.PiecesKept
 
 /-!
 # The commandments, proved
@@ -71,7 +72,7 @@ theorem V_your_money_is_yours (G : GameDef) (_hG : G.Valid) (s s' : State G) (e 
     (hs : Inv G s) (h : Engine.step G s e = .ok s') :
     OffersKept s s' e ∧
     AcceptedOffersAreExact s s' e ∧
-    ∀ x ∈ newEntries s s',
+    (∀ x ∈ newEntries s s',
     (∀ k i, x.dst = .deposit k i → FundsDeal s s' e x k i) ∧
     (∀ k i, x.src = .deposit k i →
       x.reason = .refund ∨
@@ -93,10 +94,14 @@ theorem V_your_money_is_yours (G : GameDef) (_hG : G.Valid) (s s' : State G) (e 
            x ∈ lawEntries (s.afterPosting (s.costEntries b k)) (.build b k)) ∨
          (EndsTurn s e ∧
            (x ∈ s.roundEndLawEntries ∨
-            x ∈ rollEntries (s.afterPosting s.entriesBeforeRoll)
+            x ∈ rollEntries s.afterRoundEnd
               (rollAt G s.seed s.rollsMade)))))) ∧
-    MoneyLeavesBankOnlyFor s e x := by
-  refine ⟨offers_kept h, accepted_offers_exact h, fun x hx => ?_⟩
+    MoneyLeavesBankOnlyFor s e x) ∧
+    PiecesKept s s' e ∧
+    PieceLeavesOnlyFor s s' e ∧
+    SeatsKeepAPiece s s' := by
+  refine ⟨offers_kept h, accepted_offers_exact h, fun x hx => ?_, pieces_kept h, piece_leaves_only_for h,
+    seats_keep_a_piece h⟩
   have hv := step_vconj hs.ids h hx
   exact ⟨hv.1, hv.2.1, hv.2.2.1, hv.2.2.2.1, hv.2.2.2.2, step_bank h hx⟩
 
@@ -171,11 +176,9 @@ theorem the_winner_earned_it (G : GameDef) (_hG : G.Valid) (s : State G) (hs : I
       (∀ p ∈ s.turnOrder, s.pointsOf p ≤ s.pointsOf w) ∧
       (G.targetPoints ≤ s.pointsOf w ∨ s.turnsTaken = maxTurns G s.turnOrder.length)) ∧
     (s.phase = .ended → s.winner.isSome = true) ∧
-    ((∃ p ∈ s.turnOrder, G.targetPoints ≤ s.builtPointsOf p) → s.phase = .ended) ∧
     (∀ e s', Engine.step G s e = .ok s' → LooksForWinner e →
       (∃ p ∈ s'.turnOrder, G.targetPoints ≤ s'.pointsOf p) → s'.phase = .ended) :=
-  ⟨hs.winner.won, hs.winner.isSome, fun ⟨_, hp, ht⟩ => target_ends_game hs.noPending hp ht,
-    fun _ _ h hl hat => looks_for_winner h hl hat⟩
+  ⟨hs.winner.won, hs.winner.isSome, fun _ _ h hl hat => looks_for_winner h hl hat⟩
 
 theorem limits_hold (G : GameDef) (_hG : G.Valid) (s : State G) (hs : Inv G s) :
     s.laws.length ≤ maxLawsInForce ∧
@@ -203,7 +206,7 @@ theorem every_other_event_is_exact (G : GameDef) (_hG : G.Valid) (s s' : State G
     (∀ seat id yes, e = .vote seat id yes → NoEntriesUnlessEnded s s') ∧
     (∀ p id, e = .move p (.accept id) → ∃ o, s.offers.find? (·.id == id) = some o) ∧
     (∀ p, e = .move p .endTurn → EndsTurn s e) ∧
-    ((∀ p k loc, e ≠ .move p (.place k loc)) → s'.pieces = s.pieces) ∧
+    (¬ EndsTurn s e → (∀ p k loc, e ≠ .move p (.place k loc)) → s'.pieces = s.pieces) ∧
     (¬ EndsTurn s e →
       s'.turnsTaken = s.turnsTaken ∧ s'.turnIndex = s.turnIndex ∧ s'.round = s.round ∧
       s'.rollsMade = s.rollsMade) ∧
@@ -241,7 +244,7 @@ theorem X_what_you_vote_on_is_what_runs (G : GameDef) (_hG : G.Valid) :
         newEntries s s' = rollEntries s (rollAt G s.seed s.rollsMade)) ∧
       (s.isLastTurn = true →
         newEntries s s' = s.roundEndEntries ++
-          rollEntries (s.afterPosting s.roundEndEntries) (rollAt G s.seed s.rollsMade)) ∧
+          rollEntries s.afterRoundEnd (rollAt G s.seed s.rollsMade)) ∧
       s.nextRoller = s'.currentSeat) ∧
     (∀ (s s' : State G) e,
       Reachable G s → Engine.step G s e = .ok s' → EndsTurn s e → s'.rollsMade = s.rollsMade →

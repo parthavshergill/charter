@@ -46,18 +46,6 @@ theorem checkWin_of_nil {s : State G} (h : seatsAtTarget s = []) : checkWin s = 
   rw [h]
   rfl
 
-/-- While a game runs, no seat is at the target with built points alone. A seat can be there by what it
-holds, after a turn change, until the next move or vote. -/
-def NoPending (s : State G) : Prop :=
-  s.phase ≠ .ended → ∀ p ∈ s.turnOrder, s.builtPointsOf p < G.targetPoints
-
-theorem NoPending.start {G : GameDef} (hG : G.Valid) (seats : Nat) (serverSeed : UInt64)
-    (nonces : List UInt64) : NoPending (initialState G seats serverSeed nonces) := by
-  intro _ q _
-  have := valid_target hG
-  simp [State.builtPointsOf, initialState]
-  omega
-
 /-! ## What bodies leave alone -/
 
 theorem decideLaw_fields (s : State G) (id : Nat) (L : Law) :
@@ -148,53 +136,6 @@ theorem body_laws {s s1 : State G} {e : Event} (hne : ∀ a b c, e ≠ .vote a b
   | exit seat i =>
     obtain ⟨_, _, rfl⟩ := exitBody_ok h
     rfl
-
-theorem NoPending.step {s s' : State G} {e : Event} (hn : NoPending s)
-    (h : Engine.step G s e = .ok s') : NoPending s' := by
-  have he := step_not_ended h
-  have ofCheck : ∀ {t : State G}, checkWin t = .ok s' → s'.phase ≠ .ended →
-      ∀ p ∈ s'.turnOrder, s'.builtPointsOf p < G.targetPoints := by
-    intro t hc hne p hp
-    rcases checkWin_ok hc with ⟨rfl, hnil⟩ | ⟨w, hw⟩
-    · have hnot : p ∉ seatsAtTarget s' := by rw [hnil]; simp
-      have hlt : s'.pointsOf p < G.targetPoints :=
-        Nat.lt_of_not_le fun hge => hnot (List.mem_filter.mpr ⟨hp, by simpa using hge⟩)
-      simp only [State.pointsOf] at hlt
-      omega
-    · obtain ⟨_, _, rfl⟩ := endGame_ok hw
-      exact absurd rfl hne
-  rcases step_view h with ⟨_, h⟩ | ⟨_, _, s1, hb, hf⟩
-  · obtain ⟨_, _, rfl⟩ := endTurnNow_ok h
-    intro _ p hp
-    rw [builtPointsOf_congr (s := s) (by simp) (by simp)]
-    exact hn he p (by simpa using hp)
-  · have f := bodyOf_frame hb
-    intro hne
-    cases e with
-    | forceEndTurn => cases hb
-    | move p m => exact ofCheck hf hne
-    | vote a b c => exact ofCheck hf hne
-    | propose a b =>
-      obtain rfl : s' = countAction s1 a := (Except.ok.inj hf).symm
-      intro q hq
-      have hP : s1.pieces = s.pieces := body_pieces (by simp) hb
-      have hL : s1.laws = s.laws := body_laws (by simp) hb
-      rw [builtPointsOf_congr (s := s) (s' := countAction s1 a) hP hL]
-      exact hn he q (f.turnOrder ▸ hq)
-    | sign a b =>
-      obtain rfl : s' = countAction s1 a := (Except.ok.inj hf).symm
-      intro q hq
-      have hP : s1.pieces = s.pieces := body_pieces (by simp) hb
-      have hL : s1.laws = s.laws := body_laws (by simp) hb
-      rw [builtPointsOf_congr (s := s) (s' := countAction s1 a) hP hL]
-      exact hn he q (f.turnOrder ▸ hq)
-    | exit a b =>
-      obtain rfl : s' = countAction s1 a := (Except.ok.inj hf).symm
-      intro q hq
-      have hP : s1.pieces = s.pieces := body_pieces (by simp) hb
-      have hL : s1.laws = s.laws := body_laws (by simp) hb
-      rw [builtPointsOf_congr (s := s) (s' := countAction s1 a) hP hL]
-      exact hn he q (f.turnOrder ▸ hq)
 
 /-! ## One event at a time -/
 
@@ -345,7 +286,7 @@ theorem step_is_exact {s s' : State G} {e : Event}
     (∀ seat id yes, e = .vote seat id yes → NoEntriesUnlessEnded s s') ∧
     (∀ p id, e = .move p (.accept id) → ∃ o, s.offers.find? (·.id == id) = some o) ∧
     (∀ p, e = .move p .endTurn → EndsTurn s e) ∧
-    ((∀ p k loc, e ≠ .move p (.place k loc)) → s'.pieces = s.pieces) ∧
+    (¬ EndsTurn s e → (∀ p k loc, e ≠ .move p (.place k loc)) → s'.pieces = s.pieces) ∧
     (¬ EndsTurn s e →
       s'.turnsTaken = s.turnsTaken ∧ s'.turnIndex = s.turnIndex ∧ s'.round = s.round ∧
       s'.rollsMade = s.rollsMade) := by
@@ -425,10 +366,9 @@ theorem step_is_exact {s s' : State G} {e : Event}
     · exact h1
     · cases hb
   · -- the pieces
-    intro hne
-    rcases step_view h with ⟨_, h⟩ | ⟨_, _, s1, hb, hf⟩
-    · obtain ⟨_, _, rfl⟩ := endTurnNow_ok h
-      simp
+    intro hnot hne
+    rcases step_view h with ⟨hend, _⟩ | ⟨_, _, s1, hb, hf⟩
+    · exact absurd hend hnot
     · have hp := body_pieces hne hb
       rcases finish_cases hf with rfl | ⟨w, hw⟩
       · exact hp

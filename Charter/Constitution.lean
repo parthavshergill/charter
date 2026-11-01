@@ -122,18 +122,27 @@ theorem IV_promises_are_paid_up_front (G : GameDef) (hG : G.Valid) (s : State G)
 * Money leaves a seat's own account only for that seat's build, that seat's trade at the exact price
   or agreed amounts, its deposit, or what a law in force says.
 * Money leaves the bank or treasury only when the dice pay out, for a bank trade at its exact price,
-  or under a law in force. -/
+  or under a law in force.
+
+What you own leaves you only for a stated reason, and this covers pieces too:
+* A piece leaves its owner only for that seat's own upgrade, or by a law in force at a turn change. A law
+  can do this only at a round's end or on a roll.
+* A turn change leaves exactly the pieces `turnPieces` says. No other event but placing a piece changes any.
+* A seat that has a piece always keeps one. -/
 theorem V_your_money_is_yours (G : GameDef) (hG : G.Valid) (s s' : State G) (e : Event)
     (hs : Reachable G s) (h : Engine.step G s e = .ok s') :
     OffersKept s s' e ∧
     AcceptedOffersAreExact s s' e ∧
-    ∀ x ∈ newEntries s s',
+    (∀ x ∈ newEntries s s',
       MoneyEntersDepositOnlyToFundDeal s s' e x ∧
       MoneyLeavesDepositOnlyAsPromised s x ∧
       DealsPayOnlyAtRoundEnd s e x ∧
       RefundsGoToOwnerAtClose s s' x ∧
       MoneyLeavesSeatOnlyFor s s' e x ∧
-      MoneyLeavesBankOnlyFor s e x :=
+      MoneyLeavesBankOnlyFor s e x) ∧
+    PiecesKept s s' e ∧
+    PieceLeavesOnlyFor s s' e ∧
+    SeatsKeepAPiece s s' :=
   Proofs.V_your_money_is_yours G hG s s' e (hs.inv hG) h
 
 /-- **VI. Every deal ends.**

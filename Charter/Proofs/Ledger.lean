@@ -228,7 +228,7 @@ theorem step_posted {s s' : State G} {e : Event} (hc : Core s) (h : step G s e =
     refine ⟨⟨_, by simp; rfl, by simpa using hbk, turnEntries_ok hc.pieces hc.deals _⟩, ?_, ?_, ?_⟩
     · intro x hx
       simp only [startNextTurn_pieces] at hx
-      simpa using hc.pieces x hx
+      simpa using turnPieces_ok hc.pieces _ x hx
     · intro x hx
       simp at hx
     · intro d hd

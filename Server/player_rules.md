@@ -36,6 +36,7 @@ Each law on your screen comes with its rule source, such as `(law "Toll" (on-bui
 
 - `(on-build KIND ...)` runs when anyone builds KIND. `(on-harvest ...)` runs for each payment the dice make to a player. `(on-round-end ...)` runs once at the end of each round. `(on-roll ...)` runs once on every roll of the dice, after the bank has paid.
 - `(transfer A B R n)` means A pays B n of resource R.
+- `(move-piece A B KIND)` takes A's newest KIND. To `bank`, it is destroyed. To a player, it is seized. What sits on it goes with it. Roads stay where they are. A law can do this only at a round's end or on a roll. A player always keeps their last piece. A player at their limit for that kind cannot receive it, so it is destroyed.
 - `actor` is the builder, the player the dice just paid, or the player whose turn the roll starts. `each` is one player inside `(for-each-player test ...)`, which runs for every player who passes the test. `treasury` and `bank` are shared accounts.
 - `(if test ...)` does what is inside it when the test holds, and otherwise nothing. `(< a b)` means a is less than b. `(<= a b)` means a is at most b.
 - `(holding P R)`, `(points P)` and `(count P KIND)` read what a player has. `res` and `amount` are the resource and size of the payment that set off `on-harvest`.

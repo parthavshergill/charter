@@ -148,7 +148,8 @@ effect   := transfer
           | (if cond transfer+)
           | (for-each-player cond inner+)   ; binds `each` to every player whose condition holds
 inner    := transfer | (if cond transfer+)
-transfer := (transfer FROM TO RES expr)
+transfer := (transfer FROM TO RES expr) | (move-piece FROM TO KIND)
+            ; move-piece takes FROM's newest KIND. TO is bank, which destroys it, or a player, who seizes it. Only in on-round-end and on-roll.
 FROM, TO := actor | each | treasury | bank
 RESOURCE := grain | timber | ore | wool | brick
 RES      := RESOURCE | res
@@ -271,6 +272,9 @@ Request: At the end of each round, the seat that declared the most grain pays th
 
 Request: Each ore you hold is worth 1 point.
 (law "Ore counts" (set-worth ore 1))
+
+Request: At the end of each round, whoever has the most points loses a settlement.
+(law "Cut down" (on-round-end (for-each-player (= (points each) (most-over true (points each))) (move-piece each bank settlement))))
 
 Request: Whoever rolls a 7 gets 2 ore from the treasury.
 (law "Lucky roller" (on-roll (if (= rolled 7) (transfer treasury actor ore 2))))
