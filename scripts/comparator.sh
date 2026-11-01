@@ -37,6 +37,9 @@ cd /work/charter
 # Keep only the build results, so that a deleted file does not linger in the copy.
 find . -mindepth 1 -maxdepth 1 ! -name .lake -exec rm -rf {} +
 tar -xf - --warning=no-unknown-keyword
+# The fork has a lakefile.lean, so Lake creates this empty directory when it loads the project. The
+# sandbox can write only to the root .lake, so the directory must be there first.
+mkdir -p forks/leansqlite/.lake
 # The real binaries, not the elan wrappers: the sandbox removes what the wrappers need.
 export PATH="$(lean --print-prefix)/bin:$PATH"
 lake --version
