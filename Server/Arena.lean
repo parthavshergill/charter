@@ -1,5 +1,6 @@
 import Lean.Data.Json
 import Server.ArenaReference
+import Server.Spec
 import Evolved.Pool
 
 /-!

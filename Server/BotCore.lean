@@ -1,5 +1,5 @@
 import Server.MoveJson
-import Server.Spec
+import Server.GameFacts
 
 /-!
 # The bot's policy
