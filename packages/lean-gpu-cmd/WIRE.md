@@ -50,6 +50,7 @@ The player applies scale first (mesh space), then rotation by `rotY` radians abo
 | 5 | `draw` | `u32 mesh, transform, rgb, u32 pick` | 41 |
 | 6 | `label` | `str text, vec3 pos, f32 size, rgb, u32 pick` | 25 + str |
 | 7 | `highlight` | `u32 pick, rgb` | 9 |
+| 8 | `defineMeshFile` | `u32 id, str sha256, rgb tint, f32 pulse, f32 sway, f32 glow, prim standIn` | 21 + str + prim |
 
 ### Primitives
 
@@ -85,6 +86,15 @@ prim := u8 kind, f32 args...
   A hemisphere sky light is always present.
 - `defineMesh` binds a mesh id to a primitive. Redefining an id with another
   primitive replaces the geometry for later draws in the same and later streams.
+- `defineMeshFile` binds a mesh id to a triangle mesh file, named by `sha256`: 64 lower-case hex
+  digits. The player fetches `<assetBase>/<sha256>.mesh` once (`assetBase` is `/assets` unless the
+  page says otherwise). It knows no other name for the file. Until the file loads, and for good if
+  the file is missing or bad, it draws `standIn` in the color `tint`. A missing file is not an
+  error in the stream. Draws are the same as for a primitive, and the draw's color multiplies the
+  file's vertex colors, so a file that is white takes the draw's color. Flat shading stays on.
+- `pulse`, `sway` and `glow` make every instance of the mesh move by itself: size by the fraction
+  `pulse`, a tilt of `sway` radians about its base, and up to `glow` of added light in the color
+  `tint`. All zero means still. Reduced motion turns them off.
 - `draw` places one instance. `pick ≠ 0` makes it pickable: hover highlights it
   and a click calls `onPick(pick)`. Several objects may share a pick id.
 - `label` draws camera-facing text centered at `pos`, `size` world units tall.
@@ -107,3 +117,19 @@ missing from the new stream shrinks and fades out (≈220 ms).
 
 Use **stable** pick ids (derived from what the object is, such as a board
 coordinate), not list indexes. Otherwise objects can glide to unrelated places.
+
+## Mesh files
+
+A mesh file holds only numbers: no textures, URIs or scripts. All values are little endian.
+
+```
+file := "GPM1", u32 vertices, u32 triangles, f32 minX, minY, minZ, f32 maxX, maxY, maxZ,
+        position*, color*, index*
+position := u16 x, y, z    -- 0 is the minimum and 65535 is the maximum on that axis
+color    := u8 r, g, b     -- sRGB, one per vertex
+index    := u16 a, b, c    -- one per triangle, counter-clockwise from outside
+```
+
+The file's length must be exactly `36 + 9 vertices + 6 triangles` bytes. The player refuses a file
+that is too large, has a wrong length, has a bound that is not a finite number or that crosses,
+has an index past the last vertex, or does not hash to its name. The limits are in `web/meshfile.js`.

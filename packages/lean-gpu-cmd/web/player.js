@@ -2,6 +2,7 @@
 // API: const p = new GpuPlayer(canvas, opts); p.render(arrayBuffer); p.onPick = (id) => {};
 // Wire format: see ../WIRE.md.
 import * as THREE from './vendor/three.module.min.js';
+import { fetchMeshFile } from './meshfile.js';
 
 // ---------------------------------------------------------------- decoding
 
@@ -27,6 +28,13 @@ export function decodeStream(buf) {
     o += n;
     return s;
   };
+  const prim = () => {
+    const kind = u8();
+    if (!PRIMS[kind]) throw new Error(`gpc: bad prim ${kind}`);
+    const args = [];
+    for (let k = 0; k < PRIM_ARGS[kind]; k++) args.push(f32());
+    return { prim: PRIMS[kind], args };
+  };
   for (let i = 0; i < 4; i++) if (bytes[i] !== MAGIC[i]) throw new Error('gpc: bad magic');
   o = 4;
   const cmds = [];
@@ -36,17 +44,11 @@ export function decodeStream(buf) {
       case 1: cmds.push({ op: 'clear', rgb: u32() }); break;
       case 2: cmds.push({ op: 'camera', eye: vec3(), target: vec3(), fov: f32() }); break;
       case 3: cmds.push({ op: 'light', dir: vec3(), intensity: f32() }); break;
-      case 4: {
-        const id = u32(), kind = u8();
-        if (!PRIMS[kind]) throw new Error(`gpc: bad prim ${kind}`);
-        const args = [];
-        for (let k = 0; k < PRIM_ARGS[kind]; k++) args.push(f32());
-        cmds.push({ op: 'mesh', id, prim: PRIMS[kind], args });
-        break;
-      }
+      case 4: { const id = u32(); cmds.push({ op: 'mesh', id, ...prim() }); break; }
       case 5: cmds.push({ op: 'draw', mesh: u32(), pos: vec3(), rotY: f32(), scale: vec3(), rgb: u32(), pick: u32() }); break;
       case 6: cmds.push({ op: 'label', text: str(), pos: vec3(), size: f32(), rgb: u32(), pick: u32() }); break;
       case 7: cmds.push({ op: 'highlight', pick: u32(), rgb: u32() }); break;
+      case 8: cmds.push({ op: 'meshFile', id: u32(), sha: str(), tint: u32(), motion: { pulse: f32(), sway: f32(), glow: f32() }, ...prim() }); break;
       default: throw new Error(`gpc: bad opcode ${op} at ${o - 1}`);
     }
   }
@@ -138,6 +140,23 @@ function buildGeometry(prim, a) {
     case 'pyramid': { const g = new THREE.ConeGeometry(pos(a[0]), pos(a[1]), 4, 1); g.translate(0, pos(a[1]) / 2, 0); return g; }
   }
   throw new Error(`gpc: unknown prim ${prim}`);
+}
+
+// A mesh file's stand-in has vertex colors too, so that the same material draws it and the file.
+function tinted(geo, rgb) {
+  const c = new THREE.Color(rgb & 0xffffff), n = geo.attributes.position.count, a = new Float32Array(3 * n);
+  for (let i = 0; i < n; i++) { a[3 * i] = c.r; a[3 * i + 1] = c.g; a[3 * i + 2] = c.b; }
+  geo.setAttribute('color', new THREE.BufferAttribute(a, 3));
+  return geo;
+}
+
+function meshFileGeometry(m) {
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(m.positions, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(m.colors, 3));
+  geo.setIndex(new THREE.BufferAttribute(m.index, 1));
+  geo.computeVertexNormals();
+  return geo;
 }
 
 // ---------------------------------------------------------------- textures
@@ -264,7 +283,10 @@ export class GpuPlayer {
 
     this.root = new THREE.Group();
     scene.add(this.root);
-    this.geoms = new Map();     // mesh id -> {key, geo}
+    this.geoms = new Map();     // mesh id -> {key, geo, colored, motion, sha}
+    this.assetBase = opts.assetBase ?? '/assets';
+    this.meshFiles = new Map(); // sha -> the file's geometry once loaded, null before then or if it failed
+    this.motionAt = 0;
     this.items = [];            // live objects
     this.dying = [];            // objects fading out
     this.highlights = new Map();
@@ -318,6 +340,7 @@ export class GpuPlayer {
           }
           break;
         }
+        case 'meshFile': this._defineMeshFile(c); break;
         case 'draw': draws.push(c); break;
         case 'label': labels.push(c); break;
         case 'highlight': this.highlights.set(c.pick, c.rgb); break;
@@ -331,6 +354,38 @@ export class GpuPlayer {
   _swapGeo(it, geo, oldGeo) {
     if (it.obj.geometry === oldGeo) it.obj.geometry = geo;
     if (it.outline) it.outline.geometry = geo;
+    const g = this.geoms.get(it.mesh), m = it.obj.material;
+    it.motion = g?.motion ?? null;
+    if (g && m.vertexColors !== !!g.colored) { m.vertexColors = !!g.colored; m.needsUpdate = true; }
+  }
+
+  // The stand-in draws until the file loads. It stays if the file never does: a missing file is no error.
+  _defineMeshFile(c) {
+    const key = `file:${c.sha}:${c.tint}:${c.prim}:${c.args.join(',')}:${c.motion.pulse},${c.motion.sway},${c.motion.glow}`;
+    const old = this.geoms.get(c.id);
+    if (old && old.key === key) return;
+    const motion = c.motion.pulse || c.motion.sway || c.motion.glow ? { ...c.motion, tint: new THREE.Color(c.tint & 0xffffff) } : null;
+    const geo = this.meshFiles.get(c.sha) || tinted(buildGeometry(c.prim, c.args), c.tint);
+    this.geoms.set(c.id, { key, geo, colored: true, motion, sha: c.sha });
+    if (old) for (const it of this.items) if (it.mesh === c.id) this._swapGeo(it, geo, old.geo);
+    if (!this.meshFiles.has(c.sha)) this._loadMeshFile(c.sha);
+  }
+
+  async _loadMeshFile(sha) {
+    this.meshFiles.set(sha, null); // once only
+    let geo;
+    try { geo = meshFileGeometry(await fetchMeshFile(this.assetBase, sha)); }
+    catch (e) { console.warn(`gpc: mesh file ${sha.slice(0, 12)} stays a stand-in: ${e.message}`); return; }
+    this.meshFiles.set(sha, geo);
+    for (const [id, g] of this.geoms) {
+      if (g.sha !== sha) continue;
+      const oldGeo = g.geo;
+      g.geo = geo;
+      for (const it of [...this.items, ...this.dying]) if (it.mesh === id) this._swapGeo(it, geo, oldGeo);
+      oldGeo.dispose();
+    }
+    this.renderer.shadowMap.needsUpdate = true;
+    this.needsFrame = true;
   }
 
   _classOf(c, isLabel) {
@@ -501,6 +556,12 @@ export class GpuPlayer {
       const pulse = hl != null ? 0.5 + 0.5 * Math.sin(now * 0.006) : 0;
       if (hl != null) m.emissive.copy(color).lerp(this._hlColor.setHex(hl & 0xffffff), 0.3).multiplyScalar(0.1 + 0.3 * pulse + 0.2 * it.hover);
       else m.emissive.copy(color).multiplyScalar(0.28 * it.hover);
+      if (it.motion && !this.still) {
+        const wave = Math.sin(now * 0.0017 + it.phase), mo = it.motion;
+        if (mo.pulse) o.scale.multiplyScalar(1 + mo.pulse * wave);
+        if (mo.sway) { o.rotation.x = mo.sway * wave; o.rotation.z = mo.sway * Math.cos(now * 0.0013 + it.phase); }
+        if (mo.glow) m.emissive.addScaledVector(mo.tint, mo.glow * (0.5 + 0.5 * wave));
+      }
       if (it.outline) {
         it.outline.material.opacity = (0.55 + 0.45 * pulse) * Math.min(1, opacity * 1.5);
         // constant world-space rim: ~0.05 sideways, ~0.035 above the top
@@ -692,7 +753,9 @@ export class GpuPlayer {
   stats() {
     return { meshes: this.items.filter((i) => !i.label).length, labels: this.items.filter((i) => i.label).length,
       pickables: new Set(this.items.filter((i) => i.pick).map((i) => i.pick)).size, highlights: this.highlights.size,
-      animating: this.items.filter((i) => i.anim).length + this.dying.length, hover: this.hoverId };
+      animating: this.items.filter((i) => i.anim).length + this.dying.length, hover: this.hoverId,
+      moving: this.items.filter((i) => i.motion).length, triangles: this.renderer.info.render.triangles, calls: this.renderer.info.render.calls,
+      meshFiles: [...this.meshFiles.values()].filter(Boolean).length, standIns: [...this.meshFiles.values()].filter((g) => !g).length };
   }
 
   setTable(visible) { this.table.visible = !!visible; }

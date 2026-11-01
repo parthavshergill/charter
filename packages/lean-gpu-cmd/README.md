@@ -6,8 +6,9 @@ animates changes, and reports which object the user clicked.
 
 ## Non-goals
 
-- Not a general 3D engine. There are six primitives (hex prism, box, cylinder,
-  cone, sphere, house), one sun, and text labels. No textures, no imported models.
+- Not a general 3D engine. There are eight primitives, one kind of mesh file, one sun,
+  and text labels. No textures, and no general model formats: a mesh file has only
+  vertices, vertex colors and triangles, and is named by its SHA-256.
 - No scene graph or hierarchy on the Lean side: a stream is a flat list of draws.
 - The player is not proved. Only the Lean encoder/decoder pair is.
 - No incremental/delta protocol: each stream is a complete scene. The player
@@ -29,6 +30,8 @@ theorem GpuCmd.readCmd_cmdBytes (c : Cmd) (rest : List UInt8) :
     readCmd (cmdBytes c ++ rest) = some (c, rest)
 theorem GpuCmd.readPrim_primBytes (p : Prim) (rest : List UInt8) :
     readPrim (primBytes p ++ rest) = some (p, rest)
+theorem GpuCmd.readMotion_motionBytes (m : Motion) (rest : List UInt8) :
+    readMotion (motionBytes m ++ rest) = some (m, rest)
 -- scalar encodings
 theorem GpuCmd.Wire.readU32_u32 (x : UInt32) (rest : List UInt8) :
     readU32 (u32 x ++ rest) = some (x, rest)
@@ -52,6 +55,7 @@ unbounded ULEB128 length, so the theorems have no size hypotheses.
 'GpuCmd.decodeList_encodeList' depends on axioms: [propext, Classical.choice, Quot.sound]
 'GpuCmd.readCmd_cmdBytes' depends on axioms: [propext, Classical.choice, Quot.sound]
 'GpuCmd.readPrim_primBytes' depends on axioms: [propext, Classical.choice, Quot.sound]
+'GpuCmd.readMotion_motionBytes' depends on axioms: [propext, Classical.choice, Quot.sound]
 'GpuCmd.Wire.readU32_u32' depends on axioms: [propext, Classical.choice, Quot.sound]
 'GpuCmd.Wire.readF32_f32' depends on axioms: [propext, Classical.choice, Quot.sound]
 'GpuCmd.Wire.readUleb_uleb' depends on axioms: [propext, Quot.sound]
@@ -66,7 +70,8 @@ unbounded ULEB128 length, so the theorems have no size hypotheses.
 - A 2,013-command round trip at run time (`lake test`).
 - The JavaScript decoder agrees with the Lean encoder on a golden stream that
   uses every opcode and primitive, a non-ASCII label and a 300-byte label
-  (`node web/decode.test.mjs`, after `lake test` writes `Tests/golden.gpc`).
+  (`node web/decode.test.mjs`, after `lake test` writes `Tests/golden.gpc`). The same test
+  feeds the mesh file reader good and bad files.
 - The player in headless Chrome (Playwright, manual run): the bar chart renders
   37 meshes and 18 labels with shadows; hovering a bar sets the hover id; a click
   calls `onPick` with the bar's pick id; switching data tweens the bars; orbit
@@ -123,6 +128,7 @@ Browser (copy `web/` including `web/vendor/`; no CDN):
 Player API: `new GpuPlayer(canvas, { table?: boolean, background?: number })`,
 `render(arrayBuffer)`, `onPick(pickId)`, `onHover(pickId | 0)`, `pickAt(ndcX, ndcY)`,
 `screenOf(pickId)`, `resetView()`, `setTable(bool)`, `stats()`, `dispose()`.
+The option `assetBase` (default `/assets`) says where mesh files are.
 Also `decodeStream(buf)` (plain objects) and `ease`.
 
 What the player does:
@@ -170,6 +176,7 @@ GpuCmd/Codec.lean   encode / decode + round-trip theorems
 GpuCmd/Audit.lean   #print axioms
 Tests/              #guard tests, lake test driver
 web/player.js       three.js player (ES module); web/vendor/three.module.min.js (r170, MIT)
+web/meshfile.js     reads and refuses mesh files (no three.js)
 examples/           bar chart (Lean exe + index.html)
 WIRE.md             byte layout and player semantics
 ```
