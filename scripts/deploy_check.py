@@ -6,35 +6,15 @@ it makes no real calls.
 The stand-in for R2 answers as `cloudflare/src/index.ts` does. It starts its own servers on free ports
 and stops them at the end.
 """
-import glob, http.server, json, os, re, shutil, signal, socket, sqlite3, subprocess, sys, tempfile, threading, time, urllib.error, urllib.parse, urllib.request
+import glob, http.server, json, os, re, shutil, signal, sqlite3, subprocess, sys, tempfile, threading, time, urllib.error, urllib.parse, urllib.request
+
+from checklib import check, free_port, send_text, wait_for
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BIN = os.path.join(ROOT, ".lake", "build", "bin", "charter-server")
 FAKE_KEY = "fake-key-for-the-deploy-check-0123456789"
 BANK = '(law "A fairer bank" (set-bank-rate 3))'
 END = json.dumps({"actions": [{"action": "end_turn"}], "confess": None, "remember": "a note to keep", "say": "Next.", "whispers": []})
-
-
-def free_port():
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
-
-
-def check(ok, what):
-    if not ok:
-        raise SystemExit(f"FAILED: {what}")
-    print(f"ok: {what}")
-
-
-def wait_for(test, what, seconds=30):
-    end = time.time() + seconds
-    while time.time() < end:
-        v = test()
-        if v:
-            return v
-        time.sleep(0.02)
-    raise SystemExit(f"FAILED: timed out waiting for {what}")
 
 
 class Api(http.server.BaseHTTPRequestHandler):
@@ -60,21 +40,8 @@ class Api(http.server.BaseHTTPRequestHandler):
             else:
                 Api.calls.append("seat" if is_seat else "clerk")
         text = "A description." if describing else END if is_seat else BANK
-        events = [
-            {"type": "message_start", "message": {"usage": {"input_tokens": Api.describe_input if describing else Api.input_tokens, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}}},
-            {"type": "content_block_start", "content_block": {"type": "text"}},
-            {"type": "content_block_delta", "delta": {"type": "text_delta", "text": text}},
-            {"type": "message_delta", "delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": Api.describe_output if describing else 3}},
-            {"type": "message_stop"},
-        ]
-        self.send_response(200)
-        self.send_header("content-type", "text/event-stream")
-        self.end_headers()
-        try:
-            for e in events:
-                self.wfile.write(f"event: {e['type']}\ndata: {json.dumps(e)}\n\n".encode())
-        except OSError:
-            pass
+        usage = {"input_tokens": Api.describe_input if describing else Api.input_tokens, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}
+        send_text(self, text, usage, output_tokens=Api.describe_output if describing else 3)
 
 
 class Store(http.server.BaseHTTPRequestHandler):

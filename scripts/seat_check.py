@@ -5,19 +5,15 @@ It makes no real API calls and costs nothing. It reads the requests the game sen
 exactly what a seat would see. It covers: answers that do not read, actions the engine refuses, rate
 limits, slow seats, the clerk pipeline, private memory, and words from other players.
 """
-import glob, http.server, json, os, re, shutil, socket, subprocess, tempfile, threading, time, urllib.error, urllib.request
+import glob, http.server, json, os, re, shutil, subprocess, tempfile, threading, time, urllib.error, urllib.request
+
+from checklib import check, free_port, send_error, send_text, wait_for
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BIN = os.path.join(ROOT, ".lake", "build", "bin", "charter-server")
 SIM = os.path.join(ROOT, ".lake", "build", "bin", "charter-sim")
 FAKE_KEY = "fake-key-for-the-stand-in-api-0123456789"
 BANK = '(law "A fairer bank" (set-bank-rate 3))'
-
-
-def free_port():
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
 
 
 def answer(actions=(), say=None, whispers=(), confess=None, remember=None):
@@ -60,31 +56,9 @@ class StandIn(http.server.BaseHTTPRequestHandler):
         if delay:
             time.sleep(delay)
         if isinstance(item, dict):
-            payload = json.dumps({"type": "error", "error": {"type": item.get("type", "rate_limit_error"), "message": "stand-in"}}).encode()
-            self.send_response(item["status"])
-            self.send_header("content-type", "application/json")
-            if "retry" in item:
-                self.send_header("retry-after", str(item["retry"]))
-            self.send_header("content-length", str(len(payload)))
-            self.end_headers()
-            self.wfile.write(payload)
-            return
-        self.send_response(200)
-        self.send_header("content-type", "text/event-stream")
-        self.end_headers()
-        events = [
-            {"type": "message_start", "message": {"usage": {"input_tokens": 10, "cache_read_input_tokens": 5, "cache_creation_input_tokens": 1}}},
-            {"type": "content_block_start", "content_block": {"type": "text"}},
-            {"type": "content_block_delta", "delta": {"type": "text_delta", "text": item}},
-            {"type": "message_delta", "delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": 3}},
-            {"type": "message_stop"},
-        ]
-        try:
-            for e in events:
-                self.wfile.write(f"event: {e['type']}\ndata: {json.dumps(e)}\n\n".encode())
-                self.wfile.flush()
-        except OSError:
-            pass
+            send_error(self, item["status"], item.get("type", "rate_limit_error"), "stand-in", item.get("retry"))
+        else:
+            send_text(self, item, {"input_tokens": 10, "cache_read_input_tokens": 5, "cache_creation_input_tokens": 1})
 
 
 def reset(default=END):
@@ -123,22 +97,6 @@ class Server:
     def stop(self):
         self.proc.terminate()
         self.proc.wait(timeout=10)
-
-
-def check(ok, what):
-    if not ok:
-        raise SystemExit(f"FAILED: {what}")
-    print(f"ok: {what}")
-
-
-def wait_for(test, what, seconds=30):
-    end = time.time() + seconds
-    while time.time() < end:
-        v = test()
-        if v:
-            return v
-        time.sleep(0.02)
-    raise SystemExit(f"FAILED: timed out waiting for {what}")
 
 
 class Table:
