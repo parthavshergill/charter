@@ -10,6 +10,7 @@ Formats:
   order encoder (hidden x obs), decoder (act + 1 x hidden, the last row is the value), then one MinGRU block
   (3 hidden x hidden) per layer. rl/puffer-smoke/policy_reader.py checked this order against PufferLib's C forward.
 - `npz-flat`: the same arrays in an `.npz`: `encoder`, `decoder`, `gru0`, `gru1`, ...
+- `puffer-attention`: a `.bin` checkpoint of the `attention` encoder (rl/arch/attention/attention_np.py).
 
 A custom encoder adds a format here with its own forward. The MinGRU and decoder stay the same.
 """
@@ -37,7 +38,7 @@ class FlatNet:
         self.act_size = act_size
 
     def forward(self, obs, state):
-        x = self.encoder @ obs
+        x = self.encoder(obs) if callable(self.encoder) else self.encoder @ obs
         out = []
         for W, s in zip(self.grus, state):
             x, s2 = mingru_step(W, x, s)
@@ -101,7 +102,10 @@ def load_policy(path, meta):
         z = np.load(path)
         enc, dec = z["encoder"], z["decoder"]
         grus = [z[f"gru{i}"] for i in range(meta["layers"])]
+    elif fmt == "puffer-attention":
+        from arch.attention.attention_np import load as load_attention
+        enc, dec, grus = load_attention(path, meta)
     else:
         raise ValueError(f"unknown policy format {fmt}")
-    return FlatNet(enc.astype(np.float32), dec.astype(np.float32), [g.astype(np.float32) for g in grus],
+    return FlatNet(enc if callable(enc) else enc.astype(np.float32), dec.astype(np.float32), [g.astype(np.float32) for g in grus],
                    meta["act_size"])
