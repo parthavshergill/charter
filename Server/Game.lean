@@ -274,11 +274,43 @@ def actorOf : Event → Option Nat
   | .move p _ | .propose p _ | .vote p _ _ | .sign p _ | .exit p _ => some p
   | .forceEndTurn => none
 
+/-- The entries that laws made in reaction to the roll itself. They come last in a roll, so this is
+what `rollEntries` holds after the harvest. -/
+def rollLawPart (s : State G) (roll : Nat) : List Entry :=
+  let x := s.afterPosting s.entriesBeforeRoll
+  (rollEntries x roll).drop (harvestEntries x roll).length
+
+/-- What the laws did on a roll, as one line: "By law, on a 7, Ada paid the bank 2 brick and 1 ore. Mara
+paid the bank 1 ore." A roll law can touch every seat at once, so the screen tells it in one caption. -/
+def rollLawSentence (g : Game) (roll : Nat) (part : List Entry) : Option String :=
+  let grouped := groupEntries part
+  let pairs := grouped.foldl (fun (acc : List (Account × Account)) e =>
+    if acc.contains (e.src, e.dst) then acc else acc ++ [(e.src, e.dst)]) []
+  let words := pairs.map fun (a, b) =>
+    let goods := (grouped.filter fun e => e.src == a && e.dst == b).map fun e => (e.res, e.amount)
+    s!"{accountText g a} paid {accountText g b} {Text.bundleText goods}"
+  match words with
+  | [] => none
+  | first :: rest =>
+    let others := rest.map fun w => s!" {Text.capFirst w}."
+    some s!"By law, on {Text.rollName roll}, {first}.{String.join others}"
+
 /-- All the sentences for one accepted event. Each has its actor, kind, text and weight. -/
 def sentences (g : Game) (s s' : State G) (e : Event) : List (Option Nat × String × String × Bool) :=
   let actor := actorOf e
+  let rollLaw := match s'.lastRoll with
+    | some r => if s'.rollsMade != s.rollsMade then some (r, rollLawPart s r) else none
+    | none => none
+  let all := newEntries s s'
+  let others := all.take (all.length - ((rollLaw.map (·.2.length)).getD 0))
   -- A counter is not money, so it gets no line of its own. A pack's note says what a roll means.
-  let moneyLines := ((groupEntries (newEntries s s')).filter (!markRes G ·.res)).filterMap (entryLine g)
+  let moneyLines := ((groupEntries others).filter (!markRes G ·.res)).filterMap (entryLine g)
+  let rollLawLine := match rollLaw with
+    | some (r, part) =>
+      match rollLawSentence g r (part.filter (!markRes G ·.res)) with
+      | some text => [((none : Option Nat), "money", text, true)]
+      | none => []
+    | none => []
   let rolled :=
     if s'.rollsMade != s.rollsMade then
       match s'.currentSeat, s'.lastRoll with
@@ -301,7 +333,7 @@ def sentences (g : Game) (s s' : State G) (e : Event) : List (Option Nat × Stri
     | _, _ => []
   let beforeRoll := moneyLines.map fun (k, t, m) => ((none : Option Nat), k, t, m)
   let (k, t, m) := actionText g s s' e
-  [(actor, k, t, m)] ++ roundLine ++ expired ++ rolled ++ beforeRoll ++ over
+  [(actor, k, t, m)] ++ roundLine ++ expired ++ rolled ++ beforeRoll ++ rollLawLine ++ over
 
 /-- Laws that left the open list in this step, with how they ended. -/
 def closedLaws (g : Game) (s s' : State G) (e : Event) : List Decision :=

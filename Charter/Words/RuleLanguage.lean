@@ -11,7 +11,8 @@ namespace Charter
 
 /-- Who a law can name. There is no way to name one seat. -/
 inductive Party where
-  /-- The player who caused the trigger: the builder, or the player the dice just paid. -/
+  /-- The player who caused the trigger: the builder, the player the dice just paid, or the seat
+  whose turn the roll starts. -/
   | actor
   /-- The current player inside a `forEach`. -/
   | each
@@ -31,6 +32,8 @@ inductive Expr where
   | lit (n : Nat)
   /-- The amount the dice just paid. -/
   | harvestedAmount
+  /-- The total the dice just showed. It is 0 outside a roll. -/
+  | rolled
   | holding (p : Party) (r : ResRef)
   | points (p : Party)
   | count (p : Party) (k : PieceKind)
@@ -66,6 +69,8 @@ inductive Clause where
   | onHarvest (body : List Effect)
   | onBuild (k : PieceKind) (body : List Effect)
   | onRoundEnd (body : List Effect)
+  /-- Runs on every roll of the dice, including a roll that pays nobody. -/
+  | onRoll (body : List Effect)
   | setCost (k : PieceKind) (b : Bundle)
   | setPoints (k : PieceKind) (n : Nat)
   | setBankRate (n : Nat)

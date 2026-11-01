@@ -155,7 +155,7 @@ theorem Cover.endTurn {s s' : State G} {e : Event} (hc : Cover s) (hi : IdInv s)
     have hzero3 : outflow H (.deposit d.id i) r = 0 := by
       apply outflow_eq_zero'
       intro x hx h1 _
-      exact (harvestEntries_form (hH x hx)).1 _ _ h1
+      exact (rollEntries_form (hH x hx)).1 _ _ h1
     rw [hT, outflow_append, outflow_append, outflow_append, hzero1, hzero2, hzero3] at hbal
     have hle := due_outflow_le_owed hi.deal_nodup hd0 i r
     simp only [State.worstCase, State.roundsLeft] at hcov ⊢
@@ -179,7 +179,7 @@ theorem Cover.endTurn {s s' : State G} {e : Event} (hc : Cover s) (hi : IdInv s)
       rcases mem_turnEntries hx with ⟨hl2, _⟩ | hx
       · rw [hl] at hl2
         cases hl2
-      · exact (harvestEntries_form hx).1 _ _ h1
+      · exact (rollEntries_form hx).1 _ _ h1
     rw [worstCase_congr hround]
     change s.worstCase d i r ≤ _ at hcov
     omega

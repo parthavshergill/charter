@@ -289,11 +289,11 @@ theorem deal_ended_empty {s : State G} (hdep : DepositInv G s) (hc : Core s) (hi
     have hout : outflow H (.deposit d.id i) q.name = 0 := by
       apply outflow_eq_zero'
       intro x hx h5 _
-      exact (harvestEntries_form (hH x hx)).1 _ _ h5
+      exact (rollEntries_form (hH x hx)).1 _ _ h5
     have hin : inflow H (.deposit d.id i) q.name = 0 := by
       apply inflow_eq_zero'
       intro x hx h5 _
-      exact (harvestEntries_form (hH x hx)).2.1 _ _ h5
+      exact (rollEntries_form (hH x hx)).2.1 _ _ h5
     rw [hout, hin, hzero] at hbal
     simpa using hbal
   · rcases finish_cases' hf with rfl | ⟨hns, hnx, w, hw⟩

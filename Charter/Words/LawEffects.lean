@@ -1,10 +1,11 @@
-import Charter.Words.State
+import Charter.Words.Turns
 
 /-!
 # What a law does
 
 These definitions are the meaning of the rule language. A harvest is what the bank pays when the
-dice roll, plus what the laws do in reaction.
+dice roll, plus what the laws do in reaction. A whole roll is the harvest, then what the laws do in
+reaction to the roll itself.
 -/
 
 namespace Charter
@@ -14,6 +15,8 @@ inductive Trigger where
   | harvest (actor : Seat) (r : Res) (amount : Nat)
   | build (actor : Seat) (k : PieceKind)
   | roundEnd
+  /-- The dice showed `total`. `actor` is the seat whose turn the roll starts. -/
+  | roll (actor : Seat) (total : Nat)
   deriving Repr, DecidableEq
 
 /-- Who and what a law can see while it runs. -/
@@ -21,6 +24,7 @@ structure LawEnv where
   actor : Option Seat := none
   each : Option Seat := none
   harvested : Option (Res × Nat) := none
+  rolled : Option Nat := none
 
 /-- The account this party means here, if it means one here. -/
 def Party.account (env : LawEnv) : Party → Option Account
@@ -44,6 +48,7 @@ def Party.seat (env : LawEnv) : Party → Option Seat
 def Expr.eval {G : GameDef} (s : State G) (env : LawEnv) : Expr → Nat
   | .lit n => n
   | .harvestedAmount => (env.harvested.map (·.2)).getD 0
+  | .rolled => env.rolled.getD 0
   | .holding p r =>
       match p.account env, r.get env with
       | some a, some x => s.balance a x
@@ -93,6 +98,7 @@ def Clause.bodyFor : Clause → Trigger → List Effect
   | .onHarvest b, .harvest .. => b
   | .onBuild k b, .build _ k' => if k == k' then b else []
   | .onRoundEnd b, .roundEnd => b
+  | .onRoll b, .roll .. => b
   | _, _ => []
 
 /-- Who and what a law can see when it reacts to this trigger. -/
@@ -100,6 +106,7 @@ def Trigger.env : Trigger → LawEnv
   | .harvest a r n => { actor := some a, harvested := some (r, n) }
   | .build a _ => { actor := some a }
   | .roundEnd => {}
+  | .roll a n => { actor := some a, rolled := some n }
 
 /-- The transfers one law asks for on this trigger, in clause order. -/
 def Law.plan {G : GameDef} (s : State G) (t : Trigger) (L : Law) : List Entry :=
@@ -143,5 +150,21 @@ def harvestEntries {G : GameDef} (s : State G) (roll : Nat) : List Entry :=
     match e.dst with
     | .player p => s.laws.flatMap fun x => Law.plan after (.harvest p e.res e.amount) x.2
     | _ => [])
+
+/-- The seat whose turn the next roll starts. There is none if no roll comes next. -/
+def State.nextRoller {G : GameDef} (s : State G) : Option Seat :=
+  match nextStage s with
+  | .firstRound | .newRound => s.turnOrder[0]?
+  | .sameRound i => s.turnOrder[i]?
+  | _ => none
+
+/-- The whole of a roll: the harvest, then every law reacting to the roll itself, all planned from
+the moment after the harvest posted. If no law reacts to a roll, this is the harvest alone. -/
+def rollEntries {G : GameDef} (s : State G) (roll : Nat) : List Entry :=
+  let harvest := harvestEntries s roll
+  harvest ++
+    match s.nextRoller with
+    | some a => lawEntries (s.afterPosting harvest) (.roll a roll)
+    | none => []
 
 end Charter

@@ -69,6 +69,7 @@ def TriggerOk (T : List Seat) : Trigger → Prop
   | .harvest a _ _ => a ∈ T
   | .build a _ => a ∈ T
   | .roundEnd => True
+  | .roll a _ => a ∈ T
 
 theorem trigger_env_ok {T : List Seat} {t : Trigger} (h : TriggerOk T t) : EnvOk T t.env := by
   cases t <;> simp_all [EnvOk, Trigger.env, TriggerOk]
@@ -142,6 +143,29 @@ theorem harvestEntries_ok {s : State G} (hp : PiecesOk s) (roll : Nat) :
     have := lawPlan_ok (s.afterPosting (baseHarvest s roll))
       (t := .harvest o b.res b.amount) ho L.2 e he
     exact ⟨h1 ▸ this.1, h2 ▸ this.2⟩
+
+/-- The seat whose turn a roll starts is a seat in the game. -/
+theorem nextRoller_mem {s : State G} {a : Seat} (h : s.nextRoller = some a) : a ∈ s.turnOrder := by
+  unfold State.nextRoller at h
+  split at h
+  · exact List.mem_of_getElem? h
+  · exact List.mem_of_getElem? h
+  · exact List.mem_of_getElem? h
+  · cases h
+
+theorem rollEntries_ok {s : State G} (hp : PiecesOk s) (roll : Nat) :
+    ∀ x ∈ rollEntries s roll, EntryOk s.turnOrder x := by
+  intro x hx
+  simp only [rollEntries, List.mem_append] at hx
+  cases hx with
+  | inl hx => exact harvestEntries_ok hp roll x hx
+  | inr hx =>
+    cases hn : s.nextRoller with
+    | none => simp [hn] at hx
+    | some a =>
+      simp only [hn] at hx
+      exact lawEntries_ok (s.afterPosting (harvestEntries s roll)) (t := .roll a roll)
+        (nextRoller_mem hn) x hx
 
 /-! ## Deals -/
 
@@ -277,7 +301,7 @@ theorem turnEntries_ok {s : State G} (hp : PiecesOk s) (hd : DealsOk s) (roll : 
   · simp only [List.mem_append] at hx
     cases hx with
     | inl hx => exact entriesBeforeRoll_ok hd x hx
-    | inr hx => exact harvestEntries_ok (s := s.afterPosting _) hp roll x hx
+    | inr hx => exact rollEntries_ok (s := s.afterPosting _) hp roll x hx
   · exact entriesBeforeRoll_ok hd x hx
 
 end Charter.Proofs

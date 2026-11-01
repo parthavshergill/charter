@@ -17,7 +17,7 @@ What the rule language means is in `Charter/Words/LawEffects.lean`. Four of its 
 - A payment from an account to itself moves nothing, so a player pays "every other player".
 - `(- a b)` stops at 0, so it reads "their grain above 7". `(/ a n)` rounds down, and it says so.
 - A party that does not exist at that moment (`actor` at a round's end) holds nothing and pays
-  nothing. The sentence says so instead of pretending.
+  nothing. The sentence says so instead of pretending. So does `rolled` outside a roll.
 - A payer who is short pays in proportion. The law's last line says this, unless the payer is the
   bank or the law itself makes sure the payer can pay.
 -/
@@ -75,6 +75,8 @@ structure Ctx where
   hasActor : Bool := false
   hasEach : Bool := false
   hasHarvest : Bool := false
+  /-- This sentence runs on a roll, so `rolled` means something here. -/
+  hasRoll : Bool := false
   /-- The party this sentence calls "they". -/
   they : Option Party := none
   /-- The resource just harvested, when the law's condition fixes it. -/
@@ -131,7 +133,7 @@ def isMul : Expr → Bool | .mul .. => true | _ => false
 
 /-- A single quantity. It reads as "their grain above 7". -/
 def isQuantity : Expr → Bool
-  | .holding .. | .points .. | .count .. | .harvestedAmount => true
+  | .holding .. | .points .. | .count .. | .harvestedAmount | .rolled => true
   | _ => false
 
 /-- This number reads as a plural noun: "their points are". -/
@@ -166,6 +168,7 @@ def exprText (c : Ctx) : Expr → String
     if !c.hasHarvest then "0 (nothing was harvested here)"
     else if c.they == some .actor then "what they were paid"
     else s!"what {c.actorNoun} was paid"
+  | .rolled => if c.hasRoll then "the total rolled" else "0 (no dice are rolled here)"
   | .holding p r =>
     if !c.bound p then missingParty p else
     match r with
@@ -374,6 +377,8 @@ def sentText (c : Ctx) : Cond → String
     | none =>
       let isWord (e : Expr) := if isPluralExpr e then "are" else "is"
       match cond with
+      | .lt (.lit n) .rolled => s!"{exprText c .rolled} is more than {n}"
+      | .le (.lit n) .rolled => s!"{exprText c .rolled} is at least {n}"
       | .lt (.lit n) b =>
         if (holdingsSum b).isSome then s!"{exprText c b} {isWord b} more than {n}"
         else s!"{n} is less than {exprText c b}"
@@ -472,6 +477,31 @@ def harvestedOf (parts : List Cond) : Harvested :=
   | [], _ :: _ => { words := s!"anything but {orList negs}", rest := others }
   | _, _ => { rest := parts }
 
+/-- The numbers of a condition that only asks which total was rolled. -/
+def rollNumbers : Cond → Option (List Nat)
+  | .eq .rolled (.lit n) | .eq (.lit n) .rolled => some [n]
+  | .or a b => do return (← rollNumbers a) ++ (← rollNumbers b)
+  | _ => none
+
+/-- "a 7", "an 8". -/
+def rollName (n : Nat) : String :=
+  if n == 8 || n == 11 || n == 18 then s!"an {n}" else s!"a {n}"
+
+/-- The part of a condition that says which total was rolled, as words before "is rolled". -/
+def rolledOf (parts : List Cond) : Harvested :=
+  let pos := parts.filterMap rollNumbers
+  let negs := parts.filterMap fun
+    | .not (.eq .rolled (.lit n)) | .not (.eq (.lit n) .rolled) => some n
+    | _ => none
+  let others := parts.filter fun c =>
+    (rollNumbers c).isNone && (match c with
+      | .not (.eq .rolled (.lit _)) | .not (.eq (.lit _) .rolled) => false
+      | _ => true)
+  match pos, negs with
+  | [ns], [] => { words := orList (ns.map rollName), rest := others }
+  | [], _ :: _ => { words := s!"anything but {orList (negs.map rollName)}", rest := others }
+  | _, _ => { rest := parts }
+
 /-! ## Amounts -/
 
 /-- "road they own", for "2 grain per road they own". -/
@@ -554,11 +584,13 @@ inductive Moment where
   | round
   | build (k : PieceKind)
   | harvest
+  | roll
 
 def ctxFor : Moment → Ctx
   | .round => {}
   | .build _ => { actorNoun := "the builder", hasActor := true }
   | .harvest => { actorNoun := "the player paid", hasActor := true, hasHarvest := true }
+  | .roll => { actorNoun := "the player whose turn starts", hasActor := true, hasRoll := true }
 
 /-- Why a transfer can never move anything, if it cannot. The parser accepts these. The constitution
 rejects most of them, but the sentence must stay true for whatever the text says. -/
@@ -602,11 +634,17 @@ def halves (amounts : List String) : Option String :=
     let names := amounts.map fun a => ((a.drop head.length).dropEnd tail.length).toString
     some s!"half of their {andList names}, each rounded down,"
 
+/-- Several amounts that all round down, but not all by half, share the words "each rounded down". -/
+def allRoundDown (amounts : List String) : Option String :=
+  let tail := ", rounded down"
+  if amounts.length < 2 || !amounts.all (·.endsWith tail) then none
+  else some s!"{andList (amounts.map fun a => (a.dropEnd tail.length).toString)}, each rounded down,"
+
 def Phrase.render (plural : Bool) (p : Phrase) : String :=
   let amounts := match p.amounts.reverse with
     | [] => []
     | last :: rest => (closeAmount last :: rest).reverse
-  let what := (halves p.amounts).getD (andList amounts)
+  let what := ((halves p.amounts).orElse fun _ => allRoundDown p.amounts).getD (andList amounts)
   s!"{if plural then p.verb else p.verb ++ "s"} {what} {p.tail}"
 
 /-- Join phrases that share a verb and a tail. -/
@@ -680,6 +718,9 @@ def leadOf (t : Moment) (actorWith : Option String) (resWords : String) : Lead :
       | none => "a player"
     let what := if resWords.isEmpty then "" else s!" {resWords}"
     { text := s!"Each time {who} is paid{what} at harvest, ", actor := "they", actorPlural := true }
+  | .roll =>
+    { text := if resWords.isEmpty then "Each time the dice roll, " else s!"When {resWords} is rolled, "
+      actor := "the player whose turn starts", actorPlural := false }
 
 /-- One line, for a run of transfers with the same conditions and the same subject. -/
 def lineOf (t : Moment) (group : List Item) : String :=
@@ -692,6 +733,7 @@ def lineOf (t : Moment) (group : List Item) : String :=
     let h : Harvested :=
       match t with
       | .harvest => harvestedOf (conjuncts first.guards ++ conjuncts first.eachCond)
+      | .roll => rolledOf (conjuncts first.guards ++ conjuncts first.eachCond)
       | _ => { rest := conjuncts first.guards ++ conjuncts first.eachCond }
     let known := h.known
     let subst (cond : Cond) : Cond := match known with
@@ -712,7 +754,7 @@ def lineOf (t : Moment) (group : List Item) : String :=
     let actorWith : Option String :=
       if guards == .yes then none else
       match t with
-      | .round => none
+      | .round | .roll => none
       | .build _ => if subject == .actor then withText base .actor guards else none
       | .harvest => withText base .actor guards
     let lead := leadOf t actorWith h.words
@@ -776,6 +818,7 @@ def plainLead : Moment → String
   | .round => "Each round, "
   | .build k => s!"Each time {article k} is built, "
   | .harvest => "Each time a player is paid at harvest, "
+  | .roll => "Each time the dice roll, "
 
 /-- Lines for a clause's effects. Runs of transfers with the same conditions and subject share one. -/
 def linesOf (t : Moment) (body : List Effect) : List String :=
@@ -875,6 +918,7 @@ def clauseLines : Clause → List String
   | .onHarvest b => linesOf .harvest b
   | .onBuild k b => linesOf (.build k) b
   | .onRoundEnd b => linesOf .round b
+  | .onRoll b => linesOf .roll b
   | .setCost k [] => [s!"{capFirst (article k)} is free."]
   | .setCost k b => [s!"{capFirst (article k)} costs {bundleText b}."]
   | .setPoints k n => [s!"{capFirst (article k)} is worth {pointsWords n}."]
@@ -895,6 +939,7 @@ def _root_.Charter.Clause.canFallShort : Clause → Bool
   | .onHarvest b => clauseCanFallShort .harvest b
   | .onBuild k b => clauseCanFallShort (.build k) b
   | .onRoundEnd b => clauseCanFallShort .round b
+  | .onRoll b => clauseCanFallShort .roll b
   | _ => false
 
 /-- A law as short lines, read back from its clauses. -/

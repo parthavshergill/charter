@@ -52,7 +52,7 @@ You win the moment you reach the target points. If nobody does by the last round
 ### Laws
 Any seat can propose a law. It costs the fee, and the fee is paid at once, whatever happens to the law. A law takes effect the moment more than half of all seats vote yes. It lapses if it has not passed when its proposer's next turn starts. A vote is final, and each seat can have two proposals open at once. At most 16 laws can be in force.
 
-A law can change prices and points, change the bank's rate, add a new kind of piece, charge or pay resources when something happens (a harvest, a build, the end of a round), and repeal another law. A law binds everyone alike. It cannot name a seat, but it can describe a situation, such as "anyone with 6 or more points". It cannot see dice, turn order or who did what. No account goes below zero: a payer who is short pays less.
+A law can change prices and points, change the bank's rate, add a new kind of piece, charge or pay resources when something happens (a harvest, a build, the end of a round, or a roll of the dice, including a 7), and repeal another law. A law binds everyone alike. It cannot name a seat, but it can describe a situation, such as "anyone with 6 or more points". A law can read the total rolled, and it runs on every roll after the bank has paid. It cannot change a roll. It cannot see a single die, turn order or who did what. No account goes below zero: a payer who is short pays less.
 
 The treasury holds what laws pay into it. Only a law can pay it out.
 

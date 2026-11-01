@@ -94,7 +94,7 @@ theorem V_your_money_is_yours (G : GameDef) (_hG : G.Valid) (s s' : State G) (e 
            x ∈ lawEntries (s.afterPosting (s.costEntries b k)) (.build b k)) ∨
          (EndsTurn s e ∧
            (x ∈ s.roundEndLawEntries ∨
-            x ∈ harvestEntries (s.afterPosting s.entriesBeforeRoll)
+            x ∈ rollEntries (s.afterPosting s.entriesBeforeRoll)
               (rollAt G s.seed s.rollsMade)))))) ∧
     MoneyLeavesBankOnlyFor s e x := by
   refine ⟨offers_kept h, accepted_offers_exact hs.noPending h, fun x hx => ?_⟩
@@ -229,10 +229,11 @@ theorem X_what_you_vote_on_is_what_runs (G : GameDef) (_hG : G.Valid) :
     (∀ (s s' : State G) e,
       Reachable G s → Engine.step G s e = .ok s' → EndsTurn s e → s'.rollsMade = s.rollsMade + 1 →
       (s.isLastTurn = false →
-        newEntries s s' = harvestEntries s (rollAt G s.seed s.rollsMade)) ∧
+        newEntries s s' = rollEntries s (rollAt G s.seed s.rollsMade)) ∧
       (s.isLastTurn = true →
         newEntries s s' = s.roundEndEntries ++
-          harvestEntries (s.afterPosting s.roundEndEntries) (rollAt G s.seed s.rollsMade))) ∧
+          rollEntries (s.afterPosting s.roundEndEntries) (rollAt G s.seed s.rollsMade)) ∧
+      s.nextRoller = s'.currentSeat) ∧
     (∀ (s s' : State G) e,
       Reachable G s → Engine.step G s e = .ok s' → EndsTurn s e → s'.rollsMade = s.rollsMade →
       newEntries s s' = s.entriesBeforeRoll) := by

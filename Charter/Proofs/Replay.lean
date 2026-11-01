@@ -34,6 +34,7 @@ theorem expr_congr {s t : State G} (h : Agree s t) (env : LawEnv) (x : Expr) :
   induction x with
   | lit n => rfl
   | harvestedAmount => rfl
+  | rolled => rfl
   | holding p r =>
     simp only [Expr.eval, State.balance, h.books]
   | points p =>
@@ -138,6 +139,24 @@ theorem TurnAgree.nextStage {s t : State G} (h : TurnAgree s t) :
     h.turnOrder]
   rfl
 
+theorem TurnAgree.afterPosting {s t : State G} (h : TurnAgree s t) (es : List Entry) :
+    TurnAgree (s.afterPosting es) (t.afterPosting es) :=
+  { toAgree := h.toAgree.afterPosting es, phase := h.phase, turnIndex := h.turnIndex,
+    turnsTaken := h.turnsTaken, round := h.round, deals := h.deals,
+    builtThisRound := h.builtThisRound }
+
+theorem TurnAgree.nextRoller {s t : State G} (h : TurnAgree s t) : s.nextRoller = t.nextRoller := by
+  simp only [State.nextRoller, h.nextStage, h.turnOrder]
+
+/-- The whole of a roll is the same in two states that agree on what a turn change reads. -/
+theorem rollEntries_congr {s t : State G} (h : TurnAgree s t) (roll : Nat) :
+    rollEntries s roll = rollEntries t roll := by
+  simp only [rollEntries, harvestEntries_congr h.toAgree, h.nextRoller]
+  congr 1
+  cases t.nextRoller with
+  | none => rfl
+  | some a => exact lawEntries_congr (h.toAgree.afterPosting _) _
+
 theorem TurnAgree.duePayments {s t : State G} (h : TurnAgree s t) :
     s.duePayments = t.duePayments := by
   have hb : ∀ d, s.buildsSeenBy d = t.buildsSeenBy d := by
@@ -172,14 +191,14 @@ theorem turnEntries_congr {s t : State G} (h : TurnAgree s t) (roll : Nat) :
     turnEntries s roll = turnEntries t roll := by
   simp only [turnEntries, h.nextStage, h.entriesBeforeRoll]
   split
-  · rw [harvestEntries_congr (h.toAgree.afterPosting _)]
+  · rw [rollEntries_congr (h.afterPosting _)]
   · rfl
 
 /-! ## Rolls -/
 
 theorem turnEntries_rolls {s : State G} (h : (nextStage s).rolls = true) (roll : Nat) :
     turnEntries s roll = s.entriesBeforeRoll ++
-      harvestEntries (s.afterPosting s.entriesBeforeRoll) roll := by
+      rollEntries (s.afterPosting s.entriesBeforeRoll) roll := by
   simp only [turnEntries, h, ↓reduceIte]
 
 theorem turnEntries_no_roll {s : State G} (h : (nextStage s).rolls = false) (roll : Nat) :
@@ -248,6 +267,37 @@ theorem no_roll_of_counter {s s' : State G} {e : Event} (hend : EndsTurn s e)
 
 theorem afterPosting_nil (s : State G) : s.afterPosting [] = s := rfl
 
+/-- A clause that is not an `onRoll` clause has no body for a roll. -/
+theorem bodyFor_roll {c : Clause} (h : ∀ b, c ≠ .onRoll b) (a : Seat) (n : Nat) :
+    c.bodyFor (.roll a n) = [] := by
+  cases c with
+  | onRoll b => exact absurd rfl (h b)
+  | _ => rfl
+
+/-- With no `onRoll` law in force, the whole of a roll is the harvest alone. So a saved game with no
+such law replays as it always did. -/
+theorem rollEntries_no_roll_law (s : State G) (roll : Nat)
+    (h : ∀ x ∈ s.laws, ∀ c ∈ x.2.clauses, ∀ b, c ≠ .onRoll b) :
+    rollEntries s roll = harvestEntries s roll := by
+  have hlaw : ∀ (a : Seat) (t : State G), t.laws = s.laws → lawEntries t (.roll a roll) = [] := by
+    intro a t ht
+    have hplan : t.laws.flatMap (fun x => Law.plan t (.roll a roll) x.2) = [] := by
+      rw [ht]
+      apply List.flatMap_eq_nil_iff.mpr
+      intro x hx
+      apply List.flatMap_eq_nil_iff.mpr
+      intro c hc
+      rw [bodyFor_roll (h x hx c hc)]
+      rfl
+    simp only [lawEntries, hplan]
+    rfl
+  simp only [rollEntries]
+  cases s.nextRoller with
+  | none => simp
+  | some a =>
+    simp only
+    rw [hlaw a (s.afterPosting (harvestEntries s roll)) rfl, List.append_nil]
+
 /-! ## Commandment X, parts (c), (d), (e) -/
 
 /-- X(c): deals pay first, then the laws do what the rule language says. -/
@@ -259,24 +309,38 @@ theorem round_end_prefix {s s' : State G} {e : Event} (h : Engine.step G s e = .
   rw [hT, ← List.append_assoc]
   exact List.prefix_append _ _
 
-/-- X(d): a new turn rolls, and the entries are that roll's harvest. -/
+/-- The turn that a roll starts belongs to the seat the laws saw as the actor. -/
+theorem startNextTurn_currentSeat {s : State G} (h : (nextStage s).rolls = true) (roll : Nat) :
+    (startNextTurn s roll).currentSeat = s.nextRoller := by
+  unfold startNextTurn State.nextRoller
+  cases he : nextStage s with
+  | setupTurn i => rw [he] at h; cases h
+  | firstRound => rfl
+  | sameRound i => rfl
+  | newRound => rfl
+  | gameOver => rw [he] at h; cases h
+
+/-- X(d): a new turn rolls, and the entries are the whole of that roll. -/
 theorem roll_entries {s s' : State G} {e : Event} (h : Engine.step G s e = .ok s')
     (hend : EndsTurn s e) (hc : s'.rollsMade = s.rollsMade + 1) :
     (s.isLastTurn = false →
-      newEntries s s' = harvestEntries s (rollAt G s.seed s.rollsMade)) ∧
+      newEntries s s' = rollEntries s (rollAt G s.seed s.rollsMade)) ∧
     (s.isLastTurn = true →
       newEntries s s' = s.roundEndEntries ++
-        harvestEntries (s.afterPosting s.roundEndEntries) (rollAt G s.seed s.rollsMade)) := by
+        rollEntries (s.afterPosting s.roundEndEntries) (rollAt G s.seed s.rollsMade)) ∧
+    s.nextRoller = s'.currentSeat := by
   have hr := rolls_of_counter hend h hc
-  rw [newEntries_endTurn hend h, turnEntries_rolls hr]
-  constructor
+  refine ⟨?_, ?_, ?_⟩
   · intro hl
     have hb : s.entriesBeforeRoll = [] := by simp [State.entriesBeforeRoll, hl]
-    rw [hb]
+    rw [newEntries_endTurn hend h, turnEntries_rolls hr, hb]
     rfl
   · intro hl
     have hb : s.entriesBeforeRoll = s.roundEndEntries := by simp [State.entriesBeforeRoll, hl]
-    rw [hb]
+    rw [newEntries_endTurn hend h, turnEntries_rolls hr, hb]
+  · obtain ⟨b, _, hs⟩ := step_endsTurn hend h
+    rw [hs, startNextTurn_currentSeat (s := { s with books := b, journal := _ }) hr]
+    rfl
 
 /-- X(e): a turn change with no roll writes only the round-end entries, if any. -/
 theorem no_roll_entries {s s' : State G} {e : Event} (h : Engine.step G s e = .ok s')
