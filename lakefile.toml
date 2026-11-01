@@ -22,4 +22,4 @@ name = "Charter"
 
 [[lean_lib]]
 name = "Server"
-roots = ["Server.Util", "Server.SExp", "Server.Text", "Server.Rules", "Server.Preview", "Server.Spec", "Server.Persona", "Server.Game", "Server.Bots", "Server.Player", "Server.Http"]
+roots = ["Server.Util", "Server.SExp", "Server.Text", "Server.Rules", "Server.Preview", "Server.Spec", "Server.Persona", "Server.Game", "Server.Bots", "Server.Player", "Server.Http", "Server.Clerk", "Server.Formalize", "Server.View"]
