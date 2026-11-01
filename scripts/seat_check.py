@@ -302,29 +302,36 @@ def main():
         # A seat reads the source as what binds, and any description as someone's words.
         rules_text = StandIn.seat_requests[0]["system"][0]["text"]
         check("The source is the law, and it is the only text that binds." in rules_text, "the rules say the source is what binds")
-        pack_srv = srv.req("/api/games", {"seats": 3, "game": "not-catan"})["code"]
-        pack_token = srv.req(f"/api/games/{pack_srv}/join", {"name": "Ann", "nonce": 7})["token"]
-        srv.req(f"/api/games/{pack_srv}/claude", {})
-        srv.req(f"/api/games/{pack_srv}/claude", {})
-        srv.get(f"/api/games/{pack_srv}/view?token={pack_token}")
-        count = len(StandIn.seat_requests)
-        v = srv.get(f"/api/games/{pack_srv}/view?token={pack_token}")
-        if v["turn"] == 0:
-            for _ in range(4):
-                v = srv.get(f"/api/games/{pack_srv}/view?token={pack_token}")
-                place = [m for m in v["legalMoves"] if m["move"]["t"] == "place"]
-                if not place:
-                    break
-                srv.req(f"/api/games/{pack_srv}/move", {"token": pack_token, "move": place[0]["move"]})
-            srv.req(f"/api/games/{pack_srv}/move", {"token": pack_token, "move": {"t": "endTurn"}})
-        def asked():
-            for r in StandIn.seat_requests[count:]:
-                if "Rule source, the binding text: (law" in user_text(r):
-                    return user_text(r)
-            return None
-        msg = wait_for(asked, "a seat at the pack's table to be asked")
-        check("The description from the pack Not Catan, which does not bind: " in msg, "a seat reads a pack's words as the pack's, and not as binding")
-        check("Anyone who builds" not in msg, "a seat reads no sentence written by rule for a law")
+        # This table has its own server, so that its seats stop before the next test counts requests.
+        pack_data = tempfile.mkdtemp(prefix="charter-seats-pack-")
+        pack_srv = Server(free_port(), pack_data, api_port)
+        try:
+            pack = pack_srv.req("/api/games", {"seats": 3, "game": "not-catan"})["code"]
+            pack_token = pack_srv.req(f"/api/games/{pack}/join", {"name": "Ann", "nonce": 7})["token"]
+            count = len(StandIn.seat_requests)
+            pack_srv.req(f"/api/games/{pack}/claude", {})
+            pack_srv.req(f"/api/games/{pack}/claude", {})
+            v = pack_srv.get(f"/api/games/{pack}/view?token={pack_token}")
+            if v["turn"] == 0:
+                for _ in range(4):
+                    v = pack_srv.get(f"/api/games/{pack}/view?token={pack_token}")
+                    place = [m for m in v["legalMoves"] if m["move"]["t"] == "place"]
+                    if not place:
+                        break
+                    pack_srv.req(f"/api/games/{pack}/move", {"token": pack_token, "move": place[0]["move"]})
+                pack_srv.req(f"/api/games/{pack}/move", {"token": pack_token, "move": {"t": "endTurn"}})
+            def asked():
+                for r in StandIn.seat_requests[count:]:
+                    if "Rule source, the binding text: (law" in user_text(r):
+                        return user_text(r)
+                return None
+            msg = wait_for(asked, "a seat at the pack's table to be asked")
+            check("The description from the pack Not Catan, which does not bind: " in msg, "a seat reads a pack's words as the pack's, and not as binding")
+            check("Anyone who builds" not in msg, "a seat reads no sentence written by rule for a law")
+        finally:
+            pack_srv.stop()
+            shutil.rmtree(pack_data, ignore_errors=True)
+        time.sleep(0.3)  # A request sent just before the stop may still be arriving.
 
         # A suggestion to a person reads no seat's confessional and no seat's unproposed draft.
         reset()
