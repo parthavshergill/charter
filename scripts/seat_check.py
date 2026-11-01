@@ -232,7 +232,7 @@ def main():
         t.my_setup_turn()
         wait_for(lambda: len(StandIn.seat_requests) >= 3, "the seat to be asked three times")
         first, second, third = StandIn.seat_requests[:3]
-        check(first["model"] == "claude-opus-5-5", "a seat uses the default model")
+        check(first["model"] == "claude-sonnet-5-5", "a seat uses the default model")
         check(first["thinking"] == {"type": "adaptive"}, "a seat uses adaptive thinking")
         check("tool_choice" not in first and "temperature" not in first, "a seat's request sends no forced tool choice and no sampling settings")
         check(first["output_config"]["format"]["type"] == "json_schema", "a seat answers in a fixed form")
