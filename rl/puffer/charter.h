@@ -63,7 +63,8 @@ struct Env {
     int seats;             // seats in this game
     int seat_choices[SEATS];
     int num_seat_choices;
-    int zeroed[SEATS];     // this agent's observation is all zeros already
+    int zeroed[SEATS];     // this agent's observation is all zeros already (or, with CHARTER_STALE_WAIT, its waiting row is written)
+    int decided[SEATS];    // this agent has decided in this game
     int num_games;
     void* games[MAX_GAMES];
     int current;
@@ -127,9 +128,19 @@ static void write_outputs(Env* env) {
             charter_mask(G(env), a->action_mask, CHARTER_ACTS);
             a->action_mask[NOOP_ACTION] = 0;
             env->zeroed[i] = 0;
+            env->decided[i] = 1;
         } else if (!env->zeroed[i]) {
+#ifdef CHARTER_STALE_WAIT
+            // A waiting agent that has decided in this game keeps its last observation, so the critic (and the
+            // GRU) still sees its position while others move. Only the mask changes. Agents that sit the game
+            // out, or have not decided yet in this game, see zeros.
+            if (!(i < env->playing && env->decided[i])) {
+                memset(a->observations, 0, OBS_SIZE * sizeof(obs_t));
+            }
+#else
             // A waiting agent's rows stay zero until it decides again, so they are written once.
             memset(a->observations, 0, OBS_SIZE * sizeof(obs_t));
+#endif
             memset(a->action_mask, 0, CHARTER_ACTS);
             a->action_mask[NOOP_ACTION] = 1;
             env->zeroed[i] = 1;
@@ -249,6 +260,10 @@ static void start_game(Env* env) {
     env->moves = env->invalid = 0;
     for (int i = 0; i < SEATS; i++) {
         env->returns[i] = 0;
+#ifdef CHARTER_STALE_WAIT
+        env->decided[i] = 0;
+        env->zeroed[i] = 0;
+#endif
     }
     run_random_bots(env);
     add_rewards(env);
@@ -363,6 +378,7 @@ void puf_init(Env* env, Dict* kwargs) {
     }
     for (int i = 0; i < SEATS; i++) {
         env->zeroed[i] = 0;
+        env->decided[i] = 0;
     }
     int move_rows = (int)opt_num(kwargs, "move_rows", 0);
 #ifdef CHARTER_MOVE_ROWS
