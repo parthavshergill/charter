@@ -67,14 +67,20 @@ decides much of the game:
 **Vary the openings too.** The `setupJitter` weight adds noise to the value of each spot during setup. The game's
 seed and the spot fix the noise, so a game can be replayed. Without it, a bot can win by learning one fixed opening
 that fails when the other seats open differently. The default is 0, so a real table's hand bot opens as it always did.
-Slime Parliament keeps a seat effect even with jitter, so rotation is still required.
+Slime Parliament keeps a seat effect even with jitter, so rotation is still required. So does Pirate Republic, now
+that hand bots declare: with 4 hand bots, seat 1 wins 93% of games. A tie leaves the hat where it is, and every seat
+holds 1 ballot after each round's end, so the captain keeps the hat by declaring 1 ballot too. Seat 0 takes the hat
+first. In the next round seat 0 does not declare ballots, because it predicts that no later seat will, and seat 1
+takes the hat. From then on seat 1 keeps it by tying.
 
 **Measure against more than one opponent.** The default hand bot accepts any even swap, even of a good it does
 not need. One change, `{"offerLimit": 2}`, wins 85% on Island and 96% on Not Catan against three default hand bots. So
-also test against opponents that refuse all offers, such as `{"acceptMargin": 10}`.
+also test against opponents that refuse all offers, such as `{"acceptMargin": 10}`. The default hand bot makes no
+offers. So opponents that refuse offers change nothing unless the measured bot makes offers.
 
-**Know what the opponents do not do.** Hand bots never declare, and they never propose a law. A strategy that does
-these things can win a contest that nobody else enters. Before you believe a very high win rate, turn off one part
+**Know what the opponents do not do.** Hand bots never propose a law. They declare only where a law in force
+reads declarations at a round's end, and only the numbers 0, 1 and what they hold. A strategy that does what they do
+not can win a contest that nobody else enters. Before you believe a very high win rate, turn off one part
 of the strategy at a time and measure again.
 
 ## Add a strategy
@@ -131,14 +137,20 @@ Hand bots, 4 seats, on a Mac with 14 cores, shared with other work:
 | Pirate Republic | 100 | 466 | 2,595 |
 | Strike the Earth | 207 | 245 | 1,355 |
 
+This table is from before the hand bot declared. Declaring costs time only where a law reads declarations at a
+round's end. There, each time the bot might declare, it predicts the round's end once for each number it tries. On a
+Linux machine with 4 cores, 4 hand bots on Pirate Republic play 50 games per second per thread, against 199 before.
+On the other packs the change in speed was smaller than the noise between runs.
+
 ## How we know the fast bot is the same bot
 
 `make arena-check` runs in CI and makes two checks:
 
 - `--check-fixture scripts/fixtures/bot-game.jsonl` plays a recorded bot game, and requires the same events.
 - `--check-reference 2` plays each pack with plain bots, offers, laws and deals. At each step, it requires that the
-  fast policy chooses what `Server/ArenaReference.lean` chooses. That file uses no shortcuts, and it asks for every
-  legal move.
+  fast policy chooses what `Server/ArenaReference.lean` chooses. That file uses no shortcuts. It asks for every
+  legal move, and it tries declarations on every resource. One of the check's laws makes a good worth a point and
+  pays seats that declare, so the rules for both run on every pack.
 
 These are checks on games that were played, not proofs. The rules themselves stay safe either way, because every event
 goes through `Engine.step`.
