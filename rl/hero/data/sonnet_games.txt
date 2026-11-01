@@ -25,3 +25,7 @@ MEQET full
 HVWCF full
 FDBPW full
 MUBCR full
+ZRFVJ restricted
+STXQA restricted
+HUGUF restricted
+RJAPD restricted

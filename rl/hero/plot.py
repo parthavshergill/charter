@@ -234,13 +234,13 @@ def draw(theme_name, rows, sonnet, out_paths):
         p_ = 100 * r["wins"] / r["games"]
         sx.plot([100 * lo, 100 * hi], [y, y], color=t["sonnet"], lw=2, alpha=0.45, solid_capstyle="round")
         sx.plot([p_], [y], "D", ms=9, color=t["sonnet"], mfc=t["sonnet"] if arm == "restricted" else t["bg"],
-                mec=t["sonnet"], mew=2, zorder=5)
+                mec=t["sonnet"], mew=2, zorder=5, clip_on=False)
         sx.text(100 * hi + 3, y, f"{r['wins']}/{r['games']}", fontsize=11, color=t["ink2"], va="center")
     sx.axvline(25, color=t["ink2"], lw=1.5, ls=(0, (4, 3)))
     sx.set_yticks(range(len(rows_s)))
     sx.set_yticklabels([n for n, _, _ in reversed(rows_s)], fontsize=12)
     sx.set_ylim(-0.6, max(len(rows_s), 1) - 0.4)
-    sx.set_xlim(0, 100)
+    sx.set_xlim(-2, 102)
     sx.set_xticks([0, 25, 50, 100])
     sx.set_xticklabels(["0", "25%", "50", "100"], fontsize=12)
     sx.set_title("vs 3 Claude Sonnet seats\n(Island; only our bot's moves)", loc="left", fontsize=14,
