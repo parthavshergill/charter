@@ -39,6 +39,24 @@ cd rl && modal run modal_app.py --action eval --run <name>/try1 --subjects "rand
 `train` writes `/vol/<run>/train.log`, `ckpt/` and a meta JSON next to the first and last checkpoint, on the volume
 `charter-rl`. Behind an HTTPS proxy, install `modal[api-proxy-support]` and set `SSL_CERT_FILE` to its CA bundle.
 
+## A custom encoder
+
+Put it in `rl/arch/<name>/` (or `rl/<name>/`) with:
+- `puffer_build.sh`: run as `bash puffer_build.sh PUFFER_DIR OCEAN_DIR LAYOUT_JSON`. It copies its `.cu` and headers
+  into `OCEAN_DIR` (PufferLib's `ocean/charter/`) and prints the extra nvcc flags on its last line of output.
+- `patches/*.patch`, optional: applied after `rl/puffer/patches/`, and only when this encoder is built (the
+  `src/ocean.cu` hook goes here, not in `rl/puffer/patches/`, which every build applies).
+- `policy.py` with `load_policy(path, meta)`, returning an object with `.player(seed)`, for eval.
+  `rl/reference/policy.py` has `mingru_step` and `Player` to reuse.
+
+Then `modal run modal_app.py --action train --encoder <name> [--meta-extra '{"entity_dim": 32}']`. Checkpoint metas
+say `"format": "puffer-<name>"`, and eval loads them through your `policy.py`.
+
+`rl/reference/encoders.py` is one example design per encoder kind (max pool for `entity`, for instance). It does not
+fix the design. The protocol's rule is met by your own PyTorch version of your encoder, checked the same way: forward
+and every weight gradient on the same weights and inputs, with a seeded error caught. `reference_test.py --check`
+works for any encoder that has an entry in `ENCODERS`.
+
 ## The environment
 
 - **Seats.** Four. Agent `i` plays game seat `seat_of[i]`, drawn afresh each game. Each tick, exactly one agent may

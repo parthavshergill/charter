@@ -11,7 +11,8 @@ Formats:
   (3 hidden x hidden) per layer. rl/puffer-smoke/policy_reader.py checked this order against PufferLib's C forward.
 - `npz-flat`: the same arrays in an `.npz`: `encoder`, `decoder`, `gru0`, `gru1`, ...
 
-A custom encoder adds a format here with its own forward. The MinGRU and decoder stay the same.
+A custom encoder `<name>` gets format `puffer-<name>`, and its own `policy.py` in rl/arch/<name>/ (or rl/<name>/)
+defines `load_policy(path, meta)`. It can reuse `mingru_step` and `Player` from here.
 """
 import numpy as np
 
@@ -93,8 +94,24 @@ def read_puffer_bin(path, obs_size, hidden, layers, act_size):
     return enc, dec, grus
 
 
+def custom_loader(name):
+    """`load_policy(path, meta)` of a custom encoder's module: rl/arch/<name>/policy.py, or rl/<name>/policy.py."""
+    import importlib
+    for mod in (f"arch.{name}.policy", f"{name}.policy"):
+        try:
+            return importlib.import_module(mod).load_policy
+        except ModuleNotFoundError as e:
+            if e.name not in (mod, mod.rsplit(".", 1)[0], "arch", name):
+                raise
+    raise ValueError(f"no policy module for encoder {name}: expected rl/arch/{name}/policy.py or rl/{name}/policy.py")
+
+
 def load_policy(path, meta):
+    """A player maker for this policy. A custom format `puffer-<name>` goes to that encoder's own module, whose
+    `load_policy(path, meta)` returns an object with `.player(seed)`, as `FlatNet` does."""
     fmt = meta.get("format", "puffer-flat")
+    if fmt.startswith("puffer-") and fmt not in ("puffer-flat",):
+        return custom_loader(fmt[len("puffer-"):])(path, meta)
     if fmt == "puffer-flat":
         enc, dec, grus = read_puffer_bin(path, meta["obs_size"], meta["hidden"], meta["layers"], meta["act_size"])
     elif fmt == "npz-flat":
