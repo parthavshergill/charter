@@ -59,7 +59,7 @@ def reward (s : St) : Nat := s.balance .treasury "cash"
 #guard match next (declaring (table 0) [(0, "dirt", 1)]) with
   | some s =>
     holds s 0 "cash" == 20 && holds s 0 "dirt" == 0 && rackets s 0 == 0 &&
-      [1, 2, 3].all (fun p => rackets s p == 1 && holds s p "dirt" == 1) && reward s == 1
+      [1, 2, 3].all (fun p => rackets s p == 1 && holds s p "dirt" == 1) && reward s == 2
   | none => false
 
 -- Talking costs the talker its rackets, but not its fronts.
@@ -68,14 +68,14 @@ def reward (s : St) : Nat := s.balance .treasury "cash"
   | none => false
 
 -- The reward goes once. Seat 1 plays on after seat 0 talked, and at the next roll nobody is paid again,
--- though seat 0's declaration still stands.
+-- though seat 0's declaration still stands. Three rackets run now, so the reward grows by 1.
 #guard match (next (declaring (table 0) [(0, "dirt", 1)])).bind next with
-  | some s => holds s 0 "cash" == 20 && rackets s 1 == 1 && reward s == 2
+  | some s => holds s 0 "cash" == 20 && rackets s 1 == 1 && reward s == 3
   | none => false
 
--- Declaring dirt with no dirt in hand is not talking: nothing happens but the roll's 1.
+-- Declaring dirt with no dirt in hand is not talking: nothing happens but the roll's 2.
 #guard match next (declaring { table 0 with books := ((table 0).books.postAll [⟨.player 0, .bank, "dirt", 1, .trade⟩]).getD (table 0).books } [(0, "dirt", 3)]) with
-  | some s => holds s 0 "cash" == 0 && rackets s 0 == 2 && reward s == 21
+  | some s => holds s 0 "cash" == 0 && rackets s 0 == 2 && reward s == 22
   | none => false
 
 -- Seat 3 is last in the round. If it talks, it is paid at the round's end, before the declarations clear,
@@ -87,25 +87,40 @@ def reward (s : St) : Nat := s.balance .treasury "cash"
 
 /-! ## The take -/
 
--- Nobody talks. At the round's end each racket pays its owner 1 cash, and cash is worth a point:
--- two fronts, two rackets and two cash make 6.
+-- Nobody talks. At the round's end each racket pays its owner 2 cash, and cash is worth a point:
+-- two fronts, two rackets and four cash make 8.
 #guard match next (table 3) with
-  | some s => [0, 1, 2, 3].all (fun p => holds s p "cash" == 2 && rackets s p == 2) && s.pointsOf 0 == 6
+  | some s => [0, 1, 2, 3].all (fun p => holds s p "cash" == 4 && rackets s p == 2) && s.pointsOf 0 == 8
   | none => false
 
 /-! ## The heat -/
 
--- A new racket puts 2 cash in the reward and gives its builder 1 dirt.
-def building : St :=
-  give { fresh with phase := .actions, pieces := [⟨0, "front", .spot (spotOf 0)⟩] } 0 [("wine", 2), ("fish", 1)]
+-- The first roll sweeps all the dirt from the bank to the treasury, so nobody can buy it from the bank.
+-- With no racket running, the reward does not grow.
+#guard match next { fresh with phase := .actions } with
+  | some s => s.balance .bank "dirt" == 0 && s.balance .treasury "dirt" == 40 && reward s == 0
+  | none => false
 
-#guard match step game building (.move 0 (.place "racket" (.spot (spotOf 0)))) with
-  | .ok s => reward s == 2 && holds s 0 "dirt" == 1 && rackets s 0 == 1
+/-- A seat with a front and the goods for a racket, after the first roll. -/
+def building : St :=
+  match next { fresh with phase := .actions, pieces := [⟨1, "front", .spot (spotOf 0)⟩] } with
+  | some s => give s 1 [("wine", 2), ("fish", 1)]
+  | none => fresh
+
+-- A new racket gives its builder 1 dirt from the treasury. Building it adds nothing to the reward.
+#guard match step game building (.move 1 (.place "racket" (.spot (spotOf 0)))) with
+  | .ok s => reward s == 0 && holds s 1 "dirt" == 1 && rackets s 1 == 1 && s.balance .treasury "dirt" == 39
   | .error _ => false
 
--- Every roll puts 1 cash in the reward.
-#guard match next { fresh with phase := .actions } with
-  | some s => reward s == 1
+/-- Seats 0 and 1 run two more rackets each, so twelve run in all. -/
+def busy : List Piece :=
+  family ++ [0, 1].flatMap fun p =>
+    [⟨p, "front", .spot (spotOf (10 + 2 * p))⟩, ⟨p, "racket", .spot (spotOf (10 + 2 * p))⟩,
+     ⟨p, "front", .spot (spotOf (11 + 2 * p))⟩, ⟨p, "racket", .spot (spotOf (11 + 2 * p))⟩]
+
+-- Twelve rackets running make the reward grow by 4 on a roll.
+#guard match next { fund (table 0) 0 with pieces := busy } with
+  | some s => reward s == 24
   | none => false
 
 end Charter.Games.Omerta.Tests

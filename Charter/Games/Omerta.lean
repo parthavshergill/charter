@@ -5,8 +5,8 @@ import Charter.Games.HexMap
 # Omertà
 
 A crime family shares one city. Fronts are shops on the street corners, and a racket runs in the back
-room of a front. Rackets pay the family every round, and every racket makes the district attorney's
-reward for a witness bigger. The reward sits in the treasury, where everyone can watch it grow.
+room of a front. Rackets pay the family every round, and the more rackets run, the faster the district
+attorney's reward for a witness grows. The reward sits in the treasury, where everyone can watch it grow.
 
 Anyone who has seen a racket built holds dirt. On your turn you can talk: declare your dirt. At the next
 roll of the dice, or at the round's end if you were last, you take the whole reward. Then the police
@@ -19,9 +19,9 @@ board only keeps score of who kept it.
 
 A seat declares only on its own turn, and the order of seats never changes. So a law that pays at the
 round's end lets the last seat see everyone's choice and talk with no risk. Here the reward goes to the
-first seat that talks, at the next roll, before anyone else can answer. The reward also grows by 1 on
-every roll. So the first seat of a round gets the first chance, and a later seat gets a larger reward,
-and neither is safe.
+first seat that talks, at the next roll, before anyone else can answer. The reward also grows on every
+roll, not only at the round's end. So the first seat of a round gets the first chance, and a later seat
+gets a larger reward, and neither is safe.
 -/
 
 namespace Charter.Games.Omerta
@@ -84,28 +84,32 @@ every racket. Everyone else loses their newest racket. A seat can hold at most 4
 def theRaid : List Effect :=
   [ .forEach talksNow
       [ pay .treasury .each "cash" (.divBy reward talkers)
-      , pay .each .bank "dirt" (held .each "dirt")
+      , pay .each .treasury "dirt" (held .each "dirt")
       , closeOne, closeOne, closeOne, closeOne ]
   , .when (.lt (.lit 0) talkers)
       [ .forEach (.and (.not talksNow) runsRacket) [closeOne] ] ]
 
 /-! ## The founding laws -/
 
-/-- **The take.** Each racket pays its owner 1 cash at the round's end, unless someone talks at that
+/-- How many rackets run in the whole city. -/
+def allRackets : Expr := .totalOver .yes (rackets .each)
+
+/-- **The take.** Each racket pays its owner 2 cash at the round's end, unless someone talks at that
 moment. Cash is worth a point. -/
 def lawTake : Law :=
-  { title := "Each racket pays 1 cash a round, and cash is worth a point"
+  { title := "Each racket pays 2 cash a round, and cash is worth a point"
     clauses :=
-      [ .onRoundEnd [.when (.eq talkers (.lit 0)) [.forEach runsRacket [pay .bank .each "cash" (rackets .each)]]]
+      [ .onRoundEnd [.when (.eq talkers (.lit 0)) [.forEach runsRacket [pay .bank .each "cash" (.mul (rackets .each) (.lit 2))]]]
       , .setWorth "cash" 1 ] }
 
-/-- **The heat.** A new racket puts 2 cash in the reward and gives its builder 1 dirt. Each roll puts in
-1 more. -/
+/-- **The heat.** On every roll the reward grows by 1 cash for every 3 rackets running in the city. A new
+racket gives its builder 1 dirt. Dirt is kept in the treasury, and every roll sweeps the bank's dirt
+there, so nobody can buy it from the bank. -/
 def lawHeat : Law :=
-  { title := "Every racket and every roll makes the reward bigger"
+  { title := "The more rackets run, the faster the reward grows"
     clauses :=
-      [ .onBuild "racket" [pay .bank .treasury "cash" (.lit 2), pay .bank .actor "dirt" (.lit 1)]
-      , .onRoll [pay .bank .treasury "cash" (.lit 1)] ] }
+      [ .onRoll [pay .bank .treasury "cash" (.div allRackets 3), pay .bank .treasury "dirt" (held .bank "dirt")]
+      , .onBuild "racket" [pay .treasury .actor "dirt" (.lit 1)] ] }
 
 /-- **Talking.** It acts on every roll, which comes right after a seat's turn, and at the round's end,
 which comes right after the last seat's turn. -/
@@ -136,7 +140,7 @@ def game : GameDef where
       regions := regionsOf tiles }
   diceCount := 2
   diceSides := 6
-  targetPoints := 25
+  targetPoints := 30
   rounds := 8
   bankRate := 4
   setupPieces := ["front", "street"]
