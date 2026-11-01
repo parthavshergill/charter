@@ -289,6 +289,30 @@ def main():
         check(before < t.view()["version"], "the seat's turn went on after its draft")
         check(len(StandIn.seat_requests) >= 2, "what came after the draft in that answer was not carried out")
 
+        # A suggestion to a person reads no seat's confessional and no seat's unproposed draft.
+        reset()
+        wait_for(lambda: t.view()["turn"] == t.human, "the person's turn", 30)
+        StandIn.seat_replies.extend([
+            answer([{"action": "draft", "words": "SEAT-PRIVATE-DRAFT, make the bank trade four for one."}], confess="SEAT-CONFESSION of a plan."),
+            answer([{"action": "end_turn"}], whispers=[{"to": 0, "text": "SEAT-WHISPER to the person."}]),
+        ])
+        t.give_turn()
+        wait_for(lambda: len(StandIn.seat_requests) >= 2 and t.view()["turn"] == t.human, "the seat to finish its turn")
+        StandIn.clerk_reply = 'WORDS: Settlements are worth 2 points.\nWHY: This could help you. The seat might vote yes.\n(law "Honour" (set-points settlement 2))'
+        count = len(StandIn.clerk_requests)
+        before = t.view()["version"]
+        r = srv.req(f"/api/games/{t.code}/suggest", {"token": t.token})
+        check(r.get("id") is not None, "a person can ask for a suggestion")
+        d = wait_for(lambda: (lambda x: x if x.get("outcome") else None)(srv.get(f"/api/games/{t.code}/draft?token={t.token}")), "the suggestion")
+        check(d["outcome"] == "ready" and len(StandIn.clerk_requests) == count + 1, "a suggestion goes to the clerk once")
+        msg = user_text(StandIn.clerk_requests[-1])
+        check("SEAT-CONFESSION" not in msg, "a suggestion does not read a seat's confessional")
+        check("SEAT-PRIVATE-DRAFT" not in msg, "a suggestion does not read another seat's draft")
+        check("SEAT-WHISPER" in msg, "a suggestion reads a private message to this person")
+        check(t.view()["version"] == before and d["review"]["canPropose"], "a suggestion changes nothing in the game")
+        srv.req(f"/api/games/{t.code}/draft-clear", {"token": t.token})
+        StandIn.clerk_reply = BANK
+
         # A draft of a few letters costs no clerk call.
         reset()
         StandIn.seat_replies.extend([answer([{"action": "draft", "words": "x"}]), END])
