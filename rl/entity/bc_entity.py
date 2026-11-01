@@ -34,7 +34,7 @@ def collect(games, out, seed=7):
     obs, masks, acts, game_ids = [], [], [], []
     for k in range(games):
         gid = ["island", "not-catan"][k % 2]
-        n = 2 + k % 5   # 2 to 6 seats, as the env trains
+        n = 3 + (k // 2) % 2   # 3 or 4 seats: what both training games allow
         g = Game({"game": gid, "lineup": ["caller"] * n, "seed": seed * 100000 + k, "vote_mode": "bot",
                   "random_map": True, "slot_order": "shuffled", "declare_always": True})
         while not g.over:
