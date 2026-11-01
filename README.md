@@ -1,4 +1,9 @@
-![Charter](docs/screens/banner.png)
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/brand/charter-banner-vellum.png">
+    <img src="docs/brand/charter-banner-ink.png" alt="Charter" width="480">
+  </picture>
+</p>
 
 Charter is a multiplayer tabletop economy game with a fixed constitution and an evolving ruleset.
 
