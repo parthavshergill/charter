@@ -35,7 +35,7 @@ THEMES = {
     "dark": {"bg": "#1a1a19", "ink": "#f0efec", "ink2": "#c3c2b7", "muted": "#8f8e86", "grid": "#33332f",
              "random": "#199e70", "hand": "#3987e5", "champion-closed": "#d95926", "sonnet": "#9085e9"},
 }
-LABEL = {"random": "vs 3 random players", "hand": "vs 3 rule-based bots",
+LABEL = {"random": "vs 3 random players", "hand": "vs 3 of the bot it copied",
          "champion-closed": "vs 3 evolved rivals*"}
 
 
@@ -109,7 +109,7 @@ def draw(theme_name, rows, sonnet, out_paths):
                          "axes.labelcolor": t["ink2"], "xtick.color": t["ink2"], "ytick.color": t["ink2"],
                          "axes.edgecolor": t["grid"], "svg.fonttype": "none"})
     fig = plt.figure(figsize=(16, 9), facecolor=t["bg"])
-    ax = fig.add_axes([0.07, 0.19, 0.62, 0.61])
+    ax = fig.add_axes([0.07, 0.25, 0.62, 0.56])
     style(ax, t)
     M = 1e6
     main = {o: series(rows, MAIN_RUN, o, TRAIN) for o in ("random", "hand", "champion-closed")}
@@ -151,7 +151,7 @@ def draw(theme_name, rows, sonnet, out_paths):
                     arrowprops=dict(arrowstyle="-", color=mark, lw=1, shrinkA=0, shrinkB=0))
 
     if main["hand"]:
-        ax.annotate("start: copy of our\nrule-based bot", xy=(0, 100 * main["hand"][0][1]), xytext=(3, 45),
+        ax.annotate("start: imitation of\na rule-based bot", xy=(0, 100 * main["hand"][0][1]), xytext=(3, 45),
                     color=t["ink2"], fontsize=13, arrowprops=dict(arrowstyle="-", color=t["muted"], lw=1))
     ax.set_xlim(-2, xmax)
     ax.set_ylim(0, 102)
@@ -169,10 +169,12 @@ def draw(theme_name, rows, sonnet, out_paths):
         beats = bool(ref) and best_pt[2] > ref[0][3]       # its interval clears the rule-based bot's own
         verdict = "now beats the rule-based bot it copied" if beats else "now level with the bot it copied"
         fig.text(0.07, 0.92, f"Trained with PPO, our bot {verdict}", fontsize=28, fontweight="bold", color=t["ink"])
-    fig.text(0.07, 0.865, "Charter, 4 players. Warm-started by copying our rule-based bot, then trained against "
+    fig.text(0.07, 0.865, "Charter, 4 players. Warm-started by copying an older rule-based bot, then trained against "
              "itself and an evolved rival*.", fontsize=16, color=t["ink2"])
     n_s = sum(r["games"] for r in pts)
     foot = ("* Evolved by program synthesis [read: Claude keeps rewriting the bot and we keep whatever wins].\n"
+            "The bot it copied is an older rule-based bot. The bot at our tables today is stronger: our best "
+            "checkpoint wins 24% against it (PR #31).\n"
             "Bot games: 800 per point on Island and Not Catan, with 95% intervals.\n"
             f"Sonnet: {n_s} games on Island, our bot in every seat in turn. Sonnet gets only our bot's moves "
             "(no laws, talk or player trades). Small samples, so wide bars.")
