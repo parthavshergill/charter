@@ -232,7 +232,7 @@ async function lobby() {
   const packList = h("div", { class: "packs" }, h("span", { class: "smallcaps lbl", "aria-hidden": "true" }, "World"), worldButton);
   const packNote = h("p", { class: "packnote" });
   // The chosen game's line and empty board. The base game is first, so the sheet starts with its line.
-  const tagline = h("p", { class: "sub" }, "Settle an island. Rewrite its rules. The constitution holds.");
+  const tagline = h("p", { class: "sub" }, "Settle an island. Rewrite its rules.");
   let stagePlayer = null, stageWanted = null, stageDrawn = null;
   const scenes = new Map();
   /** A world's scene with its mesh files loaded, so that it draws at once and with no stand-ins. Nothing shows
@@ -1040,9 +1040,21 @@ function buildLedge() {
   U.endTurn = h("button", { class: "act endturn", onclick: () => endTurn() });
   fill(U.ledge, U.hand, U.tray, U.endTurn);
 }
+/** In setup your pieces are free, and ending your turn early gives up the ones not yet placed. The rules
+ *  allow it, so the screen guards it: while one of your pieces has a place, End turn is not offered. With no
+ *  place for any, End turn is there, so nobody is stuck. Claude seats have the same guard on the server. */
+function setupPieceWaiting(v) {
+  return v?.phase === "setup" && v.turn === v.you && (v.legalMoves || []).some(m => m.move.t === "place");
+}
 function endTurn() {
   const end = (G.view?.legalMoves || []).find(m => m.move.t === "endTurn");
   if (!end) return;
+  // E with a free piece still to place: the line that says to place it shakes, and the turn goes on.
+  if (setupPieceWaiting(G.view)) {
+    const p = G.ui.prompt;
+    if (p && !p.hidden) anim(p, [{ translate: "0 0" }, { translate: "-6px 0" }, { translate: "6px 0" }, { translate: "-3px 0" }, { translate: "0 0" }], { duration: 280 });
+    return;
+  }
   if (G.ending) return;
   G.selected = null;
   play("end-turn");
@@ -1091,7 +1103,7 @@ function renderLedge() {
   }
   morphKids(U.tray, tools);
   U.tray.classList.toggle("many", tools.length > 5);
-  U.endTurn.hidden = !end;
+  U.endTurn.hidden = !end || setupPieceWaiting(v);
   fill(U.endTurn, "End turn");
   U.endTurn.title = "End your turn (E)";
   // The strongest accent goes to the next action, and only when that is clearly this button.

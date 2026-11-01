@@ -2,7 +2,7 @@
 """Generate what Lean's Comparator reads: Comparator/Challenge.lean and comparator.json.
 
 The challenge holds the same theorem statements as the source files, each with `sorry` as its proof.
-It imports only the words, the engine and the named parts, so it never sees a proof.
+It imports only the words, the engine, the named parts and the parser, so it never sees a proof.
 
     python3 scripts/comparator_challenge.py write    writes the two files from the source files.
     python3 scripts/comparator_challenge.py check    fails if the two files are out of date.
@@ -24,11 +24,12 @@ SOURCES = [
     "Charter/Constitution/Supporting.lean",
     "Charter/Proofs/Witness.lean",
     "Charter/Proofs/IslandWitness.lean",
+    "Server/ParserFacts.lean",
     "Server/SecrecyPromise.lean",
 ]
 # Helper lemmas that promise nothing by themselves.
 SKIP = {"witness_of_check"}
-IMPORTS = ["Charter.Constitution.Promises", "Charter.Games.Witnesses", "Charter.Games.Island", "Server.Secrecy"]
+IMPORTS = ["Charter.Constitution.Promises", "Charter.Games.Witnesses", "Charter.Games.Island", "Server.ResourcesNamed", "Server.Secrecy"]
 AXIOMS = ["propext", "Quot.sound", "Classical.choice"]
 
 OPENERS = {"(": ")", "[": "]", "{": "}", "⟨": "⟩"}

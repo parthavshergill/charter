@@ -5,10 +5,10 @@ open Lean
 # Which axioms the theorems rest on
 
 This does what `#print axioms` does, for every theorem in the project. It prints one line for each
-promise in the constitution's files, and one for each public theorem about the text of laws. It checks
-every theorem in a `Charter` module, including the proofs and the tests, and every theorem in
-`Server.RoundTrip`. It exits with an error if anything they rest on is an axiom outside the allowed list,
-or if `Rules.parse_of_print` is missing.
+promise in the constitution's files, and one for each statement about the parser. It checks every theorem
+in a `Charter` module, including the proofs and the tests, and every theorem in `Server.ParserProof` and
+`Server.ParserFacts`. It exits with an error if anything they rest on is an axiom outside the allowed list,
+or if a statement about the parser is missing.
 
 Run it with `make audit`, or:
 
@@ -18,20 +18,24 @@ Run it with `make audit`, or:
 /-- The only axioms a theorem may use. `sorry` shows up as `sorryAx`, which is not on this list. -/
 def allowed : List Name := [``propext, ``Classical.choice, ``Quot.sound]
 
-/-- The module with the proof about the text of laws. -/
-def roundTrip : Name := `Server.RoundTrip
+/-- The module with the statements about the parser. -/
+def parserFacts : Name := `Server.ParserFacts
+
+/-- The two statements about the parser. -/
+def parserStatements : List Name := [`Charter.Rules.nothing_gets_ignored, `Charter.Rules.only_real_resources]
 
 /-- The modules about what a seat may know. -/
 def secrecy : List Name :=
   [`Server.Secrecy, `Server.SecrecyProofs, `Server.SecrecyPromise, `Server.SecrecyExamples, `Server.SecrecyReach]
 
 /-- This module's theorems are checked. -/
-def isChecked (m : Name) : Bool := (`Charter).isPrefixOf m || m == roundTrip || secrecy.contains m
+def isChecked (m : Name) : Bool :=
+  (`Charter).isPrefixOf m || m == parserFacts || m == `Server.ParserProof || secrecy.contains m
 
-/-- This theorem is one a reader of the constitution sees, or a public one about the text of laws. -/
+/-- This theorem is one a reader of the constitution sees, or a statement about the parser. -/
 def isShown (m n : Name) : Bool :=
   (m == `Charter.Constitution || m == `Charter.Constitution.Supporting ||
-    m == `Charter.Constitution.Examples || m == `Charter.Proofs.IslandWitness || m == roundTrip ||
+    m == `Charter.Constitution.Examples || m == `Charter.Proofs.IslandWitness || m == parserFacts ||
     m == `Server.SecrecyPromise || m == `Server.SecrecyExamples || m == `Server.SecrecyReach) &&
   !n.isInternal && !isPrivateName n &&
   match n with
@@ -68,14 +72,12 @@ partial def axiomsOf (env : Environment) (c : Name) : StateM Seen NameSet := do
 unsafe def main : IO UInt32 := do
   initSearchPath (← findSysroot)
   enableInitializersExecution
-  let env ← importModules #[{ module := `Charter }, { module := roundTrip }, { module := `Server.SecrecyExamples },
+  let env ← importModules #[{ module := `Charter }, { module := parserFacts }, { module := `Server.SecrecyExamples },
     { module := `Server.SecrecyReach }] {} (loadExts := true)
-  unless env.contains `Charter.Rules.parse_of_print do
-    IO.eprintln "NOT FOUND: Charter.Rules.parse_of_print"
-    return 1
-  unless env.contains `CharterServer.Secrecy.nobody_sees_what_is_hidden do
-    IO.eprintln "NOT FOUND: CharterServer.Secrecy.nobody_sees_what_is_hidden"
-    return 1
+  for statement in parserStatements ++ [`CharterServer.Secrecy.nobody_sees_what_is_hidden] do
+    unless env.contains statement do
+      IO.eprintln s!"NOT FOUND: {statement}"
+      return 1
   let mut seen : Seen := {}
   let mut total := 0
   let mut shown : Array String := #[]

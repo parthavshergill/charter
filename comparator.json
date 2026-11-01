@@ -24,6 +24,8 @@
     "Charter.Proofs.a_full_island_game_exists",
     "Charter.Proofs.island_starts_with_no_laws",
     "Charter.Proofs.a_finished_island_game_can_happen",
+    "Charter.Rules.nothing_gets_ignored",
+    "Charter.Rules.only_real_resources",
     "CharterServer.Secrecy.nobody_sees_what_is_hidden",
     "CharterServer.Secrecy.the_end_reveals_everything",
     "CharterServer.Secrecy.unmarked_games_hide_only_the_seed"

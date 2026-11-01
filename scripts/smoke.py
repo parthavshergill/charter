@@ -109,7 +109,7 @@ def play(srv, code, token):
     """Play the human seat until the game ends, using laws, deals, offers and trades on the way. The
     seat settles where the dice pay and saves its resources until it has proposed everything, because
     the bots can win in about thirteen rounds. Trades with the bank and with bots get it what is short."""
-    did = {"law": False, "piece": False, "deal": False, "form": False, "offer": False, "built": False}
+    did = {"law": False, "piece": False, "deal": False, "form": False, "offer": False, "built": False, "setupEnd": False}
     post = lambda action, body: srv.post(f"/api/games/{code}/{action}", dict(body, token=token))
     deadline = time.time() + 300
     seen = -1
@@ -175,6 +175,11 @@ def play(srv, code, token):
                 did["form"] = True
                 continue
         place = [m for m in moves if m["move"]["t"] == "place"]
+        # Promise IX: a seat can always end its turn, even in setup with a free piece still to place. The
+        # page hides End turn then (setupPieceWaiting in web/app.js), so the server's list must not change.
+        if v["phase"] == "setup" and place and not did["setupEnd"]:
+            check(any(m["move"]["t"] == "endTurn" for m in moves), "in setup the server still lists end turn beside a free piece")
+            did["setupEnd"] = True
         attach = [m for m in place if m["move"]["kind"] == "lighthouse"]
         spots = sorted(place, key=settle_value, reverse=True)
         chosen = (attach or spots)[:1]

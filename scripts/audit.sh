@@ -6,7 +6,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 echo "== Build =="
-lake build Charter Server.RoundTrip Server.SecrecyExamples Server.SecrecyReach
+lake build Charter Server.ParserFacts Server.SecrecyExamples Server.SecrecyReach
 
 echo
 echo "== Axioms =="
@@ -18,10 +18,10 @@ modules=$(find Charter/Words Charter/Engine Charter/Proofs Charter/Constitution 
   | sed -e 's/\.lean$//' -e 's#/#.#g' | sort)
 modules="Charter.Sha256 Charter.Words Charter.Engine Charter.Constitution Charter.Games.Tiny Charter.Games.Witnesses $modules"
 modules="HexGrid HexGrid.Basic Charter.Games.HexMap Charter.Games.Island Charter.Games.IslandGame Charter.Games.IslandGameEvents $modules"
-# The text of laws: the parser, the printer, what they can say, and the proof that they agree.
-text_of_laws="Server/SExp.lean Server/Rules.lean Server/Readable.lean Server/RoundTrip.lean"
-modules="$modules Server.SExp Server.Rules Server.Readable Server.RoundTrip"
-# What a seat may know: the choke point, its promise and the examples.
+# The text of laws: the parser, the resources a law names, and the two statements about the parser.
+text_of_laws="Server/SExp.lean Server/Rules.lean Server/ResourcesNamed.lean Server/ParserProof.lean Server/ParserFacts.lean"
+modules="$modules Server.SExp Server.Rules Server.ResourcesNamed Server.ParserProof Server.ParserFacts"
+# What a seat may know: the choke point, its promise, the examples and how far it reaches.
 secrecy="Server/Secrecy.lean Server/SecrecyProofs.lean Server/SecrecyPromise.lean Server/SecrecyExamples.lean Server/SecrecyReach.lean"
 modules="$modules Server.Secrecy Server.SecrecyProofs Server.SecrecyPromise Server.SecrecyExamples Server.SecrecyReach"
 lake env leanchecker $modules
