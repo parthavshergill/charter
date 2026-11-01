@@ -6,6 +6,7 @@ import Server.Talk
 import Server.Clerk
 import Server.Formalize
 import Server.Suggest
+import Server.Describe
 
 /-!
 # The tables this server holds
@@ -17,7 +18,7 @@ every game is replayed from its log. The web server and the headless runner shar
 Next to each game's log are three others, none of which reaches `Engine.step`:
 
 * `<code>.talk`: table talk (`Server/Talk.lean`).
-* `<code>.clerk`: the clerk's memory (`Server/Clerk.lean`).
+* `<code>.clerk`: the clerk's memory (`Server/Clerk.lean`), and the laws' descriptions (`Server/Describe.lean`).
 * `<code>.seats`: what the Claude seats noted and spent (`Server/Seat.lean`). No route serves it.
 
 A container's disk does not last, so `Server/Mirror.lean` copies all of these to object storage.
@@ -104,6 +105,8 @@ structure Ctx where
   clerkLogs : Std.Mutex (Std.HashMap String (EventLog.Log String))
   /-- Each table's seat log, opened when first used. -/
   seatLogs : Std.Mutex (Std.HashMap String (EventLog.Log String))
+  /-- The descriptions of each table's laws. The clerk log holds the finished ones for good. -/
+  descriptions : IO.Ref (Std.HashMap String Describe.Book)
   /-- What each Claude seat keeps, by table and seat. -/
   minds : IO.Ref (Std.HashMap (String × Nat) Mind)
   /-- What each table has used. -/
@@ -148,6 +151,7 @@ def Ctx.new (tbl : Std.HashMap String Entry) (root dataDir : System.FilePath) (b
     nextDraft := ← IO.mkRef 1
     clerkLogs := ← Std.Mutex.new {}
     seatLogs := ← Std.Mutex.new {}
+    descriptions := ← IO.mkRef {}
     minds := ← IO.mkRef {}
     usage := ← IO.mkRef {}
     seat
@@ -358,6 +362,52 @@ def remember (ctx : Ctx) (code : String) (job : Formalize.Job) : IO Unit := do
     try withClerkLog ctx code (Clerk.append · n)
     catch err => IO.eprintln s!"[{code}] clerk log: {err}"
 
+/-! ## Descriptions of laws -/
+
+/-- What is known about the descriptions of this table's laws. -/
+def bookOf (ctx : Ctx) (code : String) : IO Describe.Book := do
+  return (← ctx.descriptions.get).getD code {}
+
+private def setDescription (ctx : Ctx) (code key : String) (st : Describe.Status) : IO Unit :=
+  ctx.descriptions.modify fun all => all.insert code ((all.getD code {}).insert key st)
+
+/-- Read back what a table's clerk log holds, after a restart. -/
+def restoreDescriptions (ctx : Ctx) (code : String) : IO Unit := do
+  if !(← (Clerk.logPath ctx.dataDir code).pathExists) then return
+  let lines ← withClerkLog ctx code fun log => log.readFrom 0
+  for line in lines do
+    if let some (key, text) := Describe.recordOfLine line then
+      setDescription ctx code key (.ready text)
+
+/-- Ask for a description of a rule Claude wrote, unless it is a deal or the law has one or is getting
+one. The law is marked before this returns, so the screen shows it as being written from the start. The
+thread reads only the law, and it touches no game. -/
+def startDescription (ctx : Ctx) (code formal : String) : IO Unit := do
+  let some e ← findEntry ctx code | return
+  let .ok (.law L) := e.game.parse formal | return
+  let key := Describe.lawKey L
+  let isNew ← ctx.descriptions.modifyGet fun all =>
+    let book := all.getD code {}
+    match book.get? key with
+    | some .writing | some (.ready _) => (false, all)
+    | _ => (true, all.insert code (book.insert key .writing))
+  if !isNew then return
+  let cfg ← Describe.settings ctx.root
+  discard <| IO.asTask (prio := .dedicated) do
+    try
+      match ← Describe.run cfg code L with
+      | some text =>
+        -- A description that cannot be saved still shows until the server restarts.
+        try
+          withClerkLog ctx code fun log =>
+            discard <| log.append (Describe.recordJson key text cfg.api.model cfg.effort).compress
+        catch err => IO.eprintln s!"[{code}] clerk log: {err}"
+        setDescription ctx code key (.ready text)
+      | none => setDescription ctx code key .failed
+    catch err =>
+      IO.eprintln s!"[{code}] description: {err}"
+      setDescription ctx code key .failed
+
 /-- Start a clerk job for a seat, replacing any it has running. The thread only reads the game. -/
 private def startJob (ctx : Ctx) (code : String) (seat : Nat) (words : String) (suggest : Bool)
     (work : Formalize.Job → Formalize.Settings → IO (Option Game.Game) → List Clerk.Note → IO Unit) :
@@ -370,7 +420,8 @@ private def startJob (ctx : Ctx) (code : String) (seat : Nat) (words : String) (
       state := ← IO.mkRef { lastEventMs := now }
       stop := ← IO.mkRef (pure ())
       cancelled := ← IO.mkRef false
-      suggest }
+      suggest
+      onReady := startDescription ctx code }
   ctx.drafts.modify (·.insert (code, seat) job)
   let cfg ← Formalize.settings ctx.root
   let current : IO (Option Game.Game) := do return (← findEntry ctx code).map (·.game)

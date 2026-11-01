@@ -15,7 +15,8 @@ uses the rule the talk route uses, and at clerk notes only through this seat's o
 every seat already sees in its view. `ServerTests` holds this.
 
 The "why" is advice from Claude. No check reads it, and the screen shows it apart from the rule, whose
-statement Lean writes from the clauses.
+source Lean prints from the clauses. The rule's description comes from `Server/Describe.lean`, which sees
+none of what this file reads.
 -/
 
 namespace CharterServer.Suggest
@@ -240,7 +241,8 @@ def run (job : Job) (cfg : Settings) (current : IO (Option Game)) (talk : List T
   let mine := notes.filter (·.seat == job.seat)
   let giveUp (why : String) : IO Unit :=
     finish (.refused s!"The clerk could not find a rule to suggest this time. {why} Try again, or write your own rule.")
-  let ready (words why : String) (formal : String) : IO Unit :=
+  let ready (words why : String) (formal : String) : IO Unit := do
+    job.onReady formal
     touch job fun st => { st with suggestedWords := some words, why := some why, stage := "done"
                                   final := some (.ready formal none true) }
   let mut retry : Option (String × String) := none
@@ -248,7 +250,7 @@ def run (job : Job) (cfg : Settings) (current : IO (Option Game)) (talk : List T
     touch job fun st => { st with stage := "sent", attempt := n, text := "", thinking := "",
                                   retryReason := retry.map (·.2) }
     let body := requestBody cfg system (message g s job.seat talk notes retry)
-    let outcome ← runRequest job (curlConfig cfg key body)
+    let outcome ← runRequest job (curlConfig cfg key body) cfg.model
     addSpent job
     if ← job.cancelled.get then
       finish .cancelled

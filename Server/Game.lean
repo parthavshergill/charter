@@ -251,7 +251,7 @@ def actionText (g : Game) (s s' : State G) : Event → String × String × Bool
     match s.currentSeat with
     | some p => ("turn", s!"The timer ended {g.nameOf p}'s turn.", true)
     | none => ("turn", "The timer ended the turn.", true)
-  | .propose p (.law L) => ("law", s!"{g.nameOf p} proposed: {Text.lawLine L}", true)
+  | .propose p (.law L) => ("law", s!"{g.nameOf p} proposed \"{L.title}\".", true)
   | .propose p (.deal d) => ("deal", s!"{g.nameOf p} proposed a deal. {Text.dealLine g.nameOf d}", true)
   | .vote p id yes =>
     let word := if yes then "yes" else "no"
