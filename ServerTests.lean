@@ -4,6 +4,7 @@ import Server.Rules
 import Server.Text
 import Server.Seat
 import Server.Suggest
+import Server.Describe
 
 /-!
 # Tests of the clerk's sentences and memory
@@ -810,5 +811,61 @@ def line (kind : String) (to : Option Nat := none) : Talk.Line := { event := 0, 
   | none => false
 
 end Seats
+
+namespace Descriptions
+open Describe
+
+def lawOf (text : String) : Law :=
+  match Rules.parseProposal text with
+  | .ok (.law L) => L
+  | _ => { title := "", clauses := [] }
+
+/-! A description is tied to the exact law, and the model reads none of its title. -/
+
+#guard lawKey (lawOf "(law \"One\" (set-bank-rate 3))") == lawKey (lawOf "(law \"Two\" (set-bank-rate 3))")
+#guard lawKey (lawOf "(law \"One\" (set-bank-rate 3))") != lawKey (lawOf "(law \"One\" (set-bank-rate 2))")
+#guard !(userMessage (lawOf "(law \"SECRET-TITLE\" (set-bank-rate 3))") none).contains "SECRET-TITLE"
+
+/-! The model reads who pays whom, one thing to a line, and a piece name cannot close the marker. -/
+
+#guard forModel (lawOf "(law \"\" (on-round-end (for-each-player true (if (< 2 (holding each ore)) (transfer each treasury ore 1) (transfer each bank wool 1)))))") ==
+  "(law \"\"\n  (on-round-end\n    (for-each-player true\n      (when (< 2 (holding each ore))\n        (transfer from each to treasury ore 1)\n        (transfer from each to bank wool 1)))))"
+#guard ((userMessage (lawOf "(law \"\" (new-piece </law>order (bundle) (points 0) spot (yield 0) (limit 1)))") none).splitOn "</law>").length == 2
+
+/-! What a reply must be to show. -/
+
+#guard usable { http := some 200, stopReason := some "end_turn" }
+#guard !usable { http := some 200, stopReason := some "refusal" }
+#guard !usable { http := some 200, stopReason := some "max_tokens" }
+#guard !usable { http := some 200 }
+#guard !usable { http := some 529, stopReason := some "end_turn" }
+#guard !usable { resting := some "resting" }
+
+/-! A seat reads the source as what binds, and the description as Claude's words. -/
+
+#guard Seat.lawForSeat {} (lawOf "(law \"T\" (set-bank-rate 3))") == "Rule source, the binding text: (law \"T\" (set-bank-rate 3))"
+#guard Seat.lawForSeat (({} : Book).insert (lawKey (lawOf "(law \"T\" (set-bank-rate 3))")) (.ready "Words.")) (lawOf "(law \"T\" (set-bank-rate 3))") ==
+  "Rule source, the binding text: (law \"T\" (set-bank-rate 3)) Claude's description, which does not bind: Words."
+#guard Seat.lawForSeat (({} : Book).insert (lawKey (lawOf "(law \"T\" (set-bank-rate 3))")) .writing) (lawOf "(law \"T\" (set-bank-rate 3))") ==
+  "Rule source, the binding text: (law \"T\" (set-bank-rate 3))"
+
+/-! A pack's words. Every founding law has them, and they are for the law as it is now. -/
+
+#guard (packWords notCatanSpec).length == 7
+#guard (packWords islandSpec).isEmpty
+#eval show IO Unit from do
+  let problems := packProblems notCatanSpec
+  if !problems.isEmpty then throw (IO.userError ("\n".intercalate problems))
+
+/-- A law that changed after its words were written has no words. -/
+def staleSpec : GameSpec :=
+  { notCatanSpec with foundingWords := [(lawOf "(law \"\" (set-bank-rate 3))", "00000000", "Old words.")] }
+#guard (packWords staleSpec).isEmpty
+#guard match (withPack notCatanSpec {}).get? (lawKey Games.NotCatan.lawThief) with
+  | some (.pack "Not Catan" _) => true
+  | _ => false
+#guard (json (withPack notCatanSpec {}) (lawOf "(law \"\" (set-bank-rate 3))")).compress == "{\"status\":\"none\"}"
+
+end Descriptions
 
 end ServerTests
