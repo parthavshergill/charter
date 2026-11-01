@@ -16,7 +16,7 @@ namespace Charter.Games.AIBubble
 
 /-- Each founding law, the start of its fingerprint, and what the pack says it does. -/
 def foundingWords : List (Law × String × String) :=
-  [ (lawCrash, "27ad1d55",
+  [ (lawCrash, "6724467d",
       "Each hype you hold is worth 1 point. On any roll, if the dice plus a third of the bubble come to 20 or more, the market crashes: all hype goes to the bank, and the bubble empties.")
   , (lawRaise, "be9b8d79",
       "To raise money, declare a number in capital. At the round's end, that much of your hype becomes twice as much capital, and it goes onto the bubble. A datacenter pays its builder 2 hype and adds 1 to the bubble, and a campus adds 2. Each round every lab gets 1 hype, plus 1 for each 10 on the bubble.")

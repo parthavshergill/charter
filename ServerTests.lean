@@ -6,6 +6,7 @@ import Server.Text
 import Server.Seat
 import Server.Suggest
 import Server.Describe
+import Server.RoundTrip
 import Server.GenericCheck
 
 /-!
@@ -360,6 +361,52 @@ def roundTrips (text : String) : Bool :=
   | _ => false)
 -- A measure cannot name a seat either.
 #guard (Rules.parseProposal "(law \"x\" (on-round-end (transfer bank treasury wool (most-over true (holding 2 wool)))))").toOption.isNone
+
+/-! ### The conditions of `Rules.parse_of_print`, on real games -/
+
+/-- This law reads back from its printed S-expression and from its printed text, as itself. -/
+def foundingLawReads (rs : List Res) (L : Law) : Bool :=
+  let same (r : Except String Proposal) : Bool :=
+    match r with
+    | .ok p => Rules.proposalToSExp p == Rules.lawS L
+    | .error _ => false
+  same (Rules.parseProposalSExp rs (Rules.lawS L)) && same (Rules.parseProposal (Rules.printProposal (.law L)) rs)
+
+/-- The founding laws of every game that do not read back. -/
+def unreadableFoundingLaws : List String :=
+  gameSpecs.flatMap fun d =>
+    let rs := d.G.resources.map (·.name)
+    (d.G.foundingLaws.filter (!foundingLawReads rs ·)).map (·.title)
+
+-- Every founding law of every game reads back, so `Rules.parse_of_print` covers each one, and a seat can
+-- propose the same law again.
+#guard unreadableFoundingLaws == []
+
+-- `Readable.law` picks out the same founding laws as the parser does.
+#guard gameSpecs.all fun d =>
+  let rs := d.G.resources.map (·.name)
+  d.G.foundingLaws.all fun L => Rules.Readable.law rs L == foundingLawReads rs L
+
+-- No game has a resource called `res`, the word for the resource the dice just paid.
+#guard gameSpecs.all fun d => !(d.G.resources.map (·.name)).contains "res"
+
+/-- The problems `lawProblems` finds with a law at this 4-seat table. -/
+def valueProblems (L : Law) : Option (List String) :=
+  match table4.state with
+  | some s => some (lawProblems table4.spec.G s L)
+  | none => none
+
+-- `lawProblems` does not refuse a value that the text cannot say. A seat can reach these only through
+-- the parser, which does refuse them. A game's founding law can reach them directly.
+#guard [ [Effect.when .yes [.forEach .yes [Rules.anEffect]]]
+       , [.forEach .yes [.forEach .yes [Rules.anEffect]]]
+       , [.when .yes [.when .yes [Rules.anEffect]]]
+       , [.when .yes [], Rules.anEffect]
+       , [.transfer .bank .treasury (.lit "gold") (.lit 1)]
+       , [.when (.harvestedIs "gold") [Rules.anEffect]]
+       , [.transfer .bank .treasury (.lit "ore") (.divBy (.lit 7) (.lit 2))] ].all
+    fun b =>
+      valueProblems (Rules.lawWith b) == some [] && !Rules.Readable.law Rules.islandResources (Rules.lawWith b)
 
 -- The limit on planned payments counts one payment per seat per transfer.
 #guard problems table6 (manyTransfers 21) == []

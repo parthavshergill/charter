@@ -192,12 +192,15 @@ def parseDeal (rs : List Res) : SExp → P Deal
                terms := ← terms.mapM (parseTerm rs) }
   | x => fail "expected (deal \"title\" (signers ...) (rounds n) (exit-notice n) (deposits ...) term...)" x
 
-/-- Read the text of a law or a deal. -/
-def parseProposal (text : String) (rs : List Res := islandResources) : P Proposal := do
-  match ← SExp.read text with
+/-- Read a law or a deal from its S-expression. `parseProposal` does this after the reader. -/
+def parseProposalSExp (rs : List Res) : SExp → P Proposal
   | x@(.list (.atom "law" :: _)) => Proposal.law <$> parseLaw rs x
   | x@(.list (.atom "deal" :: _)) => Proposal.deal <$> parseDeal rs x
   | x => fail "expected (law ...) or (deal ...)" x
+
+/-- Read the text of a law or a deal. -/
+def parseProposal (text : String) (rs : List Res := islandResources) : P Proposal := do
+  parseProposalSExp rs (← SExp.read text)
 
 /-! ## Writing the text back -/
 
@@ -298,10 +301,13 @@ def dealS (d : Deal) : SExp :=
     :: .list (.atom "deposits" :: d.deposits.map fun x => .list [natS x.1, .atom x.2.1, natS x.2.2])
     :: d.terms.map termS)
 
+/-- The S-expression of a law or a deal. `printProposal` renders this. -/
+def proposalToSExp : Proposal → SExp
+  | .law l => lawS l
+  | .deal d => dealS d
+
 /-- The one-line text of a law or a deal. -/
-def printProposal : Proposal → String
-  | .law l => (lawS l).render
-  | .deal d => (dealS d).render
+def printProposal (p : Proposal) : String := (proposalToSExp p).render
 
 /-- This law reads what seats have declared. -/
 def lawReadsDeclared (L : Law) : Bool :=

@@ -6,7 +6,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 echo "== Build =="
-lake build Charter
+lake build Charter Server.RoundTrip
 
 echo
 echo "== Axioms =="
@@ -18,17 +18,20 @@ modules=$(find Charter/Words Charter/Engine Charter/Proofs Charter/Constitution 
   | sed -e 's/\.lean$//' -e 's#/#.#g' | sort)
 modules="Charter.Sha256 Charter.Words Charter.Engine Charter.Constitution Charter.Games.Tiny Charter.Games.Witnesses $modules"
 modules="HexGrid HexGrid.Basic Charter.Games.HexMap Charter.Games.Island Charter.Games.IslandGame Charter.Games.IslandGameEvents $modules"
+# The text of laws: the parser, the printer, what they can say, and the proof that they agree.
+text_of_laws="Server/SExp.lean Server/Rules.lean Server/Readable.lean Server/RoundTrip.lean"
+modules="$modules Server.SExp Server.Rules Server.Readable Server.RoundTrip"
 lake env leanchecker $modules
 echo "Replayed $(echo "$modules" | wc -w | tr -d ' ') modules through the kernel."
 
 echo
 echo "== Banned constructs =="
 banned='\b(sorry|admit|axiom|native_decide|implemented_by|unsafe|extern|partial def)\b|debug\.skipKernelTC|maxHeartbeats 0'
-if grep -rnE "$banned" Charter Charter.lean; then
+if grep -rnE "$banned" Charter Charter.lean $text_of_laws; then
   echo "Found a banned construct."
   exit 1
 fi
-echo "None found in Charter."
+echo "None found in Charter or in $text_of_laws."
 
 echo
 echo "== Statement lock =="
