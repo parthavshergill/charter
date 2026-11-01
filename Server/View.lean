@@ -302,7 +302,10 @@ def reviewJson (g : Game) (you : Nat) (formal : String) (difference : Option Str
 /-- A draft as the screen reads it. It says only what has really happened. -/
 def draftJson (g : Game) (you : Nat) (job : Formalize.Job) (st : Formalize.JobState) (now : Nat) : Json :=
   let base : List (String × Json) :=
-    [ ("id", toJson job.id), ("words", job.words), ("stage", st.stage), ("attempt", toJson st.attempt)
+    [ ("id", toJson job.id), ("words", st.suggestedWords.getD job.words)
+    , ("mode", if job.suggest then "suggest" else "draft"), ("why", toJson st.why)
+    , ("whyStale", toJson (job.suggest && st.why.isSome && st.atEvent != g.events))
+    , ("stage", st.stage), ("attempt", toJson st.attempt)
     , ("retryReason", toJson st.retryReason), ("elapsedMs", toJson (now - job.startedMs))
     , ("quietMs", toJson (now - st.lastEventMs))
     , ("thinking", toJson ((String.ofList (st.thinking.toList.reverse.take 240).reverse)))

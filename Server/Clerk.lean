@@ -17,7 +17,8 @@ A draft's memory has two parts:
 - **Tabled**: proposals, who made them, and how they ended. This comes from the game itself, so it
   needs no copy in the clerk's log, and it is public.
 - **The seat's own drafts**: its earlier requests and what came of them. A draft stays private until
-  it is proposed, so `memoryBlock` keeps only the asking seat's notes and looks at no others.
+  it is proposed, so `memoryBlock` keeps only the asking seat's notes and looks at no others. A rule the
+  clerk suggested to a seat is a note of that seat too.
 
 Memory goes in the user message, so the cached system block never changes. Everything in it is data
 from players, marked as such, and it cannot close its own markers.
@@ -53,6 +54,10 @@ structure Note where
   difference : Option String := none
   /-- Why no rule came of it. -/
   refused : Option String := none
+  /-- The clerk suggested this rule, and `words` are the clerk's words. -/
+  suggested : Bool := false
+  /-- The advice the clerk gave with a suggestion. -/
+  why : Option String := none
   deriving Repr, BEq
 
 /-- Cut to a length, and say that it was cut. -/
@@ -64,14 +69,16 @@ def noteJson (n : Note) : Json :=
     [("seat", toJson n.seat), ("round", toJson n.round), ("words", toJson (cut maxWordsKept n.words))] ++
     (n.formal.map (fun x => [("formal", toJson (cut maxFormalKept x))])).getD [] ++
     (n.difference.map (fun x => [("difference", toJson (cut maxNoteKept x))])).getD [] ++
-    (n.refused.map (fun x => [("refused", toJson (cut maxNoteKept x))])).getD []
+    (n.refused.map (fun x => [("refused", toJson (cut maxNoteKept x))])).getD [] ++
+    (if n.suggested then [("suggested", toJson true)] else []) ++
+    (n.why.map (fun x => [("why", toJson (cut maxNoteKept x))])).getD []
 
 def noteOfJson (j : Json) : Option Note := do
   let seat ← jNat j "seat"
   let round ← jNat j "round"
   let words ← jStr j "words"
   return { seat, round, words, formal := jStr j "formal", difference := jStr j "difference"
-           refused := jStr j "refused" }
+           refused := jStr j "refused", suggested := (jBool j "suggested").getD false, why := jStr j "why" }
 
 /-- Read a stored line. A line that does not read is skipped: memory only helps, so a bad line must
 not stop a draft. -/
@@ -137,7 +144,11 @@ def noteLine (g : Game) (n : Note) : String :=
   let diff := match n.difference with
     | some d => s!" Difference stated: {d}"
     | none => ""
-  oneLine s!"- Round {n.round}. Asked: \"{n.words}\" {result}{diff}{table}"
+  let asked := if n.suggested then "Suggested to this player" else "Asked"
+  let advice := match n.why with
+    | some w => s!" Why given: {w}"
+    | none => ""
+  oneLine s!"- Round {n.round}. {asked}: \"{n.words}\" {result}{diff}{advice}{table}"
 
 /-- Keep the newest lines that fit in `budget`, in their order. -/
 def fitNewest (budget : Nat) (lines : List String) : List String :=

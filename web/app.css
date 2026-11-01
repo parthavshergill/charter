@@ -172,6 +172,9 @@ svg.shield { width: 16px; height: 19px; flex: none; vertical-align: -4px; clip-p
 .english { white-space: pre-line; }
 .titleline { color: var(--ink-2); font-size: 14px; font-style: italic; }
 .diff { margin: 0 0 var(--s3); padding-left: var(--s3); border-left: 2px solid var(--wax); font-size: 14px; color: var(--ink); }
+.advice { margin: 0 0 var(--s3); padding: var(--s2) var(--s3); background: rgba(120, 88, 40, .12); font-size: 14px; line-height: 1.4; color: var(--ink-2); }
+.advice p { margin: 0; font-style: italic; }
+.advicehead { margin-bottom: 2px; font-size: 12px; letter-spacing: .04em; color: var(--ink-3); }
 .conseq { margin: 0 0 var(--s3); border-top: 1px solid var(--vellum-3); }
 .conseq .case { display: grid; grid-template-columns: 1fr; gap: 2px; padding: var(--s2) 0; border-bottom: 1px solid var(--vellum-3); }
 .conseq .when { font-size: 12px; letter-spacing: .04em; color: var(--ink-2); }

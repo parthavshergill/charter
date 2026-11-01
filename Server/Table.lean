@@ -5,6 +5,7 @@ import Server.Game
 import Server.Talk
 import Server.Clerk
 import Server.Formalize
+import Server.Suggest
 
 /-!
 # The tables this server holds
@@ -332,7 +333,8 @@ it told the clerk nothing the seat would refer back to. Memory only helps, so a 
 write it never stops a draft. -/
 def remember (ctx : Ctx) (code : String) (job : Formalize.Job) : IO Unit := do
   let cancelled ← job.cancelled.get
-  let some final := (← job.state.get).final | return
+  let st ← job.state.get
+  let some final := st.final | return
   let current ← findEntry ctx code
   let round := match current with
     | some e => (e.game.state.map (·.round)).getD 0
@@ -345,16 +347,21 @@ def remember (ctx : Ctx) (code : String) (job : Formalize.Job) : IO Unit := do
       let printed := match parse formal with
         | .ok p => Rules.printProposal p
         | .error _ => formal
-      some { seat := job.seat, round, words := job.words, formal := some printed, difference }
-    | .refused why => some { seat := job.seat, round, words := job.words, refused := some why }
+      some { seat := job.seat, round, words := st.suggestedWords.getD job.words, formal := some printed, difference
+             suggested := job.suggest, why := st.why }
+    | .refused why =>
+      -- A suggestion that came to nothing has no words to remember.
+      if job.suggest then none else some { seat := job.seat, round, words := job.words, refused := some why }
     | .failed _ | .cancelled => none
   if cancelled then return
   if let some n := note then
     try withClerkLog ctx code (Clerk.append · n)
     catch err => IO.eprintln s!"[{code}] clerk log: {err}"
 
-/-- Start a draft for a seat, replacing any draft it has running. The thread only reads the game. -/
-def startDraft (ctx : Ctx) (code : String) (seat : Nat) (words : String) : IO Formalize.Job := do
+/-- Start a clerk job for a seat, replacing any it has running. The thread only reads the game. -/
+private def startJob (ctx : Ctx) (code : String) (seat : Nat) (words : String) (suggest : Bool)
+    (work : Formalize.Job → Formalize.Settings → IO (Option Game.Game) → List Clerk.Note → IO Unit) :
+    IO Formalize.Job := do
   if let some old := (← ctx.drafts.get).get? (code, seat) then stopDraft old
   let id ← ctx.nextDraft.modifyGet fun n => (n, n + 1)
   let now ← IO.monoMsNow
@@ -362,7 +369,8 @@ def startDraft (ctx : Ctx) (code : String) (seat : Nat) (words : String) : IO Fo
     { id, seat, words, startedMs := now, table := code
       state := ← IO.mkRef { lastEventMs := now }
       stop := ← IO.mkRef (pure ())
-      cancelled := ← IO.mkRef false }
+      cancelled := ← IO.mkRef false
+      suggest }
   ctx.drafts.modify (·.insert (code, seat) job)
   let cfg ← Formalize.settings ctx.root
   let current : IO (Option Game.Game) := do return (← findEntry ctx code).map (·.game)
@@ -372,12 +380,24 @@ def startDraft (ctx : Ctx) (code : String) (seat : Nat) (words : String) : IO Fo
         catch err =>
           IO.eprintln s!"[{code}] clerk log: {err}"
           pure []
-      Formalize.run job cfg current notes
+      work job cfg current notes
       remember ctx code job
     catch err =>
       -- The message is about a process or a file, and it never holds the key.
       IO.eprintln s!"[{code}] draft: {err}"
       job.state.modify fun st => { st with stage := "done", final := some (.failed "The clerk could not be reached on this server. Write the formal text yourself.") }
   return job
+
+/-- Start a draft of a seat's words. -/
+def startDraft (ctx : Ctx) (code : String) (seat : Nat) (words : String) : IO Formalize.Job :=
+  startJob ctx code seat words false Formalize.run
+
+/-- Ask the clerk to suggest a rule to a seat. This is a draft in every other way: the same state, the
+same checks, the same "drafting" signal to the table, and it reaches no engine event. -/
+def startSuggest (ctx : Ctx) (code : String) (seat : Nat) : IO Formalize.Job := do
+  let talk := match ← findEntry ctx code with
+    | some e => e.talk.toList
+    | none => []
+  startJob ctx code seat "" true fun job cfg current notes => Suggest.run job cfg current talk notes
 
 end CharterServer
