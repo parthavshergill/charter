@@ -30,14 +30,41 @@ function h(tag, attrs = {}, ...kids) {
   return n;
 }
 const fill = (n, ...kids) => n.replaceChildren(...kids.flat(9).filter(k => k != null && k !== false));
+/** A finger, not a mouse. Hover does not exist, and a keyboard is not there until it is asked for. */
+const touch = () => matchMedia("(pointer: coarse)").matches;
+/** The narrow layout: the rail along the foot of the screen, and the dock a sheet that rises from it. */
+const narrow = () => matchMedia("(max-width: 760px) and (orientation: portrait)").matches;
+/** A phone on its side: the rail and the dock stay at the right, and the ledge is one thin row. */
+const short = () => matchMedia("(max-height: 500px) and (orientation: landscape)").matches;
 // The seat token goes in a header, not the address, so it stays out of anything that logs addresses.
 let seatToken = null;
-async function api(path, body) {
+/** One request. A connection that says nothing must not hold the page, so each one has a time limit. */
+async function request(path, body, read, ms = body === undefined ? 12000 : 20000) {
+  const stop = new AbortController(), limit = setTimeout(() => stop.abort(), ms);
   const headers = seatToken ? { "X-Charter-Token": seatToken } : {};
   const opt = body === undefined ? { headers } : { method: "POST", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify(body) };
-  const r = await fetch(path, opt);
-  const ct = r.headers.get("content-type") || "";
-  return ct.includes("json") ? r.json() : r.arrayBuffer();
+  try { return await read(await fetch(path, { ...opt, signal: stop.signal })); }
+  finally { clearTimeout(limit); }
+}
+const api = (path, body, ms) => request(path, body, r => (r.headers.get("content-type") || "").includes("json") ? r.json() : r.arrayBuffer(), ms);
+/** Run `work` with `button` showing that it is on its way, so that a slow connection still answers a tap at once. */
+async function busyWhile(button, work) {
+  button?.classList.add("busy");
+  try { return await work; } finally { button?.classList.remove("busy"); }
+}
+const NO_SERVER = "The server cannot be reached. Try again.";
+const whenIdle = (f, ms = 1500) => "requestIdleCallback" in window ? requestIdleCallback(f, { timeout: ms }) : setTimeout(f, 200);
+// A press shows the moment the finger comes down. A button is .down until just after the finger lifts.
+if (touch()) {
+  let down = null, lift = null;
+  const up = () => { const d = down; down = null; clearTimeout(lift); lift = setTimeout(() => d?.classList.remove("down"), 90); };
+  addEventListener("pointerdown", e => {
+    down?.classList.remove("down");
+    down = e.target.closest?.("button:not(:disabled), a, summary, label, .rcard, .banner") || null;
+    down?.classList.add("down");
+  }, { capture: true, passive: true });
+  addEventListener("pointerup", up, { capture: true, passive: true });
+  addEventListener("pointercancel", up, { capture: true, passive: true });
 }
 const store = {
   get: k => { try { return localStorage.getItem(k); } catch { return null; } },
@@ -51,12 +78,27 @@ const ROUND_WORDS = ["", "first", "second", "third", "fourth", "fifth", "sixth",
 
 // ---------------------------------------------------------------- the 3D table
 async function loadPlayer(canvas) {
+  let mod;
+  try { mod = await import("./vendor/player.js"); }
+  catch (e) {
+    // A deploy between this page and this file: the page is out of date, and a new one has all of it.
+    console.warn("3D table unavailable:", e);
+    const gone = await fetch(new URL("app.js", document.baseURI), { cache: "no-store" }).then(r => r.status === 404, () => false);
+    if (gone) window.reloadOnce?.();
+    return null;
+  }
   try {
-    const mod = await import("./vendor/player.js");
-    return new mod.GpuPlayer(canvas, {
+    const tier = params.has("tier") ? Number(params.get("tier")) : undefined;
+    const player = new mod.GpuPlayer(canvas, {
+      tier,
       hoverFx: id => id < 3000 || id >= 9000,
-      clickable: id => id < 3000 || id >= 9000,
+      // What a tap can act on now. A finger's near miss goes only to one of these.
+      clickable: id => id >= 9000 || (id < 3000 && (G.view?.legalMoves || []).some(m => m.pick === id && (!G.selected || m.kind === G.selected))),
     });
+    const showTier = n => { document.documentElement.dataset.tier = n; };
+    showTier(player.tier);
+    player.onTier = showTier;
+    return player;
   } catch (e) { console.warn("3D table unavailable:", e); return null; }
 }
 
@@ -145,7 +187,7 @@ async function lobby() {
     if (!stagePlayer) return null;
     if (stageShown === d.id) return stageLoad;
     stageShown = d.id;
-    return (stageLoad = api(`/api/defs/${d.id}/scene`).then(buf => { if (stageShown === d.id && buf.byteLength > 4) stagePlayer.render(buf); }));
+    return (stageLoad = api(`/api/defs/${d.id}/scene`).then(buf => { if (stageShown === d.id && buf.byteLength > 4) stagePlayer.render(buf); }, e => console.warn("backdrop", e)));
   };
   // The row shows the first three games, and the chosen game if it is further along.
   // Every game after the first three is on the Library's shelf.
@@ -159,7 +201,8 @@ async function lobby() {
     if (d) { applyLook(d.look); tagline.textContent = d.look.tagline; showBackdrop(d); }
   };
   showPacks();
-  const defsLoaded = api("/api/defs").then(list => { defs = list; game = list[0]?.id ?? null; showPacks(); showSeats(); });
+  // A server that was asleep can take a while to wake, and this is the first thing that waits for it.
+  const defsLoaded = api("/api/defs", undefined, 130000).then(list => { defs = list; game = list[0]?.id ?? null; showPacks(); showSeats(); }, () => { err.textContent = NO_SERVER; });
   const seatRange = d => d.minSeats === d.maxSeats ? plural(d.minSeats, "seat") : `${d.minSeats} to ${d.maxSeats} seats`;
   // One row of the shelf. A picture can go after .shelftext later: the row leaves no gap without one.
   const shelfRow = d => h("button", { class: "shelfrow" + (d.id === game ? " on" : ""), "aria-pressed": d.id === game ? "true" : "false", onclick: () => { game = d.id; showPacks(); showSeats(); turnTo("form", () => packList.querySelector(".pack.on")); } },
@@ -224,7 +267,9 @@ async function lobby() {
   const join = async code => {
     code = code.trim().toUpperCase();
     if (!code) { err.textContent = "Enter a table code."; joinCode.focus(); return; }
-    const r = await api(`/api/games/${code}/join`, { name: name.value.trim(), token: store.get(tokenKey(code)) || undefined, nonce: myNonce() });
+    let r;
+    try { r = await api(`/api/games/${code}/join`, { name: name.value.trim(), token: store.get(tokenKey(code)) || undefined, nonce: myNonce() }); }
+    catch { err.textContent = NO_SERVER; return; }
     if (!r.ok) { err.textContent = r.error || "Could not join that table."; return; }
     store.set(tokenKey(code), r.token);
     location.href = `/?game=${code}`;
@@ -237,13 +282,17 @@ async function lobby() {
       h("button", { tabindex: i ? "-1" : "0", title: `The constitution: ${p.line}`, "aria-label": `Promise ${p.n}: ${p.line}`, onclick: e => openPromise(p.n, e.currentTarget) }, p.n))),
     h("label", { class: "field signature" }, name, h("span", { class: "signlabel" }, "Sign your name")),
     seg, packList, packNote,
-    h("button", { class: "act gold", onclick: async () => {
+    h("button", { class: "act gold", onclick: e => {
       if (!nameOk()) return;
-      const r = await api("/api/games", { seats, game: game ?? undefined });
-      if (!r.ok) { err.textContent = r.error; return; }
-      await join(r.code);
+      busyWhile(e.currentTarget, (async () => {
+        let r;
+        try { r = await api("/api/games", { seats, game: game ?? undefined }); }
+        catch { err.textContent = NO_SERVER; return; }
+        if (!r.ok) { err.textContent = r.error; return; }
+        await join(r.code);
+      })());
     } }, "Found a table"),
-    h("div", { class: "joinline" }, joinCode, h("button", { class: "act", onclick: () => nameOk() && join(joinCode.value) }, "Join")),
+    h("div", { class: "joinline" }, joinCode, h("button", { class: "act", onclick: e => nameOk() && busyWhile(e.currentTarget, join(joinCode.value)) }, "Join")),
     err, tables);
   const page = scrollSheet(form, shelf, promises);
   app.replaceChildren(stage, page);
@@ -252,10 +301,11 @@ async function lobby() {
   document.fonts?.load('32px "Mrs Saint Delafield"').catch(() => {});
   // A person with a mouse can start signing at once. A phone keeps its keyboard down until asked.
   if (!name.value && matchMedia("(pointer: fine)").matches) name.focus({ preventScroll: true });
-  const whole = !params.has("join") && !store.get("charter.opened");
+  // A phone gets the short unroll: the whole fall is more than two seconds before anything can be read.
+  const whole = !params.has("join") && !store.get("charter.opened") && !touch();
   const release = reduced() ? () => {} : openScroll(page, whole);
   if (whole && !reduced()) { store.set("charter.opened", "1"); setTimeout(release, 1200); }
-  loadPlayer(stage.querySelector("canvas")).then(async p => {
+  const showBoard = () => loadPlayer(stage.querySelector("canvas")).then(async p => {
     if (!p) { release(); return; }
     p.setInsets({ l: innerWidth <= 560 ? 16 : Math.min(innerWidth * .46, 480), r: 16, t: 16, b: 16 });
     stagePlayer = p;
@@ -264,6 +314,9 @@ async function lobby() {
     if (d) await showBackdrop(d);
     release();
   });
+  // On a phone the board comes after the form can be used, and not at all if the person asked to save data.
+  if (touch()) { if (!navigator.connection?.saveData) defsLoaded.then(() => whenIdle(showBoard)); }
+  else showBoard();
   // Only the tables this browser holds a seat at. No route lists every table, because a code is what
   // lets a person reach one. Any table lost from the server is left out.
   let codes = [];
@@ -277,7 +330,7 @@ async function lobby() {
 // ---------------------------------------------------------------- game state
 const G = {
   code: null, token: null, view: null, version: -1, player: null, use3d: true,
-  sceneBusy: false, sceneDirty: false, polling: null, ui: null,
+  sceneBusy: false, sceneDirty: false, sceneTag: null, sceneFailed: false, polling: null, pollSeq: 0, quiet: 0, lostTries: 0, ui: null,
   selected: null,       // the piece kind being placed, in the actions phase
   dock: null,           // what is open in the dock: {t:"draft"} {t:"vote",id} {t:"laws"} {t:"chronicle"} {t:"moment"}
   menu: false, everyEvent: false,
@@ -291,16 +344,23 @@ const you = () => G.view?.you;
 const seat = i => G.view?.seats?.find(s => s.seat === i);
 const nameOf = i => (i === you() ? "You" : seat(i)?.name ?? `Seat ${i}`);
 
+// The button that was just tapped: a move on its way shows on it until the server has answered.
+let lastTapped = null;
+addEventListener("click", e => { lastTapped = e.target.closest?.("button") || null; setTimeout(() => { lastTapped = null; }); }, true);
 async function post(path, body) {
+  const tapped = lastTapped;
+  tapped?.classList.add("busy");
+  G.quiet = 0;
   let r;
   try { r = await api(`/api/games/${G.code}/${path}`, { token: G.token, ...body }); }
   catch { r = { ok: false, error: "The server cannot be reached." }; }
+  tapped?.classList.remove("busy");
   if (r && r.ok === false) say(r.error || "Refused.");
   poke();
   return r;
 }
 const postMove = move => post("move", { move });
-function poke() { G.version = -1; clearTimeout(G.polling); G.polling = setTimeout(poll, 40); }
+function poke() { G.version = -1; G.pollSeq++; clearTimeout(G.polling); G.polling = setTimeout(poll, 40); }
 
 /** Say something where the eye already is: the prompt line above the ledge. */
 function say(msg) {
@@ -323,36 +383,84 @@ async function refreshScene() {
   if (G.sceneBusy) { G.sceneDirty = true; return; }
   G.sceneBusy = true;
   try {
-    const buf = await api(`/api/games/${G.code}/scene?${sceneQuery()}`);
-    if (buf.byteLength > 4) G.player.render(buf);
-  } catch (e) { console.warn("scene", e); }
+    const q = sceneQuery();
+    // The server sends nothing if the picture is the one this page already has.
+    if (G.sceneTag) q.set("have", G.sceneTag);
+    const scene = await request(`/api/games/${G.code}/scene?${q}`, undefined, async r => r.status === 204 ? null : { tag: r.headers.get("x-scene-tag"), buf: await r.arrayBuffer() }, 20000);
+    if (scene?.buf.byteLength > 4) { G.player.render(scene.buf); G.sceneTag = scene.tag; }
+    G.sceneFailed = false;
+    showBoard3D();
+  } catch (e) { console.warn("scene", e); G.sceneFailed = true; }
   G.sceneBusy = false;
   if (G.sceneDirty) { G.sceneDirty = false; refreshScene(); }
 }
+/** How much of the bottom of the screen the interface takes, wherever that row is drawn. */
+function footHeight() {
+  const U = G.ui, rows = [U.ledge, U.replayBar].concat(narrow() ? [U.rail] : []).filter(n => !n.hidden && n.offsetHeight).map(n => n.getBoundingClientRect());
+  return rows.length ? Math.round(Math.max(...rows.map(r => r.bottom)) - Math.min(...rows.map(r => r.top))) : 0;
+}
 function updateInsets() {
+  const root = document.documentElement, roomy = !narrow() && !short();
+  // A narrow window has no room to spare: the dock lies over the board, and the board keeps its size.
+  const dockW = !G.dock || !roomy || innerWidth < 800 ? 0 : (innerWidth <= 860 ? 300 : 372);
+  root.style.setProperty("--dockw", `${dockW}px`);
+  // On a phone what the ledge holds sets its height, and the rest of the interface sits on top of it.
+  if (roomy) root.style.removeProperty("--ledge"); else if (!document.body.classList.contains("kb")) root.style.setProperty("--ledge", `${footHeight()}px`);
+  const crown = narrow() ? G.ui.crown.offsetHeight : 0;
+  root.style.setProperty("--crown", `${crown}px`);
   if (!G.player) return;
-  const dockOpen = !!G.dock;
-  const dockW = dockOpen ? (innerWidth <= 860 ? 300 : 372) : 0;
-  document.documentElement.style.setProperty("--dockw", `${dockW}px`);
-  const ledge = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--ledge"));
+  const ledge = parseInt(getComputedStyle(root).getPropertyValue("--ledge"));
   const lobby = G.view?.phase === "lobby";
-  G.player.setInsets(lobby ? { l: Math.min(innerWidth * .46, 480), r: 16, t: 16, b: 16 } : { l: 0, r: 52 + dockW, t: 44, b: ledge + 8 });
+  if (narrow()) G.player.setInsets(lobby ? { l: 8, r: 8, t: 8, b: 8 } : { l: 4, r: 4, t: crown + 4, b: ledge + 4 });
+  else G.player.setInsets(lobby ? { l: Math.min(innerWidth * .46, 480), r: 16, t: 16, b: 16 } : { l: 0, r: parseInt(getComputedStyle(root).getPropertyValue("--rail")) + dockW, t: roomy ? 44 : 30, b: ledge + 8 });
+}
+// On a phone, the on-screen keyboard covers the bottom of the page and the page does not know. The size of
+// what can be seen says how much it covers, and the sheet sits on top of the keyboard.
+function followKeyboard() {
+  const vv = window.visualViewport;
+  if (!vv) return;
+  const root = document.documentElement;
+  // Where `bottom: 0` really is, since browsers disagree on what a page's height means while a keyboard is up.
+  const foot = h("div", { style: { position: "fixed", bottom: "0", width: "0", height: "0", visibility: "hidden" } });
+  document.body.append(foot);
+  const on = () => {
+    const hidden = Math.max(0, Math.round(foot.getBoundingClientRect().bottom - vv.height - vv.offsetTop));
+    root.style.setProperty("--kb", `${hidden}px`);
+    root.style.setProperty("--seen", `${Math.round(vv.height)}px`);
+    const open = hidden > 120;
+    if (open !== document.body.classList.contains("kb")) {
+      document.body.classList.toggle("kb", open);
+      // Safari can leave the page moved up after the keyboard goes.
+      if (!open) scrollTo(0, 0);
+      updateInsets();
+    }
+  };
+  vv.addEventListener("resize", on);
+  vv.addEventListener("scroll", on);
+  on();
 }
 
 // ---------------------------------------------------------------- picking on the board
 function onPick(id, cx, cy) {
   const v = G.view; if (!v) return;
-  if (id === 8999) return;
+  closeTip();
+  if (id === 8999) { if (touch()) tipAt(tipFor(id), cx, cy); return; }
   if (id >= 9000) { openDock({ t: "laws", focus: id }); return; }
-  if (id >= 3000) return;
+  if (id >= 3000) { if (touch()) tipAt(tipFor(id), cx, cy); return; }
   let moves = (v.legalMoves || []).filter(m => m.pick === id);
   if (G.selected) moves = moves.filter(m => m.kind === G.selected);
+  if (moves.length && !reduced()) ring({ x: cx, y: cy }, "small");
   if (moves.length === 1) { place(moves[0]); return; }
   if (moves.length > 1) showPickMenu(moves, cx, cy);
+  else if (touch()) tipAt(tipFor(id), cx, cy);
 }
 function place(m) {
   closePickMenu();
+  // A second tap on the same place, before the first has been answered, is the same tap.
+  if (G.placing === m.pick) return;
+  G.placing = m.pick;
   postMove(m.move).then(r => {
+    G.placing = null;
     if (r?.ok && G.selected) {
       // Stay in the mode only while more of the piece can really be placed.
       setTimeout(() => {
@@ -367,8 +475,8 @@ function showPickMenu(moves, cx, cy) {
   const m = G.ui.pickmenu;
   fill(m, moves.map(x => h("button", { class: "act", onclick: () => place(x) }, capital(x.kind), x.cost?.length ? costOf(x.cost) : null)));
   m.hidden = false;
-  m.style.left = `${Math.min(cx + 12, innerWidth - 200)}px`;
-  m.style.top = `${Math.max(cy - 40, 8)}px`;
+  m.style.left = `${Math.max(8, Math.min(cx + 12, innerWidth - m.offsetWidth - 8))}px`;
+  m.style.top = `${Math.max(8, Math.min(cy - 40, innerHeight - m.offsetHeight - 8))}px`;
 }
 
 /** What a hover on the board shows. Details stay here until asked for. */
@@ -405,15 +513,27 @@ function tipFor(id) {
     m.cost?.length ? h("div", { class: "row" }, "Costs ", costOf(m.cost)) : null,
     m.yields?.length ? h("div", { class: "row" }, m.yields.map(y => h("span", {}, resIcon(y.res, "res small"), ` ${y.number} `, h("span", { class: "pips" }, "•".repeat(y.pips))))) : null];
 }
+function placeTip(x, y) {
+  const tip = G.ui.tip, w = tip.offsetWidth, ht = tip.offsetHeight;
+  tip.style.left = `${Math.max(8, Math.min(x + 16, innerWidth - w - 8))}px`;
+  tip.style.top = `${Math.max(Math.min(y - ht - 12, innerHeight - ht - 8), 8)}px`;
+}
 function onHover(id, x, y) {
   const tip = G.ui?.tip; if (!tip) return;
   if (id !== G.tipId) { G.tipId = id; const kids = tipFor(id); tip.hidden = !kids; if (kids) fill(tip, kids); }
-  if (!tip.hidden) {
-    const w = tip.offsetWidth, ht = tip.offsetHeight;
-    tip.style.left = `${Math.min(x + 16, innerWidth - w - 8)}px`;
-    tip.style.top = `${Math.max(Math.min(y - ht - 12, innerHeight - ht - 8), 8)}px`;
-  }
+  if (!tip.hidden) placeTip(x, y);
 }
+/** What a mouse shows on hover, a finger gets on a tap. It stays a few seconds, or until the next tap. */
+function tipAt(kids, x, y) {
+  const tip = G.ui?.tip; if (!tip) return;
+  clearTimeout(G.tipTimer);
+  tip.hidden = !kids;
+  if (!kids) return;
+  fill(tip, kids);
+  placeTip(x, y);
+  G.tipTimer = setTimeout(closeTip, 3500);
+}
+function closeTip() { clearTimeout(G.tipTimer); if (G.ui?.tip) G.ui.tip.hidden = true; }
 
 // ---------------------------------------------------------------- game screen
 async function gameScreen(code) {
@@ -441,16 +561,23 @@ async function gameScreen(code) {
     center: h("div"),
   };
   U.sheet = h("div", { class: "sheet", onscroll: () => { if (U.sheet.firstChild === U.constitution) G.constitutionTop = U.sheet.scrollTop; } });
-  U.dock.append(h("button", { class: "x", title: "Close (Esc)", "aria-label": "Close", onclick: () => closeDock(true) }, uiIcon("close")), U.sheet);
+  U.grab = h("div", { class: "grab", "aria-hidden": "true" });
+  U.dock.append(U.grab, h("button", { class: "x", title: "Close (Esc)", "aria-label": "Close", onclick: () => closeDock(true) }, uiIcon("close")), U.sheet);
   buildDraftDesk();
   buildLedge();
+  U.crown = h("div", { class: "crown" }, U.houses, h("div", { class: "heraldry" }, U.herald, U.caption));
   app.replaceChildren(h("div", { class: "stage" }, canvas, svg, h("div", { class: "vignette" })),
-    h("div", { class: "crown" }, U.houses, h("div", { class: "heraldry" }, U.herald, U.caption)), U.slips, U.prompt, U.declared, U.ledge, U.replayBar, U.dock, U.rail, U.menu, U.pickmenu, U.tip, U.center);
-  G.player = await loadPlayer(canvas);
-  if (G.player) { G.player.onPick = onPick; G.player.onHover = onHover; } else G.use3d = false;
+    U.crown, U.slips, U.prompt, U.declared, U.ledge, U.replayBar, U.dock, U.rail, U.menu, U.pickmenu, U.tip, U.center);
+  bindTouch();
+  followKeyboard();
+  // A person who chose the 2D board, or whose device could not draw the 3D table, starts with it.
+  if (store.get("charter.board2d")) G.use3d = false;
+  // The table opens before the 3D player has arrived. The 2D board stands in if the wait is long.
+  if (G.use3d) startPlayer();
   applyMode();
   addEventListener("resize", updateInsets);
   addEventListener("keydown", onKey);
+  if (typeof ResizeObserver === "function") { const watch = new ResizeObserver(() => updateInsets()); watch.observe(U.ledge); watch.observe(U.rail); watch.observe(U.crown); }
   setInterval(renderClock, 1000);
   // A draft that was running before a reload is still running on the server.
   G.words = store.get(`charter.words.${code}`) || "";
@@ -459,19 +586,106 @@ async function gameScreen(code) {
   if (params.has("replay")) { startReplay(true); return; }
   poll();
 }
-function applyMode() {
-  const U = G.ui;
+const PLAYER_WAIT_MS = 600;
+function startPlayer() {
+  if (G.playerLoad) return G.playerLoad;
+  G.boardShown3D = false;
+  const late = setTimeout(() => { G.showStandIn = true; applyMode(); }, PLAYER_WAIT_MS);
+  return (G.playerLoad = loadPlayer(G.ui.canvas).then(p => {
+    clearTimeout(late);
+    G.playerLoad = null;
+    if (!p) { G.use3d = false; applyMode(); renderMenu(); return null; }
+    G.player = p;
+    p.onPick = onPick; p.onHover = onHover;
+    p.onTooSlow = () => {
+      // Even the lowest tier cannot keep up. The 2D board shows the same game, and it can be changed back.
+      store.set("charter.board2d", "1");
+      G.use3d = false; applyMode(); renderMenu();
+      caption("This device draws the 3D table slowly, so this is the 2D board. The menu can change it back.");
+    };
+    applyMode();
+    return p;
+  }));
+}
+/** Which board can be seen now. Until the 3D player has drawn, the 2D board stands in. */
+const showing3D = () => G.use3d && !!G.player && G.boardShown3D;
+function showBoard3D() {
+  if (G.boardShown3D || !G.use3d) return;
+  G.boardShown3D = true;
+  showBoards();
+}
+function showBoards() {
+  const U = G.ui, three = showing3D(), standIn = !three && (!G.use3d || G.showStandIn);
+  // The canvas is drawn on behind the stand-in until its first scene has arrived.
   U.canvas.style.display = G.use3d ? "block" : "none";
-  U.svg.style.display = G.use3d ? "none" : "block";
+  U.svg.style.display = standIn ? "block" : "none";
+  G.player?.setPaused(!G.use3d);
   updateInsets();
-  if (G.view) { if (G.use3d) refreshScene(); else renderBoard2D(U.svg, G.view, seatColor, onPick); }
+  return standIn;
+}
+function applyMode() {
+  const standIn = showBoards();
+  if (G.view) { if (G.use3d) refreshScene(); if (standIn) renderBoard2D(G.ui.svg, G.view, seatColor, onPick); }
+}
+/** The things a tap can do on a phone that a pointer does by hovering. */
+function bindTouch() {
+  const U = G.ui;
+  // Pulling the sheet's top edge down puts it away.
+  let pull = null;
+  U.grab.addEventListener("pointerdown", e => { U.grab.setPointerCapture(e.pointerId); pull = { y: e.clientY, t: performance.now(), dy: 0 }; U.dock.classList.add("pulled"); });
+  U.grab.addEventListener("pointermove", e => {
+    if (!pull) return;
+    pull.dy = Math.max(0, e.clientY - pull.y);
+    U.dock.style.transform = `translateY(${pull.dy}px)`;
+  });
+  const letGo = e => {
+    if (!pull) return;
+    const fast = pull.dy / Math.max(1, performance.now() - pull.t) > .6, far = pull.dy > Math.min(110, U.dock.offsetHeight / 3);
+    U.dock.classList.remove("pulled");
+    U.dock.style.transform = "";
+    if (e.type === "pointerup" && pull.dy > 8 && (fast || far)) closeDock(true);
+    pull = null;
+  };
+  U.grab.addEventListener("pointerup", letGo);
+  U.grab.addEventListener("pointercancel", letGo);
+  if (!touch()) return;
+  // A tap on nothing in particular closes what a tap opened.
+  addEventListener("pointerdown", e => {
+    if (!e.target.closest?.(".tip")) closeTip();
+    if (G.openBanner != null && !e.target.closest?.(".banner")) { G.openBanner = null; renderHouses(); }
+  }, { capture: true, passive: true });
+  // A banner opens to what that seat holds.
+  U.houses.addEventListener("click", e => {
+    const b = e.target.closest(".banner");
+    if (!b) return;
+    const s = Number(b.dataset.key);
+    G.openBanner = G.openBanner === s ? null : s;
+    renderHouses();
+  });
+  // A card says what it is. A piece that cannot be built says why: a disabled button takes no tap, so the tap
+  // lands on the row, and the row asks which button is there.
+  U.hand.addEventListener("click", e => {
+    const c = e.target.closest(".rcard");
+    if (c) tipAt([h("h4", {}, capital(c.dataset.res)), h("div", { class: "row" }, c.title)], e.clientX, e.clientY);
+  });
+  U.tray.addEventListener("click", e => {
+    if (e.target !== U.tray) return;
+    const off = [...U.tray.children].find(t => { const r = t.getBoundingClientRect(); return t.disabled && e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom; });
+    if (off) tipAt([h("h4", {}, off.querySelector(".nm")?.textContent), h("div", { class: "row" }, off.title)], e.clientX, e.clientY);
+  });
 }
 
 async function poll() {
   clearTimeout(G.polling);
+  const seq = ++G.pollSeq;
   try {
     const q = new URLSearchParams({ since: G.version, described: G.view?.described ?? 0 });
     const v = await api(`/api/games/${G.code}/view?${q}`);
+    // A newer request has started since this one left. Its answer is the one that counts.
+    if (seq !== G.pollSeq) return;
+    G.lostTries = 0;
+    G.quiet = v?.unchanged ? G.quiet + 1 : 0;
+    if (G.sceneFailed) refreshScene();
     if (G.lost) { G.lost = false; caption(""); }
     if (v && v.talkCount != null && v.talkCount !== G.talkCount) fetchTalk();
     if (v && "turnLeftMs" in v) { G.turnEnd = v.turnLeftMs == null ? null : performance.now() + v.turnLeftMs; renderClock(); }
@@ -487,10 +701,32 @@ async function poll() {
       else afterView(prev, v);
       if (v.phase === "ended" && !G.token && !G.replay) { startReplay(false); return; }
     }
-  } catch (e) { if (!G.lost) { G.lost = true; caption("Lost contact with the table. Trying again.", true); } }
-  const wait = pollWait(700);
+  } catch (e) {
+    if (seq !== G.pollSeq) return;
+    G.lostTries++;
+    if (!G.lost) { G.lost = true; caption("Lost contact with the table. Trying again.", true); }
+  }
+  const wait = pollWait(calmWait());
   if (wait != null) G.polling = setTimeout(poll, wait);
 }
+// How long until the next look at the table. A table that keeps saying nothing has changed gets asked less
+// often, and any touch brings the pace back at once. With no connection, it tries less and less often.
+const POLL_MS = 700, CALM_MS = 2500, OTHERS_TURN_MS = 1400, TOUCH_KEEPS_MS = 8000, LOST_MAX_MS = 10000;
+let lastTouch = performance.now();
+function calmWait() {
+  if (G.lostTries) return Math.min(LOST_MAX_MS, 1000 * 2 ** (G.lostTries - 1));
+  if (performance.now() - lastTouch < TOUCH_KEEPS_MS || G.quiet < 4) return POLL_MS;
+  const v = G.view, cap = v && v.turn !== v.you ? OTHERS_TURN_MS : CALM_MS;
+  return Math.min(cap, POLL_MS * 1.35 ** (G.quiet - 3));
+}
+for (const kind of ["pointerdown", "keydown"]) addEventListener(kind, () => {
+  const calm = performance.now() - lastTouch >= TOUCH_KEEPS_MS;
+  lastTouch = performance.now();
+  // Coming back after a quiet spell: look now rather than at the end of the long wait.
+  if (calm && G.code && !G.replay && !G.lost && !document.hidden && G.quiet >= 4) { G.quiet = 0; clearTimeout(G.polling); G.polling = setTimeout(poll, 0); }
+}, { capture: true, passive: true });
+addEventListener("online", () => { if (G.code && !G.replay) { G.lostTries = 0; poke(); } });
+addEventListener("offline", () => { if (G.code && !G.replay) { G.lost = true; caption("No connection. The table will come back when you do.", true); } });
 // A hidden tab is someone who may come straight back, so it polls slowly and still counts as a person at
 // the table (the server's limit is CHARTER_TABLE_AWAY_MS, 3 minutes). After 10 minutes hidden it stops, so
 // a forgotten tab lets the table pause and the server sleep. Showing the tab again gets the whole view.
@@ -510,6 +746,8 @@ document.addEventListener("visibilitychange", () => {
 
 /** Everything that follows a new view. */
 function afterView(prev, v) {
+  G.ending = false;
+  G.ui.endTurn.classList.remove("busy");
   if (G.selected && !(v.pieceDefs || []).some(d => d.name === G.selected && d.spots > 0)) G.selected = null;
   if (v.turn !== prev?.turn) closePickMenu();
   const newLaw = trackDecisions(v);
@@ -534,7 +772,7 @@ function renderAll() {
   if (!G.view) return;
   applyLook(G.view.look);
   renderHouses(); renderHerald(); renderLedge(); renderPrompt(); renderSlips(); renderRail(); renderDock(); renderCenter();
-  if (!G.use3d) renderBoard2D(G.ui.svg, G.view, seatColor, onPick);
+  if (!showing3D() && (!G.use3d || G.showStandIn)) renderBoard2D(G.ui.svg, G.view, seatColor, onPick);
   updateInsets();
 }
 
@@ -556,7 +794,7 @@ function renderHouses() {
     const held = Object.entries(s.hand || {}).filter(([r, n]) => n > 0 && v.resources.includes(r));
     const built = Object.entries(s.pieces || {}).filter(([, n]) => n > 0);
     const drafting = (v.drafting || []).includes(s.seat);
-    return h("div", { "data-key": s.seat, class: "banner" + (v.turn === s.seat && v.phase !== "ended" ? " turn" : "") + (v.winner === s.seat ? " won" : "") + (s.seat === v.you ? " you" : ""), tabindex: 0, "aria-label": `${s.name}, ${plural(s.points, "point")}` },
+    return h("div", { "data-key": s.seat, class: "banner" + (v.turn === s.seat && v.phase !== "ended" ? " turn" : "") + (v.winner === s.seat ? " won" : "") + (s.seat === v.you ? " you" : "") + (G.openBanner === s.seat ? " open" : ""), tabindex: 0, "aria-label": `${s.name}, ${plural(s.points, "point")}` },
       cloth,
       drafting ? h("span", { class: "quillmark", title: "Drafting a rule" }, uiIcon("quill")) : null,
       h("span", { class: "name" }, s.seat === v.you ? "You" : s.name.replace(/^Bot /, "")),
@@ -618,9 +856,15 @@ function buildLedge() {
 function endTurn() {
   const end = (G.view?.legalMoves || []).find(m => m.move.t === "endTurn");
   if (!end) return;
+  if (G.ending) return;
   G.selected = null;
   if (G.dock?.t === "trade") closeDock();
-  postMove(end.move);
+  // Until the table has moved on, the button shows that it is on its way, and a second tap does nothing.
+  G.ending = true;
+  postMove(end.move).then(r => {
+    G.ending = !!r?.ok && G.view?.turn === G.view?.you;
+    G.ui.endTurn.classList.toggle("busy", G.ending);
+  });
 }
 /** A good no hex pays, such as a laurel, stays off the screen until someone holds it. */
 function goodsInPlay(v) {
@@ -648,7 +892,7 @@ function renderLedge() {
       const enabled = d.spots > 0, sel = G.selected === d.name, made = d.made;
       const why = !enabled && d.short?.length ? `Need ${costText(d.short)}` : !enabled ? (d.owned >= d.limit ? `All ${d.limit} built` : "No place for one") : `${capital(d.name)}: ${costText(d.cost)}. ${plural(d.spots, "place")}.`;
       tools.push(h("button", { "data-key": d.name, class: "tool" + (sel ? " selected" : ""), disabled: !enabled, title: why, "aria-pressed": sel ? "true" : "false", "aria-label": why,
-        onclick: () => selectPiece(d.name), onpointerenter: e => { if (e.pointerType === "mouse") previewCost(d.name); }, onpointerleave: () => previewCost(null), onfocus: () => previewCost(d.name), onblur: () => previewCost(null) },
+        onclick: () => selectPiece(d.name), onpointerenter: e => { if (e.pointerType === "mouse") previewCost(d.name); }, onpointerleave: () => previewCost(null), onfocus: () => { if (!touch()) previewCost(d.name); }, onblur: () => previewCost(null) },
         pieceIcon(made ? "made" : d.name),
         h("span", { class: "nm" }, capital(d.name)),
         !enabled && d.short?.length ? h("span", { class: "need" }, d.short.map(x => h("span", {}, `${x.n}`, resIcon(x.res, "res")))) : null));
@@ -703,7 +947,7 @@ function renderPrompt() {
   if (atTarget && !G.selected) { p.textContent = `${nameOf(atTarget.seat)} reached the target. The next build, trade or vote ends the game.`; p.hidden = false; return; }
   if (G.selected) {
     const d = (v.pieceDefs || []).find(x => x.name === G.selected);
-    fill(p, `${capital(G.selected)}: `, costOf(d?.cost), `. Pick a glowing place, or Esc.`);
+    fill(p, `${capital(G.selected)}: `, costOf(d?.cost), touch() ? ". Pick a glowing place." : ". Pick a glowing place, or Esc.");
     p.hidden = false; return;
   }
   if (v.turn === v.you && v.prompt) {
@@ -759,7 +1003,12 @@ function renderMenu() {
     v.game?.name ? h("div", {}, h("strong", {}, v.game.name), `. ${v.game.blurb}`) : null,
     h("div", {}, `First to ${v.target ?? 10} points, within ${v.rounds ?? 30} rounds.`),
     !G.replay && v.phase !== "lobby" && v.seats.every(x => x.kind !== "human") ? h("a", { class: "link", href: `/?game=${v.code}&replay=1` }, "Replay from the start") : null,
-    G.player ? h("button", { class: "link", style: { textAlign: "left" }, onclick: () => { G.use3d = !G.use3d; applyMode(); renderMenu(); } }, G.use3d ? "Use the 2D board" : "Use the 3D table") : null,
+    h("button", { class: "link", style: { textAlign: "left" }, onclick: () => {
+      G.use3d = !G.use3d;
+      if (G.use3d) { store.del("charter.board2d"); G.player?.setPaused(false); G.boardShown3D = false; if (!G.player) startPlayer(); }
+      else store.set("charter.board2d", "1");
+      applyMode(); renderMenu();
+    } }, G.use3d ? "Use the 2D board" : "Use the 3D table"),
     h("details", { class: "formal" }, h("summary", {}, "Dice fingerprint"), h("div", { class: "fine" }, v.fingerprint)),
     h("a", { class: "link", href: "/" }, "Leave for the title page"));
 }
@@ -769,7 +1018,7 @@ function openDock(d) {
   G.dock = d;
   G.menu = false; renderMenu();
   renderDock(); renderRail(); renderPrompt(); renderLedge(); updateInsets();
-  if (d.t === "draft") setTimeout(() => G.ui.words.focus(), 60);
+  if (d.t === "draft" && !touch()) setTimeout(() => G.ui.words.focus(), 60);
 }
 function toggleDock(d) {
   if (G.dock?.t === d.t && (d.id == null || G.dock.id === d.id)) closeDock(true); else openDock(d);
@@ -778,11 +1027,14 @@ function closeDock(byHand) {
   if (byHand && G.dock?.t === "vote") G.dismissed = G.dock.id;
   G.dock = null;
   G.ui.dock.classList.remove("open");
+  G.ui.ledge.classList.remove("sheetup");
   renderRail(); renderPrompt(); renderLedge(); updateInsets();
 }
 function renderDock() {
   const U = G.ui, d = G.dock;
+  if (d && !U.dock.classList.contains("open")) closeTip();
   U.dock.classList.toggle("open", !!d);
+  U.ledge.classList.toggle("sheetup", !!d);
   if (!d) return;
   const keep = U.sheet.scrollTop;
   if (d.t === "draft") { if (U.sheet.firstChild !== U.desk) { fill(U.sheet, U.desk); U.growWords(); } renderDraft(); return; }
@@ -823,7 +1075,7 @@ function declareDoc() {
   const v = G.view, d = v.declarations;
   const mine = r => (d.rows.find(x => x.seat === v.you && x.res === r)?.n) || 0;
   const row = r => {
-    const box = h("input", { type: "number", min: "0", max: String(d.max), value: String(mine(r)), "aria-label": `Number to declare for ${r}` });
+    const box = h("input", { type: "number", inputmode: "numeric", min: "0", max: String(d.max), value: String(mine(r)), "aria-label": `Number to declare for ${r}` });
     const send = () => {
       const n = Math.max(0, Math.min(d.max, Math.floor(Number(box.value) || 0)));
       postMove({ t: "declare", res: r, n });
@@ -1243,10 +1495,10 @@ const CARD_GAP_MS = 70;  // between one card and the next
 const LAND_MS = 300;     // a new piece's fall in the 3D table, from the view until it meets the board
 const MANY_CARDS = 4;    // a payout this big is a payday
 
-const boardEl = () => G.use3d ? G.ui.canvas : G.ui.svg;
+const boardEl = () => showing3D() ? G.ui.canvas : G.ui.svg;
 /** Where a point on the board is on the screen, on either board. */
 function boardPoint(at, height = 0.35) {
-  if (G.use3d) return G.player?.worldToScreen(at.x, height, at.y);
+  if (showing3D()) return G.player.worldToScreen(at.x, height, at.y);
   const m = G.ui.svg.getScreenCTM();
   return m && { x: m.a * at.x * SCALE + m.e, y: m.d * at.y * SCALE + m.f };
 }
@@ -1471,7 +1723,7 @@ function renderTrade() {
   const others = v.seats.filter(s => s.seat !== v.you);
   const pick = (key, label) => h("div", { class: "pickrow" }, h("span", { class: "lbl" }, label),
     goodsInPlay(v).map(r => h("button", { class: f[key] === r ? "on" : "", title: capital(r), "aria-label": r, onclick: () => { f[key] = r; renderTrade(); } }, resIcon(r, "res"))),
-    h("input", { class: "num", type: "number", min: 1, value: f[key + "N"], "aria-label": `${label} amount`, onchange: e => { f[key + "N"] = Number(e.target.value) || 1; } }));
+    h("input", { class: "num", type: "number", inputmode: "numeric", min: 1, value: f[key + "N"], "aria-label": `${label} amount`, onchange: e => { f[key + "N"] = Number(e.target.value) || 1; } }));
   const repeat = Number(f.rounds) > 1;
   const canOffer = f.give && f.get && f.give !== f.get || (f.give && f.get && repeat);
   fill(U.sheet, h("div", { class: "tradesheet" },
@@ -1487,7 +1739,7 @@ function renderTrade() {
         h("select", { "aria-label": "To", onchange: e => { f.to = e.target.value; renderTrade(); } },
           repeat ? null : h("option", { value: "", selected: f.to === "" ? true : null }, "To anyone"),
           others.map(s => h("option", { value: s.seat, selected: String(f.to) === String(s.seat) ? true : null }, `To ${s.name}`))),
-        h("span", {}, "Rounds"), h("input", { class: "num", type: "number", min: 1, value: f.rounds, title: "1 is a single trade. More is a deal, paid each round from a deposit.", onchange: e => { f.rounds = Math.max(1, Number(e.target.value) || 1); if (f.rounds > 1 && f.to === "") f.to = others[0]?.seat ?? ""; renderTrade(); } })),
+        h("span", {}, "Rounds"), h("input", { class: "num", type: "number", inputmode: "numeric", min: 1, value: f.rounds, title: "1 is a single trade. More is a deal, paid each round from a deposit.", onchange: e => { f.rounds = Math.max(1, Number(e.target.value) || 1); if (f.rounds > 1 && f.to === "") f.to = others[0]?.seat ?? ""; renderTrade(); } })),
       repeat ? h("div", { class: "note-line", style: { margin: 0 } }, "A deal. It binds only those who sign, and pays each round from a deposit.") : null,
       h("button", { class: "act gold", disabled: !canOffer, onclick: () => submitOffer() }, repeat ? "Propose the deal" : "Make the offer"))));
 }
@@ -1525,7 +1777,9 @@ async function submitDraft(sample) {
   const gen = G.draftGen;
   G.draft = { stage: "sent", words, elapsedMs: 0, quietMs: 0, text: "", thinking: "", attempt: 1, optimistic: true };
   renderDraft(); renderRail();
-  const r = await api(`/api/games/${G.code}/draft`, sample ? { token: G.token, sample } : { token: G.token, words });
+  let r;
+  try { r = await api(`/api/games/${G.code}/draft`, sample ? { token: G.token, sample } : { token: G.token, words }); }
+  catch { r = { ok: false, error: NO_SERVER }; }
   if (gen !== G.draftGen) return;
   if (r.ok === false) { G.draft = { outcome: "failed", reason: r.error, words }; renderDraft(); return; }
   G.draft = r;
@@ -1541,7 +1795,9 @@ async function askSuggestion() {
   setWords("");
   G.draft = { stage: "sent", mode: "suggest", words: "", elapsedMs: 0, quietMs: 0, text: "", thinking: "", attempt: 1, optimistic: true };
   renderDraft(); renderRail();
-  const r = await api(`/api/games/${G.code}/suggest`, { token: G.token });
+  let r;
+  try { r = await api(`/api/games/${G.code}/suggest`, { token: G.token }); }
+  catch { r = { ok: false, error: NO_SERVER }; }
   if (gen !== G.draftGen) return;
   if (r.ok === false) { G.draft = { outcome: "failed", mode: "suggest", reason: r.error, words: "" }; renderDraft(); return; }
   G.draft = r;
@@ -1598,7 +1854,7 @@ async function cancelDraft() {
   clearTimeout(G.draftPolling);
   if (G.draft?.mode === "suggest" && !G.ui.words.value.trim()) setWords(G.wordsBefore || "");
   G.draft = null;
-  api(`/api/games/${G.code}/draft-cancel`, { token: G.token });
+  api(`/api/games/${G.code}/draft-cancel`, { token: G.token }).catch(() => {});
   renderDraft(); renderRail();
   G.ui.words.focus();
 }
@@ -1682,7 +1938,7 @@ function lastSentences(t) {
 async function proposeDraft(text) {
   const r = await post("propose", { text });
   if (!r?.ok) return;
-  await api(`/api/games/${G.code}/draft-clear`, { token: G.token });
+  await api(`/api/games/${G.code}/draft-clear`, { token: G.token }).catch(() => {});
   G.draft = null;
   G.ui.words.value = "";
   store.del(`charter.words.${G.code}`);
@@ -1773,4 +2029,6 @@ function onKey(e) {
 
 if (params.has("debug")) window.G = G;
 const code = params.get("game");
+// This page has all its files, so a later deploy may reload it once more.
+try { sessionStorage.removeItem("charter.reloaded"); } catch {}
 if (code) gameScreen(code.toUpperCase()); else lobby();

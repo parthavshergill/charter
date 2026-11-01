@@ -2,19 +2,34 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#150d07">
+<base href="/v/BUILD/">
 <title>Charter</title>
-<link rel="stylesheet" href="app.css">
 <script>
+// Every file below comes from this one version's folder, which the server names when it sends this page, so
+// old and new files cannot mix. If a deploy has replaced the version since, a new page has all of it.
+function reloadOnce() { try { if (sessionStorage.getItem("charter.reloaded")) return; sessionStorage.setItem("charter.reloaded", "1"); } catch { return; } location.reload(); }
+const atTable = new URLSearchParams(location.search).has("game");
 // The title page only: its wordmark and tagline must not change font while the sheet opens.
-if (!new URLSearchParams(location.search).has("game"))
+if (!atTable)
   for (const f of ["grenze-gotisch-700-charter", "im-fell-english-italic"])
     document.head.append(Object.assign(document.createElement("link"), { rel: "preload", href: `fonts/${f}.woff2`, as: "font", type: "font/woff2", crossOrigin: "" }));
+// A table needs the 3D player at once. The title page asks for it after the form can be used.
+else for (const f of ["vendor/player.js", "vendor/meshfile.js", "vendor/vendor/three.module.min.js"])
+  document.head.append(Object.assign(document.createElement("link"), { rel: "modulepreload", href: f }));
 </script>
+<link rel="stylesheet" href="app.css" onerror="reloadOnce()">
+<link rel="modulepreload" href="app.js">
+<link rel="modulepreload" href="board2d.js">
+<link rel="modulepreload" href="icons.js">
+<link rel="modulepreload" href="feel.js">
+<link rel="modulepreload" href="look.js">
+<link rel="modulepreload" href="constitution.js">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M37.5 11.5Q38.8 2.8 44.9 3.8T57.5 4.1Q63.6 3.5 64.7 11.7Q71.1 3.6 74.3 7.4T82.3 13.2Q87 14.9 82.9 22.4Q88.9 22.7 90.3 28.8T94.6 41.1Q97.4 46.8 90.5 50.7Q100.3 55 97.3 60.7T92.7 73Q91.2 79.2 82.6 77.3Q84.8 83 80.4 84.6T72.8 90Q69.9 93.7 65.1 89.2Q64.1 99 57.4 98.4T43.4 98.6Q36.7 99.2 36.1 88.1Q30.7 93.4 27.3 89.4T18.9 83.2Q14.1 81.1 15.7 75.9Q8.1 77.3 7.3 71.9T3.4 61.5Q.5 56.9 9.1 52.9Q1.5 48.9 4.1 42.6T8.5 29Q10.1 22.4 17.4 22.7Q13.6 15 18.6 13.1T27.5 7Q31.2 3.1 37.5 11.5z' fill='%238f1f17'/%3E%3Ccircle cx='50' cy='50' r='30' fill='%237c1812'/%3E%3Cpolygon points='50,31 66.5,40.5 66.5,59.5 50,69 33.5,59.5 33.5,40.5' fill='%23b23a2e'/%3E%3C/svg%3E">
 </head>
 <body>
 <div id="app"></div>
-<script type="module" src="app.js"></script>
+<script type="module" src="app.js" onerror="reloadOnce()"></script>
 </body>
 </html>

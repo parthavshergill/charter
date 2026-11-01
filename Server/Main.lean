@@ -152,6 +152,15 @@ def proposalText (body : Json) (seat : Nat) : Except String String := do
     return Rules.printProposal (.deal (Rules.formDeal seat other rounds notice give giveN get))
   throw "a proposal needs text, a sample or a deal form"
 
+/-- A scene stream, or nothing if the client says it has these bytes already. Most of what changes a
+table changes no picture, and a late scene is the largest thing a table sends. -/
+def respondScene (req : Req) (bytes : ByteArray) : Async Resp := do
+  let tag := hexOf (hash bytes)
+  if req.line.uri.query.get "have" == some tag then
+    respond .noContent sceneType .empty
+  else
+    respond .ok sceneType bytes [("X-Scene-Tag", tag)]
+
 /-- How many real tokens this table's Claude seats spent, from its seat log. Only for a finished table
 with Claude seats: anything else has no such line. It is a record of what happened, and no rule reads it. -/
 def realTokens (ctx : Ctx) (code : String) (g : Game) : IO Json := do
@@ -251,10 +260,10 @@ def route (ctx : Ctx) (req : Req) : ContextAsync Resp := do
         | .error err => respondErr err
         | .ok g =>
           let s := g.state.getD (emptyBoard g.spec)
-          respond .ok "application/octet-stream" (Scene.sceneBytes g.spec.layout s none .none)
+          respondScene req (Scene.sceneBytes g.spec.layout s none .none)
       | none =>
         let s := e.game.state.getD (emptyBoard e.game.spec)
-        respond .ok "application/octet-stream" (Scene.sceneBytes e.game.spec.layout s (seatOf e token) show_)
+        respondScene req (Scene.sceneBytes e.game.spec.layout s (seatOf e token) show_)
     | "draft", false =>
       let some e ← findEntry ctx code | respondErr s!"no game {code}" .notFound
       let some seat := seatOf e token | respondErr "bad or missing token" .unauthorized
@@ -346,18 +355,19 @@ def route (ctx : Ctx) (req : Req) : ContextAsync Resp := do
         return Json.mkObj [("t", "exit"), ("seat", toJson seat), ("dealId", toJson id)]
     | _, _ => respondErr "unknown route" .notFound
   | ["api", "island"] =>
-    respond .ok "application/octet-stream" (Scene.sceneBytes islandSpec.layout (emptyBoard islandSpec) none .none)
+    respond .ok sceneType (Scene.sceneBytes islandSpec.layout (emptyBoard islandSpec) none .none)
   | ["api", "defs"] =>
     respondJson (Json.arr (gameSpecs.map fun d =>
       Json.mkObj [("id", d.id), ("name", d.name), ("blurb", d.blurb), ("minSeats", toJson d.minSeats),
         ("maxSeats", toJson d.maxSeats), ("look", View.lookJson d.layout.theme)]).toArray)
   | ["api", "defs", id, "scene"] =>
     match specOf? (some id) with
-    | some d => respond .ok "application/octet-stream" (Scene.sceneBytes d.layout (emptyBoard d) none .none)
+    | some d => respond .ok sceneType (Scene.sceneBytes d.layout (emptyBoard d) none .none)
     | none => respondErr "unknown game" .notFound
   | "api" :: _ => respondErr "unknown route" .notFound
   | ["assets", name] => serveMeshFile (ctx.webRoot.parent.getD ".") name meshFolderOf
-  | rest => serveStatic ctx.webRoot rest
+  | "v" :: build :: rest => serveBuild ctx.webRoot build rest
+  | rest => serveStatic req ctx.webRoot rest
 
 def handler (ctx : Ctx) (req : Req) : ContextAsync Resp := do
   try
