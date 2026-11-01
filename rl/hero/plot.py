@@ -144,22 +144,27 @@ def draw(theme_name, rows, sonnet, out_paths):
         ax.text(x + 1.0, ly, f"{y:.0f}%  {LABEL[o]}", color=t["ink"], fontsize=14, ha="left", va="center",
                 fontweight="bold" if o == "hand" else "normal")
 
-    # Sonnet points
-    for arm, marker, fill in (("restricted", "D", True), ("full", "D", False)):
-        pts = [r for r in sonnet if r["arm"] == arm]
+    # Sonnet points (Island only): diamonds with their 95% intervals; labels join the line labels on the right
+    for arm, fill in (("restricted", True), ("full", False)):
+        pts = sorted((r for r in sonnet if r["arm"] == arm), key=lambda r: r["steps"])
         for r in pts:
             lo, hi = wilson(r["wins"], r["games"])
-            p = 100 * r["wins"] / r["games"]
-            x = r["steps"] / M + (0.9 if arm == "full" else 0)
-            ax.errorbar([x], [p], yerr=[[p - 100 * lo], [100 * hi - p]], fmt=marker, ms=10, color=t["sonnet"],
-                        mfc=t["sonnet"] if fill else t["bg"], mec=t["sonnet"], mew=2, elinewidth=1.6, capsize=4,
-                        zorder=5)
+            y = 100 * r["wins"] / r["games"]
+            x = r["steps"] / M + (1.2 if arm == "full" else 0)
+            ax.plot([x, x], [100 * lo, 100 * hi], color=t["sonnet"], lw=1.4, alpha=0.45, zorder=4,
+                    solid_capstyle="round")
+            ax.plot([x], [y], "D", ms=10, color=t["sonnet"], mfc=t["sonnet"] if fill else t["bg"], mec=t["sonnet"],
+                    mew=2, zorder=6)
+            ax.text(x + 0.9, y, f"{r['wins']}/{r['games']}", color=t["sonnet"], fontsize=11, va="center",
+                    ha="left", zorder=6)
         if pts:
-            r = max(pts, key=lambda r: r["steps"])
-            n = sum(q["games"] for q in pts)
-            name = "vs 3 Sonnet, same moves as the bot" if arm == "restricted" else "vs 3 Sonnet, full game"
-            ax.text(r["steps"] / M + (2.2 if arm == "full" else 1.3), 100 * r["wins"] / r["games"],
-                    f"{name}\n({n} games, wide bars)", color=t["sonnet"], fontsize=12, va="center")
+            r = pts[-1]
+            y = 100 * r["wins"] / r["games"]
+            ly = max(min([y] + [q - 6 for q in placed]), 5)
+            placed.append(ly)
+            name = "vs 3 Sonnet, same moves" if arm == "restricted" else "vs 3 Sonnet, full game"
+            ax.text(last_x + 1.0, ly, f"{y:.0f}%  {name}\n       (Island, {r['games']} games: wide bars)", color=t["sonnet"],
+                    fontsize=13, ha="left", va="center")
 
     ax.annotate("start: imitation of\nour rule-based bot", xy=(0, 100 * main["hand"][0][1]) if main["hand"] else (0, 10),
                 xytext=(1.5, 36), color=t["ink2"], fontsize=12,
@@ -220,8 +225,8 @@ def draw(theme_name, rows, sonnet, out_paths):
             "Our bot never proposes laws, talks or trades with players; it votes by the rule-based bot's rule.\n"
             "Wins at the round limit (most of them on the 10-round worlds) don't count as strength.")
     if sonnet:
-        foot += ("\nSonnet points: Claude Sonnet subagents playing seats over HTTP; 'same moves' limits them in code "
-                 "to the bot's moves, 'full game' lets them talk, trade and propose laws.")
+        foot += ("\nSonnet: three Claude Sonnet seats on Tutorial Island, our bot in every seat in turn. 'Same moves': "
+                 "the seat client gives Sonnet only our bot's moves (build, bank trade, end turn).")
     fig.text(0.065, 0.025, foot, fontsize=11, color=t["muted"], va="bottom", linespacing=1.5)
     for p in out_paths:
         fig.savefig(p, facecolor=t["bg"], dpi=120)
