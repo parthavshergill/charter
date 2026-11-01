@@ -15,7 +15,8 @@ the API any other way.
 * `CHARTER_BUDGET_PER_IP_USD`, 100 by default: one IP address. There are no accounts, so an IP address
   stands for a person. The server keeps only a salted hash of it, in memory, and never logs it.
 
-The cost of a request is an estimate: the tokens the API reports, times the prices here. The check runs
+The cost of a request is an estimate: the tokens the API reports, times the prices of the model it went
+to. The check runs
 before a request and the charge comes after it, so requests already running can pass a budget by a
 little. When a budget is reached the game goes on, Claude seats pass their turns, and the clerk says
 that it is resting.
@@ -44,6 +45,13 @@ structure Prices where
   cacheWrite : Micros := 5000000
   deriving Inhabited
 
+/-- The list prices of `claude-haiku-5-5`, if it writes the law descriptions. That call uses no cache,
+so the two cache prices are only estimates, at the same ratios as Opus. -/
+def haikuPrices : Prices := { input := 100000, output := 500000, cacheRead := 5000, cacheWrite := 125000 }
+
+/-- The list prices of `claude-sonnet-5-5`. -/
+def sonnetPrices : Prices := { input := 2000000, output := 10000000, cacheRead := 200000, cacheWrite := 2500000 }
+
 structure Settings where
   enabled : Bool := false
   daily : Micros := 500000000
@@ -51,7 +59,10 @@ structure Settings where
   gamesPerDay : Nat := 500
   gamesPerIp : Nat := 100
   trustIpHeader : Bool := false
+  /-- For Opus, and for any model with no prices of its own, so that an unknown model is not undercounted. -/
   prices : Prices := {}
+  haiku : Prices := haikuPrices
+  sonnet : Prices := sonnetPrices
   salt : String := ""
   deriving Inhabited
 
@@ -83,6 +94,17 @@ def parseDollars (s : String) : Option Micros := do
 def costOf (p : Prices) (input cacheRead cacheWrite output : Nat) : Micros :=
   (input * p.input + cacheRead * p.cacheRead + cacheWrite * p.cacheWrite + output * p.output) / 1000000
 
+/-- The prices of this model. -/
+def Settings.pricesFor (s : Settings) (model : String) : Prices :=
+  if model.startsWith "claude-haiku" then s.haiku
+  else if model.startsWith "claude-sonnet" then s.sonnet
+  else s.prices
+
+#guard costOf ({} : Settings).haiku 1000000 0 0 1000000 == 600000
+#guard costOf (({} : Settings).pricesFor "claude-haiku-5-5") 1000 0 0 100 == 150
+#guard costOf (({} : Settings).pricesFor "claude-sonnet-5-5") 1000 0 0 100 == 3000
+#guard costOf (({} : Settings).pricesFor "claude-opus-5-5") 1000 0 0 100 == 6000
+#guard costOf (({} : Settings).pricesFor "a-model-from-next-year") 1000 0 0 100 == 6000
 #guard parseDollars "500" == some 500000000
 #guard parseDollars "0.20" == some 200000
 #guard parseDollars ".5" == some 500000
@@ -110,11 +132,11 @@ def configure (dataDir : System.FilePath) : IO Unit := do
   let num (k : String) (d : Nat) : IO Nat := do
     return ((← IO.getEnv k).bind String.toNat?).getD d
   let base : Settings := {}
-  let prices : Prices :=
-    { input := ← usd "CHARTER_PRICE_INPUT_USD" base.prices.input
-      output := ← usd "CHARTER_PRICE_OUTPUT_USD" base.prices.output
-      cacheRead := ← usd "CHARTER_PRICE_CACHE_READ_USD" base.prices.cacheRead
-      cacheWrite := ← usd "CHARTER_PRICE_CACHE_WRITE_USD" base.prices.cacheWrite }
+  let pricesFrom (name : String) (d : Prices) : IO Prices := do
+    return { input := ← usd s!"CHARTER_PRICE_{name}INPUT_USD" d.input
+             output := ← usd s!"CHARTER_PRICE_{name}OUTPUT_USD" d.output
+             cacheRead := ← usd s!"CHARTER_PRICE_{name}CACHE_READ_USD" d.cacheRead
+             cacheWrite := ← usd s!"CHARTER_PRICE_{name}CACHE_WRITE_USD" d.cacheWrite }
   settingsRef.set
     { enabled := true
       daily := ← usd "CHARTER_BUDGET_DAILY_USD" base.daily
@@ -122,7 +144,9 @@ def configure (dataDir : System.FilePath) : IO Unit := do
       gamesPerDay := ← num "CHARTER_GAMES_PER_DAY" base.gamesPerDay
       gamesPerIp := ← num "CHARTER_GAMES_PER_IP_DAY" base.gamesPerIp
       trustIpHeader := (← IO.getEnv "CHARTER_TRUST_CLIENT_IP").isSome
-      prices
+      prices := ← pricesFrom "" base.prices
+      haiku := ← pricesFrom "HAIKU_" base.haiku
+      sonnet := ← pricesFrom "SONNET_" base.sonnet
       salt := toHex (← randomBytes 16) }
   let log : EventLog.Log String ← EventLog.Log.open (dataDir / "_spend.ledger")
   ledgerRef.set (some log)
@@ -159,11 +183,11 @@ def resting? (table : String) : IO (Option String) := do
       return some s!"The clerk is resting until tomorrow. This connection has used its Claude budget for today. {rest}"
   return none
 
-/-- Count what a finished request cost. -/
-def charge (table : String) (input cacheRead cacheWrite output : Nat) : IO Unit := do
+/-- Count what a finished request cost, at the prices of the model it went to. -/
+def charge (table model : String) (input cacheRead cacheWrite output : Nat) : IO Unit := do
   let s ← settingsRef.get
   if !s.enabled then return
-  let cost := costOf s.prices input cacheRead cacheWrite output
+  let cost := costOf (s.pricesFor model) input cacheRead cacheWrite output
   if cost == 0 then return
   fresh
   countersRef.modify fun c =>

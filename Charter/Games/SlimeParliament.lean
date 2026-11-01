@@ -184,6 +184,7 @@ def fruiting : MonumentKind → List Part
   | .harvest => [m fbHarvest 0 0 0]
   | .build => [m fbBuild 0 0 0]
   | .roundEnd => [m fbRound 0 0 0]
+  | .roll => [m fbRoll 0 0 0]
   | .newPiece _ => [m fbPiece 0 0 0]
   | .repeal => [m fbRepeal 0 0 0]
 
@@ -256,7 +257,12 @@ def theme : Theme :=
           , ("vellum", "#e8ebcb"), ("vellum-2", "#dbe0b8"), ("vellum-3", "#c3ca98")
           , ("ink", "#1c2313"), ("ink-2", "#4a5336"), ("ink-3", "#737c58")
           , ("gold", "#d6e04a"), ("gold-2", "#eff37c"), ("gold-ink", "#1e2406")
-          , ("wax", "#8e1f5e"), ("wax-2", "#b83a80"), ("pale", "#e0e7c8"), ("pale-2", "#a7b18b") ]
+          , ("wax", "#8e1f5e"), ("wax-2", "#b83a80"), ("wax-0", "#6e1648"), ("pale", "#e0e7c8"), ("pale-2", "#a7b18b")
+          , ("sign-ink", "#4a1a5e"), ("act-hover", "#3c4c34"), ("act-hover-2", "#33402a"), ("field", "#f5f7df")
+          , ("bright", "#f8fbe6"), ("err-ink", "#fbf3f7"), ("tool-off", "#7d8768"), ("need", "#c7d0a6")
+          , ("good", "#2a6b2c"), ("stain", "#5a6a28")
+          , ("roll-0", "#525c36"), ("roll-1", "#6e7a48"), ("roll-2", "#8d9960"), ("roll-3", "#98a36c"), ("roll-4", "#a4af78")
+          , ("roll-5", "#b9c38e"), ("roll-6", "#ccd4a6"), ("roll-7", "#dbe0b8"), ("roll-8", "#eff2d2") ]
         marks := []
         quietPieces := ["tendril"]
         icons :=

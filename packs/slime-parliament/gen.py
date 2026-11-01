@@ -247,6 +247,9 @@ def fruiting_bodies():
     fruit("fb_bank", union(rod((0, 0, 0), (0, .17, 0), .013, .011, stalk), *[egg(0, .05 + .045 * i, 0, .068 - i * .009, .016, .068 - i * .009, mix(C(0x2B9E9A), C(0x9FE3C8), i / 3)) for i in range(4)]))
     fruit("fb_harvest", paint(carve(.02, blend(.02, rod((0, 0, 0), (0, .1, 0), .02, .02, stalk), egg(0, .16, 0, .085, .07, .085, C(0xE8862A))), egg(0, .2, 0, .068, .06, .068, C(0xFFD27A))),
                               lambda x, y, z, c: mix(c, C(0xFFE9B0), .7 * sstep(.14, .19, y) * sstep(.08, .05, sqrt(x * x + z * z)))))
+    speckled = lambda x, y, z, c: mix(c, C(0x6B2FA0), sstep(.45, .7, wave(x, y, z, 60.)))
+    fruit("fb_roll", blend(.012, rod((0, 0, 0), (0, .1, 0), .02, .018, stalk),
+                           paint(egg(0, .115, 0, .062, .05, .062, C(0xEFE6FA)), speckled), paint(egg(.012, .205, .01, .05, .045, .05, C(0xEFE6FA)), speckled)))
     fruit("fb_build", blend(.012, path([(-.07, 0, 0), (-.07, .13, 0), (-.04, .205, 0), (.04, .205, 0), (.07, .13, 0), (.07, 0, 0)], .018, .018, stalk), ball(0, .235, 0, .03, C(0x7FCB46))))
     morel = paint(rough(egg(0, .17, 0, .062, .092, .062, C(0x8C5A2E)), .009, 38.), lambda x, y, z, c: mix(c, C(0xD2A76A), sstep(0, .6, wave(x, y, z, 38.))))
     fruit("fb_round", blend(.012, rod((0, 0, 0), (0, .11, 0), .024, .022, stalk), morel))

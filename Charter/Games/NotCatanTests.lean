@@ -5,7 +5,7 @@ import Charter.Games.NotCatan
 # Not Catan, played
 
 The first part checks the parts that are exact. The second plays each founding law through
-`Engine.step`. The third tries the ideas that are not in the pack, and shows what is wrong with each.
+`Engine.step`. The third tries the ideas that are not in the pack, and shows why each is left out.
 `docs/process/not-catan.md` reads these results.
 
 The tables here are built by hand, with the pieces and hands each test needs. Whole games are in
@@ -84,8 +84,11 @@ def blockedRoadGame : List Event :=
 
 /-! ## A table to test on -/
 
+/-- No region, for reading past the end of the list. -/
+def noRegion : Region := ⟨"", 0, []⟩
+
 /-- A corner of the `i`th producing tile. -/
-def cornerOf (i j : Nat) : Nat := ((game.map.regions.getD i alarmRegion).spots).getD j 0
+def cornerOf (i j : Nat) : Nat := ((game.map.regions.getD i noRegion).spots).getD j 0
 
 /-- Corners far apart: seat `i` has a settlement on tile `i`. -/
 def townOf (seat : Seat) : Nat := cornerOf (seat * 3) 0
@@ -106,11 +109,8 @@ def rolling (s : St) (r : Nat) : St :=
 
 def afterTurn (s : St) : Option St := (step game s .forceEndTurn).toOption
 
-/-- `s` with the last seat playing, so ending the turn ends the round. -/
-def lastTurn (s : St) : St := { s with turnIndex := 3 }
-
 def holds (s : St) (p : Seat) (r : Res) : Nat := s.balance (.player p) r
-def alarmOut (s : St) : Nat := s.balance .treasury "alarm"
+def handSize (s : St) (p : Seat) : Nat := (goods.map (holds s p)).sum
 
 /-! ## The founding laws, played -/
 
@@ -119,64 +119,47 @@ def alarmOut (s : St) : Nat := s.balance .treasury "alarm"
     ((acc.1 && (lawProblems game { fresh with laws := acc.2.1 } L).isEmpty), enact acc.2.1 acc.2.2 L, acc.2.2 + 1))
   (true, [], 0)).1
 
--- Only a 7 pays alarm, and nothing costs it. No tile shows it.
-#guard (game.map.regions.filter (·.res == "alarm")).map (·.number) == [7]
-#guard !tiles.any (·.number == some 7) && !tiles.any (·.res == some "alarm")
-#guard !game.pieces.any (fun d => d.cost.any (·.1 == "alarm"))
+-- The pack leaves room for a table's own laws and pieces.
+#guard foundingLaws.length == 4 && game.pieces.length == 6 && game.resources.length == 6
+#guard plannedTotal game.startingLaws 4 == 28 && plannedTotal game.startingLaws 6 == 40
 
--- A 7 puts alarm in the treasury. No hand keeps it, and no goods move.
-#guard match afterTurn (rolling (table) 7) with
-  | some s => alarmOut s == 4 && [0, 1, 2, 3].all (holds s · "alarm" == 0) &&
-      goods.all fun r => [0, 1, 2, 3].all (holds s · r == 0)
-  | none => false
-
--- Another roll leaves the alarm alone.
-#guard match afterTurn (rolling (table) 6) with
-  | some s => alarmOut s == 0
-  | none => false
-
-/-- A round with a 7 in it, and the alarm up: 4 in the treasury. -/
-def alarmed (s : St) : St :=
-  { s with books := (s.books.postAll [⟨.bank, .treasury, "alarm", 4, .trade⟩]).getD s.books }
-
+/-- Seat 0 holds 9 goods, seat 1 holds 7, seat 2 holds 8 of one good. All have towns, and no hex has a 7. -/
 def rich : St :=
-  give (give (give (table []) 0 [("timber", 3), ("grain", 3), ("ore", 3)]) 1 [("timber", 7)]) 2 [("wool", 8)]
+  give (give (give (table) 0 [("timber", 3), ("grain", 3), ("ore", 3)]) 1 [("timber", 7)]) 2 [("wool", 8)]
 
--- At the round's end: a hand of 9 loses half of each good, rounded down. A hand of 7 loses nothing. A
--- hand of 8 in one good loses 4. The alarm is cleared. The roll is not a 7, so it pays nothing extra.
-#guard match afterTurn (rolling (lastTurn (alarmed rich)) 12) with
+-- No hex pays on a 7: the bank's harvest is empty, whoever has towns on the map.
+#guard !tiles.any (·.number == some 7) && !game.map.regions.any (·.number == 7)
+#guard (baseHarvest (rolling rich 7) 7).isEmpty
+
+-- The 7 law fires at the roll, with no hex paying. A hand of 9 loses half of each good, rounded down. A hand
+-- of 7 loses nothing. A hand of 8 in one good loses 4. It happens on the first turn of the round, not at its end.
+#guard match afterTurn (rolling rich 7) with
   | some s =>
-    [holds s 0 "timber", holds s 0 "grain", holds s 0 "ore"] == [2, 2, 2] && holds s 1 "timber" == 7 &&
-      holds s 2 "wool" == 4 && alarmOut s == 0
+    s.lastRoll == some 7 && s.round == 1 &&
+      [holds s 0 "timber", holds s 0 "grain", holds s 0 "ore"] == [2, 2, 2] &&
+      holds s 1 "timber" == 7 && holds s 2 "wool" == 4 &&
+      handSize s 3 == 0
   | none => false
 
--- A round with no 7 costs nobody anything.
-#guard match afterTurn (rolling (lastTurn rich) 12) with
-  | some s => holds s 0 "timber" == 3 && holds s 2 "wool" == 8
+-- What was taken is in the bank, and in the journal as the law's payment.
+#guard match afterTurn (rolling rich 7) with
+  | some s => s.balance .bank "wool" == 19 - 4 && s.balance .treasury "wool" == 0
   | none => false
 
 -- Half of each good, rounded down, is not half of the hand: (2,2,2,1,1) loses 3 of 8, not 4.
-#guard match afterTurn (rolling (lastTurn (alarmed (give (table) 0
-    [("timber", 2), ("grain", 2), ("ore", 2), ("wool", 1), ("brick", 1)]))) 2) with
-  | some s => (goods.map (holds s 0)).sum == 5
+#guard match afterTurn (rolling (give (table) 0
+    [("timber", 2), ("grain", 2), ("ore", 2), ("wool", 1), ("brick", 1)]) 7) with
+  | some s => handSize s 0 == 5
   | none => false
 
-/-- Seat 0 has 5 points, and seat 1 has 1. Both have a town on a tile that pays. -/
-def thiefTable : St :=
-  table
-    ([⟨0, "settlement", .spot (cornerOf 0 0)⟩, ⟨1, "settlement", .spot (cornerOf 0 2)⟩,
-      ⟨0, "city", .spot 100⟩, ⟨0, "city", .spot 101⟩])
-
-/-- What the first tile pays, and its number. -/
-def firstTile : Region := game.map.regions.getD 0 alarmRegion
-
--- While the alarm is up, the seat at 5 points gives its harvest back, and the seat at 1 keeps it.
-#guard match afterTurn (rolling (alarmed thiefTable) firstTile.number) with
-  | some s => thiefTable.pointsOf 0 == 5 && holds s 0 firstTile.res == 0 && holds s 1 firstTile.res == 1
+-- Laurels do not count toward the hand, and the law does not take them.
+#guard match afterTurn (rolling (give (table) 0 [("timber", 7), ("laurel", 3)]) 7) with
+  | some s => holds s 0 "timber" == 7 && holds s 0 "laurel" == 3
   | none => false
--- With no alarm, both keep it.
-#guard match afterTurn (rolling thiefTable firstTile.number) with
-  | some s => holds s 0 firstTile.res == 1 && holds s 1 firstTile.res == 1
+
+-- Any other roll costs nobody anything. A 12 pays a hex that no test town stands on.
+#guard match afterTurn (rolling (give (give (table []) 0 [("timber", 9)]) 2 [("wool", 8)]) 12) with
+  | some s => holds s 0 "timber" == 9 && holds s 2 "wool" == 8
   | none => false
 
 /-- Seat 0 is behind seats 1 and 2 and level with seat 3, and it can pay for a knight. -/
@@ -187,8 +170,8 @@ def knightTable : St :=
 
 def buildKnight (s : St) : Option St := (step game s (placeAt 0 "knight" (townOf 0))).toOption
 
--- A knight takes one good from each seat ahead: ore if it has any, otherwise grain, otherwise wool. A
--- hand of brick is safe, and a seat level with the builder loses nothing.
+-- A knight takes 1 ore from each seat ahead. A seat ahead with no ore pays nothing, and a seat level with
+-- the builder loses nothing.
 #guard match buildKnight knightTable with
   | some s => holds s 0 "ore" == 1 && holds s 1 "ore" == 1 && holds s 1 "wool" == 2 &&
       holds s 2 "brick" == 1 && holds s 3 "ore" == 1
@@ -222,6 +205,9 @@ def twoKnights : St :=
   | some s => holds s 0 "laurel" == 1
   | none => false
 
+/-- What the first tile pays, and its number. -/
+def firstTile : Region := game.map.regions.getD 0 noRegion
+
 -- A harvest that empties the bank pays nobody. Seats 0 and 1 are paid 1 each, from a bank that holds 2.
 def lowBank (n : Nat) : St :=
   let t := table [⟨0, "settlement", .spot (cornerOf 0 0)⟩, ⟨1, "settlement", .spot (cornerOf 0 2)⟩]
@@ -240,20 +226,62 @@ def lowBank (n : Nat) : St :=
   | some s => holds s 0 firstTile.res == 1 && holds s 1 firstTile.res == 1
   | none => false
 
--- An empty hand on two towns gets 3 goods at the round's end. A seat with cards, or a third town, does not.
-def firstHandTable : St :=
-  give (table ([⟨0, "settlement", .spot 90⟩, ⟨0, "settlement", .spot 91⟩, ⟨1, "settlement", .spot 92⟩,
-      ⟨2, "settlement", .spot 93⟩, ⟨2, "settlement", .spot 94⟩, ⟨2, "settlement", .spot 95⟩])) 1 [("ore", 1)]
+/-! ## What is not in the pack, and why
 
-#guard match afterTurn (rolling (lastTurn firstHandTable) 2) with
-  | some s => (goods.map (holds s 0)).sum == 3 && holds s 0 "timber" == 1 && (goods.map (holds s 1)).sum == 1 &&
-      (goods.map (holds s 2)).sum == 0
+Each idea here is a real law. `problems` runs the real check. -/
+
+def problems (L : Law) (seats : Nat := 4) : List String := lawProblems game (fresh seats) L
+
+def withLaw (s : St) (L : Law) : St := { s with laws := s.laws ++ [(99, L)] }
+
+/-! ### Cut to make the laws panel shorter
+
+Both of these work. An earlier version of the pack had them. In the two stopped Claude games, the first never
+fired and nobody built the second, and each took several long lines on the screen. -/
+
+/-- Setup pays nothing and no law runs in it. So at a round's end, a seat with only its first two towns and an
+empty hand gets 3 goods. They are the same goods for everyone. -/
+def firstHand : Law :=
+  { title := "An empty first hand gets three goods"
+    clauses :=
+      [ .onRoundEnd [.forEach
+          (.and (.eq (handOf .each) (.lit 0)) (.le (.add (.count .each "settlement") (.count .each "city")) (.lit 2)))
+          [ .transfer .bank .each (.lit "timber") (.lit 1)
+          , .transfer .bank .each (.lit "brick") (.lit 1)
+          , .transfer .bank .each (.lit "grain") (.lit 1) ]] ] }
+
+#guard (problems firstHand).isEmpty
+
+def firstHandTable : St :=
+  withLaw (give (table ([⟨0, "settlement", .spot 90⟩, ⟨0, "settlement", .spot 91⟩, ⟨1, "settlement", .spot 92⟩,
+      ⟨2, "settlement", .spot 93⟩, ⟨2, "settlement", .spot 94⟩, ⟨2, "settlement", .spot 95⟩])) 1 [("ore", 1)]) firstHand
+
+#guard match afterTurn (rolling { firstHandTable with turnIndex := 3 } 2) with
+  | some s => handSize s 0 == 3 && holds s 0 "timber" == 1 && handSize s 1 == 1 && handSize s 2 == 0
   | none => false
 
--- A harbor swaps 3 of a good for 1 of the next, when its owner is paid and holds 4 more of the first.
+/-- 3 of `a` to the bank and 1 of `b` back, for a seat with a harbor and 4 more `a` than `b`. -/
+def harborStep (a b : Res) : Effect :=
+  .when (.and (.lt (.lit 0) (.count .actor "harbor")) (.lt (.add (held .actor b) (.lit 3)) (held .actor a)))
+    [.transfer .actor .bank (.lit a) (.lit 3), .transfer .bank .actor (.lit b) (.lit 1)]
+
+/-- A port as far as a law can say it. A law cannot see a trade, and the bank has one rate for everyone. So a
+harbor swaps by itself when the dice pay its owner. The seat does not choose the good, and a harbor can stand
+on any settlement. -/
+def harborLaw : Law :=
+  { title := "A harbor swaps a surplus by itself"
+    clauses :=
+      [ .newPiece { name := "harbor", cost := [("timber", 1), ("brick", 1)], points := 0
+                    placement := .attach "settlement", yield := 0, limit := 2 }
+      , .onHarvest
+          [ harborStep "timber" "brick", harborStep "brick" "wool", harborStep "wool" "grain"
+          , harborStep "grain" "ore" ] ] }
+
+#guard (problems harborLaw).isEmpty
+
 def harborTable (hasHarbor : Bool) : St :=
-  give (table ([⟨0, "settlement", .spot (cornerOf 0 0)⟩] ++ if hasHarbor then [⟨0, "harbor", .spot (cornerOf 0 0)⟩] else [])) 0
-    [("wool", 5)]
+  withLaw (give (table ([⟨0, "settlement", .spot (cornerOf 0 0)⟩] ++
+    if hasHarbor then [⟨0, "harbor", .spot (cornerOf 0 0)⟩] else [])) 0 [("wool", 5)]) harborLaw
 
 #guard match afterTurn (rolling (harborTable true) firstTile.number) with
   | some s => holds s 0 "wool" == 2 && holds s 0 "grain" == 1
@@ -262,102 +290,18 @@ def harborTable (hasHarbor : Bool) : St :=
   | some s => holds s 0 "wool" == 5 && holds s 0 "grain" == 0
   | none => false
 
-/-! ## What is not in the pack, and why
+/-! ### A port with its own rate
 
-Each idea here is a real law. `problems` runs the real check. -/
+The bank has one rate, for everyone, and a law cannot see a trade. So a cheaper rate for one seat cannot be
+said. A law can only change the rate for all. -/
 
-def problems (L : Law) (seats : Nat := 4) : List String := lawProblems game (fresh seats) L
-
-/-- The same check on a table with no founding laws, for an idea that competes with them. -/
-def bare : GameDef := { game with foundingLaws := [] }
-def bareProblems (L : Law) : List String := lawProblems bare (initialState bare 4 1 [2]) L
-
-/-! ### Discarding at the roll, not at the round's end
-
-This passes the checks, and it is wrong. The law runs once for each piece the seat has, so half of a hand,
-asked for once per piece, is more than the hand. Short payers pay in proportion, so it takes everything. -/
-
-def discardAtRoll : Law :=
-  { title := "Half at the roll"
-    clauses := [.onHarvest [.when (.and (.harvestedIs "alarm") (.lt (.lit 7) (handOf .actor)))
-      (goods.map fun r => .transfer .actor .bank (.lit r) (.div (held .actor r) 2))]] }
-
-#guard (problems discardAtRoll).isEmpty
-
-def withLaw (s : St) (L : Law) : St := { s with laws := s.laws ++ [(99, L)] }
-
--- Two towns, 8 timber: half per town takes all 8.
-#guard match afterTurn (rolling (withLaw (give (table [⟨0, "settlement", .spot 1⟩, ⟨0, "settlement", .spot 8⟩]) 0 [("timber", 8)]) discardAtRoll) 7) with
-  | some s => holds s 0 "timber" == 0
-  | none => false
-
-/-! Dividing by the number of pieces does not help. `div` takes only a fixed number, so each number of
-pieces needs its own case. A law cannot hold them all: with the hand test in each case, one case costs
-about 33 nodes, and a seat can have from 2 to 9 pieces. Each case also rounds down each good by each
-piece, so at 9 pieces a hand of 17 in one good loses nothing. -/
-
-def discardCase (k : Nat) : Effect :=
-  .when (.and (.lt (.lit 7) (handOf .actor)) (.eq (.add (.count .actor "settlement") (.count .actor "city")) (.lit k)))
-    (goods.map fun r => .transfer .actor .bank (.lit r) (.div (held .actor r) (2 * k)))
-
-def discardEveryCase : Law :=
-  { title := "Half at the roll, by cases"
-    clauses := [.onHarvest [.when (.harvestedIs "alarm") ((List.range 8).map fun i => discardCase (i + 2))]] }
-
-#guard (problems discardEveryCase).contains "this law is too big"
-
-/-! ### A tax on big hands each round, with no 7
-
-The first idea, and it passes. It runs every round, so a 7 means nothing and a hand can never be big. -/
-
-def taxEveryRound : Law :=
-  { title := "Big hands pay each round"
-    clauses := [.onRoundEnd [.forEach (.lt (.lit 7) (handOf .each))
-      (goods.map fun r => .transfer .each .bank (.lit r) (.div (held .each r) 2))]] }
-
-#guard (problems taxEveryRound).isEmpty
-#guard match afterTurn (rolling (lastTurn (withLaw rich taxEveryRound)) 12) with
-  | some s => holds s 2 "wool" == 4
-  | none => false
-
-/-! ### Blocking one hex
-
-A law cannot see which hex paid. But a second hidden region can stand on the same corners as one hex, with
-the same number, and pay a counter. A law that reacts to that counter reacts to that hex. So one fixed hex
-can be blocked. It needs one resource for each such hex, and a game has at most 8 resources, of which Not
-Catan uses 7. The block cannot move, because no seat has a way to choose a hex. So this is not in the pack. -/
-
-def hexBlockGame : GameDef :=
-  { game with
-    resources := game.resources ++ [⟨"mark", 200⟩]
-    map := { game.map with regions := game.map.regions ++ [{ firstTile with res := "mark" }] }
-    foundingLaws := game.foundingLaws ++
-      [{ title := "The thief sits on one hex"
-         clauses := [.onHarvest
-           [ .when (.harvestedIs "mark") [.transfer .actor .bank (.lit "mark") .harvestedAmount]
-           , .when (.and (.harvestedIs "mark") alarmIsUp) [.transfer .actor .bank (.lit firstTile.res) .harvestedAmount] ]] }] }
-
-theorem hexBlock_valid : hexBlockGame.Valid := by decide +kernel
-
-/-- Seat 0 on the blocked hex, and a hand of the same good that the law must not touch beyond the harvest. -/
-def hexBlockTable (alarm : Bool) : State hexBlockGame :=
-  let s : State hexBlockGame := { initialState hexBlockGame 4 1 [2] with
-    phase := .actions, pieces := [⟨0, "settlement", .spot (firstTile.spots.getD 0 0)⟩] }
-  { s with
-    rollsMade := ((List.range 500).find? (fun k => rollAt hexBlockGame s.seed k == firstTile.number)).getD 0
-    books := (s.books.postAll (if alarm then [⟨.bank, .treasury, "alarm", 1, .trade⟩] else [])).getD s.books }
-
-#guard match (step hexBlockGame (hexBlockTable true) .forceEndTurn).toOption with
-  | some s => s.balance (.player 0) firstTile.res == 0
-  | none => false
-#guard match (step hexBlockGame (hexBlockTable false) .forceEndTurn).toOption with
-  | some s => s.balance (.player 0) firstTile.res == 1
-  | none => false
+def threeForOne : Law := { title := "Everyone trades at 3", clauses := [.setBankRate 3] }
+#guard (problems threeForOne).isEmpty
 
 /-! ### A card that does one of several things
 
 A seat cannot choose a good when it plays a card, and a law cannot draw at random. A piece for each choice
-would use up the pieces: a game has at most 8 kinds, and the pack uses 7. So a "card" can only do a fixed
+would use up the pieces: a game has at most 8 kinds, and the pack uses 6. So a "card" can only do a fixed
 thing, or a thing that depends on what the bank holds, which every seat can see coming. -/
 
 def piece (name : String) (cost : Bundle) : Clause :=
@@ -399,38 +343,9 @@ def bankDraw : Law :=
   | some s => holds s 0 "ore" == 4 && holds s 1 "ore" == 0
   | none => false
 
--- Only one more kind of piece fits, so two of these cards cannot both pass.
-#guard (lawProblems game { fresh with laws := game.startingLaws ++ [(90, monopolyOnOre)] } plentyFixed).contains
+-- Only two more kinds of piece fit, so three of these cards cannot all pass.
+#guard (lawProblems game { fresh with laws := game.startingLaws ++ [(90, monopolyOnOre), (91, plentyFixed)] } freeRoads).contains
   "there would be too many kinds of piece"
-
-/-! ### A port with its own rate
-
-The bank has one rate, for everyone, and a law cannot see a trade. So a cheaper rate for one seat cannot be
-said. A law can only change the rate for all. -/
-
-def threeForOne : Law := { title := "Everyone has a harbor", clauses := [.setBankRate 3] }
-#guard (problems threeForOne).isEmpty
-
-/-- The harbor law at a round's end, for every seat. It plans 48 payments at 6 seats, even though a game of
-this pack has at most 4 seats, and the same law on a harvest plans 8. It would leave a table little room for
-its own laws, so the harbor reacts to a harvest. -/
-def harborEachRound : Law :=
-  { title := "Harbors swap at the round's end"
-    clauses := [.onRoundEnd [.forEach (.lt (.lit 0) (.count .each "harbor"))
-      [ .when (.lt (.add (held .each "brick") (.lit 3)) (held .each "timber"))
-          [.transfer .each .bank (.lit "timber") (.lit 3), .transfer .bank .each (.lit "brick") (.lit 1)]
-      , .when (.lt (.add (held .each "wool") (.lit 3)) (held .each "brick"))
-          [.transfer .each .bank (.lit "brick") (.lit 3), .transfer .bank .each (.lit "wool") (.lit 1)]
-      , .when (.lt (.add (held .each "grain") (.lit 3)) (held .each "wool"))
-          [.transfer .each .bank (.lit "wool") (.lit 3), .transfer .bank .each (.lit "grain") (.lit 1)]
-      , .when (.lt (.add (held .each "ore") (.lit 3)) (held .each "grain"))
-          [.transfer .each .bank (.lit "grain") (.lit 3), .transfer .bank .each (.lit "ore") (.lit 1)] ]]] }
-
-#guard (problems harborEachRound 4).isEmpty
-#guard (problems harborEachRound 6).contains "the laws in force could make too many payments at once"
-#guard ({ game with foundingLaws := game.foundingLaws.dropLast ++ [harborEachRound] } : GameDef).checks
-#guard plannedTotal game.startingLaws 6 + 40 ≥ plannedTotal
-  ({ game with foundingLaws := game.foundingLaws.dropLast ++ [harborEachRound] } : GameDef).startingLaws 6
 
 /-! ### An award that moves
 
@@ -442,9 +357,10 @@ def wreathsWorthNothing : Law := { title := "No more wreaths", clauses := [.setP
 
 /-! ### What the law language cannot say at all
 
-There is no text to check for these. `Trigger` has no roll, no trade and no turn. `Expr` has no dice, no
-round and no current seat, and `Party` has no way to name a seat. `Cond` has no "for all seats". `Effect`
-moves resources and nothing else: it cannot move or remove a piece, skip a seat's harvest, or ask a seat to
-choose. `Placement` has no way to restrict a piece to the coast. Hands are public, so no card can be secret. -/
+There is no text to check for these. `Trigger` has no trade. A law can read the total rolled, but `Expr` has
+no round, and a harvest does not say which hex paid. `Party` has no way to name a seat. `Cond` has no "for all
+seats". `Effect` moves resources and nothing else: it cannot move or remove a piece, skip a seat's harvest, or
+ask a seat to choose. `Placement` has no way to restrict a piece to the coast. Hands are public, so no card can
+be secret. -/
 
 end Charter.Games.NotCatan.Tests

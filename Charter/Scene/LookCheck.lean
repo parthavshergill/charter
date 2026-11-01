@@ -12,13 +12,15 @@ open GpuCmd
 
 /-- The marks drawn in `web/icons.js`. -/
 def builtinMarks : List String :=
-  [ "grain", "timber", "ore", "wool", "brick", "helium", "alloy", "ice", "crystal", "laurel", "alarm"
-  , "road", "settlement", "city", "made", "knight", "relic", "wreath", "harbor" ]
+  [ "grain", "timber", "ore", "wool", "brick", "helium", "alloy", "ice", "crystal", "laurel"
+  , "road", "settlement", "city", "made", "knight", "relic", "wreath" ]
 
 /-- The colour tokens a pack can set, as in `web/look.js`. -/
 def colorTokens : List String :=
   [ "walnut-0", "walnut-1", "walnut-2", "walnut-3", "brass", "vellum", "vellum-2", "vellum-3"
-  , "ink", "ink-2", "ink-3", "gold", "gold-2", "gold-ink", "wax", "wax-2", "pale", "pale-2" ]
+  , "ink", "ink-2", "ink-3", "gold", "gold-2", "gold-ink", "wax", "wax-2", "wax-0", "pale", "pale-2"
+  , "sign-ink", "act-hover", "act-hover-2", "field", "bright", "err-ink", "tool-off", "need", "good", "stain"
+  , "roll-0", "roll-1", "roll-2", "roll-3", "roll-4", "roll-5", "roll-6", "roll-7", "roll-8" ]
 
 /-- The fonts a pack can choose, as in `web/look.js`. -/
 def fontNames : List String := ["", "book", "slab", "humanist", "rounded", "typewriter"]
@@ -120,13 +122,14 @@ def lookProblems (G : GameDef) (L : Layout) : List String :=
   let readable :=
     (if contrast (token "ink" "#2a1f14") (token "vellum" "#efe4c8") < 4.5 then ["ink on vellum is too hard to read"] else []) ++
     (if contrast (token "pale" "#e9dcc0") (token "walnut-1" "#1f140c") < 4.5 then ["pale on walnut is too hard to read"] else []) ++
-    (if contrast (token "gold-ink" "#2b1d07") (token "gold" "#e8bb4d") < 4.5 then ["gold-ink on gold is too hard to read"] else [])
+    (if contrast (token "gold-ink" "#2b1d07") (token "gold" "#e8bb4d") < 4.5 then ["gold-ink on gold is too hard to read"] else []) ++
+    (if contrast (token "sign-ink" "#1c2f6b") (token "vellum" "#efe4c8") < 4.5 then ["a signature on vellum is too hard to read"] else [])
   let fonts :=
     [t.look.bodyFont, t.look.displayFont].filterMap fun f =>
       if fontNames.contains f then none else some s!"{f} is not a font from the fixed list"
   let monuments :=
     [("cost", MonumentKind.cost), ("points", .points), ("bank", .bank), ("harvest", .harvest), ("build", .build)
-    , ("round end", .roundEnd), ("new piece", .newPiece "x"), ("repeal", .repeal)].filterMap fun (n, k) =>
+    , ("round end", .roundEnd), ("roll", .roll), ("new piece", .newPiece "x"), ("repeal", .repeal)].filterMap fun (n, k) =>
       if (t.monumentModel k).isEmpty then some s!"the {n} monument is empty" else none
   let meshes := t.meshDefs.filterMap fun
     | .defineMeshFile id sha _ _ _ =>

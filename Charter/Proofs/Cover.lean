@@ -211,7 +211,7 @@ theorem turnEntries_posts (hG : G.Valid) {s : State G} (hc : Cover s) (hi : IdIn
   obtain ⟨b1, h1⟩ := beforeRoll_posts hG hc hi
   simp only [turnEntries]
   split
-  · obtain ⟨b2, h2⟩ := harvestEntries_posts (s.afterPosting s.entriesBeforeRoll) roll
+  · obtain ⟨b2, h2⟩ := rollEntries_posts (s.afterPosting s.entriesBeforeRoll) roll
     rw [afterPosting_books h1] at h2
     rw [postAll_append, h1, Option.bind_some]
     exact ⟨b2, h2⟩
@@ -255,7 +255,7 @@ theorem turnEntries_last {s : State G} (hl : s.isLastTurn = true) (roll : Nat) :
     ∃ H, turnEntries s roll = s.duePayments ++ (s.roundEndLawEntries ++
         (s.closingDeals.flatMap (s.afterPosting (s.duePayments ++ s.roundEndLawEntries)).refundEntries
           ++ H)) ∧
-      ∀ x ∈ H, x ∈ harvestEntries (s.afterPosting s.entriesBeforeRoll) roll := by
+      ∀ x ∈ H, x ∈ rollEntries (s.afterPosting s.entriesBeforeRoll) roll := by
   have hb : s.entriesBeforeRoll = s.roundEndEntries := by
     simp [State.entriesBeforeRoll, hl]
   simp only [turnEntries]
@@ -307,7 +307,7 @@ theorem payments_exact {s s' : State G} {e : Event} (hend : EndsTurn s e)
     · obtain ⟨d, _, hx⟩ := List.mem_flatMap.mp hx
       rw [(refundEntries_form hx).1]
       simp
-    · exact (harvestEntries_form (hH x hx)).2.2.1
+    · exact (rollEntries_form (hH x hx)).2.2.1
   rw [h1, List.filter_eq_nil_iff.mpr]
   · simp
   · intro x hx

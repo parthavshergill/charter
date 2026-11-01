@@ -11,6 +11,7 @@ import Charter.Games.Belt
 import Charter.Games.NotCatan
 import Charter.Games.NotCatanTests
 import Charter.Games.SlimeParliament
+import Charter.Games.SlimeParliamentWords
 import Charter.Scene.Belt
 import Charter.Games.Witnesses
 import Charter.Scene.OfState

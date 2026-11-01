@@ -47,16 +47,26 @@ These are under `vars` in `cloudflare/wrangler.jsonc`. Change a value and run `n
 | `CHARTER_GAMES_PER_DAY` | 500 | New tables a day, for the whole server. This limits storage, not spending. |
 | `CHARTER_GAMES_PER_IP_DAY` | 100 | New tables a day, for one IP address. |
 | `CHARTER_TABLE_AWAY_MS` | 180000 | A table pauses after this long with none of its people there. |
-| `CHARTER_PRICE_INPUT_USD` | 4 | Dollars per million input tokens. |
-| `CHARTER_PRICE_OUTPUT_USD` | 20 | Dollars per million output tokens. |
-| `CHARTER_PRICE_CACHE_READ_USD` | 0.20 | Dollars per million cache-read tokens. |
-| `CHARTER_PRICE_CACHE_WRITE_USD` | 5 | Dollars per million cache-write tokens. |
+| `CHARTER_DESCRIBE_MODEL` | `claude-sonnet-5-5` | The model that writes a law's description. |
+| `CHARTER_DESCRIBE_EFFORT` | `low` | The effort of that call. |
+| `CHARTER_PRICE_INPUT_USD` | 4 | Dollars per million input tokens, for Opus and for any model with no prices of its own. |
+| `CHARTER_PRICE_OUTPUT_USD` | 20 | Dollars per million output tokens, the same way. |
+| `CHARTER_PRICE_CACHE_READ_USD` | 0.20 | Dollars per million cache-read tokens, the same way. |
+| `CHARTER_PRICE_CACHE_WRITE_USD` | 5 | Dollars per million cache-write tokens, the same way. |
+| `CHARTER_PRICE_HAIKU_INPUT_USD` | 0.10 | Dollars per million input tokens, for a model whose name starts with `claude-haiku`. |
+| `CHARTER_PRICE_HAIKU_OUTPUT_USD` | 0.50 | Dollars per million output tokens, the same way. |
+| `CHARTER_PRICE_HAIKU_CACHE_READ_USD` | 0.005 | Dollars per million cache-read tokens, the same way. This is an estimate. The description call uses no cache. |
+| `CHARTER_PRICE_HAIKU_CACHE_WRITE_USD` | 0.125 | Dollars per million cache-write tokens, the same way. This is an estimate. |
+| `CHARTER_PRICE_SONNET_INPUT_USD` | 2 | Dollars per million input tokens, for a model whose name starts with `claude-sonnet`. |
+| `CHARTER_PRICE_SONNET_OUTPUT_USD` | 10 | Dollars per million output tokens, the same way. |
+| `CHARTER_PRICE_SONNET_CACHE_READ_USD` | 0.20 | Dollars per million cache-read tokens, the same way. |
+| `CHARTER_PRICE_SONNET_CACHE_WRITE_USD` | 2.50 | Dollars per million cache-write tokens, the same way. |
 
-The prices are the list prices of `claude-opus-5-5`. If you change `CHARTER_SEAT_MODEL` or `CHARTER_MODEL`, change the prices too.
+Each request is priced by the model it went to. The first four prices are the list prices of `claude-opus-5-5`. They also apply to a model the server does not know, so that it cannot count too little. If you use a dearer model, such as a Fable model, set them to its prices.
 
 **The budgets are estimates.** The server multiplies the tokens the API reports by these prices, so a real bill can differ. A request already running can pass a budget by a little. A day is a UTC day. The server's total survives a restart. The per-address figures do not, so a restart resets them.
 
-When a budget is reached the game keeps playing. The clerk says it is resting, Claude seats pass their turns, and people can still write formal text themselves.
+When a budget is reached the game keeps playing. The clerk says it is resting, Claude seats pass their turns, and people can still write formal text themselves. No description call is made, so a new law shows its rule source with a short note.
 
 There are no accounts, so an IP address stands for a person, and friends sharing a connection share a budget. The server keeps only a salted hash of each address, in memory, and never logs it. A table's Claude spending counts against the last address to ask for Claude at that table.
 

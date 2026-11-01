@@ -5,17 +5,10 @@ import Charter.Scene.Render
 /-!
 # Not Catan: as near to a famous board game as `GameDef` and the rule language get
 
-The map, prices, piece limits, target, bank rate, stock and setup are exact. Everything else is a rough
-copy made with founding laws, and each law's title says what it stands for. The gaps are the point:
+The map, prices, piece limits, target, bank rate, stock and setup are exact. A few founding laws add
+what the rule language can say well, and each law's title says what it does. The gaps are the point:
 `docs/process/not-catan.md` lists every feature, what was tried and what is missing from the language.
 `Charter/Games/NotCatanTests.lean` plays each law and each rejected idea.
-
-**How a law can see a 7.** A law cannot read the dice. But the map can hold a region that no tile
-draws: `alarmRegion` pays one more resource, `alarm`, on a 7, to every piece on every corner. So a law
-that reacts to a harvest of `alarm` reacts to a 7. The first law sends the alarm straight on to the
-treasury, so no hand ever keeps it, and a treasury with alarm in it means "a 7 came up this round".
-This is a counter, not a good: no piece costs it, so the screen and the Claude seats leave it out of
-hands and trades (`markRes` in `Server/Spec.lean`).
 -/
 
 namespace Charter.Games.NotCatan
@@ -53,58 +46,34 @@ def spots : List Vertex := spotsOf tiles
 def edges : List Edge := sidesOf tiles
 def links : List (Nat × Nat) := linksOf tiles
 
-/-- The region no tile draws: on a 7, it pays `alarm` to every piece on every corner. -/
-def alarmRegion : Region := { res := "alarm", number := 7, spots := List.range spots.length }
-
 /-! ## Small words for the laws -/
 
 def held (p : Party) (r : Res) : Expr := .holding p (.lit r)
 
-/-- All the goods a seat holds. Alarm and laurels do not count. -/
+/-- All the goods a seat holds. Laurels do not count. -/
 def handOf (p : Party) : Expr :=
   .add (held p "timber") (.add (held p "grain") (.add (held p "ore") (.add (held p "wool") (held p "brick"))))
 
-/-- A 7 came up this round. -/
-def alarmIsUp : Cond := .lt (.lit 0) (held .treasury "alarm")
+/-! ## The founding laws
 
-/-! ## The founding laws -/
+Each law is one definition here: its title, then its clauses. The list at the end is the order they
+stand in. A majority can repeal any of them. -/
 
-/-- **Rough copy of discarding on a 7.** The check comes at the end of the round, not at the roll, so a
-seat whose turn is still to come can spend first. It takes half of each good, rounded down, not half of
-the hand by the seat's own choice. The law also moves each payment of alarm to the treasury, and clears
-it at the round's end. -/
-def lawAlarm : Law :=
-  { title := "A 7 rings the alarm: big hands lose half"
+/-- **A 7.** It fires at the roll, for every seat at once. It takes half of each good, rounded down, not
+half of the hand by the seat's own choice. -/
+def lawSeven : Law :=
+  { title := "A 7 costs big hands half"
     clauses :=
-      [ .onHarvest [.when (.harvestedIs "alarm") [.transfer .actor .treasury (.lit "alarm") .harvestedAmount]]
-      , .onRoundEnd
-          [ .forEach (.and alarmIsUp (.lt (.lit 7) (handOf .each)))
-              (goods.map fun r => .transfer .each .bank (.lit r) (.div (held .each r) 2))
-          , .transfer .treasury .bank (.lit "alarm") (held .treasury "alarm") ] ] }
+      [ .onRoll [.forEach (.and (.eq .rolled (.lit 7)) (.lt (.lit 7) (handOf .each)))
+          (goods.map fun r => .transfer .each .bank (.lit r) (.div (held .each r) 2))] ] }
 
-/-- **Rough copy of the blocked hex.** No law can see which hex paid, and no seat can choose one. So
-for the rest of a round with a 7, every seat at 5 points or more hands its harvests back. It hits the
-leaders' whole income for a short time, not one hex for a long time. -/
-def lawThief : Law :=
-  { title := "The thief takes what the leaders harvest"
-    clauses :=
-      [ .onHarvest [.when (.and alarmIsUp (.and (.not (.harvestedIs "alarm")) (.le (.lit 5) (.points .actor))))
-          [.transfer .actor .bank .harvested .harvestedAmount]] ] }
-
-/-- One card from `each` to the builder, if `each` has none of `before`: the next good it holds. -/
-def takeOneOf (before : List Res) : List Res → List Effect
-  | [] => []
-  | r :: rs =>
-    let test : Cond := before.foldr (fun b acc => .and (.eq (held .each b) (.lit 0)) acc) (.lt (.lit 0) (held .each r))
-    .when test [.transfer .each .actor (.lit r) (.lit 1)] :: takeOneOf (before ++ [r]) rs
-
-/-- **Rough copy of the knight's theft.** A law cannot name one victim or pick at random. So a knight
-takes one good from every seat ahead of the builder: ore if it has any, otherwise grain, otherwise wool.
-A hand of only timber and brick is safe. -/
+/-- **Rough copy of a knight.** A law cannot name one victim or pick at random. So a new knight takes 1
+ore from every seat ahead of the builder. -/
 def lawKnight : Law :=
-  { title := "A new knight robs every seat ahead"
+  { title := "A new knight takes ore from each seat ahead"
     clauses :=
-      [ .onBuild "knight" [.forEach (.lt (.points .actor) (.points .each)) (takeOneOf [] ["ore", "grain", "wool"])] ] }
+      [ .onBuild "knight" [.forEach (.and (.lt (.points .actor) (.points .each)) (.lt (.lit 0) (held .each "ore")))
+          [.transfer .each .actor (.lit "ore") (.lit 1)]] ] }
 
 /-- **Rough copy of the two big awards.** A law cannot give points, and pieces never move. So the third
 knight or the sixth road pays enough laurels for a wreath, worth 2 points for good. There are laurels
@@ -126,38 +95,9 @@ def lawEmptyBank : Law :=
       [ .onHarvest [.when (.eq (.holding .bank .harvested) (.lit 0))
           [.transfer .actor .bank .harvested .harvestedAmount]] ] }
 
-/-- **Rough copy of the starting hand.** Setup pays nothing and no law runs in it. So at a round's end,
-a seat that still has only its first two towns and an empty hand gets 3 goods. They are the same goods
-for everyone, and they do not depend on where it settled. -/
-def lawFirstHand : Law :=
-  { title := "An empty first hand gets three goods"
-    clauses :=
-      [ .onRoundEnd [.forEach
-          (.and (.eq (handOf .each) (.lit 0)) (.le (.add (.count .each "settlement") (.count .each "city")) (.lit 2)))
-          [ .transfer .bank .each (.lit "timber") (.lit 1)
-          , .transfer .bank .each (.lit "brick") (.lit 1)
-          , .transfer .bank .each (.lit "grain") (.lit 1) ]] ] }
-
-/-- One step of a harbor: 3 of `a` to the bank and 1 of `b` back, for a seat with a harbor and 4 more
-`a` than `b`. -/
-def harborStep (a b : Res) : Effect :=
-  .when (.and (.lt (.lit 0) (.count .actor "harbor")) (.lt (.add (held .actor b) (.lit 3)) (held .actor a)))
-    [.transfer .actor .bank (.lit a) (.lit 3), .transfer .bank .actor (.lit b) (.lit 1)]
-
-/-- **Rough copy of a port.** A law cannot see a trade, and the bank has one rate for everyone. So a
-harbor makes a swap by itself, when the dice pay its owner: 3 of a good it has too much of for 1 of the
-next good along the line timber, brick, wool, grain, ore. The seat does not choose the good, and a harbor
-can stand on any settlement. -/
-def lawHarbor : Law :=
-  { title := "A harbor swaps a surplus by itself"
-    clauses :=
-      [ .onHarvest
-          [ harborStep "timber" "brick", harborStep "brick" "wool", harborStep "wool" "grain"
-          , harborStep "grain" "ore" ] ] }
-
-/-- The founding laws, in force from the first turn. A majority can repeal any of them. -/
+/-- The founding laws, in force from the first turn. -/
 def foundingLaws : List Law :=
-  [lawAlarm, lawThief, lawKnight, lawLaurels, lawEmptyBank, lawFirstHand, lawHarbor]
+  [lawSeven, lawKnight, lawLaurels, lawEmptyBank]
 
 /-! ## The game -/
 
@@ -166,7 +106,7 @@ def game : GameDef where
   name := "Not Catan"
   resources :=
     [ ⟨"timber", 19⟩, ⟨"grain", 19⟩, ⟨"ore", 19⟩, ⟨"wool", 19⟩, ⟨"brick", 19⟩
-    , ⟨"alarm", 200⟩, ⟨"laurel", 6⟩ ]
+    , ⟨"laurel", 6⟩ ]
   pieces :=
     [ { name := "road", cost := [("timber", 1), ("brick", 1)], points := 0
         placement := .link, yield := 0, limit := 15 }
@@ -179,13 +119,11 @@ def game : GameDef where
     , { name := "relic", cost := [("ore", 3), ("wool", 3), ("grain", 3)], points := 1
         placement := .attach "settlement", yield := 0, limit := 2 }
     , { name := "wreath", cost := [("laurel", 3)], points := 2
-        placement := .attach "settlement", yield := 0, limit := 2 }
-    , { name := "harbor", cost := [("timber", 1), ("brick", 1)], points := 0
         placement := .attach "settlement", yield := 0, limit := 2 } ]
   map :=
     { spotCount := spots.length
       links := links
-      regions := regionsOf tiles ++ [alarmRegion] }
+      regions := regionsOf tiles }
   diceCount := 2
   diceSides := 6
   targetPoints := 10
@@ -220,12 +158,6 @@ def wreathModel (seat : Nat) : List Part :=
   [ box 0 0 0 0.08 0.02 0.08 marble, cyl 0 0.02 0 0.012 0.13 stoneDark
   , cyl 0 0.15 0 0.085 0.018 0x4F8042, cyl 0 0.16 0 0.05 0.016 (seatColor seat) ]
 
-open Scene in
-/-- A short jetty with a crane and a crate in the owner's colour. -/
-def harborModel (seat : Nat) : List Part :=
-  [ box 0 0 0 0.16 0.018 0.09 timberDark, box (-0.05) 0.018 0 0.014 0.14 0.014 timberDark
-  , box (-0.01) 0.15 0 0.1 0.012 0.012 timberDark, box 0.045 0.018 0 0.04 0.04 0.04 (seatColor seat) ]
-
 def theme : Scene.Theme :=
   { Scene.islandTheme with
     harbours := false
@@ -233,11 +165,9 @@ def theme : Scene.Theme :=
       if k == "knight" then some (knightModel seat)
       else if k == "relic" then some (relicModel seat)
       else if k == "wreath" then some (wreathModel seat)
-      else if k == "harbor" then some (harborModel seat)
       else none
     look :=
       { marks := Scene.islandMarks ++
-          [ ("laurel", "laurel"), ("alarm", "alarm"), ("knight", "knight"), ("relic", "relic")
-          , ("wreath", "wreath"), ("harbor", "harbor") ] } }
+          [("laurel", "laurel"), ("knight", "knight"), ("relic", "relic"), ("wreath", "wreath")] } }
 
 end Charter.Games.NotCatan

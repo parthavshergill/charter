@@ -74,6 +74,8 @@ structure Job where
   table : String := ""
   /-- The player asked the clerk to suggest a rule, so `words` is empty. -/
   suggest : Bool := false
+  /-- Runs on a rule Claude wrote, just before the screen can see that it is ready. -/
+  onReady : String → IO Unit := fun _ => pure ()
 
 /-- The model and limits. Effort and output are bounded, because this runs on a player's click. -/
 structure Settings where
@@ -150,7 +152,7 @@ def tableContext (g : Game) (s : State g.spec.G) (seat : Nat) : String :=
     if n == 0 then none else some s!"{n} {r}"
   let treasuryText := if treasury.isEmpty then "nothing" else ", ".intercalate treasury
   let guide := if g.spec.guide.isEmpty then "" else s!"\n\n{g.spec.guide}"
-  Clerk.neutralize s!"Round {s.round} of {G.rounds}. First to {G.targetPoints} points wins. The bank trades {s.rules.bankRate} for 1. The treasury holds {treasuryText}.
+  Clerk.neutralize s!"Round {s.round} of {G.rounds}. First to {G.targetPoints} points wins. The bank trades {s.rules.bankRate} for 1. The treasury holds {treasuryText}. The dice show {G.diceCount} to {G.diceCount * G.diceSides}.
 
 The resources of this game: {", ".intercalate g.resources}.{guide}
 
@@ -268,14 +270,15 @@ def apiError (j : Json) : Option (String × String) :=
 
 /-- Count what the request that just ended cost. A request stopped part way has no final output count,
 so that part is estimated from what arrived, at about four characters a token. -/
-private def chargeJob (job : Job) : IO Unit := do
+private def chargeJob (job : Job) (model : String) : IO Unit := do
   let st ← job.state.get
   let output := if st.outputTokens != 0 then st.outputTokens else (st.text.length + st.thinking.length) / 4
-  Spend.charge job.table st.inputTokens st.cacheReadTokens st.cacheWriteTokens output
+  Spend.charge job.table model st.inputTokens st.cacheReadTokens st.cacheWriteTokens output
 
 /-- Run one request and read it to the end. Blocks this thread only. Every call to the API comes through
-here, so this is where the budgets are checked and charged. -/
-def runRequest (job : Job) (config : String) : IO Outcome := do
+here, so this is where the budgets are checked and charged. `model` is the model named in the request,
+which sets the price. -/
+def runRequest (job : Job) (config model : String) : IO Outcome := do
   if let some why ← Spend.resting? job.table then return { resting := some why }
   -- These fields describe one request, so a request that gets no reply must not repeat the last one's.
   job.state.modify fun st =>
@@ -313,7 +316,7 @@ def runRequest (job : Job) (config : String) : IO Outcome := do
       raw := raw ++ l
   let code ← child.wait
   out := { out with exitCode := code }
-  chargeJob job
+  chargeJob job model
   if out.apiErrorType.isNone then
     if let .ok j := Json.parse raw then
       if let some (t, m) := apiError j then
@@ -439,7 +442,8 @@ def addSpent (job : Job) : IO Unit :=
 the table's clerk log, and `Clerk.memoryBlock` takes only this seat's part of it. -/
 def run (job : Job) (cfg : Settings) (current : IO (Option Game)) (notes : List Clerk.Note) : IO Unit := do
   let isCancelled : IO Bool := job.cancelled.get
-  let finish (f : Final) : IO Unit :=
+  let finish (f : Final) : IO Unit := do
+    if let .ready formal _ true := f then job.onReady formal
     touch job fun st => { st with stage := "done", final := some f }
   let check := checkFormal job current
   -- Formal text is checked directly. It does not need the model.
@@ -462,7 +466,7 @@ def run (job : Job) (cfg : Settings) (current : IO (Option Game)) (notes : List 
     touch job fun st => { st with stage := "sent", attempt := n, text := "", thinking := "",
                                   retryReason := retry.map (·.2) }
     let body := requestBody cfg system (userMessage g s job.seat memory job.words retry)
-    let outcome ← runRequest job (curlConfig cfg key body)
+    let outcome ← runRequest job (curlConfig cfg key body) cfg.model
     addSpent job
     if ← isCancelled then
       finish .cancelled

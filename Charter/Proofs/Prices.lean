@@ -52,6 +52,7 @@ theorem clause_price {R : Rules} {c : Clause} (hR : RulesPriceOk G R) (hc : Clau
   | onHarvest _ => exact hR
   | onBuild _ _ => exact hR
   | onRoundEnd _ => exact hR
+  | onRoll _ => exact hR
   | setBankRate _ => exact hR
   | repeal _ => exact hR
 
@@ -96,6 +97,7 @@ theorem lawProblems_price {s : State G} {L : Law} (h : lawProblems G s L = []) :
   | onHarvest _ => trivial
   | onBuild _ _ => trivial
   | onRoundEnd _ => trivial
+  | onRoll _ => trivial
   | setPoints _ _ => trivial
   | setBankRate _ => trivial
   | repeal _ => trivial

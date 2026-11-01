@@ -1,6 +1,7 @@
 // The Charter client. It shows what the server sends and holds no game rules: every move it posts
 // comes from `view.legalMoves` or from text the engine then accepts or rejects, and every cost, reason
-// and rule statement is written by Lean. What is here is presentation: what to show, when, and where.
+// and deal statement is written by Lean. A law's description is Claude's or a pack's words, and the law's
+// source below it is what counts. What is here is presentation: what to show, when, and where.
 import { renderBoard2D } from "./board2d.js";
 import { resIcon, uiIcon, pieceIcon, shield, chargeOf, waxSeal } from "./icons.js";
 import { applyLook } from "./look.js";
@@ -65,11 +66,42 @@ function myNonce() {
   return (a & 0xfffff) * 2 ** 32 + b;
 }
 
+// ---------------------------------------------------------------- the scroll
+/** The document a table is founded on: a sheet, with a roller and the seal at its foot. */
+const scrollSheet = (...kids) => h("div", { class: "scroll" },
+  h("div", { class: "titlepage vellum" }, kids),
+  h("div", { class: "roller", "aria-hidden": "true" }, h("span", { class: "roll" }), waxSeal("seal")));
+
+/** Open the scroll once. A first visit waits for the board and takes the whole fall and unroll; any other
+ *  visit takes a short unroll. The animation only hides the form: it can be typed in throughout, and any
+ *  key, click or focus inside the sheet opens it at once. Returns the call that starts a waiting scroll. */
+function openScroll(scroll, whole) {
+  const finish = () => {
+    scroll.classList.remove("opening", "whole", "waiting");
+    document.removeEventListener("keydown", finish, true);
+    document.removeEventListener("pointerdown", finish, true);
+    scroll.removeEventListener("focusin", focused);
+    scroll.removeEventListener("animationend", ended);
+  };
+  const ended = e => { if (e.target.classList.contains("roller")) finish(); };
+  // The name line may already hold the focus, and its event can arrive late, when the window gains focus.
+  const held = document.activeElement;
+  const focused = e => { if (e.target !== held) finish(); };
+  scroll.classList.add("opening");
+  if (whole) scroll.classList.add("whole", "waiting");
+  document.addEventListener("keydown", finish, true);
+  document.addEventListener("pointerdown", finish, true);
+  scroll.addEventListener("focusin", focused);
+  scroll.addEventListener("animationend", ended);
+  return () => scroll.classList.remove("waiting");
+}
+const TURN_MS = 520; // as .scroll.turning in app.css
+
 // ---------------------------------------------------------------- title page
 async function lobby() {
   const stage = h("div", { class: "stage" }, h("canvas"), h("div", { class: "vignette" }));
   let seats = 4;
-  const name = h("input", { class: "input", placeholder: "Your name", "aria-label": "Your name", value: store.get("charter.name") || "" });
+  const name = h("input", { class: "signline", "aria-label": "Your name", value: store.get("charter.name") || "", autocomplete: "off", spellcheck: "false", autocapitalize: "words" });
   const joinCode = h("input", { class: "input", placeholder: "Code", "aria-label": "Table code", maxlength: 5, value: params.get("join") || "" });
   const err = h("div", { class: "errline", role: "status" });
   const seatButtons = [2, 3, 4].map(n =>
@@ -92,22 +124,66 @@ async function lobby() {
   showSeats();
   const packList = h("div", { class: "packs", role: "group", "aria-label": "World" });
   const packNote = h("p", { class: "packnote" });
+  // The chosen game's line and empty board. The base game is first, so the sheet starts with its line.
+  const tagline = h("p", { class: "sub" }, "Settle an island. Rewrite its rules. The constitution holds.");
+  let stagePlayer = null, stageShown = null, stageLoad = null;
+  const showBackdrop = d => {
+    if (!stagePlayer) return null;
+    if (stageShown === d.id) return stageLoad;
+    stageShown = d.id;
+    return (stageLoad = api(`/api/defs/${d.id}/scene`).then(buf => { if (stageShown === d.id && buf.byteLength > 4) stagePlayer.render(buf); }));
+  };
+  // The row shows the first three games, and the chosen game if it is further along.
+  // Every game after the first three is on the Library's shelf.
+  const libraryLink = h("button", { class: "link library", onclick: () => turnTo(true) }, "Library");
   const showPacks = () => {
-    fill(packList, h("span", { class: "smallcaps lbl" }, "World"), defs.map(d =>
-      h("button", { class: "pack" + (d.id === game ? " on" : ""), "aria-pressed": d.id === game ? "true" : "false", onclick: () => { game = d.id; showPacks(); showSeats(); } }, d.name)));
+    const row = defs.filter((d, i) => i < 3 || d.id === game);
+    fill(packList, h("span", { class: "smallcaps lbl" }, "World"), row.map(d =>
+      h("button", { class: "pack" + (d.id === game ? " on" : ""), "aria-pressed": d.id === game ? "true" : "false", onclick: () => { game = d.id; showPacks(); showSeats(); packList.querySelector(".pack.on").focus(); } }, d.name)), libraryLink);
     packNote.textContent = defs.find(d => d.id === game)?.blurb || "";
     const d = defs.find(x => x.id === game);
     if (d) { applyLook(d.look); tagline.textContent = d.look.tagline; showBackdrop(d); }
   };
-  api("/api/defs").then(list => { defs = list; game = list[0]?.id ?? null; showPacks(); showSeats(); });
-  // The page's background is the chosen game's own empty board. The first pack's board comes first.
-  const tagline = h("p", { class: "sub" });
-  let stagePlayer = null, stageShown = null;
-  const showBackdrop = async d => {
-    if (!stagePlayer || stageShown === d.id) return;
-    stageShown = d.id;
-    const buf = await api(`/api/defs/${d.id}/scene`);
-    if (stageShown === d.id && buf.byteLength > 4) stagePlayer.render(buf);
+  showPacks();
+  const defsLoaded = api("/api/defs").then(list => { defs = list; game = list[0]?.id ?? null; showPacks(); showSeats(); });
+  const seatRange = d => d.minSeats === d.maxSeats ? plural(d.minSeats, "seat") : `${d.minSeats} to ${d.maxSeats} seats`;
+  // One row of the shelf. A picture can go after .shelftext later: the row leaves no gap without one.
+  const shelfRow = d => h("button", { class: "shelfrow" + (d.id === game ? " on" : ""), "aria-pressed": d.id === game ? "true" : "false", onclick: () => { game = d.id; showPacks(); showSeats(); turnTo(false, () => packList.querySelector(".pack.on")); } },
+    waxSeal("seal small"),
+    h("span", { class: "shelftext" }, h("span", { class: "shelfname" }, d.name), h("span", { class: "shelfblurb" }, d.blurb), h("span", { class: "smallcaps" }, seatRange(d))));
+  const libraryHead = h("h2", { tabindex: "-1" }, "Library");
+  const shelf = h("div", { class: "shelf", hidden: true, onkeydown: e => { if (e.key === "Escape") turnTo(false); } });
+  const showShelf = () => {
+    const rest = defs.slice(3);
+    fill(shelf, libraryHead,
+      rest.length ? h("div", { class: "shelflist" }, rest.map(shelfRow)) : h("p", { class: "shelfempty" }, "No charters are shelved here yet."),
+      h("button", { class: "link shelfback", onclick: () => turnTo(false) }, "Back to the charter"));
+  };
+  // Change between the form and the Library: the sheet rolls up and comes down again with the other side.
+  // Its top stays where it is. The Library is never taller than the form, so a long list scrolls inside it.
+  let turning = false;
+  const turnTo = (toLibrary, focusTarget) => {
+    if (turning) return;
+    const sheet = page.firstChild;
+    const swap = () => {
+      turning = false;
+      if (toLibrary) {
+        const top = page.getBoundingClientRect().top;
+        Object.assign(page.style, { top: `${top}px`, transform: "none", maxHeight: `calc(100dvh - ${top + 36}px)` });
+        sheet.style.maxHeight = `${sheet.offsetHeight}px`;
+        showShelf();
+      } else page.style.top = page.style.transform = page.style.maxHeight = sheet.style.maxHeight = "";
+      page.classList.toggle("shelved", toLibrary);
+      form.hidden = toLibrary; shelf.hidden = !toLibrary;
+      sheet.scrollTop = 0;
+      if (toLibrary) shelf.querySelector(".shelfrow.on")?.scrollIntoView({ block: "nearest" });
+      (focusTarget?.() ?? (toLibrary ? libraryHead : libraryLink)).focus({ preventScroll: true });
+    };
+    if (reduced()) { swap(); return; }
+    turning = true;
+    page.classList.add("turning");
+    setTimeout(swap, TURN_MS / 2);
+    setTimeout(() => page.classList.remove("turning"), TURN_MS);
   };
   const nameOk = () => {
     const v = name.value.trim();
@@ -123,10 +199,11 @@ async function lobby() {
     location.href = `/?game=${code}`;
   };
   const tables = h("div", { class: "tablelist" });
-  const page = h("div", { class: "titlepage vellum" },
-    h("h1", {}, "Charter"), h("div", { class: "rule" }),
+  const form = h("div", {},
+    h("h1", {}, "Charter"),
     tagline,
-    h("label", { class: "field" }, name),
+    h("div", { class: "numerals", "aria-hidden": "true" }, ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"].map(n => h("span", {}, n))),
+    h("label", { class: "field signature" }, name, h("span", { class: "signlabel" }, "Sign your name")),
     seg, packList, packNote,
     h("button", { class: "act gold", onclick: async () => {
       if (!nameOk()) return;
@@ -136,14 +213,24 @@ async function lobby() {
     } }, "Found a table"),
     h("div", { class: "joinline" }, joinCode, h("button", { class: "act", onclick: () => nameOk() && join(joinCode.value) }, "Join")),
     err, tables);
+  const page = scrollSheet(form, shelf);
   app.replaceChildren(stage, page);
   name.addEventListener("keydown", e => { if (e.key === "Enter") e.target.closest(".titlepage").querySelector(".act.gold").click(); });
+  // The signature font loads before it is needed, so the first letter typed is already in ink.
+  document.fonts?.load('32px "Mrs Saint Delafield"').catch(() => {});
+  // A person with a mouse can start signing at once. A phone keeps its keyboard down until asked.
+  if (!name.value && matchMedia("(pointer: fine)").matches) name.focus({ preventScroll: true });
+  const whole = !params.has("join") && !store.get("charter.opened");
+  const release = reduced() ? () => {} : openScroll(page, whole);
+  if (whole && !reduced()) { store.set("charter.opened", "1"); setTimeout(release, 1200); }
   loadPlayer(stage.querySelector("canvas")).then(async p => {
-    if (!p) return;
-    p.setInsets({ l: Math.min(innerWidth * .46, 480), r: 16, t: 16, b: 16 });
+    if (!p) { release(); return; }
+    p.setInsets({ l: innerWidth <= 560 ? 16 : Math.min(innerWidth * .46, 480), r: 16, t: 16, b: 16 });
     stagePlayer = p;
+    await defsLoaded;
     const d = defs.find(x => x.id === game);
-    if (d) showBackdrop(d);
+    if (d) await showBackdrop(d);
+    release();
   });
   // Only the tables this browser holds a seat at. No route lists every table, because a code is what
   // lets a person reach one. Any table lost from the server is left out.
@@ -260,7 +347,7 @@ function tipFor(id) {
   }
   if (id >= 9000) {
     const l = (v.laws || []).find(x => x.pick === id);
-    return l ? [h("h4", {}, `Law ${l.id}: ${l.title}`), h("div", { class: "english" }, l.english)] : null;
+    return l ? [h("h4", {}, `Law ${l.id}: ${l.title}`), l.description?.text ? h("div", { class: "english" }, l.description.text) : h("pre", { class: "sexp" }, sourceLines(l.text))] : null;
   }
   if (id >= 7000) {
     const t = v.board?.tiles?.[id - 7000];
@@ -349,7 +436,7 @@ function applyMode() {
 async function poll() {
   clearTimeout(G.polling);
   try {
-    const q = new URLSearchParams({ since: G.version });
+    const q = new URLSearchParams({ since: G.version, described: G.view?.described ?? 0 });
     const v = await api(`/api/games/${G.code}/view?${q}`);
     if (G.lost) { G.lost = false; caption(""); }
     if (v && v.talkCount != null && v.talkCount !== G.talkCount) fetchTalk();
@@ -361,7 +448,9 @@ async function poll() {
     if (v && !v.unchanged && v.code) {
       const prev = G.view;
       G.view = v; G.version = v.version;
-      afterView(prev, v);
+      // A description came in, and nothing else changed.
+      if (prev?.version === v.version) renderDock();
+      else afterView(prev, v);
       if (v.phase === "ended" && !G.token && !G.replay) { startReplay(false); return; }
     }
   } catch (e) { if (!G.lost) { G.lost = true; caption("Lost contact with the table. Trying again.", true); } }
@@ -449,11 +538,9 @@ function renderHerald() {
   if (v.phase === "lobby") { fill(U.herald); return; }
   const last = U.herald.querySelector(".die");
   const die = v.lastRoll != null ? h("div", { class: "die" + (G.prevRoll !== v.rollsMade ? " hit" : ""), title: "The last roll" }, String(v.lastRoll)) : null;
-  // A counter in the treasury is something still in effect, such as an alarm after a 7.
-  const marks = (v.marksUp || []).map(m => h("div", { class: "upmark", title: m.note, "aria-label": m.note }, resIcon(m.res, "res")));
   void last;
   G.prevRoll = v.rollsMade;
-  fill(U.herald, h("div", { class: "tab" }, v.phase === "setup" ? "The founding" : v.phase === "ended" ? "The end" : `Round ${v.round}`), die, marks, U.clock);
+  fill(U.herald, h("div", { class: "tab" }, v.phase === "setup" ? "The founding" : v.phase === "ended" ? "The end" : `Round ${v.round}`), die, U.clock);
 }
 /** The time left in this turn, quietly. It comes from the server, which keeps the real clock. */
 function renderClock() {
@@ -656,11 +743,9 @@ function flashFocus() {
   G.dock.focus = null;
 }
 
-/** A rule's statement from Lean, a line for each thing it does. What a short payer owes is part of
- *  the rule, so it stays, but it is set smaller than the rule itself. */
+/** A deal's statement from Lean, a line for each thing it does. */
 function statementOf(text) {
-  return h("p", { class: "statement" }, text.split("\n").map(line =>
-    h("span", { class: line.startsWith("A payer who is short") ? "line small" : "line" }, line)));
+  return h("p", { class: "statement" }, text.split("\n").map(line => h("span", { class: "line" }, line)));
 }
 
 /** Consequences: who gains and who pays at this table. Empty cases are not shown. */
@@ -682,7 +767,43 @@ function consequences(pv) {
 }
 const formalText = text => h("details", { class: "formal" }, h("summary", {}, "Formal text"), h("pre", { class: "sexp" }, text));
 
-/** The charter at a vote: the statement and consequences the proposer saw, then the signatures. */
+/** A law's description, which is someone's words. The rule source below it is what counts. Space is
+ *  kept for it while it is written, so nothing on the sheet moves when it arrives. */
+function describedOf(d, badge = null) {
+  const st = d?.status || "none";
+  const line = st === "pack" ? `${d.pack}'s own words` : "Claude's description";
+  if (st === "none" || st === "failed") return h("div", { class: "described" + (st === "failed" ? " held" : "") }, badge ? h("div", { class: "byline" }, badge) : null,
+    h("p", { class: "nowords" }, "Claude has not described this law. The rule source below is what counts."));
+  return h("div", { class: "described held" }, h("div", { class: "byline" }, h("span", {}, line), badge),
+    st === "writing"
+      ? h("div", { class: "ghost", role: "status", "aria-label": "Claude is writing a description" }, h("i"), h("i"), h("i"))
+      : h("p", { class: "saying" }, d.text));
+}
+/** The rule source, as it prints, with line breaks added so that it can be read. */
+const SOURCE_LINES = new Set(["new-piece", "repeal", "for-each-player", "if", "transfer"]);
+function laidOut(text) {
+  let out = "", depth = 0, quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (quoted) { out += c; if (c === "\\") out += text[++i] ?? ""; else if (c === '"') quoted = false; continue; }
+    if (c === '"') quoted = true;
+    else if (c === "(") {
+      const head = /^[^\s()"]*/.exec(text.slice(i + 1))[0];
+      if (depth > 0 && (head.startsWith("on-") || head.startsWith("set-") || SOURCE_LINES.has(head))) out = out.trimEnd() + "\n" + "  ".repeat(depth);
+      depth++;
+    } else if (c === ")") depth--;
+    out += c;
+  }
+  return out;
+}
+/** The source on the screen. A long line wraps with an indent, so the shape of the law stays clear. */
+const sourceLines = text => laidOut(text).split("\n").map(line => {
+  const indent = line.length - line.trimStart().length;
+  return h("span", { class: "srcline", style: { paddingLeft: `${indent + 2}ch`, textIndent: "-2ch" } }, line.trimStart());
+});
+const sourceOf = text => h("div", { class: "source" }, h("div", { class: "byline" }, h("span", {}, "Rule source")), h("pre", { class: "sexp" }, sourceLines(text)));
+
+/** The charter at a vote: the description, consequences and source the proposer saw, then the signatures. */
 function voteDoc(p) {
   const v = G.view;
   const byYou = p.by === v.you;
@@ -698,10 +819,10 @@ function voteDoc(p) {
   });
   return h("div", {},
     h("div", { class: "smallcaps" }, `${byYou ? "Your rule" : `${seat(p.by)?.name}'s rule`} · ${p.title}`),
-    statementOf(p.english),
+    describedOf(p.description),
     consequences(p.preview),
     p.stale ? h("p", { class: "note-line" }, "Moves since it was proposed changed these figures.") : null,
-    formalText(p.text),
+    sourceOf(p.text),
     h("div", { class: "signatures" }, lines),
     h("div", { class: "tally" }, p.canPass ? (p.yesNeeded ? `${plural(p.yesNeeded, "more yes vote")} needed.` : "") : "It can no longer pass."),
     p.canVote ? h("div", { class: "votebar" },
@@ -737,12 +858,11 @@ function lawsDoc() {
     h("h2", {}, "In force"),
     v.game?.blurb && (v.laws || []).some(l => l.by == null) ? h("p", { class: "note-line" }, `${v.game.name}: ${v.game.blurb}`) : null,
     !laws.length && !deals.length ? h("p", { class: "empty" }, "Only the constitution.") : null,
-    laws.map(l => h("details", { class: "lawrow" + (l.by == null ? " founding" : ""), "data-pick": l.pick, open: G.openLaws?.has(l.id) ? true : null, ontoggle: e => { (G.openLaws ||= new Set())[e.currentTarget.open ? "add" : "delete"](l.id); } },
-      h("summary", {},
-        h("div", { class: "head" }, h("span", { class: "ttl" }, l.title), h("span", { class: "num" }, `Law ${l.id}`)),
-        h("p", { class: "english" }, l.english)),
-      l.by != null ? h("div", { class: "meta" }, `${nameOf(l.by)} proposed it in round ${l.round}. ${l.votes.filter(x => x.yes).length} yes, ${l.votes.filter(x => !x.yes).length} no.`) : h("div", { class: "meta" }, "In force from the founding. A majority can repeal it."),
-      h("pre", { class: "sexp" }, l.text))),
+    laws.map(l => h("div", { class: "lawrow" + (l.by == null ? " founding" : ""), "data-pick": l.pick },
+      h("div", { class: "head" }, h("span", { class: "ttl" }, l.title), h("span", { class: "num" }, `Law ${l.id}`)),
+      describedOf(l.description),
+      sourceOf(l.text),
+      l.by != null ? h("div", { class: "meta" }, `${nameOf(l.by)} proposed it in round ${l.round}. ${l.votes.filter(x => x.yes).length} yes, ${l.votes.filter(x => !x.yes).length} no.`) : h("div", { class: "meta" }, "In force from the founding. A majority can repeal it."))),
     deals.map(d => h("details", { class: "lawrow" },
       h("summary", {},
         h("div", { class: "head" }, h("span", { class: "ttl" }, `Deal until round ${d.lastRound}`)),
@@ -899,7 +1019,7 @@ function trackProposals(prev, v) {
     if (p.kind === "law") for (const x of p.votes) G.stampsSeen.add(`${p.id}:${x.seat}`);
     const busy = G.moment || (G.dock?.t === "draft" && (document.activeElement === G.ui.words || (G.draft && !G.draft.outcome)));
     if (!busy && (p.kind === "law" || p.canSign)) { G.dock = { t: "vote", id: p.id }; }
-    else caption(`${seat(p.by)?.name} proposed: ${p.english}`);
+    else caption(`${seat(p.by)?.name} proposed: ${p.kind === "deal" ? p.english : p.description?.text || `"${p.title}"`}`);
   }
   // Move on to the next open document when one closes.
   if (G.dock?.t === "vote" && !open.includes(G.dock.id) && !G.moment) {
@@ -940,7 +1060,8 @@ function momentDoc(m) {
   const yes = d.votes.filter(x => x.yes).length, no = d.votes.length - yes;
   return h("div", { class: "momentdoc" },
     h("div", { class: "smallcaps" }, d.title),
-    statementOf(d.english),
+    describedOf(d.description),
+    sourceOf(d.text),
     h("div", { class: "signatures" }, lines),
     h("div", { class: "outcome " + (passed ? "passed" : "failed") }, passed ? (m.sealed ? `Enacted, ${yes} to ${no}.` : `${yes} to ${no}.`) : "It did not take effect."),
     passed && m.sealed ? h("div", { class: "sealmark" }, waxSeal()) : null);
@@ -1161,7 +1282,8 @@ async function pollDraft() {
   G.draft = d; G.draftBeat = beat;
   placeSuggestion(d);
   renderDraft(); renderRail();
-  const wait = d.outcome ? null : pollWait(220);
+  // A law's description fills in after the review is on screen.
+  const wait = !d.outcome || d.review?.description?.status === "writing" ? pollWait(220) : null;
   if (wait != null) G.draftPolling = setTimeout(pollDraft, wait);
 }
 async function checkDraft() {
@@ -1215,7 +1337,7 @@ function renderDraft() {
   U.draftBar.hidden = !running && d?.outcome === "ready" && same && !canSuggest;
   // Ready-made laws, one click away, while the desk is empty.
   U.samplesBox.hidden = !!d || !!typed;
-  if (!d && !typed) fill(U.samplesBox, (v?.samples || []).slice(0, 5).map(s => h("button", { class: "link", title: s.english, onclick: () => submitDraft(s.id) }, s.title)));
+  if (!d && !typed) fill(U.samplesBox, (v?.samples || []).slice(0, 5).map(s => h("button", { class: "link", title: s.text, onclick: () => submitDraft(s.id) }, s.title)));
   U.proposeBar.hidden = true;
   if (!d) { fill(U.draftBody); return; }
   if (running) { fill(U.draftBody, draftingView(d)); return; }
@@ -1238,10 +1360,10 @@ function renderDraft() {
   fill(U.draftBody, h("div", { class: same ? "" : "dim" },
     d.why ? h("div", { class: "advice" }, h("div", { class: "advicehead" }, d.whyStale ? "The clerk's advice, before the table last changed" : "The clerk's advice"), h("p", {}, d.why)) : null,
     h("div", { class: "titleline" }, rv.title),
-    statementOf(rv.statement),
-    rv.difference ? h("p", { class: "diff" }, rv.difference) : null,
+    rv.kind === "deal" ? statementOf(rv.statement) : describedOf(rv.description, rv.difference ? h("span", { class: "notasked", title: "The clerk compared this rule with your words. This says nothing about the description." }, "Not exactly what you asked") : null),
+    rv.difference ? h("p", { class: "diff" }, h("span", { class: "diffby" }, "The clerk, on your request: "), rv.difference) : null,
     consequences(rv.preview),
-    formalText(rv.text)));
+    rv.kind === "deal" ? formalText(rv.text) : sourceOf(rv.text)));
   const bar = U.proposeBar;
   bar.hidden = !same;
   if (same) {
@@ -1299,7 +1421,7 @@ function gathering(v) {
   }
   const open = v.maxSeats - v.filled;
   const invite = `${location.origin}/?join=${v.code}`;
-  return h("div", { class: "titlepage vellum" },
+  return scrollSheet(
     h("div", { class: "smallcaps" }, "The table"),
     h("div", { class: "bigcode", title: invite }, v.code),
     h("p", { class: "packnote" }, h("b", {}, v.game?.name), `. ${v.game?.blurb || ""}`),

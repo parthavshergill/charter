@@ -224,7 +224,9 @@ theorem IX_cannot_stall_always_ends (G : GameDef) (hG : G.Valid) (s : State G)
 * If other moves happen first, its answer may be out of date, and the screen must say so.
 * This covers the function. That the screen shows its result is tested, not proved.
 * At a round's end, the deals pay first. Then the laws do exactly what the rule language says.
-* When the dice roll, the entries are exactly that roll's payout and the laws reacting to it.
+* When the dice roll, the entries are exactly that roll's payout, the laws reacting to it, and the laws
+  reacting to the roll itself. Those last laws fire on every roll, and they act for the seat whose turn
+  the roll starts.
 * On the last turn of a round, those come after exactly the round-end entries: the deals' payments,
   the laws' entries and the refunds.
 * A turn change with no roll makes only those round-end entries, if any. -/

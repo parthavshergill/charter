@@ -257,18 +257,20 @@ def mayDraw (s s' : State G) (e : Event) (x : Entry) (i : Seat) : Bool :=
       (lawEntries (s.afterPosting (s.costEntries b k)) (.build b k)).contains x ||
       (endsTurn s e &&
         (s.roundEndLawEntries.contains x ||
-         (harvestEntries (s.afterPosting s.entriesBeforeRoll)
+         (rollEntries (s.afterPosting s.entriesBeforeRoll)
            (rollAt G s.seed s.rollsMade)).contains x))
     | _ =>
       endsTurn s e &&
         (s.roundEndLawEntries.contains x ||
-         (harvestEntries (s.afterPosting s.entriesBeforeRoll)
+         (rollEntries (s.afterPosting s.entriesBeforeRoll)
            (rollAt G s.seed s.rollsMade)).contains x)
   | _ => false
 
 /-- Commandment V, the rule for money that leaves the bank or the treasury. -/
 def mayLeaveBank (s : State G) (e : Event) (x : Entry) : Bool :=
   let harvest := (harvestEntries (s.afterPosting s.entriesBeforeRoll)
+    (rollAt G s.seed s.rollsMade)).contains x
+  let wholeRoll := (rollEntries (s.afterPosting s.entriesBeforeRoll)
     (rollAt G s.seed s.rollsMade)).contains x
   match x.reason with
   | .harvest => endsTurn s e && harvest
@@ -281,7 +283,7 @@ def mayLeaveBank (s : State G) (e : Event) (x : Entry) : Bool :=
      | .move b (.place k _) =>
        (lawEntries (s.afterPosting (s.costEntries b k)) (.build b k)).contains x
      | _ => false) ||
-    (endsTurn s e && (s.roundEndLawEntries.contains x || harvest))
+    (endsTurn s e && (s.roundEndLawEntries.contains x || wholeRoll))
   | _ => false
 
 /-- Commandment V: every entry of a step is allowed by one of its rules. -/
@@ -434,7 +436,7 @@ def claimLimits (s : State G) : List String :=
   claim "limits: no trigger makes a law plan more entries than it counts"
     (s.laws.all fun x =>
       let triggers : List Trigger := [.roundEnd] ++ s.turnOrder.flatMap fun p =>
-        (.harvest p "grain" 1) :: s.rules.pieces.map fun d => .build p d.name
+        (.harvest p "grain" 1) :: (.roll p 7) :: s.rules.pieces.map fun d => .build p d.name
       triggers.all fun t =>
         decide ((Law.plan s t x.2).length ≤ x.2.plannedEntries s.turnOrder.length))
 
@@ -471,6 +473,9 @@ def lawPool (G : GameDef) (s : State G) : List Law :=
         [.when (.harvestedIs r0) [.transfer .bank .actor .harvested .harvestedAmount]]] }
   , { title := "self", clauses := [.onRoundEnd [.forEach .yes [.transfer .each .each (.lit r0) (.lit 1)]]] }
   , { title := "gift", clauses := [.onBuild k0 [.forEach .yes [.transfer .each .actor (.lit r0) (.lit 1)]]] }
+  , { title := "roll gift", clauses := [.onRoll [.transfer .bank .actor (.lit r0) (.lit 1)]] }
+  , { title := "roll tax", clauses := [.onRoll
+        [.forEach (.le (.lit 3) .rolled) [.transfer .each .treasury (.lit r1) (.div (.holding .each (.lit r1)) 2)]]] }
   ] ++ s.laws.map fun x => { title := "repeal", clauses := [.repeal x.1] }
 
 /-- A pool of deals between two seats of this game. -/
@@ -635,11 +640,13 @@ def claimXTurn (s s' : State G) (e : Event) : List String :=
   (let roll := rollAt G s.seed s.rollsMade
    if s'.rollsMade == s.rollsMade + 1 then
      if s.isLastTurn then
-       claim "X(d): a last turn is the round's end and then the harvest, and nothing else"
+       claim "X(d): a last turn is the round's end and then the roll, and nothing else"
          (newEntries s s' ==
-           s.roundEndEntries ++ harvestEntries (s.afterPosting s.roundEndEntries) roll)
+           s.roundEndEntries ++ rollEntries (s.afterPosting s.roundEndEntries) roll) ++
+       claim "X(d): roll laws act for the seat whose turn starts" (s.nextRoller == s'.currentSeat)
      else
-       claim "X(d): any other turn is exactly the harvest" (newEntries s s' == harvestEntries s roll)
+       claim "X(d): any other turn is exactly the roll" (newEntries s s' == rollEntries s roll) ++
+       claim "X(d): roll laws act for the seat whose turn starts" (s.nextRoller == s'.currentSeat)
    else
      claim "X(e): a turn change with no roll makes only the round-end entries"
        (s'.rollsMade == s.rollsMade && newEntries s s' == s.entriesBeforeRoll))
@@ -2295,6 +2302,139 @@ def towerInForce : State tinySettlers :=
 #guard
   let s : State tinySettlers := { towerInForce with pieces := [⟨0, "tower", .spot 0⟩] }
   s.pointsOf 0 == 1 && ({ s with laws := [] } : State tinySettlers).pointsOf 0 == 0
+
+/-! ## Laws that react to the roll -/
+
+/-- Tiny Sevens, with a seed whose rolls start 7, 7, 3. -/
+def sevens2 (events : List Event) : Option (State tinySevens) :=
+  (replay tinySevens 2 42 [3] events).toOption
+
+/-- The next turn change, from the state after these events. -/
+def nextTurn (events : List Event) : Option (State tinySevens × State tinySevens) :=
+  match sevens2 events with
+  | none => none
+  | some s =>
+    match step tinySevens s .forceEndTurn with
+    | .ok s' => some (s, s')
+    | .error _ => none
+
+def forced (n : Nat) : List Event := List.replicate n .forceEndTurn
+
+#guard after (sevens2 []) fun s => (List.range 3).map (rollAt tinySevens s.seed) == [7, 7, 3]
+-- A law fires on a 7, a roll that no hex on this map pays. The actor is the seat whose turn starts.
+#guard (nextTurn (forced 3)).any fun (s, s') =>
+  s'.lastRoll == some 7 && s'.currentSeat == some 0 && s.nextRoller == some 0 &&
+  newEntries s s' ==
+    [⟨.bank, .player 0, "timber", 1, .lawEffect⟩, ⟨.bank, .player 0, "grain", 1, .lawEffect⟩,
+     ⟨.bank, .player 1, "grain", 1, .lawEffect⟩]
+#guard (nextTurn (forced 4)).any fun (s, s') =>
+  s'.lastRoll == some 7 && s'.currentSeat == some 1 && s.nextRoller == some 1 &&
+  (newEntries s s').head? == some ⟨.bank, .player 1, "timber", 1, .lawEffect⟩
+-- The third roll is a 3, so the law moves nothing. The turn wraps round to seat 0.
+#guard (nextTurn (forced 5)).any fun (s, s') =>
+  s'.lastRoll == some 3 && s.nextRoller == some 0 && (newEntries s s').isEmpty
+-- During setup no roll comes next, so there is no roller.
+#guard after (sevens2 (forced 1)) fun s => s.nextRoller == none
+-- At the end of the last round there is no roll, so no roll law fires.
+#guard after (sevens2 (forced (maxTurns tinySevens 2 - 1))) fun s =>
+  s.nextRoller == none && (nextStage s).rolls == false &&
+  predictNextTurn tinySevens s 7 == s.entriesBeforeRoll
+-- The law fires through the whole game, and every claim holds at every step.
+#guard traceFailures tinySevens 2 42 (forced (maxTurns tinySevens 2)) == []
+
+/-- Seat 0 has a settlement on the brick hex, which pays on a 3. The first two rolls are 7. -/
+def sevensWithBrick : List Event :=
+  [placeAt 0 "settlement" 0, placeOn 0 "road" 0 1, endT 0] ++ forced 4
+
+/-- A tithe on harvest and a law that empties the treasury to the seat whose turn starts. -/
+def orderLaws : List (Nat × Law) :=
+  [ (0, { title := "tithe", clauses := [.onHarvest [.transfer .actor .treasury .harvested (.lit 1)]] })
+  , (1, { title := "sweep", clauses := [.onRoll
+      [.transfer .treasury .actor (.lit "brick") (.holding .treasury (.lit "brick"))]] }) ]
+
+-- The order within a roll: the bank pays, the laws react to that payment, then the roll law runs. The
+-- roll law sees the treasury after the tithe. Planned earlier, it would see an empty treasury.
+#guard after (sevens2 sevensWithBrick) fun s =>
+  let t : State tinySevens := { s with laws := orderLaws }
+  rollEntries t 3 ==
+    [⟨.bank, .player 0, "brick", 1, .harvest⟩,
+     ⟨.player 0, .treasury, "brick", 1, .lawEffect⟩,
+     ⟨.treasury, .player 0, "brick", 1, .lawEffect⟩] &&
+  rollEntries t 3 == harvestEntries t 3 ++ [⟨.treasury, .player 0, "brick", 1, .lawEffect⟩]
+-- With no roll law, the entries are the harvest alone.
+#guard after (sevens2 sevensWithBrick) fun s =>
+  let t : State tinySevens := { s with laws := [] }
+  rollEntries t 3 == harvestEntries t 3 && rollEntries t 3 == [⟨.bank, .player 0, "brick", 1, .harvest⟩]
+-- Rolls that no hex pays still run the law, and a game with no roll law writes nothing on them.
+#guard after (sevens2 sevensWithBrick) fun s =>
+  rollEntries ({ s with laws := [] } : State tinySevens) 7 == [] && !(rollEntries s 7).isEmpty
+
+/-- The 7 penalty: a seat holding more than 7 in total pays half of each resource to the bank. -/
+def sevenPenalty : Law :=
+  { title := "Seven penalty"
+    clauses := [.onRoll [.forEach
+      (.and (.eq .rolled (.lit 7))
+        (.lt (.lit 7) (.add (.add (.holding .each (.lit "grain")) (.holding .each (.lit "timber")))
+          (.holding .each (.lit "brick")))))
+      [ .transfer .each .bank (.lit "grain") (.div (.holding .each (.lit "grain")) 2)
+      , .transfer .each .bank (.lit "timber") (.div (.holding .each (.lit "timber")) 2)
+      , .transfer .each .bank (.lit "brick") (.div (.holding .each (.lit "brick")) 2) ]]] }
+
+/-- Seat 0 holds 5 grain and 4 timber. Seat 1 holds 7 grain. -/
+def penaltyGame : Option (State tinySevens) :=
+  (sevens2 (forced 3)).map fun s =>
+    ({ s with laws := [(0, sevenPenalty)] } : State tinySevens).afterPosting
+      [⟨.bank, .player 0, "grain", 5, .harvest⟩, ⟨.bank, .player 0, "timber", 4, .harvest⟩,
+       ⟨.bank, .player 1, "grain", 7, .harvest⟩]
+
+-- On a 7, only the seat over 7 pays, half of each resource, rounded down. Nobody pays on an 8.
+#guard after penaltyGame fun s =>
+  rollEntries s 7 == [⟨.player 0, .bank, "grain", 2, .lawEffect⟩, ⟨.player 0, .bank, "timber", 2, .lawEffect⟩] &&
+  rollEntries s 8 == []
+#guard (lawProblems tinySettlers sixSeats sevenPenalty).isEmpty
+
+-- `rolled` is the total shown, and 0 outside a roll, as `harvestedAmount` is.
+#guard after (settlers2 []) fun s =>
+  Expr.rolled.eval s (Trigger.roll 1 9).env == 9 &&
+  Expr.rolled.eval s (Trigger.roundEnd).env == 0 &&
+  Expr.rolled.eval s (Trigger.build 0 "road").env == 0 &&
+  Expr.rolled.eval s (Trigger.harvest 0 "grain" 2).env == 0
+-- `harvestedAmount` is 0 on a roll trigger, and an `actor` exists there.
+#guard after (settlers2 []) fun s =>
+  Expr.harvestedAmount.eval s (Trigger.roll 1 9).env == 0 &&
+  (Party.actor.account (Trigger.roll 1 9).env) == some (.player 1)
+
+-- The checks treat a roll clause as they treat a harvest clause.
+#guard lawAccepted [.onRoll [.transfer .actor .treasury (.lit "grain") (.lit 1)]]
+#guard lawAccepted [.onRoll [.when (.eq .rolled (.lit 7)) [.transfer .bank .treasury (.lit "grain") .rolled]]]
+#guard lawAccepted [.onRoll [.forEach (.eq .rolled (.lit 2)) [.transfer .each .treasury (.lit "grain") (.lit 1)]]]
+#guard lawRejected [.onRoll []]
+#guard lawRejected [.onRoll [.when .yes []]]
+#guard lawRejected [.onRoll [.forEach .yes []]]
+#guard lawRejected [.onRoll [.transfer .each .treasury (.lit "grain") (.lit 1)]]
+#guard lawRejected [.onRoll [.transfer .actor .treasury .harvested (.lit 1)]]
+#guard lawRejected [.onRoll [.transfer .bank .bank (.lit "grain") (.lit 1)]]
+#guard lawRejected [.onRoll [payTreasury (.div .rolled 0)]]
+#guard lawRejected [.onRoll [.when (.lt (.div .rolled 0) (.lit 1)) [payTreasury (.lit 1)]]]
+-- A number that names `rolled` outside a roll clause passes, and it is 0 there, as `harvestedAmount` is.
+#guard lawAccepted [.onRoundEnd [.transfer .bank .treasury (.lit "grain") .rolled]]
+#guard lawAccepted [.onHarvest [.transfer .actor .treasury .harvested .rolled]]
+#guard lawAccepted [.onRoundEnd [.transfer .bank .treasury (.lit "grain") .harvestedAmount]]
+-- Roll clauses count in both payment caps.
+#guard (badLaw [.onRoll [nestedEach 0, .forEach .yes [nestedEach 0]]]).plannedEntries 6 == 7
+#guard !(lawProblems tinySettlers sixSeats (badLaw [.onRoll [.forEach .yes (List.replicate 11 (nestedEach 0))]])).isEmpty
+#guard (lawProblems tinySettlers sixSeats (badLaw [.onRoll [.forEach .yes (List.replicate 10 (nestedEach 0))]])).isEmpty
+#guard plannedTotal [(0, badLaw [.onRoll [.forEach .yes [nestedEach 0]]])] 6 == 6
+#guard (lawProblems tinySettlers
+    { sixSeats with laws := [(0, badLaw [.onRoll [.forEach .yes (List.replicate 10 (nestedEach 0))]]),
+                             (1, badLaw [.onRoll [.forEach .yes (List.replicate 10 (nestedEach 0))]])] }
+    (badLaw [.onRoll [.forEach .yes (List.replicate 10 (nestedEach 0))]])) ==
+  ["the laws in force could make too many payments at once"]
+-- A roll law cannot change the roll: the dice are the same with and without one.
+#guard after (sevens2 (forced 5)) fun s =>
+  let bare := initialState { tinySevens with foundingLaws := [] } 2 42 [3]
+  s.seed == bare.seed && (List.range 40).all fun k =>
+    rollAt tinySevens s.seed k == rollAt { tinySevens with foundingLaws := [] } bare.seed k
 
 /-! ## Game definitions that are rejected -/
 

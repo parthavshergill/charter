@@ -18,7 +18,7 @@
 # The server reads: CHARTER_TURN_MS (a person's turn, 5 minutes), CHARTER_CLAUDE_TURN_MS (a Claude seat's
 # turn, 10 minutes, 25 in make sim), CHARTER_VOTE_HOLD_MS (how long other seats wait for a person's vote,
 # 30 seconds), CHARTER_TABLE_AWAY_MS (a table pauses with none of its people there, 3 minutes), CHARTER_SEAT_MODEL,
-# CHARTER_SEAT_EFFORT, CHARTER_SEAT_CONCURRENCY. 0 turns a limit off. CHARTER_BIND sets the address to listen on,
+# CHARTER_SEAT_EFFORT, CHARTER_SEAT_CONCURRENCY, CHARTER_DESCRIBE_MODEL, CHARTER_DESCRIBE_EFFORT. 0 turns a limit off. CHARTER_BIND sets the address to listen on,
 # 127.0.0.1 by default. docs/deploy.md lists the budgets.
 PORT ?= 8787
 SPECTATE_PORT ?= 8788

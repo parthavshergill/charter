@@ -38,7 +38,8 @@ def sameRows (a b : List Row) : Bool :=
 /-- What the engine really did with the law, against what it did without it. -/
 def actualRows (s : State G) (withLaw without : List Entry) : List Row := rowsOf s without withLaw
 
-/-- Laws to try, by game. They read holdings, act at a round's end, change prices and make pieces. -/
+/-- Laws to try, by game. They read holdings, act at a round's end, change prices, make pieces and react
+to the roll. -/
 def lawsFor (spec : GameSpec) : List String :=
   if spec.id == slimeSpec.id then
     [ "(law \"Half on a swelling\" (on-build swelling (transfer actor treasury oatmeal (/ (holding actor oatmeal) 2))))"
@@ -53,7 +54,9 @@ def lawsFor (spec : GameSpec) : List String :=
     , "(law \"Half on an outpost\" (on-build outpost (transfer actor treasury helium (/ (holding actor helium) 2))))"
     , "(law \"Ice levy\" (on-round-end (for-each-player true (transfer each treasury ice (/ (holding each ice) 2)))))"
     , "(law \"Tithe\" (on-harvest (transfer actor treasury res (/ amount 2))))"
-    , "(law \"Cheap lanes\" (set-cost lane (bundle (ice 1))))" ]
+    , "(law \"Cheap lanes\" (set-cost lane (bundle (ice 1))))"
+    , "(law \"Roller's gift\" (on-roll (transfer bank actor ice 1)))"
+    , "(law \"Ice levy on a 7\" (on-roll (for-each-player (= rolled 7) (transfer each treasury ice (/ (holding each ice) 2)))))" ]
   else
     [ "(law \"Half on a city\" (on-build city (transfer actor treasury grain (/ (holding actor grain) 2))))"
     , "(law \"Half on a road\" (on-build road (transfer actor treasury timber (/ (holding actor timber) 2))))"
@@ -62,6 +65,9 @@ def lawsFor (spec : GameSpec) : List String :=
     , "(law \"Dole and tithe\" (on-round-end (for-each-player true (transfer bank each grain 1))) (on-harvest (if (< 1 (holding actor grain)) (transfer actor treasury grain 1))))"
     , "(law \"Tithe\" (on-harvest (transfer actor treasury res (/ amount 2))))"
     , "(law \"Cheap cities\" (set-cost city (bundle (grain 2) (ore 2))))"
+    , "(law \"Roller's gift\" (on-roll (transfer bank actor grain 1)))"
+    , "(law \"Half on a 7\" (on-roll (for-each-player (and (= rolled 7) (< 3 (+ (holding each grain) (holding each wool)))) (transfer each treasury grain (/ (holding each grain) 2)) (transfer each treasury wool (/ (holding each wool) 2)))))"
+    , "(law \"Roll tithe\" (on-roll (for-each-player (<= 7 rolled) (transfer each treasury grain (/ (holding each grain) 2)))))"
     , "(law \"Lighthouses\" (new-piece lighthouse (bundle (ore 2) (brick 2)) (points 2) (attach settlement) (yield 1) (limit 2)))" ]
 
 structure Tally where
@@ -74,6 +80,11 @@ structure Tally where
   /-- Builds where running the laws without posting the cost first would have given the wrong figures.
   This shows that the check can see that mistake. -/
   costFirstMatters : Nat := 0
+  /-- Turn ends where a law that reacts to the roll changed what the engine did. -/
+  rollLawChanged : Nat := 0
+  /-- Of those, how many times running the roll law before the harvest posted would have given the wrong
+  figures. This shows that the check can see that mistake. -/
+  harvestFirstMatters : Nat := 0
   failures : List String := []
 
 /-- Vote yes until the law passes. It returns the state just before the deciding vote, and after it. -/
@@ -107,7 +118,19 @@ def tryLaw (spec : GameSpec) (s : State spec.G) (seat : Nat) (text : String) (t 
     let shown := match rolled, e1.lastRoll with
       | true, some r => early ++ rollRows before withLaw r
       | _, _ => early
+    let isRollLaw := L.clauses.any fun | .onRoll _ => true | _ => false
+    let early' : List Entry := before.entriesBeforeRoll
+    let wrongOrder : List Row := match rolled, e1.lastRoll, withLaw.nextRoller with
+      | true, some r, some a =>
+        -- Plan the roll law before the harvest posts, and put the harvest in front of it.
+        let start := withLaw.afterPosting early'
+        let wrong := harvestEntries start r ++ lawEntries start (.roll a r)
+        early ++ rowsOf before (afterTheRoll before r) wrong
+      | _, _, _ => early
     t := { t with
+      rollLawChanged := t.rollLawChanged + (if isRollLaw && !actual.isEmpty then 1 else 0)
+      harvestFirstMatters := t.harvestFirstMatters +
+        (if isRollLaw && !actual.isEmpty && !sameRows actual wrongOrder then 1 else 0)
       turnEnds := t.turnEnds + 1
       lastTurns := t.lastTurns + (if before.isLastTurn then 1 else 0)
       lastTurnsWithRoll := t.lastTurnsWithRoll + (if before.isLastTurn && rolled then 1 else 0)
@@ -182,9 +205,10 @@ def run : IO Bool := do
       for seed in [1, 2] do
         t := playAndCheck spec seats (seed * 1000 + seats) false 2 t
       t := playAndCheck spec seats (7000 + seats) true 3 t
-  IO.println s!"previews: {t.turnEnds} turn ends, {t.lawChangedRoll} changed by a law, {t.lastTurns} last turns, {t.lastTurnsWithRoll} of them with a roll; {t.builds} builds, {t.buildsChanged} changed by a law, {t.costFirstMatters} where the cost must be posted first"
+  IO.println s!"previews: {t.turnEnds} turn ends, {t.lawChangedRoll} changed by a law, {t.lastTurns} last turns, {t.lastTurnsWithRoll} of them with a roll; {t.builds} builds, {t.buildsChanged} changed by a law, {t.costFirstMatters} where the cost must be posted first; {t.rollLawChanged} turn ends changed by a law that reacts to the roll, {t.harvestFirstMatters} where the harvest must be posted first"
   let enough := t.turnEnds > 50 && t.lawChangedRoll > 10 && t.lastTurns > 10 && t.lastTurnsWithRoll > 5 &&
-    t.lastTurns > t.lastTurnsWithRoll && t.builds > 20 && t.buildsChanged > 5 && t.costFirstMatters > 0
+    t.lastTurns > t.lastTurnsWithRoll && t.builds > 20 && t.buildsChanged > 5 && t.costFirstMatters > 0 &&
+    t.rollLawChanged > 10 && t.harvestFirstMatters > 0
   if !enough then IO.println "previews: FAILED: too few cases were tried for this to mean anything"
   for f in t.failures.reverse.take 15 do
     IO.println s!"previews: FAILED: {f}"

@@ -1,7 +1,8 @@
 import Charter.Games.Island
 import Charter.Games.Belt
 import Charter.Games.NotCatan
-import Charter.Games.SlimeParliament
+import Charter.Games.NotCatanWords
+import Charter.Games.SlimeParliamentWords
 import Charter.Scene.OfState
 import Charter.Scene.Belt
 import Charter.Scene.LookCheck
@@ -27,6 +28,8 @@ A pack is one new file and one entry here, and nothing else changes:
 2. Import it here, write a `GameSpec` below, and add that to `gameSpecs`. The lobby, the seats, the log,
    replay and the scene all read from that list. Import the file in `Charter.lean` too, so that
    `make audit` builds it.
+3. If the pack has founding laws, write what they do in plain words, as in
+   `Charter/Games/NotCatanWords.lean`, and put them in `foundingWords`.
 
 A pack's name and sentence are what a player reads when choosing it, so keep the sentence short and
 plain. `Server/PreviewCheck.lean` plays every pack with bots, and `ServerTests.lean` checks its layout.
@@ -56,10 +59,9 @@ structure GameSpec where
   samples : Bool := false
   /-- What a Claude seat or the clerk needs to know about this game and the screen does not say. -/
   guide : String := ""
-  /-- A line for the chronicle when the dice show this number. -/
-  rollNotes : List (Nat × String) := []
-  /-- What it means while the treasury holds a counter, for the mark by the dice. -/
-  upNote : String := ""
+  /-- What the pack says its founding laws do: the law, the start of its fingerprint, and the words. See
+  `Describe.packWords`. Laws of a pack with none of these show their source with a short note. -/
+  foundingWords : List (Law × String × String) := []
   /-- The folder, under the server's root, that holds this pack's mesh files. -/
   meshFolder : String := ""
 
@@ -84,13 +86,10 @@ def beltSpec : GameSpec :=
       { tiles := Games.Belt.tiles, spots := Games.Belt.spots, edges := Games.Belt.edges
         links := Games.Belt.links, theme := Scene.BeltLook.theme, word := "the belt" } }
 
-def alarmNote : String :=
-  "A 7: the alarm rings. Hands over 7 lose half at the end of this round. Until then, the thief takes the harvests of seats with 5 points or more."
-
 def notCatanSpec : GameSpec :=
   { id := "not-catan"
     name := "Not Catan"
-    blurb := "A race to 10 on 19 hexes, where a 7 costs big hands half and knights rob the leaders."
+    blurb := "A race to 10 on 19 hexes, where a 7 costs big hands half."
     G := Games.NotCatan.game
     valid := Games.NotCatan.game_valid
     layout :=
@@ -99,9 +98,8 @@ def notCatanSpec : GameSpec :=
     minSeats := 3
     maxSeats := 4
     samples := true
-    guide := "Two of this game's resources are not goods. Alarm is a counter: a roll of 7 pays it to every settlement and city, and the first founding law moves it straight to the treasury. So a treasury holding alarm means a 7 came up this round. It empties at the round's end. A roll of 7 pays no goods. Laurel pays for a wreath: there are laurels for only two wreaths in the game. Laws can read alarm in the treasury, and a harvest of alarm, so a law can react to a 7 this way."
-    rollNotes := [(7, alarmNote)]
-    upNote := alarmNote }
+    guide := "Laurel is not harvested. It pays for a wreath, and there are laurels for only two wreaths in the game."
+    foundingWords := Games.NotCatan.foundingWords }
 
 def slimeSpec : GameSpec :=
   { id := "slime-parliament"
@@ -115,6 +113,7 @@ def slimeSpec : GameSpec :=
     minSeats := 2
     maxSeats := 4
     meshFolder := "packs/slime-parliament/meshes"
+    foundingWords := Games.SlimeParliament.foundingWords
     guide := "You are a slime mould on a damp log. Oatmeal, dew, rot and pollen are the goods. A tendril costs oatmeal and dew. A node costs oatmeal, dew and rot. A swelling replaces a node. A puffball attaches to a node, costs pollen and oatmeal, and gives every seat pollen. The founding laws say more." }
 
 instance : Inhabited GameSpec := ⟨islandSpec⟩
@@ -145,7 +144,7 @@ def meshFiles : List String :=
 /-! ## Counters
 
 A game can have a resource that no piece and no law fee costs. Nobody wants it for itself, so it is a
-counter that laws read, such as Not Catan's alarm. The screen and the Claude seats leave it out of hands,
+counter that laws read, such as a flag a law keeps in the treasury. The screen and the Claude seats leave it out of hands,
 trades and what a corner pays. It is still in the books and the laws' text, and the rules treat it like
 any other resource. -/
 

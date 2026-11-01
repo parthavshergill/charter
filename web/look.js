@@ -5,7 +5,9 @@ import { setIconLook } from "./icons.js";
 
 // The colour tokens at the top of app.css. Nothing else can be set.
 const TOKENS = new Set(["walnut-0", "walnut-1", "walnut-2", "walnut-3", "brass", "vellum", "vellum-2", "vellum-3",
-  "ink", "ink-2", "ink-3", "gold", "gold-2", "gold-ink", "wax", "wax-2", "pale", "pale-2"]);
+  "ink", "ink-2", "ink-3", "gold", "gold-2", "gold-ink", "wax", "wax-2", "wax-0", "pale", "pale-2",
+  "sign-ink", "act-hover", "act-hover-2", "field", "bright", "err-ink", "tool-off", "need", "good", "stain",
+  "roll-0", "roll-1", "roll-2", "roll-3", "roll-4", "roll-5", "roll-6", "roll-7", "roll-8"]);
 // The fixed list of fonts. These are on the player's machine, so nothing is fetched.
 const FONTS = {
   book: 'Palatino, "Palatino Linotype", "Book Antiqua", "Iowan Old Style", Georgia, serif',
@@ -53,6 +55,6 @@ export function applyLook(look) {
     else console.warn(`look: ${k} is not a colour token this page can set`);
   }
   if (Object.hasOwn(FONTS, look?.bodyFont ?? "")) put("--serif", FONTS[look.bodyFont]);
-  if (Object.hasOwn(FONTS, look?.displayFont ?? "")) put("--display", FONTS[look.displayFont]);
+  if (Object.hasOwn(FONTS, look?.displayFont ?? "")) put("--brand-text", FONTS[look.displayFont]);
   setIconLook(checkedIcons(look?.icons), Object.assign(Object.create(null), look?.marks));
 }

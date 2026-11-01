@@ -37,7 +37,7 @@ end
 
 /-- The effects inside a clause. -/
 def Clause.effects : Clause → List Effect
-  | .onHarvest b | .onBuild _ b | .onRoundEnd b => b
+  | .onHarvest b | .onBuild _ b | .onRoundEnd b | .onRoll b => b
   | _ => []
 
 /-- How many nodes a clause has. -/
@@ -60,6 +60,7 @@ def State.knownKind {G : GameDef} (s : State G) (L : Law) (k : PieceKind) : Bool
 def clauseProblems {G : GameDef} (s : State G) (L : Law) : Clause → List String
   | .onHarvest _ => []
   | .onRoundEnd _ => []
+  | .onRoll _ => []
   | .onBuild k _ => if s.knownKind L k then [] else [s!"there is no piece named {k}"]
   | .setCost k b =>
       (if s.knownKind L k then [] else [s!"there is no piece named {k}"]) ++
@@ -138,6 +139,7 @@ end
 def Clause.env : Clause → LawEnv
   | .onHarvest _ => (Trigger.harvest 0 "" 0).env
   | .onBuild k _ => (Trigger.build 0 k).env
+  | .onRoll _ => (Trigger.roll 0 0).env
   | _ => {}
 
 /-- Why a clause would do nothing, or is wrong where it runs. `R` is the rules at the moment this
@@ -145,7 +147,7 @@ clause applies, and `final` is the rules after the whole law applies. -/
 def Clause.noEffect (G : GameDef) (R final : Rules) (c : Clause) : List String :=
   Effect.problemsAll c.env c.effects ++
   match c with
-  | .onHarvest b | .onRoundEnd b =>
+  | .onHarvest b | .onRoundEnd b | .onRoll b =>
       if Effect.plannedAll 2 b == 0 then ["this rule has no effects"] else []
   | .onBuild k b =>
       (if Effect.plannedAll 2 b == 0 then ["this rule has no effects"] else []) ++

@@ -88,7 +88,8 @@ def theme : Theme :=
       | some "crystal" => 0xB05A9C
       | _ => 0xF0D9A0
     look :=
-      { marks :=
+      { tagline := "Mine the belt. Rewrite its rules. The constitution holds."
+        marks :=
           [ ("helium", "helium"), ("alloy", "alloy"), ("ice", "ice"), ("crystal", "crystal")
           , ("lane", "road"), ("outpost", "settlement"), ("station", "city"), ("dock", "made") ] } }
 

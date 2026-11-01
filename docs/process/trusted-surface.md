@@ -10,13 +10,13 @@ The script stops at `Charter.Engine`. The engine is the code the theorems are ab
 
 ## Size
 
-The ten commandments and the five supporting promises mention 273 definitions in all. Of these, 60 are the short named parts in `Charter/Constitution/Promises.lean`.
+The ten commandments and the five supporting promises mention 275 definitions in all. Of these, 60 are the short named parts in `Charter/Constitution/Promises.lean`.
 
 | Text a reader must review | Size |
 |---|---|
-| The commandments | 239 lines in `Constitution.lean` |
-| The named parts | 437 lines in `Constitution/Promises.lean` |
-| The words | 1,510 lines, in 15 files by topic |
+| The commandments | 241 lines in `Constitution.lean` |
+| The named parts | 439 lines in `Constitution/Promises.lean` |
+| The words | 1,540 lines, in 15 files by topic |
 | SHA-256 | 111 lines |
 
 Three kinds of text are outside the surface: setup placement, which is in the engine; the tiny games, in `Games/Tiny.lean`; and the examples and rejection tests, in `Constitution/Examples.lean`.
@@ -42,7 +42,7 @@ Each row is one group. `Promises` means `Charter/Constitution/Promises.lean`, an
 | The rule language | `RuleLanguage` | 7 | What a law can say. It has no way to name a seat, which commandment II rests on. |
 | What a deal can say | `Deal` | 8 | Signers, deposits, terms, and the most a deal can owe per round. |
 | State and events | `State` | 35 | The game state, every event, and the rules in force, which are computed from the laws. |
-| What a law does | `LawEffects` | 15 | The meaning of the rule language, how a shortfall is settled, and what the dice pay out. |
+| What a law does | `LawEffects` | 17 | The meaning of the rule language, how a shortfall is settled, what the dice pay out, and the whole of a roll, with the seat whose turn it starts. |
 | Payments | `Payments` | 16 | What deals owe at a round's end, refunds, trades and fees. Commandments IV, V and X state these exactly. |
 | Placing a piece | `Placing` | 9 | When a build is allowed, what it costs, and the board after it. Commandment VII rests on this. |
 | Which laws can pass | `LawChecks` | 20 | `lawProblems` and what it needs. These keep laws small and stop laws that would do nothing. |
@@ -63,12 +63,12 @@ All ten commandments rest on the same 121 definitions: the data types of a game,
 | II | 136 | 15 | `Renaming` |
 | III | 146 | 25 | Votes, `ProposalsKept`, `nextStage`, how actions and the phase change |
 | IV | 141 | 20 | `worstCase`, `duePayments`, `BuildsRecorded` |
-| V | 177 | 56 | The named parts of V, `lawEntries`, `harvestEntries`, `settle`, `roundEndEntries`, trades and fees |
+| V | 182 | 61 | The named parts of V, `lawEntries`, `harvestEntries`, `rollEntries`, `settle`, `roundEndEntries`, trades and fees |
 | VI | 140 | 19 | `DealsKept`, `dealAfter`, `closingDeals`, `blockedByDeal`, `tradeBlocked` |
 | VII | 151 | 30 | `canPlace`, `placedPieces`, `costEntries`, `lawEntries`, `settle` |
 | VIII | 134 | 13 | `rollAt`, `dieAt`, `scramble`, `nextStage` |
 | IX | 137 | 16 | `maxTurns`, `maxEvents`, `TurnMovedOn`, `nextStage` |
-| X | 161 | 40 | `Engine.replay`, `Engine.predictNextTurn`, `lawEntries`, `harvestEntries`, `roundEndEntries` |
+| X | 166 | 45 | `Engine.replay`, `Engine.predictNextTurn`, `lawEntries`, `harvestEntries`, `rollEntries`, `roundEndEntries` |
 | `the_winner_earned_it` | 123 | 2 | `pointsOf`, `maxTurns` |
 | `limits_hold` | 123 | 2 | `maxActiveDeals`, `maxOpenPerSeat` |
 | `every_other_event_is_exact` | 130 | 9 | `depositEntries`, `lawFeeEntries`, `refundEntries` |
@@ -86,8 +86,9 @@ All ten commandments rest on the same 121 definitions: the data types of a game,
 ## What no theorem covers
 
 - **The screen.** Nothing proves that it shows the true state, or that it sends what a player chose.
-- **The clerk.** Nothing proves that its sentences match what a law does. Tests check them.
-- **A law's title.** It is free text with no meaning in the game. So the screen must write its read-back of a law from the law's clauses.
+- **A law's description.** It is Claude's words. A pack's founding laws have the pack's own words in its place. No proof and no sentence test stands behind either. They can be wrong. The rule source right below them is what counts, and that is what the screen shows every player and every Claude seat as the binding text.
+- **The clerk.** Nothing proves that the rule it writes is the rule a player asked for. Its `DIFFERENCE` line is its own account of the gap. It says nothing about the description.
+- **A law's title.** It is free text with no meaning in the game. The description call does not see it.
 - **Fair dice.** Nothing proves the rolls are fair. Commandment VIII says only that nobody can change them after the seed is fixed.
 
 ## What is tested but not proved
@@ -98,7 +99,8 @@ All ten commandments rest on the same 121 definitions: the data types of a game,
 - **Every seat can place its setup pieces.** `Charter/EngineTests.lean` checks this for the tiny games. `Charter/Games/IslandTests.lean` checks the settlements for the Island, and shows one way a road can be blocked at 4 seats. A one-time search found no such block at 2 and 3 seats. That search is not kept, so nothing checks that result again.
 - **The preview on the screen.** Commandment X proves `predictNextTurn` is exact. That the screen shows its result is tested only. So are the preview's build cases, which use what commandment VII states.
 - **The promises on real games.** `Charter/EngineTests.lean` runs a checker of the constitution's claims on every step of complete and random games. The file has 445 `#guard`s and `example`s.
-- **The clerk's sentences.** `ServerTests.lean` writes each one out in full, and `make clerk-check` tests its memory and reply handling.
+- **A deal's sentences.** `ServerTests.lean` writes each one out in full.
+- **The clerk and the descriptions, as code.** `make clerk-check` tests the clerk's memory and reply handling. It tests what a description call sends, that a description goes only with the law it was written for, that no client can supply one, and what shows when there is none. The check of what descriptions say was a one-time test, and `docs/process/reviews.md` gives its results.
 - **The whole server.** `make smoke` plays a full game over HTTP, restarts the server, and checks that the game replays from its log.
 
 ## How the proofs are checked

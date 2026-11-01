@@ -18,13 +18,14 @@ variable (σ : Renaming) {G : GameDef}
 
 /-- An environment with its two seats renamed. -/
 def env (E : LawEnv) : LawEnv :=
-  { actor := E.actor.map σ.to, each := E.each.map σ.to, harvested := E.harvested }
+  { actor := E.actor.map σ.to, each := E.each.map σ.to, harvested := E.harvested, rolled := E.rolled }
 
 /-- A trigger with its seat renamed. -/
 def trigger : Trigger → Trigger
   | .harvest a r n => .harvest (σ.to a) r n
   | .build a k => .build (σ.to a) k
   | .roundEnd => .roundEnd
+  | .roll a n => .roll (σ.to a) n
 
 theorem party_account (E : LawEnv) (p : Party) :
     p.account (σ.env E) = (p.account E).map σ.account := by
@@ -50,6 +51,7 @@ theorem expr_eval (s : State G) (E : LawEnv) (e : Expr) :
   induction e with
   | lit n => rfl
   | harvestedAmount => rfl
+  | rolled => rfl
   | holding p r =>
     simp only [Expr.eval, party_account, resRef_get]
     cases p.account E <;> cases r.get E <;> simp [balance_rename]

@@ -27,16 +27,17 @@ def fbCost : UInt32 := 118
 def fbPoints : UInt32 := 119
 def fbBank : UInt32 := 120
 def fbHarvest : UInt32 := 121
-def fbBuild : UInt32 := 122
-def fbRound : UInt32 := 123
-def fbPiece : UInt32 := 124
-def fbRepeal : UInt32 := 125
-def speaker : UInt32 := 126
-def madeA : UInt32 := 127
-def madeB : UInt32 := 128
-def madeC : UInt32 := 129
-def log : UInt32 := 130
-def stump : UInt32 := 131
+def fbRoll : UInt32 := 122
+def fbBuild : UInt32 := 123
+def fbRound : UInt32 := 124
+def fbPiece : UInt32 := 125
+def fbRepeal : UInt32 := 126
+def speaker : UInt32 := 127
+def madeA : UInt32 := 128
+def madeB : UInt32 := 129
+def madeC : UInt32 := 130
+def log : UInt32 := 131
+def stump : UInt32 := 132
 
 /-- Every mesh file: its id, its hash, its colour, how it moves and what stands in for it. -/
 def defs : List Cmd :=
@@ -62,19 +63,20 @@ def defs : List Cmd :=
   , .defineMeshFile 119 "975868af279d7647b182a8da3a0c45edb7841f14d771d7b1e8b7b8a9876a9854" 0xB99D4D { pulse := 0.0, sway := 0.03, glow := 0.1 } (.cone 0.08 0.3)
   , .defineMeshFile 120 "c5f2e06aab6ffbd2ea206fae06d188b78ed0722cbcbed4ac782fd831a337697b" 0x5F9E8D { pulse := 0.0, sway := 0.03, glow := 0.1 } (.cone 0.08 0.3)
   , .defineMeshFile 121 "c266af4320eb2e0fee66cc59b43775e06d4c04a2a291f352db54490f6af3ddb7" 0xCB914D { pulse := 0.0, sway := 0.03, glow := 0.1 } (.cone 0.08 0.3)
-  , .defineMeshFile 122 "9d4a2eec568905a325c48b22014fe4a92925fc8f43a069ab681b9140a038d166" 0xA9A27F { pulse := 0.0, sway := 0.03, glow := 0.1 } (.cone 0.08 0.3)
-  , .defineMeshFile 123 "ba7b6305108c7a864a917104b07e0020f048e73bf3177516fc1f729cbbc43410" 0x947047 { pulse := 0.0, sway := 0.03, glow := 0.1 } (.cone 0.08 0.3)
-  , .defineMeshFile 124 "7f2194df88023a3999e59a09fad3a67af7ec1dd1057876c003e204ac07a58fea" 0xC5B99F { pulse := 0.0, sway := 0.03, glow := 0.1 } (.cone 0.08 0.3)
-  , .defineMeshFile 125 "60cedcb90fb65c6d9e3b61501a19cdc08a2ebee5f118cd6a694691ef71e2d18d" 0x8A7D68 { pulse := 0, sway := 0.012, glow := 0 } (.cone 0.08 0.3)
-  , .defineMeshFile 126 "26c02798b55f0333f35648be1efb7682b1add77c45bb5a6635b0b41285edf0d2" 0xAFA38B { pulse := 0, sway := 0.012, glow := 0.05 } (.cone 0.2 0.5)
-  , .defineMeshFile 127 "83736db807f36b74ef3dbfaff662c0717bea1aa2fd5a41f00b9997a9474a20a8" 0xE2E2E2 { pulse := 0.03, sway := 0, glow := 0.2 } (.cylinder 0.061 0.277)
-  , .defineMeshFile 128 "4ddcc522f5568643837734b696981f3e35930700167e6a9446b8059a6356a1d2" 0xEEEEEE { pulse := 0.03, sway := 0, glow := 0.2 } (.cylinder 0.104 0.174)
-  , .defineMeshFile 129 "849f5eb3330c95301babd3212449e82a578820fd680bdded55416143f92694aa" 0xDADADA { pulse := 0.03, sway := 0, glow := 0.2 } (.cylinder 0.128 0.226)
-  , .defineMeshFile 130 "6dc9d65b0f2ef1fd401b9a1ecd5638cf77dc42079a0c713e3ef495e2526db028" 0x483D24 { pulse := 0, sway := 0, glow := 0 } (.box 13 0.16 6.4)
-  , .defineMeshFile 131 "063a46f006d1062a5ab0b4e57f58823f2c9df1ad3dd9928becbdc259b2ca3e6d" 0x5F462B { pulse := 0, sway := 0, glow := 0 } (.cylinder 0.3 0.33) ]
+  , .defineMeshFile 122 "7be5a25b22bb88b76d4d9ac5173fc72376cecb001ebffddc03ed6d5ae9c63786" 0xBEAFB8 { pulse := 0.0, sway := 0.03, glow := 0.1 } (.cone 0.08 0.3)
+  , .defineMeshFile 123 "9d4a2eec568905a325c48b22014fe4a92925fc8f43a069ab681b9140a038d166" 0xA9A27F { pulse := 0.0, sway := 0.03, glow := 0.1 } (.cone 0.08 0.3)
+  , .defineMeshFile 124 "ba7b6305108c7a864a917104b07e0020f048e73bf3177516fc1f729cbbc43410" 0x947047 { pulse := 0.0, sway := 0.03, glow := 0.1 } (.cone 0.08 0.3)
+  , .defineMeshFile 125 "7f2194df88023a3999e59a09fad3a67af7ec1dd1057876c003e204ac07a58fea" 0xC5B99F { pulse := 0.0, sway := 0.03, glow := 0.1 } (.cone 0.08 0.3)
+  , .defineMeshFile 126 "60cedcb90fb65c6d9e3b61501a19cdc08a2ebee5f118cd6a694691ef71e2d18d" 0x8A7D68 { pulse := 0, sway := 0.012, glow := 0 } (.cone 0.08 0.3)
+  , .defineMeshFile 127 "26c02798b55f0333f35648be1efb7682b1add77c45bb5a6635b0b41285edf0d2" 0xAFA38B { pulse := 0, sway := 0.012, glow := 0.05 } (.cone 0.2 0.5)
+  , .defineMeshFile 128 "83736db807f36b74ef3dbfaff662c0717bea1aa2fd5a41f00b9997a9474a20a8" 0xE2E2E2 { pulse := 0.03, sway := 0, glow := 0.2 } (.cylinder 0.061 0.277)
+  , .defineMeshFile 129 "4ddcc522f5568643837734b696981f3e35930700167e6a9446b8059a6356a1d2" 0xEEEEEE { pulse := 0.03, sway := 0, glow := 0.2 } (.cylinder 0.104 0.174)
+  , .defineMeshFile 130 "849f5eb3330c95301babd3212449e82a578820fd680bdded55416143f92694aa" 0xDADADA { pulse := 0.03, sway := 0, glow := 0.2 } (.cylinder 0.128 0.226)
+  , .defineMeshFile 131 "6dc9d65b0f2ef1fd401b9a1ecd5638cf77dc42079a0c713e3ef495e2526db028" 0x483D24 { pulse := 0, sway := 0, glow := 0 } (.box 13 0.16 6.4)
+  , .defineMeshFile 132 "063a46f006d1062a5ab0b4e57f58823f2c9df1ad3dd9928becbdc259b2ca3e6d" 0x5F462B { pulse := 0, sway := 0, glow := 0 } (.cylinder 0.3 0.33) ]
 
 /-- How many triangles each mesh has, by id. -/
 def triangles : List (UInt32 × Nat) :=
-  [ (100, 664), (101, 328), (102, 1082), (103, 1796), (104, 608), (105, 380), (106, 816), (107, 602), (108, 942), (109, 974), (110, 1010), (111, 972), (112, 968), (113, 188), (114, 170), (115, 298), (116, 310), (117, 238), (118, 784), (119, 636), (120, 836), (121, 904), (122, 648), (123, 780), (124, 788), (125, 576), (126, 2804), (127, 512), (128, 732), (129, 756), (130, 8114), (131, 1102) ]
+  [ (100, 664), (101, 328), (102, 1082), (103, 1796), (104, 608), (105, 380), (106, 816), (107, 602), (108, 942), (109, 974), (110, 1010), (111, 972), (112, 968), (113, 188), (114, 170), (115, 298), (116, 310), (117, 238), (118, 784), (119, 636), (120, 836), (121, 904), (122, 804), (123, 648), (124, 780), (125, 788), (126, 576), (127, 2804), (128, 512), (129, 732), (130, 756), (131, 8114), (132, 1102) ]
 
 end Charter.Games.SlimeParliament.Meshes

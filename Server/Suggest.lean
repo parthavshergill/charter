@@ -15,7 +15,8 @@ uses the rule the talk route uses, and at clerk notes only through this seat's o
 every seat already sees in its view. `ServerTests` holds this.
 
 The "why" is advice from Claude. No check reads it, and the screen shows it apart from the rule, whose
-statement Lean writes from the clauses.
+source Lean prints from the clauses. The rule's description comes from `Server/Describe.lean`, which sees
+none of what this file reads.
 -/
 
 namespace CharterServer.Suggest
@@ -86,6 +87,8 @@ def publicFacts (g : Game) (s : State g.spec.G) (seat : Nat) : String :=
     else s!"This seat cannot pay it now: it needs {bundleWords short} more."
   let deals := if s.deals.isEmpty then "none" else
     "\n".intercalate (s.deals.map fun d => s!"- until round {d.lastRound}: {Text.dealLine g.nameOf d.deal}")
+  let unpaid := (Scene.rollsOf G).filter fun r => !G.map.regions.any (·.number == r)
+  let unpaidWords := if unpaid.isEmpty then "" else s!"No hex pays on {Text.orList (unpaid.map toString)}. "
   let offers := if s.offers.isEmpty then "none" else
     "\n".intercalate (s.offers.map fun o =>
       let to := match o.to with
@@ -94,6 +97,7 @@ def publicFacts (g : Game) (s : State g.spec.G) (seat : Nat) : String :=
       s!"- {g.nameOf o.src} offers {bundleWords o.give} to {to}, for {bundleWords o.get}")
   Clerk.neutralize s!"The bank holds: {", ".intercalate bank}.
 A law costs its proposer {bundleWords G.lawFee}. A deal costs nothing to propose. {fee}
+{unpaidWords}Each turn starts with a roll, and `on-roll` laws run on every one.
 
 What each seat harvests today:
 {"\n".intercalate collects}
@@ -240,7 +244,8 @@ def run (job : Job) (cfg : Settings) (current : IO (Option Game)) (talk : List T
   let mine := notes.filter (·.seat == job.seat)
   let giveUp (why : String) : IO Unit :=
     finish (.refused s!"The clerk could not find a rule to suggest this time. {why} Try again, or write your own rule.")
-  let ready (words why : String) (formal : String) : IO Unit :=
+  let ready (words why : String) (formal : String) : IO Unit := do
+    job.onReady formal
     touch job fun st => { st with suggestedWords := some words, why := some why, stage := "done"
                                   final := some (.ready formal none true) }
   let mut retry : Option (String × String) := none
@@ -248,7 +253,7 @@ def run (job : Job) (cfg : Settings) (current : IO (Option Game)) (talk : List T
     touch job fun st => { st with stage := "sent", attempt := n, text := "", thinking := "",
                                   retryReason := retry.map (·.2) }
     let body := requestBody cfg system (message g s job.seat talk notes retry)
-    let outcome ← runRequest job (curlConfig cfg key body)
+    let outcome ← runRequest job (curlConfig cfg key body) cfg.model
     addSpent job
     if ← job.cancelled.get then
       finish .cancelled

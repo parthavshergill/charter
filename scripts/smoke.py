@@ -209,21 +209,24 @@ def extension_pack(srv):
     srv.post(f"/api/games/{t}/bot", {})
     v = srv.get(f"/api/games/{t}/view?token={token}")
     check(v["game"]["name"] == "Not Catan" and v["game"]["blurb"], "the view names the pack")
-    check(len(v["laws"]) == 7 and all(l["english"] and l["by"] is None for l in v["laws"]), "founding laws are in force from the start, with their sentences")
-    check([l["id"] for l in v["laws"]] == list(range(7)), "founding laws take the first ids")
-    check(sum(l["text"].startswith("In force from the founding") for l in v["chronicle"]) == 7, "the chronicle states each founding law")
-    check("alarm" not in v["resources"] and "laurel" in v["resources"], "a counter is off the screen, and a good a piece costs is on it")
-    check(all(y["res"] != "alarm" for m in v["legalMoves"] for y in m.get("yields", [])), "a corner does not show the counter")
+    check(len(v["laws"]) == 4 and all(l["description"]["status"] == "pack" and l["description"]["text"] and l["by"] is None for l in v["laws"]), "founding laws are in force from the start, in the pack's own words")
+    check([l["id"] for l in v["laws"]] == list(range(4)), "founding laws take the first ids")
+    check(sum(l["text"].startswith("In force from the founding") for l in v["chronicle"]) == 4, "the chronicle states each founding law")
+    check("laurel" in v["resources"], "a good a piece costs is on the screen")
+    check("marksUp" not in v, "the view has no mark by the dice")
+    check(all(y["number"] != 7 for m in v["legalMoves"] for y in m.get("yields", [])), "no corner pays on a 7")
     check(len(v["board"]["tiles"]) == 19 and sum(1 for x in v["board"]["tiles"] if x["res"] is None) == 1, "the board has 19 hexes and one desert")
     scene = srv.raw(f"/api/games/{t}/scene?token={token}")
     picks = [x["pick"] for x in v["legalMoves"] if x["pick"] is not None]
-    SCENES.append((scene, picks, ["Law 0", "Law 6"]))
+    SCENES.append((scene, picks, ["Law 0", "Law 3"]))
     code = None
     for n in (3, 4):
         code, end = bots_only(srv, n, "not-catan", "settlement")
         check(end["target"] == 10 and end["bankRate"] == 4, "the pack keeps its target and bank rate")
         check(end["bank"].get("timber", 0) + sum(s["hand"]["timber"] for s in end["seats"]) + end["treasury"].get("timber", 0) == 19, "19 timber are in the game, wherever they are")
-        check(sum(s["hand"].get("alarm", 0) for s in end["seats"]) == 0, "no hand keeps the counter")
+        sevens = [l["text"] for l in end["chronicle"] if l["text"].endswith("rolled 7.")]
+        paid = [l["text"] for l in end["chronicle"] if l["text"].startswith("By law, on a 7,")]
+        check(len(sevens) > 0, f"bots saw {len(sevens)} sevens, and {len(paid)} of them cost a big hand")
     return code
 
 
@@ -433,6 +436,11 @@ REFUSED_LAWS = [
     ('(law "x" (on-round-end (transfer bank treasury grain (/ 4 0))))', "divide by zero"),
     ('(law "x" (set-bank-rate 3) (set-bank-rate 5))', "same rule twice"),
     ('(law "x" (on-round-end (for-each-player true ' + "(transfer bank each grain 1) " * 22 + ')))', "too many payments"),
+    ('(law "x" (on-roll (transfer each treasury grain 1)))', "does not exist where this rule runs"),
+    ('(law "x" (on-roll (transfer actor treasury res 1)))', "does not exist where this rule runs"),
+    ('(law "x" (on-roll (transfer bank bank grain 1)))', "moves nothing"),
+    ('(law "x" (on-roll (transfer bank treasury grain (/ rolled 0))))', "divide by zero"),
+    ('(law "x" (on-roll (for-each-player true ' + "(transfer bank each grain 1) " * 22 + ')))', "too many payments"),
 ]
 
 
@@ -454,6 +462,38 @@ def end_turn_until(srv, code, tokens, ok):
 
 def held(v, seat):
     return [k for k, n in v["seats"][seat]["hand"].items() if n > 0]
+
+
+def a_roll_law_fires(srv):
+    """Two people pass a law that pays the bank's grain on every roll, and it pays on the next one, to
+    the seat whose turn that roll starts. The chronicle says so."""
+    code = srv.post("/api/games", {"seats": 2})["code"]
+    tokens = [srv.post(f"/api/games/{code}/join", {"name": n, "nonce": 7})["token"] for n in ("Mara", "Ada")]
+    # The Island's law fee is 1 grain and 1 wool.
+    v = end_turn_until(srv, code, tokens, lambda v: v["phase"] == "actions" and all(v["seats"][v["turn"]]["hand"][k] >= 1 for k in ("grain", "wool")))
+    a = v["turn"]
+    b = 1 - a
+    law = '(law "Roller gift" (on-roll (transfer bank actor grain 1)))'
+    r = srv.post(f"/api/games/{code}/propose", {"token": tokens[a], "text": law})
+    check(r["ok"], "a law that reacts to the roll can be proposed")
+    vs = srv.get(f"/api/games/{code}/view?token={tokens[b]}")
+    p = vs["proposals"][-1]
+    check(p["text"] == law and p["description"] == {"status": "none"}, "a roll law typed by hand shows its source, and it has no description")
+    check(srv.post(f"/api/games/{code}/vote", {"token": tokens[a], "id": p["id"], "yes": True})["ok"], "the proposer votes for it")
+    check(srv.post(f"/api/games/{code}/vote", {"token": tokens[b], "id": p["id"], "yes": True})["ok"], "the other seat votes for it")
+    before = srv.get(f"/api/games/{code}/view?token={tokens[a]}")
+    check(len(before["laws"]) == 1, "the roll law is in force")
+    grain = before["seats"][b]["hand"]["grain"]
+    lines = len(before["chronicle"])
+    check(srv.post(f"/api/games/{code}/move", {"token": tokens[a], "move": {"t": "endTurn"}})["ok"], "the turn ends")
+    after = srv.get(f"/api/games/{code}/view?token={tokens[a]}")
+    check(after["turn"] == b and after["seats"][b]["hand"]["grain"] > grain, "the next roll pays the seat whose turn it starts")
+    text = " ".join(l["text"] for l in after["chronicle"][lines:])
+    roll = after["lastRoll"]
+    name = ["Mara", "Ada"][b]
+    article = "an" if roll in (8, 11) else "a"
+    check(f"By law, on {article} {roll}, the bank paid {name} 1 grain." in text, "the chronicle shows the law's payment, as one line")
+    check(any(l["major"] and l["text"].startswith("By law, on") for l in after["chronicle"][lines:]), "that line is one the screen tells")
 
 
 def refusals_and_embargo(srv):
@@ -641,6 +681,7 @@ def main():
         slime_pack(srv)
         claude_table = claude_with_no_key(srv)
         talk_and_replay(srv, code, token, v)
+        a_roll_law_fires(srv)
         table3 = refusals_and_embargo(srv)
         check(v["serverSeed"] is not None, "the seed is revealed at the end")
         check(srv.post(f"/api/games/{code}/move", {"token": token, "move": {"t": "endTurn"}})["ok"] is False, "nothing happens after the end")

@@ -74,9 +74,9 @@ def monumentRow (d : GameSpec) (u0 v0 : Float) : List Cmd :=
   let t := d.layout.theme
   let kinds : List (String × MonumentKind) :=
     [ ("cost", .cost), ("points", .points), ("bank", .bank), ("harvest", .harvest), ("build", .build)
-    , ("round", .roundEnd), ("piece", .newPiece "x"), ("repeal", .repeal) ]
+    , ("round", .roundEnd), ("roll", .roll), ("piece", .newPiece "x"), ("repeal", .repeal) ]
   kinds.zipIdx.flatMap fun ((name, k), i) =>
-    let u := u0 + 1.15 * i.toFloat
+    let u := u0 + 1.05 * i.toFloat
     at_ ((t.monumentModel k).map (Part.scaled 1.5)) u v0 ++ [heading name u (v0 - 0.55)]
 
 /-- Real tiles with real pieces on them, as a game draws them, with the numbers showing. -/

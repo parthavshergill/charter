@@ -35,6 +35,8 @@ class StandIn(http.server.BaseHTTPRequestHandler):
     seat_replies = []
     default = END
     clerk_reply = BANK
+    describe_reply = "Claude's words about this law."
+    describe_requests = []
     delay = 0.0
     keys = set()
     lock = threading.Lock()
@@ -45,10 +47,15 @@ class StandIn(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers["content-length"])))
         is_seat = "format" in body.get("output_config", {})
+        describing = "You describe one law" in body["system"][0]["text"]
         with StandIn.lock:
             StandIn.keys.add(self.headers.get("x-api-key"))
-            (StandIn.seat_requests if is_seat else StandIn.clerk_requests).append(body)
-            item = (StandIn.seat_replies.pop(0) if StandIn.seat_replies else StandIn.default) if is_seat else StandIn.clerk_reply
+            if describing:
+                StandIn.describe_requests.append(body)
+                item = StandIn.describe_reply
+            else:
+                (StandIn.seat_requests if is_seat else StandIn.clerk_requests).append(body)
+                item = (StandIn.seat_replies.pop(0) if StandIn.seat_replies else StandIn.default) if is_seat else StandIn.clerk_reply
             delay = StandIn.delay if is_seat else 0
         if delay:
             time.sleep(delay)
@@ -284,10 +291,47 @@ def main():
         check(len(StandIn.clerk_requests) == 1, "a draft goes to the clerk")
         check("Please make the bank trade three for one." in user_text(StandIn.clerk_requests[0]), "the clerk gets the seat's words")
         msg = user_text(StandIn.seat_requests[1])
-        check("<your_draft>" in msg and "The bank trades 3" in msg, "the seat reads the rule as the game reads it")
+        check("<your_draft>" in msg and BANK in msg, "the seat reads its draft as the rule source")
+        wait_for(lambda: len(StandIn.describe_requests) == 1, "the description call")
+        described = json.dumps(StandIn.describe_requests[0])
+        check("Please make the bank" not in described and "(set-bank-rate 3)" in described, "a seat's draft gets a description from the law alone")
         wait_for(lambda: t.view()["turn"] == t.human, "the seat's turn to end")
         check(before < t.view()["version"], "the seat's turn went on after its draft")
         check(len(StandIn.seat_requests) >= 2, "what came after the draft in that answer was not carried out")
+
+        # A seat reads the source as what binds, and any description as someone's words.
+        rules_text = StandIn.seat_requests[0]["system"][0]["text"]
+        check("The source is the law, and it is the only text that binds." in rules_text, "the rules say the source is what binds")
+        # This table has its own server, so that its seats stop before the next test counts requests.
+        pack_data = tempfile.mkdtemp(prefix="charter-seats-pack-")
+        pack_srv = Server(free_port(), pack_data, api_port)
+        try:
+            pack = pack_srv.req("/api/games", {"seats": 3, "game": "not-catan"})["code"]
+            pack_token = pack_srv.req(f"/api/games/{pack}/join", {"name": "Ann", "nonce": 7})["token"]
+            count = len(StandIn.seat_requests)
+            pack_srv.req(f"/api/games/{pack}/claude", {})
+            pack_srv.req(f"/api/games/{pack}/claude", {})
+            v = pack_srv.get(f"/api/games/{pack}/view?token={pack_token}")
+            if v["turn"] == 0:
+                for _ in range(4):
+                    v = pack_srv.get(f"/api/games/{pack}/view?token={pack_token}")
+                    place = [m for m in v["legalMoves"] if m["move"]["t"] == "place"]
+                    if not place:
+                        break
+                    pack_srv.req(f"/api/games/{pack}/move", {"token": pack_token, "move": place[0]["move"]})
+                pack_srv.req(f"/api/games/{pack}/move", {"token": pack_token, "move": {"t": "endTurn"}})
+            def asked():
+                for r in StandIn.seat_requests[count:]:
+                    if "Rule source, the binding text: (law" in user_text(r):
+                        return user_text(r)
+                return None
+            msg = wait_for(asked, "a seat at the pack's table to be asked")
+            check("The description from the pack Not Catan, which does not bind: " in msg, "a seat reads a pack's words as the pack's, and not as binding")
+            check("Anyone who builds" not in msg, "a seat reads no sentence written by rule for a law")
+        finally:
+            pack_srv.stop()
+            shutil.rmtree(pack_data, ignore_errors=True)
+        time.sleep(0.3)  # A request sent just before the stop may still be arriving.
 
         # A suggestion to a person reads no seat's confessional and no seat's unproposed draft.
         reset()
