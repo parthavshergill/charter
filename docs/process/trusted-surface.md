@@ -171,7 +171,7 @@ Two more theorems, in `Server/SecrecyReach.lean`, carry the promise to code that
 
 `bash scripts/comparator.sh` runs Lean's Comparator, `lake comparator`, inside its bubblewrap sandbox. Comparator needs Linux, so the script uses a Docker container. CI runs it on each pull request that can change a theorem. `make audit` does not run it, and neither replaces the other.
 
-`comparator.json` lists 25 theorems: the ten commandments, the six supporting promises, the six witnesses in `Charter/Proofs/Witness.lean` and `Charter/Proofs/IslandWitness.lean`, and the three secrecy theorems in `Server/SecrecyPromise.lean`. Comparator accepted the first 22. The secrecy theorems came later, and need a new run. With `--paranoid`, the five other checkers that ship with Lean accepted those 22 too. CI does not use `--paranoid`, so that was a run by hand, and a later change needs a new one.
+`comparator.json` lists 25 theorems: the ten commandments, the six supporting promises, the six witnesses in `Charter/Proofs/Witness.lean` and `Charter/Proofs/IslandWitness.lean`, and the three secrecy theorems in `Server/SecrecyPromise.lean`. Comparator accepted all 25. With `--paranoid`, the five other checkers that ship with Lean accepted the first 22. The secrecy theorems came later and have not had that run. CI does not use `--paranoid`, so that was a run by hand, and a later change needs a new one.
 
 For those theorems, Comparator checks three things:
 

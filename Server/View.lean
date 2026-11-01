@@ -277,7 +277,8 @@ def view (g : Game) (code : String) (you : Option Nat) (drafting : List Nat) (bo
     , ("started", toJson g.room.started), ("maxSeats", toJson g.room.maxSeats)
     , ("minSeats", toJson g.room.minSeats), ("filled", toJson g.room.filled)
     , ("board", boardJson g.spec)
-    , ("resources", toJson (goodsOf G))
+    -- A hidden good goes on the screen even if no piece costs it, so that its owner sees it.
+    , ("resources", toJson (goodsOf G ++ g.secrecy.hidden.filter (markRes G)))
     , ("seatColors", toJson (g.spec.layout.theme.seats.map colorHex))
     , ("look", lookJson g.spec.layout.theme)
     , ("drafting", toJson drafting)
