@@ -190,9 +190,14 @@ def offerJson (s : State G) (you : Option Nat) (o : Offer) : Json :=
 /-- The sample laws are written for the Island's pieces and resources. A game with those can use them. -/
 def samplesJson (g : Game) : Json :=
   if !g.spec.samples then Json.arr #[] else
+  -- A game with a founding law on the roll does not need a sample law about the roll.
+  let rollRule (L : Law) : Bool := L.clauses.any fun | .onRoll _ => true | _ => false
+  let hasRollRule := g.spec.G.foundingLaws.any rollRule
   Json.arr (Rules.sampleLaws.filterMap fun (id, text) =>
     match g.parse text with
-    | .ok (.law L) => some (Json.mkObj [("id", id), ("title", L.title), ("english", Text.lawText L), ("text", text)])
+    | .ok (.law L) =>
+      if hasRollRule && rollRule L then none
+      else some (Json.mkObj [("id", id), ("title", L.title), ("english", Text.lawText L), ("text", text)])
     | _ => none).toArray
 
 def lineJson (l : Line) : Json :=
@@ -253,9 +258,6 @@ def view (g : Game) (code : String) (you : Option Nat) (drafting : List Nat := [
       [ ("phase", toJson (phaseText s.phase)), ("round", toJson s.round), ("rounds", toJson G.rounds)
       , ("turn", toJson s.currentSeat), ("lastRoll", toJson s.lastRoll)
       , ("rollsMade", toJson s.rollsMade)
-      , ("marksUp", Json.arr (((G.resources.map (·.name)).filter fun (r : String) =>
-          markRes G r && decide (0 < s.balance .treasury r)).map fun r =>
-            Json.mkObj [("res", Json.str r), ("note", Json.str g.spec.upNote)]).toArray)
       , ("target", toJson G.targetPoints), ("bankRate", toJson s.rules.bankRate)
       , ("fee", feeJson s you)
       , ("prompt", promptOf g s you legal)
