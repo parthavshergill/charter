@@ -254,7 +254,7 @@ def newKind (k : PieceKind) : PieceKind := "k_" ++ k.toUpper ++ "_x"
 def renamedEnv (T : Tables) (settings : Settings) (seats seed : Nat) (leak : Bool := false) : Except String Env := do
   let e ← Env.start T settings (callers seats) seed
   let G' := rGame newRes newKind T.G
-  let T' := Tables.make T.id G' T.minSeats T.maxSeats (T.library.map (rLaw newRes newKind)) T.spotXY
+  let T' := Tables.make T.id G' T.minSeats T.maxSeats ((T.library.zip T.libraryText).map fun (L, t) => (rLaw newRes newKind L, t)) T.spotXY
   let e' ← Env.start T' settings (callers seats) seed
   -- Put each renamed name in the row of its old name.
   let ep : Episode := { e.ep with

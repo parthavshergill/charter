@@ -555,6 +555,14 @@ def create (j : Json) : Except String Game := do
   let some spec := specOf? (jStr j "game") | throw s!"there is no game called {(jStr j "game").getD ""}"
   if seats < spec.minSeats || spec.maxSeats < seats then
     throw s!"{spec.name} has {spec.minSeats} to {spec.maxSeats} seats"
+  -- Only the training harness's saved games name a dealt map. See `GameSpec.dealt`.
+  let spec ← match j.getObjVal? "_map" with
+    | .error _ => pure spec
+    | .ok m =>
+      let deal ← (fromJson? m : Except String (List (String × Nat)))
+      match spec.dealt deal with
+      | some d => pure d
+      | none => throw s!"this map does not fit {spec.name}"
   pure { spec, room := Lobby.Room.new code spec.minSeats seats, serverSeed := UInt64.ofNat seed, events := 1 }
 
 /-- Seat the players and start. -/

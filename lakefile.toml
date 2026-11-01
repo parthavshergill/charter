@@ -59,3 +59,9 @@ srcDir = "rl/lean"
 name = "charter-rl-check"
 srcDir = "rl/lean"
 root = "CharterRL.CheckMain"
+
+# Turns rl/eval's saved games into event logs for `make spectate`. See rl/lean/CharterRL/LogsMain.lean.
+[[lean_exe]]
+name = "charter-rl-logs"
+srcDir = "rl/lean"
+root = "CharterRL.LogsMain"

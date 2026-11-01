@@ -5,7 +5,10 @@
 //
 // Seats: agent i plays game seat seat_of[i], drawn afresh each game, so no agent always sits first. A waiting agent
 // sees zeros and a mask with only the no-op. With num_agents = 1 (the bot ladder), bots fill the other seats:
-// bot_policy 0 plays random legal actions, 1 is hand, 2 fair, 3 closed. With no offers made, 1, 2 and 3 play the same.
+// bot_policy 0 plays random legal actions, 1 is hand, 2 fair, 3 closed, 4 champion, 5 champion-closed. With no offers
+// made, 1, 2 and 3 play the same. champion makes and accepts offers among bot seats; 5 is the same without offers.
+// bot_share: in self-play (num_agents = 4), each game has this chance that agents 1 to 3 sit out and bot_policy bots
+// take their seats, so agent 0 also trains against bots. Agents that sit out see only waiting rows, with no reward.
 #include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -31,15 +34,16 @@ typedef float obs_t;
 #define ACT_SIZES {CHARTER_ACTS + 1}
 #define NUM_ATNS 1
 #define REWARD_SEATS 6
-enum { BOT_RANDOM = 0, BOT_HAND = 1, BOT_FAIR = 2, BOT_CLOSED = 3 };
-static const char* BOT_NAMES[] = {"caller", "hand", "fair", "closed"};
+enum { BOT_RANDOM = 0, BOT_HAND = 1, BOT_FAIR = 2, BOT_CLOSED = 3, BOT_CHAMPION = 4, BOT_CHAMPION_CLOSED = 5 };
+#define NUM_BOT_POLICIES 6
+static const char* BOT_NAMES[] = {"caller", "hand", "fair", "closed", "champion", "champion-closed"};
 
 struct Log {
     float perf, score, policy_0_score, draw_rate;
     float episode_return, episode_length, win_seat0, win_seat1, win_seat2, win_seat3;
     float points, points_share, rounds, decisions, invalid_rate, laws_proposed, laws_passed;
     float hist_score, hist_n;
-    float bot_score, bot_n;
+    float bot_score, bot_n;   // games where bot_share put bots in the other seats
     float n;
 };
 
@@ -51,8 +55,8 @@ struct Env {
     int num_agents;
     unsigned int rng;
     int bot_policy;
-    float bot_mix;         // share of games where bots (bot_policy) take every seat but agent 0's
-    int bot_game;          // this game is one of them
+    float bot_share;
+    int playing;           // agents in this game: num_agents, or 1 when bots took the others' seats
     int num_games;
     void* games[MAX_GAMES];
     int current;
@@ -65,6 +69,7 @@ struct Env {
 };
 
 static inline void puf_set_bot_policy(Env* env, int bot_policy) {
+    assert(bot_policy >= 0 && bot_policy < NUM_BOT_POLICIES);
     env->bot_policy = bot_policy;
 }
 
@@ -125,10 +130,7 @@ static void write_outputs(Env* env) {
 static void add_rewards(Env* env) {
     float r[REWARD_SEATS];
     charter_rewards(G(env), r, REWARD_SEATS);
-    for (int i = 0; i < env->num_agents; i++) {
-        if (env->seat_of[i] < 0) {
-            continue;
-        }
+    for (int i = 0; i < env->playing; i++) {
         float x = r[env->seat_of[i]];
         env->agents[i].rewards[0] += x;
         env->returns[i] += x;
@@ -162,7 +164,7 @@ static void finish(Env* env) {
     l->invalid_rate += env->moves ? (float)env->invalid / env->moves : 0.0f;
     l->laws_proposed += info[5];
     l->laws_passed += info[6];
-    if (env->bot_game) {
+    if (env->num_agents > 1 && env->playing == 1) {
         l->bot_score += won;
         l->bot_n += 1.0f;
     } else if (env->tag > 0) {
@@ -197,14 +199,13 @@ static void start_game(Env* env) {
         env->agent_at[s] = -1;
         env->random_seat[s] = 0;
     }
-    // With bot_mix, some games put bots in every seat but agent 0's; the other agents sit out and only wait.
-    env->bot_game = env->num_agents > 1 && env->bot_mix > 0
-        && (float)rand_r(&env->rng) / ((float)RAND_MAX + 1.0f) < env->bot_mix;
-    for (int i = 0; i < env->num_agents; i++) {
-        if (env->bot_game && i > 0) {
-            env->seat_of[i] = -1;
-            continue;
-        }
+    // Agents beyond `playing` sit this game out. Their seat_of is never read.
+    env->playing = env->num_agents;
+    if (env->num_agents > 1 && env->bot_share > 0 &&
+        (float)rand_r(&env->rng) / (float)RAND_MAX < env->bot_share) {
+        env->playing = 1;
+    }
+    for (int i = 0; i < env->playing; i++) {
         env->seat_of[i] = perm[i];
         env->agent_at[perm[i]] = i;
     }
@@ -308,7 +309,9 @@ void puf_init(Env* env, Dict* kwargs) {
     assert(charter_base_size() == CHARTER_BASE_OBS && charter_full_size() == CHARTER_FULL_OBS);
     env->num_agents = (int)dict_get(kwargs, "num_agents");
     env->bot_policy = (int)opt_num(kwargs, "bot_policy", BOT_HAND);
-    env->bot_mix = (float)opt_num(kwargs, "bot_mix", 0.0);
+    assert(env->bot_policy >= 0 && env->bot_policy < NUM_BOT_POLICIES);
+    env->bot_share = (float)opt_num(kwargs, "bot_share", 0.0);
+    env->playing = env->num_agents;
     assert(env->num_agents == 1 || env->num_agents == SEATS);
     int move_rows = (int)opt_num(kwargs, "move_rows", 0);
 #ifdef CHARTER_MOVE_ROWS

@@ -10,7 +10,7 @@ static double now(void) {
     return t.tv_sec + t.tv_nsec * 1e-9;
 }
 
-static int run(const char* games, int num_agents, int bot, double seconds, const char* vote, const char* mix) {
+static int run(const char* games, int num_agents, int bot, double seconds, const char* vote, const char* share) {
     Dict kw = {0};
     char buf[32];
     puf_ini_set(&kw, "games", games);
@@ -19,7 +19,7 @@ static int run(const char* games, int num_agents, int bot, double seconds, const
     snprintf(buf, sizeof(buf), "%d", bot);
     puf_ini_set(&kw, "bot_policy", buf);
     puf_ini_set(&kw, "vote_mode", vote);
-    puf_ini_set(&kw, "bot_mix", mix);
+    puf_ini_set(&kw, "bot_share", share);
 #ifdef CHARTER_MOVE_ROWS
     puf_ini_set(&kw, "move_rows", "1");
 #endif
@@ -77,12 +77,11 @@ static int run(const char* games, int num_agents, int bot, double seconds, const
         games_done += term[0] > 0;
     }
     double dt = now() - t0;
-    printf("games=%s agents=%d bot=%d vote=%s: %.0f ticks/s (%.0f agent rows/s), %.1f games/s, perf=%.3f "
-           "invalid=%.3f bad=%ld mean_reward_per_game=%.3f bot_mix=%s bot_games=%.0f bot_score=%.3f\n",
-        games, num_agents, bot, vote, ticks / dt, ticks * num_agents / dt, games_done / dt,
+    printf("games=%s agents=%d bot=%d vote=%s bot_share=%s: %.0f ticks/s (%.0f agent rows/s), %.1f games/s, perf=%.3f "
+           "invalid=%.3f bad=%ld mean_reward_per_game=%.3f\n",
+        games, num_agents, bot, vote, share, ticks / dt, ticks * num_agents / dt, games_done / dt,
         env.log.n ? env.log.perf / env.log.n : 0, env.log.n ? env.log.invalid_rate / env.log.n : 0, bad,
-        games_done ? total_reward / games_done : 0, mix, env.log.bot_n,
-        env.log.bot_n ? env.log.bot_score / env.log.bot_n : 0);
+        games_done ? total_reward / games_done : 0);
     puf_close(&env);
     return bad == 0 && games_done > 0 ? 0 : 1;
 }
@@ -95,8 +94,10 @@ int main(int argc, char** argv) {
     fails += run("island", 1, BOT_RANDOM, s, "bot", "0");
     fails += run("island", 1, BOT_HAND, s, "bot", "0");
     fails += run("not-catan", 1, BOT_HAND, s, "random", "0");
-    fails += run("island,not-catan", 4, BOT_HAND, s, "bot", "0.5");
-    fails += run("island,not-catan", 4, BOT_RANDOM, s, "policy", "0.5");
+    fails += run("island,not-catan", 1, BOT_CHAMPION, s, "bot", "0");
+    fails += run("island,not-catan", 1, BOT_CHAMPION_CLOSED, s, "bot", "0");
+    // Half the games against three champions, half in self-play. Rewards no longer sum to 1 per game.
+    fails += run("island,not-catan", 4, BOT_CHAMPION, s, "bot", "0.5");
     printf(fails ? "FAIL\n" : "PASS\n");
     return fails ? 1 : 0;
 }
