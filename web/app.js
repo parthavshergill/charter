@@ -428,6 +428,7 @@ async function gameScreen(code) {
     clock: h("div", { class: "clock", hidden: true }),
     caption: h("div", { class: "caption", role: "status" }),
     ledge: h("div", { class: "ledge" }),
+    declared: h("div", { class: "declared vellum", hidden: true }),
     replayBar: h("div", { class: "replaybar", hidden: true }),
     prompt: h("div", { class: "prompt", role: "status", hidden: true }),
     slips: h("div", { class: "slips" }),
@@ -443,7 +444,7 @@ async function gameScreen(code) {
   buildDraftDesk();
   buildLedge();
   app.replaceChildren(h("div", { class: "stage" }, canvas, svg, h("div", { class: "vignette" })),
-    h("div", { class: "crown" }, U.houses, h("div", { class: "heraldry" }, U.herald, U.caption)), U.slips, U.prompt, U.ledge, U.replayBar, U.dock, U.rail, U.menu, U.pickmenu, U.tip, U.center);
+    h("div", { class: "crown" }, U.houses, h("div", { class: "heraldry" }, U.herald, U.caption)), U.slips, U.prompt, U.declared, U.ledge, U.replayBar, U.dock, U.rail, U.menu, U.pickmenu, U.tip, U.center);
   G.player = await loadPlayer(canvas);
   if (G.player) { G.player.onPick = onPick; G.player.onHover = onHover; } else G.use3d = false;
   applyMode();
@@ -613,8 +614,6 @@ function buildLedge() {
   const U = G.ui;
   U.hand = h("div", { class: "hand", role: "group", "aria-label": "Your hand" });
   U.tray = h("div", { class: "tray" });
-  U.declared = h("div", { class: "declared vellum", hidden: true });
-  document.getElementById("app").append(U.declared);
   U.endTurn = h("button", { class: "act endturn", onclick: () => endTurn() });
   fill(U.ledge, U.hand, U.tray, U.endTurn);
 }
