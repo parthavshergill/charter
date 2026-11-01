@@ -99,8 +99,9 @@ def sh(cmd, timeout=None, cwd=None, env=None):
     return code, "".join(out)
 
 
-def build_puffer(move_rows=False, out="puffer", patch=True):
-    """Build PufferLib's trainer with the Charter env compiled in, and rl/puffer/patches applied unless patch is False."""
+def build_puffer(move_rows=False, out="puffer", patch=True, encoder="flat"):
+    """Build PufferLib's trainer with the Charter env compiled in, and rl/puffer/patches applied unless patch is False.
+    `encoder="entity"` also compiles in rl/entity/charter_entity.cu through the hook in src/ocean.cu."""
     d = f"{PUFFER}/ocean/charter"
     os.makedirs(d, exist_ok=True)
     sh(f"cp {SRC}/puffer/charter.h {d}/charter.h && cp {REPO}/rl/env/charter_rl.h {d}/charter_rl.h && "
@@ -109,6 +110,11 @@ def build_puffer(move_rows=False, out="puffer", patch=True):
         else f"cd {PUFFER} && git checkout -q -- src"))
     lib = f"{REPO}/rl/build"
     extra = f"-L{lib} -lcharter_rl -Xlinker=-rpath -Xlinker={lib}" + (" -DCHARTER_MOVE_ROWS" if move_rows else "")
+    if encoder == "entity":
+        sh(f"cp {SRC}/entity/charter_entity.cu {d}/ && "
+           f"python3 {SRC}/entity/gen_layout.py {SRC}/layout.json {d}/charter_entity_layout.h && "
+           f"python3 {SRC}/entity/apply_hook.py {PUFFER}")
+        extra += f" -DPUFFER_CHARTER_ENTITY -I{d}"
     code, text = sh(f"cd {PUFFER} && NVCC_EXTRA={shlex.quote(extra)} ./build.sh charter {out} 2>&1 | tail -20 && test -x {out}",
                     env={"CCACHE_DIR": f"{VOL}/ccache"})
     return code, text
@@ -135,14 +141,15 @@ def test(quick: bool = False):
 
 
 @app.function(gpu=GPU, cpu=8, memory=16384, timeout=4 * 3600, volumes={VOL: vol})
-def train(run: str, train_args: str = "", seconds: int = 600, move_rows: bool = False, patch: bool = True):
+def train(run: str, train_args: str = "", seconds: int = 600, move_rows: bool = False, patch: bool = True,
+          encoder: str = "flat"):
     """Build the trainer and train for at most `seconds`. Writes /vol/<run>/: train.log, ckpt/, meta.json."""
     out = f"{VOL}/{run}"
     os.makedirs(out, exist_ok=True)
     t0 = time.time()
     sh("ln -sf /usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1 /usr/lib/x86_64-linux-gnu/libnvidia-ml.so; "
        "nvidia-smi --query-gpu=name,driver_version --format=csv,noheader")
-    code, text = build_puffer(move_rows, patch=patch)
+    code, text = build_puffer(move_rows, patch=patch, encoder=encoder)
     if code != 0:
         return {"build": code, "tail": text[-2000:]}
     build_s = time.time() - t0
@@ -162,8 +169,8 @@ def train(run: str, train_args: str = "", seconds: int = 600, move_rows: bool = 
             layers = int(tok.split("=")[1])
     obs = 7122 if move_rows else 4434
     for c in ckpts[-1:] + ckpts[:1]:
-        json.dump({"name": f"{run}/{os.path.basename(c)}", "format": "puffer-flat", "obs_size": obs, "act_size": 696,
-                   "hidden": hidden, "layers": layers,
+        json.dump({"name": f"{run}/{os.path.basename(c)}", "format": f"puffer-{encoder}", "obs_size": obs,
+                   "act_size": 696, "hidden": hidden, "layers": layers, "entity_dim": 32,
                    "settings": {"vote_mode": "bot", "move_rows": move_rows}}, open(c + ".json", "w"))
     vol.commit()
     return {"build_seconds": round(build_s), "train_seconds": round(train_s), "checkpoints": len(ckpts),
@@ -213,7 +220,7 @@ def guard(max_dollars, gpu, cpu, gib, want_seconds):
 @app.local_entrypoint()
 def main(action: str = "test", run: str = "smoke", minutes: float = 10, max_dollars: float = 1.0,
          train_args: str = "", games: int = 200, subjects: str = "", quick: bool = False, move_rows: bool = False,
-         no_patch: bool = False):
+         no_patch: bool = False, encoder: str = "flat"):
     if action == "test":
         total = guard(max_dollars, None, 4, 8, 1500)
         print(json.dumps(test.with_options(timeout=total).remote(quick), indent=1))
@@ -223,7 +230,7 @@ def main(action: str = "test", run: str = "smoke", minutes: float = 10, max_doll
         seconds = total - 600
         if seconds < 60:
             sys.exit("[money] too little money for a useful run")
-        r = train.with_options(timeout=total).remote(run, train_args, seconds, move_rows, not no_patch)
+        r = train.with_options(timeout=total).remote(run, train_args, seconds, move_rows, not no_patch, encoder)
         print(json.dumps(r, indent=1))
     elif action == "eval":
         total = guard(max_dollars, None, 8, 8, 3 * 3600)
