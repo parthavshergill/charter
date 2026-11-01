@@ -95,6 +95,28 @@ All ten commandments rest on the same 134 definitions: the data types of a game,
 - **A law's title.** It is free text with no meaning in the game. The description call does not see it.
 - **Fair dice.** Nothing proves the rolls are fair. Commandment VIII says only that nobody can change them after the seed is fixed.
 
+## The text of a law
+
+Promise X is proved from the `Law` value onward. People and Claude seats read the text, so `Server/RoundTrip.lean` proves a step before that.
+
+**What is now proved.** `Rules.parse_of_print`: turn a law or a deal into its S-expression, parse that, and you get back exactly the same value. It covers every clause, effect, number, test and deal term. Its one condition is `Readable.proposal`, in `Server/Readable.lean`, which follows the parser's grammar:
+
+- Every named resource is in the game. A resource in a transfer or a number is also not called `res`, which means the resource the dice just paid.
+- A law has at least one clause, and a clause with effects has at least one.
+- An effect is a transfer or a piece move, an `if` around those, or a `for-each-player` around those or around such an `if`. An `if` or a `for-each-player` holds at least one effect.
+- A computed division does not divide by a plain number. `(/ a 2)` always reads as the fixed kind.
+
+**Who meets the condition.**
+
+- Every law and deal a seat proposes. The server gets proposals only from the parser, and `Rules.readable_of_parse` proves that whatever the parser returns meets it. `Rules.parse_of_print_of_parse` states this with no condition.
+- Every deal that `dealProblems` accepts: `Rules.parse_of_print_of_dealProblems`.
+- Not every law that `lawProblems` accepts. `lawProblems` allows deeper nesting, empty `if`s beside other effects, and made-up resources in a transfer or a `res-is`. Only a law written as a Lean value can reach these, which means a founding law.
+- Every founding law of every game. `lawProblems` does not make this true, so `ServerTests.lean` checks it, and fails if a founding law stops reading back.
+
+**What is only tested.** The characters. `SExp.render` and `SExp.read` have no theorem. A value can pass `Readable` and still fail in the text: a piece named `two words` or `12` does not survive printing. The parser cannot produce such a name, and no game has one. `Rules.survivesText` and `ServerTests.lean` test this layer.
+
+**What a reader must review.** `Readable`, the parsers and printers in `Server/Rules.lean`, and the type `SExp` in `Server/SExp.lean`.
+
 ## What is tested but not proved
 
 - **SHA-256 is the real SHA-256.** `Charter/Engine/Sha256.lean` checks the NIST example vectors and the padding boundaries. `Charter/EngineTests.lean` checks two more values against Python's `hashlib`.
@@ -115,9 +137,9 @@ All ten commandments rest on the same 134 definitions: the data types of a game,
 
 `make audit` does three things, with no sandbox, so it runs on macOS:
 
-1. It prints the axioms of each promise, and fails if any theorem in a `Charter` module rests on an axiom other than `propext`, `Classical.choice` and `Quot.sound`. `sorry` would appear here as `sorryAx`.
-2. It runs `leanchecker` on the spec, the engine, the proofs and the constitution, which replays them through the kernel.
-3. It scans `Charter` for banned constructs, such as `sorry`, `axiom`, `native_decide` and `unsafe`.
+1. It prints the axioms of each promise, and fails if any theorem in a `Charter` module or in `Server.RoundTrip` rests on an axiom other than `propext`, `Classical.choice` and `Quot.sound`. `sorry` would appear here as `sorryAx`.
+2. It runs `leanchecker` on the spec, the engine, the proofs, the constitution and the text of laws (`Server.SExp`, `Server.Rules`, `Server.Readable` and `Server.RoundTrip`), which replays them through the kernel.
+3. It scans `Charter` and those four `Server` files for banned constructs, such as `sorry`, `axiom`, `native_decide` and `unsafe`.
 
 ### Comparator
 

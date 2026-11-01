@@ -759,6 +759,7 @@ async function gameScreen(code) {
   // A draft that was running before a reload is still running on the server.
   G.words = store.get(`charter.words.${code}`) || "";
   U.words.value = G.words;
+  G.wordsRestored = !!G.words;
   if (G.token) checkDraft();
   if (params.has("replay")) { startReplay(true); return; }
   poll();
@@ -849,7 +850,7 @@ async function poll() {
     if (G.lost) { G.lost = false; caption(""); }
     if (v && v.talkCount != null && v.talkCount !== G.talkCount) fetchTalk();
     if (v && "turnLeftMs" in v) { G.turnEnd = v.turnLeftMs == null ? null : performance.now() + v.turnLeftMs; renderClock(); }
-    if (v && "resting" in v && v.resting !== G.resting) { G.resting = v.resting; if (v.resting) caption(v.resting); }
+    if (v && "resting" in v && v.resting !== G.resting) { G.resting = v.resting; if (v.resting) caption(v.resting, false, 10000); }
     // Only someone watching can see a paused table. A player who comes back has already ended the pause.
     if (v && "paused" in v && !G.token && !!v.paused !== !!G.paused) { G.paused = v.paused; caption(v.paused ? "This table is paused until one of its players comes back." : "", v.paused); }
     if (v && v.drafting && G.view && JSON.stringify(v.drafting) !== JSON.stringify(G.view.drafting)) { G.view.drafting = v.drafting; renderHouses(); }
@@ -1015,11 +1016,11 @@ function renderClock() {
   c.title = `Time left in ${v.turn === v.you ? "your" : `${who.name}'s`} turn`;
   c.classList.toggle("soon", left <= 30 && v.turn === v.you);
 }
-function caption(text, sticky) {
+function caption(text, sticky, ms = 5000) {
   const c = G.ui?.caption; if (!c) return;
   c.textContent = text; c.classList.toggle("on", !!text);
   clearTimeout(G.captionTimer);
-  if (text && !sticky) G.captionTimer = setTimeout(() => c.classList.remove("on"), 5000);
+  if (text && !sticky) G.captionTimer = setTimeout(() => c.classList.remove("on"), ms);
 }
 
 // ---------------------------------------------------------------- the ledge
@@ -1148,9 +1149,12 @@ function renderPrompt() {
 function renderSlips() {
   const v = G.view, U = G.ui;
   const offers = (v.offers || []).filter(o => o.canAccept || o.canCancel || o.to == null || o.to === v.you);
+  const hand = seat(v.you)?.hand;
+  const missing = o => o.canAccept || o.from === v.you || !hand ? null : (o.get || []).find(x => (hand[x.res] || 0) < x.n);
   fill(U.slips, offers.map(o => h("div", { class: "slip vellum" },
     h("div", {}, o.from === v.you ? "Your offer" : `${seat(o.from)?.name} offers`, o.to != null && o.from === v.you ? ` to ${nameOf(o.to)}` : ""),
-    h("div", { class: "terms" }, costOf(o.give), h("span", {}, "for"), costOf(o.get)),
+    h("div", { class: "terms" }, costOf(o.give), h("span", { class: "forline" }, h("span", {}, "for"), costOf(o.get))),
+    missing(o) ? h("div", { class: "fine" }, `You need ${missing(o).n - (hand[missing(o).res] || 0)} more ${missing(o).res}.`) : null,
     h("div", { class: "row" },
       o.canAccept ? h("button", { class: "act gold", onclick: () => postMove({ t: "accept", id: o.id }) }, "Accept") : null,
       o.canCancel ? h("button", { class: "act", onclick: () => postMove({ t: "cancel", id: o.id }) }, "Take back") : null))));
@@ -1200,6 +1204,8 @@ function renderMenu() {
 // ---------------------------------------------------------------- the dock
 function openDock(d) {
   G.dock = d;
+  // A document opened while a law's outcome is on screen is still open when that moment ends.
+  if (G.moment) G.moment.prior = d;
   G.menu = false; renderMenu();
   renderDock(); renderRail(); renderPrompt(); renderLedge(); updateInsets();
   if (d.t === "draft" && !touch()) setTimeout(() => G.ui.words.focus(), 60);
@@ -1249,9 +1255,10 @@ function renderDock() {
     return;
   }
   if (d.t === "trade") {
-    if (G.view.turn !== G.view.you || G.view.phase !== "actions") { closeDock(); return; }
-    // Keep typing in the amount boxes alive across polls.
-    if (!U.sheet.contains(document.activeElement) || !U.sheet.querySelector(".tradesheet")) renderTrade();
+    if (G.view.turn !== G.view.you || G.view.phase !== "actions") { G.tf = null; closeDock(); return; }
+    // A poll leaves the sheet alone while someone types in it, or presses a button: a button replaced under a press loses its click.
+    const inUse = U.sheet.contains(document.activeElement) || U.sheet.querySelector(":active");
+    if (!inUse || !U.sheet.querySelector(".tradesheet")) renderTrade();
     return;
   }
 }
@@ -1306,13 +1313,14 @@ function consequences(pv) {
 }
 const formalText = text => h("details", { class: "formal" }, h("summary", {}, "Formal text"), h("pre", { class: "sexp" }, text));
 
+const hasNoWords = st => st === "none" || st === "failed" || st === "strike";
 /** A law's description, which is someone's words. The rule source below it is what counts. Space is
  *  kept for it while it is written, so nothing on the sheet moves when it arrives. */
 function describedOf(d, badge = null) {
   const st = d?.status || "none";
   const line = st === "pack" ? `${d.pack}'s own words` : "Claude's description";
-  if (st === "none" || st === "failed") return h("div", { class: "described" + (st === "failed" ? " held" : "") }, badge ? h("div", { class: "byline" }, badge) : null,
-    h("p", { class: "nowords" }, "Claude has not described this law. The rule source below is what counts."));
+  if (hasNoWords(st)) return h("div", { class: "described" + (st === "none" ? "" : " held") }, badge ? h("div", { class: "byline" }, badge) : null,
+    h("p", { class: "nowords" }, st === "strike" ? "The clerk is on strike, so this law has no description. Sorry, that's on us. The rule source below is what counts." : "Claude has not described this law. The rule source below is what counts."));
   return h("div", { class: "described held" }, h("div", { class: "byline" }, h("span", {}, line), badge),
     st === "writing"
       ? h("div", { class: "ghost", role: "status", "aria-label": "Claude is writing a description" }, h("i"), h("i"), h("i"))
@@ -1346,7 +1354,7 @@ const openSources = new Set();
  *  stays open, because then it is all there is. */
 function sourceOf(text, description) {
   const st = description?.status || "none";
-  if (st === "none" || st === "failed")
+  if (hasNoWords(st))
     return h("div", { class: "source" }, h("div", { class: "byline" }, h("span", {}, "Rule source")), h("pre", { class: "sexp" }, sourceLines(text)));
   return h("details", { class: "source formal", open: openSources.has(text),
       ontoggle: e => { if (e.currentTarget.open) openSources.add(text); else openSources.delete(text); } },
@@ -1573,9 +1581,13 @@ function trackDecisions(v) {
   G.seenDecisions = list.length;
   const d = fresh[fresh.length - 1];
   if (d.outcome === "lapsed") { play("law-fail", { gain: -8 }); caption(`"${d.title}" lapsed without a majority.`); return false; }
+  // A player writing a rule keeps the desk. Taking it away would send the rest of their typing to the shortcuts.
+  if (writingRule()) { caption(`"${d.title}" ${d.outcome === "passed" ? "passed" : "did not pass"}.`); return false; }
   startMoment(d);
   return d.outcome === "passed";
 }
+/** Whether the player is at the drafting desk: typing in it, or waiting for a draft. */
+const writingRule = () => G.dock?.t === "draft" && (document.activeElement === G.ui.words || (G.draft && !G.draft.outcome));
 function trackProposals(prev, v) {
   const open = (v.proposals || []).map(p => p.id);
   if (G.seenProposals == null) { G.seenProposals = new Set(open); return; }
@@ -1583,7 +1595,7 @@ function trackProposals(prev, v) {
     if (G.seenProposals.has(p.id)) continue;
     G.seenProposals.add(p.id);
     if (p.kind === "law") for (const x of p.votes) G.stampsSeen.add(`${p.id}:${x.seat}`);
-    const busy = G.moment || G.dock?.t === "constitution" || (G.dock?.t === "draft" && (document.activeElement === G.ui.words || (G.draft && !G.draft.outcome)));
+    const busy = G.moment || G.dock?.t === "constitution" || writingRule();
     // A new document on the table. A vote that waits for you knocks, and the rest is only paper.
     if (p.by !== v.you) { if (p.canVote || p.canSign) play("vote-call"); else play("page", { table: watchingTable() }); }
     if (!busy && (p.kind === "law" || p.canSign)) { G.dock = { t: "vote", id: p.id }; }
@@ -1668,7 +1680,8 @@ function carryToMonument(d) {
       }, 320);
     });
   };
-  if (reduced() || !G.player) { finish(); return; }
+  // The sheet flies only while it shows the law. Another document stays where it is.
+  if (reduced() || !G.player || G.dock?.t !== "moment") { finish(); return; }
   // Where the square is: the first tile is the middle of the board.
   const t = G.view.board?.tiles?.[0];
   const to = t ? G.player.worldToScreen(t.x, 0.4, t.y) : { x: innerWidth / 2, y: innerHeight / 2 };
@@ -2080,19 +2093,83 @@ function yourMove() {
 }
 
 // ---------------------------------------------------------------- the trade sheet
+/** The two sides of the form, as the server reads them. */
+const tradeBundle = side => Object.entries(side).map(([res, n]) => ({ res, n }));
+const heldBy = (v, s, r) => seat(s)?.hand?.[r] || 0;
+const countOf = (n, r) => n ? `only ${n} ${r}` : `no ${r}`;
+
+/** Why one more of this good cannot go on this side. Nothing if it can. Each reason is a state of the form,
+ *  so the tile says it before the server has to. */
+function tradeRefusal(v, f, key, r) {
+  const deal = Number(f.rounds) > 1, n = f[key][r] || 0;
+  if (!deal && f[key === "give" ? "get" : "give"][r]) return `${capital(r)} is on the other side.`;
+  if (!deal && key === "give" && n >= heldBy(v, v.you, r)) return `You hold ${countOf(heldBy(v, v.you, r), r)}.`;
+  if (!n && Object.keys(f[key]).length >= (v.maxGoodsPerSide ?? 4)) return `Up to ${v.maxGoodsPerSide ?? 4} kinds on each side.`;
+  return null;
+}
+/** What stops the form going as it stands. It gets here when rounds change after the picks, or the hand changes. */
+function tradeProblem(v, f) {
+  if (Number(f.rounds) > 1) return null;
+  const both = Object.keys(f.give).find(r => f.get[r]);
+  if (both) return `${capital(both)} is on both sides. Take one off.`;
+  const over = Object.keys(f.give).find(r => f.give[r] > heldBy(v, v.you, r));
+  return over ? `You hold ${countOf(heldBy(v, v.you, over), over)}.` : null;
+}
+/** What the engine allows but will not work out as things stand: someone cannot pay yet. It stops nothing. */
+function tradeWarning(v, f) {
+  const rounds = Math.max(1, Number(f.rounds) || 1), deal = rounds > 1;
+  if (deal) {
+    const short = Object.keys(f.give).find(r => f.give[r] * rounds > heldBy(v, v.you, r));
+    if (short) return `The deposit is ${f.give[short] * rounds} ${short}. You hold ${heldBy(v, v.you, short)}.`;
+  }
+  const asked = Object.keys(f.get);
+  if (!asked.length) return null;
+  const canPay = q => asked.every(r => heldBy(v, q, r) >= f.get[r] * rounds);
+  if (f.to !== "") {
+    const q = Number(f.to), r = asked.find(x => heldBy(v, q, x) < f.get[x] * rounds);
+    return r == null ? null : `${nameOf(q)} holds ${countOf(heldBy(v, q, r), r)}.`;
+  }
+  return v.seats.some(s => s.seat !== v.you && canPay(s.seat)) ? null : "Nobody holds all of that now.";
+}
+function changeTrade(key, r, by) {
+  const v = G.view, f = G.tf;
+  const why = by > 0 ? tradeRefusal(v, f, key, r) : null;
+  f.note = why;
+  if (!why) {
+    const n = (f[key][r] || 0) + by;
+    if (n > 0) f[key][r] = n; else delete f[key][r];
+  }
+  renderTrade();
+  const tile = G.ui.sheet.querySelector(`[data-tile="${CSS.escape(`${key}.${r}`)}"]`);
+  if (why) anim(tile, [{ translate: "0 0" }, { translate: "-3px 0" }, { translate: "3px 0" }, { translate: "-2px 0" }, { translate: "0 0" }], { duration: 180 });
+  else if (by > 0) anim(tile?.querySelector(".n"), [{ scale: 1.5 }, { scale: 1 }], { duration: 160, easing: "ease-out" });
+}
 function renderTrade() {
   const v = G.view, U = G.ui;
-  if (!G.tf) G.tf = { give: null, giveN: 1, get: null, getN: 1, to: "", rounds: 1 };
+  if (!G.tf) G.tf = { give: {}, get: {}, to: "", rounds: 1, note: null };
   const f = G.tf;
   const trades = (v.legalMoves || []).filter(m => m.move.t === "bankTrade");
   const byGive = new Map();
   for (const m of trades) { if (!byGive.has(m.move.give)) byGive.set(m.move.give, []); byGive.get(m.move.give).push(m); }
   const others = v.seats.filter(s => s.seat !== v.you);
-  const pick = (key, label) => h("div", { class: "pickrow" }, h("span", { class: "lbl" }, label),
-    goodsInPlay(v).map(r => h("button", { class: f[key] === r ? "on" : "", title: capital(r), "aria-label": r, onclick: () => { f[key] = r; renderTrade(); } }, resIcon(r, "res"))),
-    h("input", { class: "num", type: "number", inputmode: "numeric", min: 1, value: f[key + "N"], "aria-label": `${label} amount`, onchange: e => { f[key + "N"] = Number(e.target.value) || 1; } }));
   const repeat = Number(f.rounds) > 1;
-  const canOffer = f.give && f.get && f.give !== f.get || (f.give && f.get && repeat);
+  const tile = (key, r) => {
+    const n = f[key][r] || 0, left = heldBy(v, v.you, r) - n;
+    const verb = key === "give" ? "Give" : "Ask for";
+    return h("div", { class: "tile" + (n ? " in" : "") + (tradeRefusal(v, f, key, r) ? " off" : ""), "data-tile": `${key}.${r}` },
+      h("button", { class: "add", "data-keep": `${key}.${r}.add`, title: capital(r), "aria-label": `${verb} one more ${r}. ${n} now.`, onclick: () => changeTrade(key, r, 1) },
+        resIcon(r, "res"),
+        n ? h("span", { class: "n" }, String(n)) : null,
+        key === "give" && !repeat ? h("span", { class: "left" }, String(Math.max(0, left))) : null),
+      h("button", { class: "less", "data-keep": `${key}.${r}.less`, disabled: !n, "aria-label": `${verb} one less ${r}`, onclick: () => changeTrade(key, r, -1) }, "−"));
+  };
+  const pick = (key, label) => h("div", { class: "pickrow" }, h("span", { class: "lbl" }, label),
+    h("div", { class: "tiles" }, goodsInPlay(v).map(r => tile(key, r))));
+  const empty = !Object.keys(f.give).length && !Object.keys(f.get).length;
+  const problem = tradeProblem(v, f);
+  const ready = Object.keys(f.give).length && Object.keys(f.get).length && !problem;
+  const note = f.note || problem || tradeWarning(v, f) || (empty ? "Tap to add. Tap again for more." : "");
+  const keep = U.sheet.scrollTop, focus = document.activeElement?.matches(":focus-visible") ? document.activeElement.dataset.keep : null;
   fill(U.sheet, h("div", { class: "tradesheet" },
     h("h3", {}, `The bank takes ${v.bankRate} for 1`),
     byGive.size ? [...byGive.entries()].map(([give, ms]) => h("div", { class: "bankrow" },
@@ -2102,21 +2179,23 @@ function renderTrade() {
     h("div", { class: "offerform" },
       h("h3", {}, "Offer the table"),
       pick("give", "Give"), pick("get", "Get"),
+      h("div", { class: "offernote" + (f.note || problem ? " stop" : ""), role: "status" }, note),
       h("div", { class: "selectline" },
-        h("select", { "aria-label": "To", onchange: e => { f.to = e.target.value; renderTrade(); } },
+        h("select", { "aria-label": "To", onchange: e => { f.to = e.target.value; f.note = null; renderTrade(); } },
           repeat ? null : h("option", { value: "", selected: f.to === "" ? true : null }, "To anyone"),
           others.map(s => h("option", { value: s.seat, selected: String(f.to) === String(s.seat) ? true : null }, `To ${s.name}`))),
-        h("span", {}, "Rounds"), h("input", { class: "num", type: "number", inputmode: "numeric", min: 1, value: f.rounds, title: "1 is a single trade. More is a deal, paid each round from a deposit.", onchange: e => { f.rounds = Math.max(1, Number(e.target.value) || 1); if (f.rounds > 1 && f.to === "") f.to = others[0]?.seat ?? ""; renderTrade(); } })),
+        h("span", {}, "Rounds"), h("input", { class: "num", type: "number", inputmode: "numeric", min: 1, value: f.rounds, title: "1 is a single trade. More is a deal, paid each round from a deposit.", onchange: e => { f.rounds = Math.max(1, Number(e.target.value) || 1); f.note = null; if (f.rounds > 1 && f.to === "") f.to = others[0]?.seat ?? ""; renderTrade(); } })),
       repeat ? h("div", { class: "note-line", style: { margin: 0 } }, "A deal. It binds only those who sign, and pays each round from a deposit.") : null,
-      h("button", { class: "act gold", disabled: !canOffer, onclick: () => submitOffer() }, repeat ? "Propose the deal" : "Make the offer"))));
+      h("button", { class: "act gold", disabled: !ready, onclick: () => submitOffer() }, repeat ? "Propose the deal" : "Make the offer"))));
+  U.sheet.scrollTop = keep;
+  if (focus) U.sheet.querySelector(`[data-keep="${CSS.escape(focus)}"]:not(:disabled)`)?.focus({ preventScroll: true });
 }
 function submitOffer() {
   const f = G.tf;
-  if (Number(f.rounds) > 1) {
-    post("propose", { dealForm: { with: Number(f.to), give: f.give, giveN: f.giveN, get: f.get, getN: f.getN, rounds: Number(f.rounds), exitNotice: 1 } }).then(r => { if (r.ok) closeDock(); });
-  } else {
-    postMove({ t: "offer", to: f.to === "" ? null : Number(f.to), give: [{ res: f.give, n: f.giveN }], get: [{ res: f.get, n: f.getN }] }).then(r => { if (r.ok) closeDock(); });
-  }
+  const sent = Number(f.rounds) > 1 ?
+    post("propose", { dealForm: { with: Number(f.to), give: tradeBundle(f.give), get: tradeBundle(f.get), rounds: Number(f.rounds), exitNotice: 1 } }) :
+    postMove({ t: "offer", to: f.to === "" ? null : Number(f.to), give: tradeBundle(f.give), get: tradeBundle(f.get) });
+  sent.then(r => { if (r.ok) { G.tf = null; closeDock(); } });
 }
 
 // ---------------------------------------------------------------- the drafting desk
@@ -2126,8 +2205,14 @@ function buildDraftDesk() {
   U.words = h("textarea", { class: "words", "aria-label": "The rule you want", placeholder: "Write the rule you want, in your own words." });
   const grow = () => { U.words.style.height = "auto"; U.words.style.height = `${Math.min(U.words.scrollHeight + 2, 200)}px`; };
   U.growWords = grow;
-  U.words.addEventListener("input", () => { play("quill"); store.set(`charter.words.${G.code}`, U.words.value); grow(); renderDraft(); });
-  U.words.addEventListener("keydown", e => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); submitDraft(); } });
+  U.words.addEventListener("input", () => { play("quill"); G.wordsRestored = false; store.set(`charter.words.${G.code}`, U.words.value); grow(); renderDraft(); });
+  // Words kept from an earlier visit are all selected when the player comes back to them, so that new
+  // typing replaces them instead of landing in the middle. The first click or keystroke ends this. The
+  // browser places the caret after these events, so the selection waits a moment.
+  const pickUpOld = () => { if (G.wordsRestored) setTimeout(() => U.words.select()); };
+  U.words.addEventListener("focus", pickUpOld);
+  U.words.addEventListener("click", () => { pickUpOld(); G.wordsRestored = false; });
+  U.words.addEventListener("keydown", e => { G.wordsRestored = false; if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); submitDraft(); } });
   U.draftBtn = h("button", { class: "act gold", onclick: () => submitDraft() }, "Draft it");
   U.cancelBtn = h("button", { class: "act", onclick: () => cancelDraft() }, "Cancel");
   U.suggestBtn = h("button", { class: "link", onclick: () => askSuggestion() }, "Suggest a rule");
@@ -2189,7 +2274,7 @@ async function pollDraft() {
   try { d = await api(`/api/games/${G.code}/draft`); }
   catch { if (gen === G.draftGen) G.draftPolling = setTimeout(pollDraft, 1000); return; }
   if (gen !== G.draftGen) return;
-  if (d?.id == null) { if (G.draft && !G.draft.outcome && !G.draft.optimistic) { G.draft = { outcome: "failed", reason: "The server lost this draft. Try again.", words: G.ui.words.value }; renderDraft(); } return; }
+  if (d?.id == null) { if (G.draft && !G.draft.outcome && !G.draft.optimistic) { G.draft = { outcome: "failed", reason: "The clerk lost this draft. Sorry, that's on us. Try again.", words: G.ui.words.value }; renderDraft(); } return; }
   const beat = G.draft && (d.text !== G.draft.text || d.thinking !== G.draft.thinking || d.stage !== G.draft.stage);
   // The clerk's nib, faintly, while the words come in where you can see them.
   if (d.text !== G.draft?.text && d.stage === "drafting" && G.dock?.t === "draft") play("quill", { gain: -4 });
@@ -2208,7 +2293,7 @@ async function checkDraft() {
     const d = await api(`/api/games/${G.code}/draft`);
     if (d?.id != null && d.outcome !== "cancelled") {
       G.draft = d;
-      if (!G.ui.words.value && d.words) G.ui.words.value = d.words;
+      if (!G.ui.words.value && d.words) { G.ui.words.value = d.words; G.wordsRestored = true; }
       if (d.outcome) G.suggestPlaced = d.id;
       if (!d.outcome) pollDraft();
     }
@@ -2231,7 +2316,7 @@ async function cancelDraft() {
   G.ui.words.focus();
 }
 const STAGE_TEXT = {
-  sent: "Sent to Claude. Waiting for a reply.", connected: "Claude has it.", thinking: "Claude is thinking.", drafting: "Claude is writing it out.",
+  sent: "Sent to Claude. Waiting for a reply.", retrying: "The clerk's line is busy. Trying again.", connected: "Claude has it.", thinking: "Claude is thinking.", drafting: "Claude is writing it out.",
   parsing: "Reading the draft.", checking: "Checking it against the constitution.", previewing: "Working out who gains and who pays.", done: "Finished.",
 };
 function renderDraft() {
@@ -2258,6 +2343,10 @@ function renderDraft() {
   U.proposeBar.hidden = true;
   if (!d) { fill(U.draftBody); return; }
   if (running) { fill(U.draftBody, draftingView(d)); return; }
+  if (d.strike) {
+    fill(U.draftBody, strikeView(d));
+    return;
+  }
   if (suggesting && (d.outcome === "refused" || d.outcome === "failed")) {
     fill(U.draftBody, h("p", { class: "fail" }, d.reason));
     return;
@@ -2270,8 +2359,7 @@ function renderDraft() {
     return;
   }
   if (d.outcome === "failed") {
-    fill(U.draftBody, h("p", { class: "fail" }, d.reason),
-      h("details", { class: "formal" }, h("summary", {}, "Write it in formal text"), h("pre", { class: "sexp" }, '(law "A title" (set-bank-rate 3))')));
+    fill(U.draftBody, h("p", { class: "fail" }, d.reason), formalHelp());
     return;
   }
   if (d.outcome === "cancelled") { fill(U.draftBody); return; }
@@ -2289,6 +2377,24 @@ function renderDraft() {
   if (same) {
     fill(bar, h("button", { class: "act gold", disabled: !rv.canPropose, onclick: () => proposeDraft(rv.text) }, "Propose"));
   }
+}
+/** How to write a rule with no clerk. The page redraws, so this keeps the fold open. */
+function formalHelp() {
+  return h("details", { class: "formal", open: !!G.formalHelpOpen, ontoggle: e => { G.formalHelpOpen = e.currentTarget.open; } },
+    h("summary", {}, "Write it in formal text"),
+    h("pre", { class: "sexp" }, '(law "A title" (set-bank-rate 3))'),
+    h("p", { class: "formalnote" }, "Put a rule like this in the box above, then draft it. It does not need the clerk."));
+}
+/** The clerk cannot work, and that is our fault. Ready-made laws and formal text need no clerk, so the way on is right here. */
+function strikeView(d) {
+  const landing = G.refusedShown !== d.id;
+  G.refusedShown = d.id;
+  const samples = (G.view?.samples || []).slice(0, 5);
+  return h("div", { class: "refusal strike" },
+    h("div", { class: "stampword" + (landing ? " fresh" : "") }, "ON STRIKE"),
+    h("p", {}, d.reason),
+    samples.length ? h("div", { class: "strikesamples" }, h("span", {}, "Ready-made laws need no clerk:"), h("div", { class: "samples" }, samples.map(s => h("button", { class: "link", title: s.text, onclick: () => submitDraft(s.id) }, s.title)))) : null,
+    formalHelp());
 }
 function draftingView(d) {
   const stalled = d.quietMs > 15000;

@@ -144,12 +144,11 @@ def proposalText (body : Json) (seat : Nat) : Except String String := do
     let some other := jNat f "with" | throw "a deal needs another seat"
     let rounds := (jNat f "rounds").getD 1
     let notice := (jNat f "exitNotice").getD 0
-    let give := (jStr f "give").getD ""
-    let giveN := (jNat f "giveN").getD 0
-    let get := match jStr f "get", jNat f "getN" with
-      | some r, some n => if r.isEmpty then none else some (r, n)
-      | _, _ => none
-    return Rules.printProposal (.deal (Rules.formDeal seat other rounds notice give giveN get))
+    let side (k : String) : Except String Bundle :=
+      match jField f k with
+      | some j => Game.bundleOfJson j
+      | none => pure []
+    return Rules.printProposal (.deal (Rules.formDeal seat other rounds notice (← side "give") (← side "get")))
   throw "a proposal needs text, a sample or a deal form"
 
 /-- A scene stream, or nothing if the client says it has these bytes already. Most of what changes a
@@ -173,7 +172,22 @@ def realTokens (ctx : Ctx) (code : String) (g : Game) : IO Json := do
   let sum (k : String) : Nat := (spent.map fun r => (jNat r k).getD 0).sum
   return toJson (sum "input" + sum "cacheRead" + sum "cacheWrite" + sum "output")
 
-def route (ctx : Ctx) (req : Req) : ContextAsync Resp := do
+/-- What this process knows about its own start, for `/api/version`. -/
+structure StartInfo where
+  startedMs : Nat
+  /-- How long the restore from storage took. None with no mirror. -/
+  restoreMs : Option Nat
+
+/-- Which build is running, and how it started. Anyone can ask, so this gives a count of the tables and
+nothing about any one of them. -/
+def handleVersion (ctx : Ctx) (start : StartInfo) : ContextAsync Resp := do
+  let commit := ((← IO.getEnv "CHARTER_COMMIT").filter (!·.isEmpty)).getD "unknown"
+  let tables ← ctx.table.atomically do return (← get).size
+  respondJson (Json.mkObj [("commit", commit), ("webBuild", ← webBuildOf ctx.webRoot),
+    ("uptimeMs", toJson ((← IO.monoMsNow) - start.startedMs)), ("restoreMs", toJson start.restoreMs),
+    ("tables", toJson tables)])
+
+def route (ctx : Ctx) (start : StartInfo) (req : Req) : ContextAsync Resp := do
   let segs := req.line.uri.path.toDecodedSegments.toList.filter (· != "")
   let q := req.line.uri.query
   let isPost := req.line.method == .post
@@ -364,14 +378,15 @@ def route (ctx : Ctx) (req : Req) : ContextAsync Resp := do
     match specOf? (some id) with
     | some d => respond .ok sceneType (Scene.sceneBytes d.layout (emptyBoard d) none .none)
     | none => respondErr "unknown game" .notFound
+  | ["api", "version"] => handleVersion ctx start
   | "api" :: _ => respondErr "unknown route" .notFound
   | ["assets", name] => serveMeshFile (ctx.webRoot.parent.getD ".") name meshFolderOf
   | "v" :: build :: rest => serveBuild ctx.webRoot build rest
   | rest => serveStatic req ctx.webRoot rest
 
-def handler (ctx : Ctx) (req : Req) : ContextAsync Resp := do
+def handler (ctx : Ctx) (start : StartInfo) (req : Req) : ContextAsync Resp := do
   try
-    route ctx req
+    route ctx start req
   catch err =>
     IO.eprintln s!"error: {err}"
     respondErr (toString err) .internalServerError
@@ -427,30 +442,41 @@ def restoreOrDie (url : String) (dataDir : System.FilePath) : IO Mirror.Mirror :
       IO.eprintln s!"charter-server: restore failed, attempt {attempt + 1}: {err}"
   die s!"could not restore the games from storage, so the server will not start. {lastError}"
 
+/-- One line about stopping, sent at once, so the last line shows where a hang happened. -/
+def stopLog (msg : String) : IO Unit := do
+  IO.println s!"charter-server: {msg}"
+  (← IO.getStdout).flush
+
 /-- On SIGTERM, which is how the platform stops a container: copy everything to storage, and exit. The
 locks are held to the end, so no move can be accepted after the last copy. -/
 def exitOnSigterm (ctx : Ctx) (mirror : Option Mirror.Mirror) : IO Unit := do
   let signal ← Std.Async.Signal.Waiter.mk .sigterm false
   let task ← signal.wait
   discard <| IO.mapTask (β := Unit) (prio := .dedicated) (t := task) fun _ => do
-    IO.println "charter-server: stopping"
-    (← IO.getStdout).flush
+    stopLog "stopping"
     ctx.table.atomically do
+      stopLog "stopping: table lock held"
       ctx.seatLogs.atomically do
+        stopLog "stopping: seat log lock held"
         ctx.clerkLogs.atomically do
+          stopLog "stopping: clerk log lock held"
           if let some m := mirror then
             try
               Mirror.flush m (all := true)
-              IO.println "charter-server: everything is in storage"
+              stopLog "everything is in storage"
             catch err =>
               IO.eprintln s!"charter-server: the last copy failed: {err}"
-          (← IO.getStdout).flush
+              (← IO.getStderr).flush
+          else
+            stopLog "stopping: no storage, so no last copy"
+          stopLog "stopping: exiting now"
           (IO.Process.exit 0 : IO Unit)
 
 end CharterServer
 
 open CharterServer in
 def main (_args : List String) : IO Unit := do
+  let startedMs ← IO.monoMsNow
   let port := ((← IO.getEnv "PORT").bind String.toNat?).getD 8787
   let bind ← bindAddress
   let root : System.FilePath := (← IO.getEnv "CHARTER_ROOT").getD "."
@@ -463,7 +489,10 @@ def main (_args : List String) : IO Unit := do
       catch _ => pure false
     if !works then die "curl is needed to reach Claude and storage, and it cannot be run."
   IO.FS.createDirAll dataDir
+  let restoreStart ← IO.monoMsNow
   let mirror ← mirrorUrl.mapM (restoreOrDie · dataDir)
+  let restoreEnd ← IO.monoMsNow
+  let start : StartInfo := { startedMs, restoreMs := mirror.map fun _ => restoreEnd - restoreStart }
   let showOnly := (← IO.getEnv "CHARTER_SHOW_ONLY").isSome
   if !showOnly then Spend.configure dataDir
   let tbl ← loadAll dataDir
@@ -486,5 +515,5 @@ def main (_args : List String) : IO Unit := do
   exitOnSigterm ctx mirror
   Std.Async.Async.block do
     let addr : Std.Net.SocketAddress := .v4 ⟨bind, port.toUInt16⟩
-    let server ← Std.Http.Server.serve addr (Std.Http.Server.Handler.ofFn (handler ctx))
+    let server ← Std.Http.Server.serve addr (Std.Http.Server.Handler.ofFn (handler ctx start))
     server.waitShutdown

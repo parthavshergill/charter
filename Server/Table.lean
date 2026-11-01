@@ -188,7 +188,7 @@ def commitRaw (ctx : Ctx) (code : String) (mk : Entry → Except String Json) : 
     match tbl.get? code with
     | none => return .error s!"no game {code}"
     | some e =>
-      match mk e >>= fun ev => (Game.apply e.game ev).map (ev, ·) with
+      match mk e >>= fun ev => (Game.applyLive e.game ev).map (ev, ·) with
       | .error err => return .error err
       | .ok (ev, g') =>
         discard <| e.log.append ev.compress
@@ -365,7 +365,7 @@ def remember (ctx : Ctx) (code : String) (job : Formalize.Job) : IO Unit := do
     | .refused why =>
       -- A suggestion that came to nothing has no words to remember.
       if job.suggest then none else some { seat := job.seat, round, words := job.words, refused := some why }
-    | .failed _ | .cancelled => none
+    | .failed _ | .strike _ | .cancelled => none
   if cancelled then return
   if let some n := note then
     try withClerkLog ctx code (Clerk.append · n)
@@ -409,17 +409,17 @@ def startDescription (ctx : Ctx) (code formal : String) : IO Unit := do
   discard <| IO.asTask (prio := .dedicated) do
     try
       match ← Describe.run cfg code L with
-      | some text =>
+      | .ok text =>
         -- A description that cannot be saved still shows until the server restarts.
         try
           withClerkLog ctx code fun log =>
             discard <| log.append (Describe.recordJson key text cfg.api.model cfg.effort).compress
         catch err => IO.eprintln s!"[{code}] clerk log: {err}"
         setDescription ctx code key (.ready text)
-      | none => setDescription ctx code key .failed
+      | .error status => setDescription ctx code key status
     catch err =>
       IO.eprintln s!"[{code}] description: {err}"
-      setDescription ctx code key .failed
+      setDescription ctx code key .strike
 
 /-- Start a clerk job for a seat, replacing any it has running. The thread only reads the game. -/
 private def startJob (ctx : Ctx) (code : String) (seat : Nat) (words : String) (suggest : Bool)
@@ -448,8 +448,7 @@ private def startJob (ctx : Ctx) (code : String) (seat : Nat) (words : String) (
       remember ctx code job
     catch err =>
       -- The message is about a process or a file, and it never holds the key.
-      IO.eprintln s!"[{code}] draft: {err}"
-      job.state.modify fun st => { st with stage := "done", final := some (.failed "The clerk could not be reached on this server. Write the formal text yourself.") }
+      Formalize.strike job s!"{err}"
   return job
 
 /-- Start a draft of a seat's words. -/

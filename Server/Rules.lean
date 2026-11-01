@@ -192,12 +192,15 @@ def parseDeal (rs : List Res) : SExp → P Deal
                terms := ← terms.mapM (parseTerm rs) }
   | x => fail "expected (deal \"title\" (signers ...) (rounds n) (exit-notice n) (deposits ...) term...)" x
 
-/-- Read the text of a law or a deal. -/
-def parseProposal (text : String) (rs : List Res := islandResources) : P Proposal := do
-  match ← SExp.read text with
+/-- Read a law or a deal from its S-expression. `parseProposal` does this after the reader. -/
+def parseProposalSExp (rs : List Res) : SExp → P Proposal
   | x@(.list (.atom "law" :: _)) => Proposal.law <$> parseLaw rs x
   | x@(.list (.atom "deal" :: _)) => Proposal.deal <$> parseDeal rs x
   | x => fail "expected (law ...) or (deal ...)" x
+
+/-- Read the text of a law or a deal. -/
+def parseProposal (text : String) (rs : List Res := islandResources) : P Proposal := do
+  parseProposalSExp rs (← SExp.read text)
 
 /-! ## Writing the text back -/
 
@@ -298,10 +301,13 @@ def dealS (d : Deal) : SExp :=
     :: .list (.atom "deposits" :: d.deposits.map fun x => .list [natS x.1, .atom x.2.1, natS x.2.2])
     :: d.terms.map termS)
 
+/-- The S-expression of a law or a deal. `printProposal` renders this. -/
+def proposalToSExp : Proposal → SExp
+  | .law l => lawS l
+  | .deal d => dealS d
+
 /-- The one-line text of a law or a deal. -/
-def printProposal : Proposal → String
-  | .law l => (lawS l).render
-  | .deal d => (dealS d).render
+def printProposal (p : Proposal) : String := (proposalToSExp p).render
 
 /-- This law reads what seats have declared. -/
 def lawReadsDeclared (L : Law) : Bool :=
@@ -330,15 +336,12 @@ def sampleLaws : List (String × String) :=
   , ("settlement-worth", "(law \"Founders' honour\" (set-points settlement 2))")
   , ("lighthouse", "(law \"Lighthouses\" (new-piece lighthouse (bundle (ore 2) (brick 2)) (points 2) (attach settlement) (yield 1) (limit 2)))") ]
 
-/-- The text for a simple deal form: `a` pays `b` each round, and `b` may pay `a` back. Deposits
-are worked out here so that the deal covers what it could owe. -/
-def formDeal (a b : Seat) (rounds exitNotice : Nat) (give : Res) (giveN : Nat)
-    (get : Option (Res × Nat)) : Deal :=
-  let pays : List Pay :=
-    (if giveN == 0 then [] else [{ src := a, dst := .seat b, res := give, amount := giveN }]) ++
-    (match get with
-     | some (r, n) => if n == 0 then [] else [{ src := b, dst := .seat a, res := r, amount := n }]
-     | none => [])
+/-- The deal from the simple form: each round `a` pays `b` all of `give`, and `b` pays `a` all of
+`get`. Either list can be empty. Deposits are worked out here so that the deal covers what it could owe. -/
+def formDeal (a b : Seat) (rounds exitNotice : Nat) (give get : Bundle) : Deal :=
+  let pay (src dst : Seat) (x : Res × Nat) : Pay := { src, dst := .seat dst, res := x.1, amount := x.2 }
+  let moved := fun (x : Res × Nat) => x.2 != 0
+  let pays : List Pay := (give.filter moved).map (pay a b) ++ (get.filter moved).map (pay b a)
   { title := s!"A deal of {rounds} rounds"
     signers := [a, b]
     rounds := rounds

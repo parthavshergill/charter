@@ -171,7 +171,13 @@ class Server:
     def stop(self, sig=signal.SIGTERM):
         if self.proc.poll() is None:
             self.proc.send_signal(sig)
-            self.proc.wait(timeout=30)
+            try:
+                self.proc.wait(timeout=30)
+            except subprocess.TimeoutExpired:
+                # A later stop in a `finally` must not hide this, so the process goes now.
+                self.proc.kill()
+                self.proc.wait()
+                raise SystemExit(f"FAILED: the server did not stop within 30 seconds of {signal.Signals(sig).name}. The end of its log:\n{self.logs()[-4000:]}")
         return self.proc.returncode
 
 
@@ -382,24 +388,28 @@ def budgets(api, root):
         d = draft(code, tokens[0], a)
         check(d["outcome"] == "ready" and Api.calls == ["clerk"], "the first draft is within the budget")
         d = draft(code, tokens[0], a)
-        check(d["outcome"] == "failed" and "resting" in d["reason"] and Api.calls == ["clerk"], f"the next one is not sent, and the clerk says so: {d['reason'][:60]}")
+        check(d["outcome"] == "failed" and "on strike until tomorrow" in d["reason"] and Api.calls == ["clerk"], f"the next one is not sent, and the clerk says so: {d['reason'][:60]}")
+        check(d.get("strike") is True and "budget" not in d["reason"], "the budget is not the player's to read about")
         code2, tokens2 = table(srv, headers=b)
         d = draft(code2, tokens2[0], b)
         check(d["outcome"] == "ready" and len(Api.calls) == 2, "another address has its own budget")
         status, r = srv.status(f"/api/games/{code}/claude", {}, a)
-        check(status == 429 and "resting" in r["error"], "a Claude seat is refused while the budget is used up")
+        check(status == 429 and "on strike until tomorrow" in r["error"], "a Claude seat is refused while the budget is used up")
         through_setup(srv, code, tokens)
         srv.req(f"/api/games/{code}/suggest", {"token": tokens[0]}, a)
         d = wait_for(lambda: (lambda d: d if d.get("outcome") else None)(srv.req(f"/api/games/{code}/draft?token={tokens[0]}")), "the suggestion to end")
-        check(d["outcome"] == "failed" and "resting" in d["reason"] and len(Api.calls) == 2, "a suggestion from the clerk is under the same budget")
+        check(d["outcome"] == "failed" and "on strike until tomorrow" in d["reason"] and len(Api.calls) == 2, "a suggestion from the clerk is under the same budget")
         v = srv.req(f"/api/games/{code}/view?token={tokens[0]}")
-        check("resting" in (v.get("resting") or ""), "the table's view says the clerk is resting")
+        check("on strike until tomorrow" in (v.get("resting") or ""), "the table's view says the clerk is on strike until tomorrow")
         before = v["version"]
         seat = tokens[v["turn"]]
         r = srv.req(f"/api/games/{code}/move", {"token": seat, "move": {"t": "endTurn"}})
         check(r["ok"] and r["version"] > before, "the game still plays")
         r = srv.req(f"/api/games/{code}/draft", {"token": seat, "words": BANK}, a)
         check(len(Api.calls) == 2, "formal text needs no budget")
+        d = wait_for(lambda: (lambda d: d if d.get("outcome") else None)(srv.req(f"/api/games/{code}/draft?token={seat}")), "the formal text to be read")
+        check(d["outcome"] == "ready" and d["viaClaude"] is False, "formal text still reaches the review")
+        check("one address's budget" in srv.logs(), "the log says which budget is used up, and not which address")
         srv.stop()
         srv = Server(data, api, CHARTER_BUDGET_PER_IP_USD=3, CHARTER_TRUST_CLIENT_IP=1)
         srv.req(f"/api/games/{code}/view?token={tokens[0]}", headers=a)
@@ -417,11 +427,14 @@ def budgets(api, root):
         wait_for(lambda: srv.req(f"/api/games/{code}/draft?token={tokens[0]}").get("outcome"), "the draft to end")
         code2, tokens2 = table(srv, people=1)
         status, r = srv.status(f"/api/games/{code2}/claude", {})
-        check(status == 429 and "server" in r["error"], "the budget for the whole server stops everyone")
+        check(status == 429 and "on strike until tomorrow" in r["error"], "the budget for the whole server stops everyone")
+        srv.req(f"/api/games/{code}/draft", {"token": tokens[0], "words": "Make the bank fairer again"})
+        wait_for(lambda: srv.req(f"/api/games/{code}/draft?token={tokens[0]}").get("outcome"), "the second draft to end")
+        check("the server's budget" in srv.logs(), "the log says it was the server's budget")
         srv.stop()
         srv = Server(data, api, CHARTER_BUDGET_DAILY_USD=3)
         v = srv.req(f"/api/games/{code}/view?token={tokens[0]}")
-        check("resting" in (v.get("resting") or ""), "the server's total survives a restart")
+        check("on strike until tomorrow" in (v.get("resting") or ""), "the server's total survives a restart")
     finally:
         srv.stop()
     # Claude seats at a table with no budget pass their turns, so the table goes on with no API calls.
@@ -439,7 +452,7 @@ def budgets(api, root):
                 for m in [m for m in v["legalMoves"] if m["move"]["t"] == "place"][:1]:
                     srv.req(f"/api/games/{code}/move", {"token": token, "move": m["move"]})
                 srv.req(f"/api/games/{code}/move", {"token": token, "move": {"t": "endTurn"}})
-            return "resting" in (v.get("resting") or "")
+            return "on strike until tomorrow" in (v.get("resting") or "")
         wait_for(poll_and_play, "the budget to run out", 30)
         count = len(Api.calls)
         start = len(events(srv, code))

@@ -66,7 +66,9 @@ Each request is priced by the model it went to. The first four prices are the li
 
 **The budgets are estimates.** The server multiplies the tokens the API reports by these prices, so a real bill can differ. A request already running can pass a budget by a little. A day is a UTC day. The server's total survives a restart. The per-address figures do not, so a restart resets them.
 
-When a budget is reached the game keeps playing. The clerk says it is resting, Claude seats pass their turns, and people can still write formal text themselves. No description call is made, so a new law shows its rule source with a short note.
+When a budget is reached the game keeps playing. The clerk says it is on strike until tomorrow, Claude seats pass their turns, and people can still write formal text themselves. No description call is made, so a new law shows its rule source with a short note.
+
+Any other problem on our side reads the same way to players: a bad or missing key, a billing problem, a rate limit or an overload that outlasts three tries, a lost connection, missing instructions, or an error nobody expected. They see that the clerk is on strike, and no key, status code or file name. The server's log has the reason.
 
 There are no accounts, so an IP address stands for a person, and friends sharing a connection share a budget. The server keeps only a salted hash of each address, in memory, and never logs it. A table's Claude spending counts against the last address to ask for Claude at that table.
 
@@ -120,6 +122,31 @@ Lines to look for:
 - `restored N objects from storage`: a container started.
 - `mirror: storage cannot be reached`: R2 is failing. The game goes on.
 - `could not restore the games from storage, so the server will not start`: see below.
+
+On SIGTERM the server writes one line at each step, in this order. If it hangs, the last line shows where.
+
+- `stopping`: the signal arrived.
+- `stopping: table lock held`, then `stopping: seat log lock held`, then `stopping: clerk log lock held`.
+- `everything is in storage`, or `the last copy failed`, or `stopping: no storage, so no last copy`.
+- `stopping: exiting now`.
+
+## Which version is running
+
+```
+curl -s https://<your address>/api/version
+```
+
+| Field | Meaning |
+|---|---|
+| `commit` | The value of `CHARTER_COMMIT`, or `unknown` if it is not set. |
+| `webBuild` | The name of the web files, as in `/v/<name>/`. |
+| `uptimeMs` | How long this server has run. |
+| `restoreMs` | How long the restore from storage took at start, with any retries. It does not count the replay of the logs. It is `null` with no storage. |
+| `tables` | How many tables the server holds. |
+
+The route gives no table codes, tokens or addresses. Anyone can ask it. Each request wakes a sleeping container and restarts its 10 minutes, so do not poll it.
+
+The `Dockerfile` sets `CHARTER_COMMIT` in its last stage from a build argument. Nothing passes that argument yet, so a deployed server says `unknown`. Do not put it under `vars`: the Worker passes each `CHARTER_` var to the container, and that value would replace the one in the image.
 
 ## Rolling back
 

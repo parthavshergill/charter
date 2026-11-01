@@ -15,6 +15,9 @@ FAKE_KEY = "fake-key-for-the-stand-in-api-0123456789"
 PROMPT = os.path.join(ROOT, "Server", "formalizer.md")
 TOLL = '(law "Road toll" (on-build road (transfer actor treasury brick 1)))'
 BANK = '(law "A fairer bank" (set-bank-rate 3))'
+STRIKE = "The clerk is on strike! Sorry, that's on us. The rest of the game still works, and you can write a rule in formal text."
+# A player reads none of these.
+TECHNICAL = r"API|[Kk]ey|\.env|HTTP|[Ss]tatus|curl|[Bb]illing|\b[0-9]{3}\b|_error|\.md"
 # The rule a bank law has passed with, after which that bank rate would change nothing.
 LATER = '(law "Settlement honour" (set-points settlement 3))'
 
@@ -58,11 +61,28 @@ class StandIn(http.server.BaseHTTPRequestHandler):
             time.sleep(delay)
         if isinstance(text, tuple):
             text, stop = text
+        if isinstance(text, dict) and text.get("close"):
+            # The connection closes with no reply at all.
+            self.close_connection = True
+            return
+        if isinstance(text, dict) and "stream" in text:
+            # The request succeeds, and then the stream fails or just stops.
+            self.send_response(200)
+            self.send_header("content-type", "text/event-stream")
+            self.end_headers()
+            lines = [{"type": "message_start", "message": {"usage": {"input_tokens": 10}}}]
+            if text["stream"]:
+                lines.append({"type": "error", "error": {"type": text["stream"], "message": f"stand-in detail {FAKE_KEY}"}})
+            for e in lines:
+                self.wfile.write(f"event: {e['type']}\ndata: {json.dumps(e)}\n\n".encode())
+            return
         if isinstance(text, dict):
-            payload = json.dumps({"type": "error", "error": {"type": "rate_limit_error", "message": "stand-in"}}).encode()
+            kind = text.get("type", "rate_limit_error")
+            payload = text["raw"].encode() if "raw" in text else json.dumps({"type": "error", "error": {"type": kind, "message": text.get("message", f"stand-in detail {FAKE_KEY}")}}).encode()
             self.send_response(text["status"])
             self.send_header("content-type", "application/json")
-            self.send_header("retry-after", "7")
+            if "retry" in text:
+                self.send_header("retry-after", str(text["retry"]))
             self.send_header("content-length", str(len(payload)))
             self.end_headers()
             self.wfile.write(payload)
@@ -91,7 +111,8 @@ class Server:
                    ANTHROPIC_API_KEY=FAKE_KEY, ANTHROPIC_BASE_URL=f"http://127.0.0.1:{api_port}")
         env.update(extra)
         self.port = port
-        self.proc = subprocess.Popen([BIN], env=env, stdout=subprocess.DEVNULL)
+        self.log = os.path.join(data, "server.stderr")
+        self.proc = subprocess.Popen([BIN], env=env, stdout=subprocess.DEVNULL, stderr=open(self.log, "a"))
         for _ in range(200):
             try:
                 self.get("/api/games")
@@ -188,6 +209,12 @@ def last_message():
     return StandIn.requests[-1]["body"]["messages"][0]["content"]
 
 
+def on_strike(d):
+    """The clerk is on strike, in the words a player reads, with no technical words."""
+    reason = d.get("reason") or ""
+    return d["outcome"] == "failed" and d.get("strike") is True and reason == STRIKE and not re.search(TECHNICAL, reason)
+
+
 def suggestion(words, formal, why="Ada holds all the ore, so this could help you. Grace might vote yes."):
     return f"WORDS: {words}\nWHY: {why}\n{formal}"
 
@@ -280,8 +307,8 @@ def check_suggestions(srv, api_port):
     check(d["outcome"] == "refused" and d["attempt"] == 3 and "could not find a rule" in d["reason"], "after three bad replies the clerk says so plainly")
     d = t.suggest(0, "REFUSE: No rule would help here.")
     check(d["outcome"] == "refused" and d["reason"] == "No rule would help here.", "the clerk can decline")
-    d = t.suggest(0, {"status": 429})
-    check(d["outcome"] == "failed" and "rate limit" in d["reason"] and "7 seconds" in d["reason"], "a rate limit is reported")
+    d = t.suggest(0, [{"status": 429}] * 3)
+    check(on_strike(d), "a rate limit that outlasts the tries puts the clerk on strike")
 
     # Cancelling.
     StandIn.delay = 1.0
@@ -352,7 +379,12 @@ def check_suggestions(srv, api_port):
         t2 = Table(bare)
         count = len(StandIn.requests)
         d = t2.suggest(0)
-        check(d["outcome"] == "failed" and "API key" in d["reason"] and len(StandIn.requests) == count, "with no key a suggestion says so, and makes no call")
+        check(on_strike(d) and len(StandIn.requests) == count, "with no key a suggestion goes on strike, and makes no call")
+        d = t2.draft(0, "Make the bank fairer.")
+        check(on_strike(d) and len(StandIn.requests) == count, "with no key a draft goes on strike, and makes no call")
+        d = t2.draft(0, BANK)
+        check(d["outcome"] == "ready" and d["viaClaude"] is False, "with no key formal text still works")
+        check("no API key" in open(bare.log).read(), "the log says the key is missing")
     finally:
         bare.stop()
         shutil.rmtree(nokey, ignore_errors=True)
@@ -453,19 +485,27 @@ def check_descriptions(srv, data, port, api_port):
 
     # A failure, a refusal or an empty reply shows the source, and the next draft of that law may ask again.
     cases = [
-        ("a server error", {"status": 500}, 1),
-        ("a refusal", ("", "refusal"), 1),
-        ("a reply cut off", ("Half a sen", "max_tokens"), 1),
-        ("an empty reply", "   ", 1),
+        ("a server error", [{"status": 500, "type": "api_error"}] * 3, 3, "strike"),
+        ("an overloaded API", [{"status": 529, "type": "overloaded_error"}] * 3, 3, "strike"),
+        ("a billing problem", [{"status": 402, "type": "billing_error"}], 1, "strike"),
+        ("a refused key", [{"status": 401, "type": "authentication_error"}], 1, "strike"),
+        ("a refusal", [("", "refusal")], 1, "failed"),
+        ("a reply cut off", [("Half a sen", "max_tokens")], 1, "failed"),
+        ("an empty reply", ["   "], 1, "failed"),
     ]
-    for i, (name, reply, calls) in enumerate(cases):
+    for i, (name, replies, calls, status) in enumerate(cases):
         count = len(StandIn.describe_requests)
-        StandIn.describe_replies.append(reply)
+        StandIn.describe_replies.extend(replies)
         text = f'(law "Case" (set-points settlement {7 + i}))'
         d = t.draft(seat, f"Case {i}", text)
-        d = wait_description(t, seat, "failed")
+        d = wait_description(t, seat, status)
         check(d["outcome"] == "ready" and d["review"]["text"] == text and "text" not in d["review"]["description"], f"{name} shows the source and no description")
-        check(len(StandIn.describe_requests) == count + calls, f"{name} is not asked again")
+        check(len(StandIn.describe_requests) == count + calls, f"{name} is asked {calls} times")
+    count = len(StandIn.describe_requests)
+    StandIn.describe_replies.extend([{"status": 529, "type": "overloaded_error"}, "Written on the second try."])
+    d = t.draft(seat, "Case again", '(law "Case" (set-points settlement 30))')
+    d = wait_description(t, seat)
+    check(d["review"]["description"]["text"] == "Written on the second try." and len(StandIn.describe_requests) == count + 2, "a description is tried again after an overload")
     # Too long: asked once more, and never cut.
     long_words = " ".join(["word"] * 60)
     count = len(StandIn.describe_requests)
@@ -531,13 +571,149 @@ def check_descriptions(srv, data, port, api_port):
         count = len(StandIn.describe_requests)
         d = t4.draft(0, "A law, on the last of the budget.", '(law "Last" (set-points settlement 4))')
         check(d["outcome"] == "ready", "a draft can finish on the last of the budget")
-        d = wait_description(t4, 0, "failed")
+        d = wait_description(t4, 0, "strike")
         check(len(StandIn.describe_requests) == count and d["review"]["text"] is not None, "with the budget used up there is no description call, and the source shows")
     finally:
         srv4.stop()
         shutil.rmtree(tight, ignore_errors=True)
 
     return Server(port, data, api_port)
+
+
+def check_strikes(api_port):
+    """Every problem on our side reads the same to a player. The API's list of errors is at
+    platform.claude.com/docs/en/api/errors. Its messages here hold the key, to prove that it stays hidden."""
+    data = tempfile.mkdtemp(prefix="charter-strike-")
+    srv = Server(free_port(), data, api_port)
+    try:
+        t = Table(srv)
+        log = lambda: open(srv.log).read()
+        one = [
+            ("a refused key", {"status": 401, "type": "authentication_error"}, "authentication_error"),
+            ("a billing problem", {"status": 402, "type": "billing_error"}, "billing_error"),
+            ("no credits", {"status": 400, "type": "invalid_request_error", "message": f"Your credit balance is too low to access the API. {FAKE_KEY}"}, "credit balance"),
+            ("a spend limit", {"status": 400, "type": "invalid_request_error", "message": "You have reached your specified API usage limits."}, "usage limits"),
+            ("a bad request", {"status": 400, "type": "invalid_request_error"}, "invalid_request_error"),
+            ("no permission", {"status": 403, "type": "permission_error"}, "permission_error"),
+            ("no such model", {"status": 404, "type": "not_found_error"}, "not_found_error"),
+            ("a request too large", {"status": 413, "type": "request_too_large"}, "request_too_large"),
+            ("an unknown status", {"status": 418, "type": "new_kind_of_error"}, "new_kind_of_error"),
+            ("a wait too long for a person", {"status": 429, "type": "rate_limit_error", "retry": 60}, "rate_limit_error"),
+        ]
+        again = [
+            ("a rate limit", {"status": 429, "type": "rate_limit_error"}, "rate_limit_error"),
+            ("a conflict", {"status": 409, "type": "conflict_error"}, "conflict_error"),
+            ("an API error", {"status": 500, "type": "api_error"}, "api_error"),
+            ("a timeout", {"status": 504, "type": "timeout_error"}, "timeout_error"),
+            ("an overload", {"status": 529, "type": "overloaded_error"}, "overloaded_error"),
+            ("a gateway page", {"status": 502, "raw": "<html>Bad gateway</html>"}, "HTTP 502"),
+            ("an error in the stream", {"stream": "overloaded_error"}, "overloaded_error"),
+            ("a stream that stops", {"stream": None}, "ended before it finished"),
+            ("a closed connection", {"close": True}, "curl exit 52"),
+        ]
+        for name, reply, logged, tries in [c + (1,) for c in one] + [c + (3,) for c in again]:
+            count = len(StandIn.requests)
+            d = t.draft(0, f"A rule that meets {name}.", [reply] * tries)
+            check(on_strike(d), f"{name} puts the clerk on strike")
+            check(len(StandIn.requests) == count + tries, f"{name} is asked {tries} times")
+            check(d["attempt"] == 1 and FAKE_KEY not in json.dumps(d) and "stand-in detail" not in json.dumps(d), f"{name} shows the player no detail")
+            check(logged in log(), f"{name} is in the server's log")
+        check(FAKE_KEY not in log(), "the log never holds the key")
+
+        # A problem that passes is not the player's to see.
+        count = len(StandIn.requests)
+        d = t.draft(0, "A rule that meets one overload.", [{"status": 529, "type": "overloaded_error"}, BANK])
+        check(d["outcome"] == "ready" and len(StandIn.requests) == count + 2 and not d.get("strike"), "an overload that passes ends in a normal draft")
+        StandIn.replies.extend([{"status": 429, "type": "rate_limit_error", "retry": 1}, {"status": 500, "type": "api_error"}, BANK])
+        t.post_draft(0, "A rule that meets two problems.")
+        stages = set()
+        for _ in range(400):
+            d = srv.get(f"/api/games/{t.code}/draft?token={t.tokens[0]}")
+            stages.add(d.get("stage"))
+            if d.get("outcome"):
+                break
+            time.sleep(0.02)
+        check(d["outcome"] == "ready" and "retrying" in stages, "two problems that pass end in a normal draft, and the screen hears of the wait")
+        StandIn.replies.extend([{"status": 529, "type": "overloaded_error"}] * 3)
+        t.post_draft(0, "A rule cancelled while it waits.")
+        time.sleep(0.3)
+        count = len(StandIn.requests)
+        srv.req(f"/api/games/{t.code}/draft-cancel", {"token": t.tokens[0]})
+        time.sleep(2.5)
+        check(srv.get(f"/api/games/{t.code}/draft?token={t.tokens[0]}")["outcome"] == "cancelled" and len(StandIn.requests) == count, "a draft cancelled during the wait asks no more")
+        StandIn.replies.clear()
+
+        # A suggestion goes the same way.
+        for name, reply, tries in [("a billing problem", {"status": 402, "type": "billing_error"}, 1), ("an overload", {"status": 529, "type": "overloaded_error"}, 3)]:
+            count = len(StandIn.requests)
+            d = t.suggest(0, [reply] * tries)
+            check(on_strike(d) and len(StandIn.requests) == count + tries, f"{name} puts a suggestion on strike")
+
+        # A request the clerk cannot write as a law is a different case, and not our fault.
+        d = t.draft(0, "Something the clerk turns down.", "REFUSE: That is not a rule about this game.")
+        check(d["outcome"] == "refused" and d["reason"] == "That is not a rule about this game." and not d.get("strike"), "the clerk's refusal stays as it was")
+        d = t.draft(0, "Something the model turns down.", ("", "refusal"))
+        check(d["outcome"] == "failed" and d["reason"].startswith("Claude declined to draft this.") and not d.get("strike"), "the model's refusal stays as it was")
+        d = t.suggest(0, ("", "refusal"))
+        check(d["outcome"] == "failed" and d["reason"].startswith("Claude declined to suggest") and not d.get("strike"), "and so does a refused suggestion")
+        d = t.draft(0, "Something very long.", ("Half a sen", "max_tokens"))
+        check(d["outcome"] == "failed" and "length limit" in d["reason"] and not d.get("strike"), "a draft that runs too long says so")
+
+        # The game stays playable during a strike.
+        StandIn.default = {"status": 402, "type": "billing_error"}
+        StandIn.describe_default = {"status": 402, "type": "billing_error"}
+        try:
+            check(on_strike(t.draft(0, "Make the bank fairer.")), "the clerk is on strike for this part")
+            seat = t.can_pay_fee()
+            count = len(StandIn.requests)
+            d = t.draft(seat, BANK)
+            check(d["outcome"] == "ready" and d["viaClaude"] is False and len(StandIn.requests) == count, "a player can still write formal text")
+            r = srv.req(f"/api/games/{t.code}/propose", {"token": t.tokens[seat], "text": d["review"]["text"]})
+            check(r.get("ok"), "and propose it")
+            pid = [p for p in t.view()["proposals"] if p["by"] == seat][-1]["id"]
+            for voter in range(2):
+                srv.req(f"/api/games/{t.code}/vote", {"token": t.tokens[voter], "id": pid, "yes": True})
+            check(any(l["id"] == pid for l in t.view()["laws"]), "and the table can vote it in")
+            before = t.view()["version"]
+            v = t.view(t.view()["turn"])
+            r = srv.req(f"/api/games/{t.code}/move", {"token": t.tokens[v["turn"]], "move": {"t": "endTurn"}})
+            check(r.get("ok") and t.view()["version"] > before, "and the turns go on")
+        finally:
+            StandIn.default = BANK
+            StandIn.describe_default = "A plain description from the stand-in."
+    finally:
+        srv.stop()
+        shutil.rmtree(data, ignore_errors=True)
+
+    # No connection at all. Nothing listens on this port.
+    data = tempfile.mkdtemp(prefix="charter-strike-")
+    srv = Server(free_port(), data, free_port())
+    try:
+        t = Table(srv)
+        d = t.draft(0, "A rule with no connection.")
+        check(on_strike(d) and "curl exit 7" in open(srv.log).read(), "a lost connection puts the clerk on strike, and the log says why")
+    finally:
+        srv.stop()
+        shutil.rmtree(data, ignore_errors=True)
+
+    # The clerk's instructions go missing while the server runs. The server will not start without them.
+    data = tempfile.mkdtemp(prefix="charter-strike-")
+    root = os.path.join(data, "root")
+    shutil.copytree(os.path.join(ROOT, "Server"), os.path.join(root, "Server"), ignore=shutil.ignore_patterns("*.lean"))
+    os.symlink(os.path.join(ROOT, "web"), os.path.join(root, "web"))
+    if os.path.exists(os.path.join(ROOT, "packs")):
+        os.symlink(os.path.join(ROOT, "packs"), os.path.join(root, "packs"))
+    srv = Server(free_port(), data, api_port, CHARTER_ROOT=root)
+    try:
+        t = Table(srv)
+        os.remove(os.path.join(root, "Server", "formalizer.md"))
+        count = len(StandIn.requests)
+        check(on_strike(t.draft(0, "A rule with no instructions.")) and len(StandIn.requests) == count, "missing instructions put a draft on strike, with no call")
+        check(on_strike(t.suggest(0)) and len(StandIn.requests) == count, "and a suggestion")
+        check("formalizer.md" in open(srv.log).read(), "the log says which file is missing")
+    finally:
+        srv.stop()
+        shutil.rmtree(data, ignore_errors=True)
 
 
 def stated_limits():
@@ -773,6 +949,7 @@ def main():
               "Ada will not trade with Grace, in either direction." in d["review"]["statement"],
               "the statement says who will not trade with whom")
 
+        check_strikes(api_port)
         check_suggestions(srv, api_port)
         srv = check_descriptions(srv, data, port, api_port)
         t.srv = srv

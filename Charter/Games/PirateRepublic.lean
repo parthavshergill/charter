@@ -60,6 +60,10 @@ def noHat : Cond := .eq (held .each "hat") (.lit 0)
 
 /-! ## The founding laws -/
 
+/-- Someone has a vote, and one seat alone has the most. -/
+def oneSeatLeads : Cond :=
+  .and (.lt (.lit 0) topVotes) (.eq (.totalOver (.eq (votes .each) topVotes) (.lit 1)) (.lit 1))
+
 /-- **The vote.** One seat alone must have the most votes, or the hat stays where it is. Then each seat is
 brought back to 1 ballot. The chest holds the spare hat and ballots, so the bank cannot sell
 them. -/
@@ -67,9 +71,8 @@ def lawVote : Law :=
   { title := "The crew votes for a captain each round"
     clauses :=
       [ .onRoundEnd
-          [ .when (.and (.lt (.lit 0) topVotes) (.eq (.totalOver (.eq (votes .each) topVotes) (.lit 1)) (.lit 1)))
-              [ .forEach (.and (.lt (votes .each) topVotes) hasHat) [pay .each .treasury "hat" (held .each "hat")]
-              , .forEach (.and (.eq (votes .each) topVotes) noHat) [pay .treasury .each "hat" (.lit 1)] ]
+          [ .forEach (.and oneSeatLeads (.and (.lt (votes .each) topVotes) hasHat)) [pay .each .treasury "hat" (held .each "hat")]
+          , .forEach (.and oneSeatLeads (.and (.eq (votes .each) topVotes) noHat)) [pay .treasury .each "hat" (.lit 1)]
           , .forEach (.lt (.lit 1) (held .each "ballot")) [pay .each .treasury "ballot" (.sub (held .each "ballot") (.lit 1))]
           , .forEach (.eq (held .each "ballot") (.lit 0)) [pay .treasury .each "ballot" (.lit 1)] ]
       , .onRoll [pay .bank .treasury "hat" (held .bank "hat"), pay .bank .treasury "ballot" (held .bank "ballot")] ] }
@@ -78,7 +81,7 @@ def lawVote : Law :=
 def lawShare : Law :=
   { title := "Plunder is worth a point, and the hat takes a double share"
     clauses :=
-      [ .onHarvest [.when (.harvestedIs "plunder") [.forEach hasHat [.transfer .bank .each .harvested .harvestedAmount]]]
+      [ .onHarvest [.forEach (.and (.harvestedIs "plunder") hasHat) [.transfer .bank .each .harvested .harvestedAmount]]
       , .setWorth "plunder" 1 ] }
 
 /-- The rum levy the hat has declared, up to 3. -/
@@ -93,6 +96,7 @@ def lawLevy : Law :=
           [ .forEach noHat [pay .each .bank "rum" levy]
           , .forEach hasHat [pay .bank .each "rum" (.totalOver noHat (.min levy (held .each "rum")))] ] ] }
 
+def navyComes : Cond := .eq .round (.lit 5)
 def tookPardon : Cond := .lt (.lit 0) (said .each "pardon")
 def stoodAndFought : Cond := .and (.le (.lit 3) (said .each "powder")) (.le (.lit 3) (held .each "powder"))
 
@@ -104,10 +108,10 @@ def lawNavy : Law :=
       , .setWorth "pardon" 3
       , .onHarvest [.when (.and (.harvestedIs "plunder") (.lt (.lit 0) (held .actor "pardon")))
           [.transfer .actor .bank .harvested .harvestedAmount]]
-      , .onRoundEnd [.when (.eq .round (.lit 5))
-          [ .forEach tookPardon [pay .treasury .each "pardon" (.lit 1), pay .each .bank "plunder" (.div (held .each "plunder") 2)]
-          , .forEach (.and (.not tookPardon) stoodAndFought) [pay .each .bank "powder" (.lit 3)]
-          , .forEach (.and (.not tookPardon) (.not stoodAndFought)) [.movePiece .each .bank "wharf"] ]] ] }
+      , .onRoundEnd
+          [ .forEach (.and navyComes tookPardon) [pay .treasury .each "pardon" (.lit 1), pay .each .bank "plunder" (.div (held .each "plunder") 2)]
+          , .forEach (.and navyComes (.and (.not tookPardon) stoodAndFought)) [pay .each .bank "powder" (.lit 3)]
+          , .forEach (.and navyComes (.and (.not tookPardon) (.not stoodAndFought))) [.movePiece .each .bank "wharf"] ] ] }
 
 def foundingLaws : List Law := [lawVote, lawShare, lawLevy, lawNavy]
 

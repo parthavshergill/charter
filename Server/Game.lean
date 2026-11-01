@@ -3,6 +3,7 @@ import Lobby
 import Charter.Constitution
 import Charter.Scene.OfState
 import Server.Util
+import Server.MoveJson
 import Server.Spec
 import Server.Persona
 import Server.Rules
@@ -123,46 +124,7 @@ def Game.openToSpectators (g : Game) : Bool :=
     | some s => s.phase == .ended
     | none => false
 
-/-! ## JSON for moves and events -/
-
-def bundleJson (b : Bundle) : Json :=
-  Json.arr (b.map fun x => Json.mkObj [("res", x.1), ("n", toJson x.2)]).toArray
-
-def bundleOfJson (j : Json) : Except String Bundle := do
-  let items ← j.getArr?
-  (items.toList.mapM fun i => do
-    let r ← i.getObjValAs? String "res"
-    let n ← i.getObjValAs? Nat "n"
-    pure (r, n))
-
-def moveJson : Move → Json
-  | .place k (.spot v) => Json.mkObj [("t", "place"), ("kind", k), ("spot", toJson v)]
-  | .place k (.link l) => Json.mkObj [("t", "place"), ("kind", k), ("link", toJson [l.1, l.2])]
-  | .bankTrade give get => Json.mkObj [("t", "bankTrade"), ("give", give), ("get", get)]
-  | .offer to give get =>
-      Json.mkObj [("t", "offer"), ("to", toJson to), ("give", bundleJson give), ("get", bundleJson get)]
-  | .accept id => Json.mkObj [("t", "accept"), ("id", toJson id)]
-  | .cancel id => Json.mkObj [("t", "cancel"), ("id", toJson id)]
-  | .declare r n => Json.mkObj [("t", "declare"), ("res", r), ("n", toJson n)]
-  | .endTurn => Json.mkObj [("t", "endTurn")]
-
-def moveOfJson (j : Json) : Except String Move := do
-  match ← j.getObjValAs? String "t" with
-  | "place" =>
-    let k ← j.getObjValAs? String "kind"
-    match jNat j "spot", (j.getObjValAs? (List Nat) "link").toOption with
-    | some v, _ => pure (.place k (.spot v))
-    | none, some [a, b] => pure (.place k (.link (a, b)))
-    | _, _ => throw "a place move needs a spot or a link"
-  | "bankTrade" => pure (.bankTrade (← j.getObjValAs? String "give") (← j.getObjValAs? String "get"))
-  | "offer" =>
-    let to := jNat j "to"
-    pure (.offer to (← bundleOfJson (← j.getObjVal? "give")) (← bundleOfJson (← j.getObjVal? "get")))
-  | "accept" => pure (.accept (← j.getObjValAs? Nat "id"))
-  | "cancel" => pure (.cancel (← j.getObjValAs? Nat "id"))
-  | "declare" => pure (.declare (← j.getObjValAs? String "res") (← j.getObjValAs? Nat "n"))
-  | "endTurn" => pure .endTurn
-  | t => throw s!"unknown move {t}"
+/-! ## JSON for events -/
 
 /-- The engine event a log entry stands for. -/
 def eventOfJson (g : Game) (j : Json) : Except String Event := do
@@ -612,6 +574,35 @@ def start (g : Game) : Except String Game :=
     else
       .error s!"the game cannot start: it needs {minSeats} to {maxSeats} seats and at least one player's nonce"
 
+/-! ## The limit on what one trade carries -/
+
+/-- A trade carries at most this many different resources on each side. This is a limit of the server,
+not a rule of the game: `applyLive` checks it when an event comes in. The engine does not know it, the
+theorems do not mention it, and `apply` does not check it, so a saved log always replays. -/
+def maxGoodsPerSide : Nat := 4
+
+/-- The words for an offer over the limit. -/
+def offerLimitProblem : String :=
+  s!"an offer can carry at most {maxGoodsPerSide} different resources on each side"
+
+/-- Why this deal is over the limit. One seat's side is what it pays or sets aside. -/
+def dealLimitProblems (d : Deal) : List String :=
+  let side (i : Seat) : List Res :=
+    (d.allPays.filter (·.src == i)).map (·.res) ++ (d.deposits.filter (·.1 == i)).map (·.2.1)
+  if d.signers.any fun i => decide (maxGoodsPerSide < (side i).eraseDups.length) then
+    [s!"a deal can ask each signer for at most {maxGoodsPerSide} different resources"]
+  else []
+
+/-- Why this new event from a player is over the limit, if it is. An event that cannot be read is not
+over it: `apply` gives the reason for that one. -/
+def overLimit (g : Game) (j : Json) : Option String :=
+  match eventOfJson g j with
+  | .ok (.move _ (.offer _ give get)) =>
+    let over (b : Bundle) : Bool := decide (maxGoodsPerSide < (b.map (·.1)).eraseDups.length)
+    if over give || over get then some offerLimitProblem else none
+  | .ok (.propose _ (.deal d)) => (dealLimitProblems d).head?
+  | _ => none
+
 /-- Apply one log entry. A rejected entry leaves the game as it was. -/
 def apply (g : Game) (j : Json) : Except String Game := do
   let bump (x : Game) : Game := { x with events := x.events + 1 }
@@ -649,5 +640,12 @@ def apply (g : Game) (j : Json) : Except String Game := do
         decisions := g.decisions ++ (closedLaws g s s' e).toArray
         tabled := nextTabled g s s' e
         opened := opened })
+
+/-- Apply a new event, one that is not yet in the log. Every new event comes through here, whoever sent
+it. A replay uses `apply`, so a limit added later cannot turn away an old table. -/
+def applyLive (g : Game) (j : Json) : Except String Game :=
+  match overLimit g j with
+  | some why => .error why
+  | none => apply g j
 
 end CharterServer.Game
