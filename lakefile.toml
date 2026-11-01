@@ -1,5 +1,5 @@
 name = "charter"
-defaultTargets = ["Charter", "Server"]
+defaultTargets = ["Charter", "charter-server"]
 
 [[require]]
 name = "hexgrid"
@@ -22,4 +22,7 @@ name = "Charter"
 
 [[lean_lib]]
 name = "Server"
-roots = ["Server.Util", "Server.SExp", "Server.Text", "Server.Rules", "Server.Preview", "Server.Spec", "Server.Persona", "Server.Game", "Server.Bots", "Server.Player", "Server.Http", "Server.Clerk", "Server.Formalize", "Server.View"]
+
+[[lean_exe]]
+name = "charter-server"
+root = "Server.Main"
