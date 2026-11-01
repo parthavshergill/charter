@@ -632,7 +632,7 @@ function renderLedge() {
         onclick: () => selectPiece(d.name), onpointerenter: e => { if (e.pointerType === "mouse") previewCost(d.name); }, onpointerleave: () => previewCost(null), onfocus: () => previewCost(d.name), onblur: () => previewCost(null) },
         pieceIcon(made ? "made" : d.name),
         h("span", { class: "nm" }, capital(d.name)),
-        !enabled && d.short?.length ? h("span", { class: "need" }, d.short.slice(0, 2).map(x => h("span", {}, `${x.n}`, resIcon(x.res, "res")))) : null));
+        !enabled && d.short?.length ? h("span", { class: "need" }, d.short.map(x => h("span", {}, `${x.n}`, resIcon(x.res, "res")))) : null));
       void i;
     });
     tools.push(h("button", { "data-key": "trade", class: "tool sep" + (G.dock?.t === "trade" ? " selected" : ""), title: "Trade with the bank or the table (T)", onclick: () => toggleDock({ t: "trade" }) }, uiIcon("trade"), h("span", { class: "nm" }, "Trade")));
