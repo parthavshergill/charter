@@ -5,7 +5,7 @@ It makes no real API calls and costs nothing. It reads the requests the game sen
 exactly what a seat would see. It covers: answers that do not read, actions the engine refuses, rate
 limits, slow seats, the clerk pipeline, private memory, and words from other players.
 """
-import glob, http.server, json, os, shutil, socket, subprocess, tempfile, threading, time, urllib.error, urllib.request
+import glob, http.server, json, os, re, shutil, socket, subprocess, tempfile, threading, time, urllib.error, urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BIN = os.path.join(ROOT, ".lake", "build", "bin", "charter-server")
@@ -386,6 +386,26 @@ def main():
         check(time.time() - start >= 0.9, "a rate limit makes the seat wait as long as the API says")
         wait_for(lambda: t.view()["turn"] == t.human, "the turn to come back")
         check(True, "the game goes on after a rate limit")
+
+        # A problem on our side: the seat passes and says nothing, and the person's game goes on.
+        for name, reply, tries in [("a billing problem", {"status": 402, "type": "billing_error"}, 1), ("a refused key", {"status": 401, "type": "authentication_error"}, 1)]:
+            reset()
+            StandIn.seat_replies.extend([reply] * tries)
+            lines = len(t.view().get("talk") or [])
+            t.give_turn()
+            wait_for(lambda: t.view()["turn"] == t.human, "the turn to come back")
+            check(len(StandIn.seat_requests) == tries, f"{name} is asked {tries} times")
+            seen = json.dumps(t.view()) + json.dumps(t.talk(t.token))
+            check(not re.search(r"billing|refused|API key|HTTP|stand-in|_error", seen), f"{name} shows the person no message")
+        # A seat that asks the clerk during a strike hears the same words as a person.
+        reset()
+        StandIn.clerk_reply = {"status": 402, "type": "billing_error"}
+        StandIn.seat_replies.extend([answer([{"action": "draft", "words": "Make the bank fairer."}]), END])
+        t.give_turn()
+        wait_for(lambda: len(StandIn.seat_requests) >= 2, "the seat to hear from the clerk")
+        check("The clerk is on strike!" in user_text(StandIn.seat_requests[1]) and "billing" not in user_text(StandIn.seat_requests[1]), "a seat hears that the clerk is on strike")
+        StandIn.clerk_reply = BANK
+        wait_for(lambda: t.view()["turn"] == t.human, "the turn to come back")
 
         # A slow seat cannot stall the game.
         reset()

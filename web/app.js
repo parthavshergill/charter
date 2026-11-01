@@ -815,7 +815,7 @@ async function poll() {
     if (G.lost) { G.lost = false; caption(""); }
     if (v && v.talkCount != null && v.talkCount !== G.talkCount) fetchTalk();
     if (v && "turnLeftMs" in v) { G.turnEnd = v.turnLeftMs == null ? null : performance.now() + v.turnLeftMs; renderClock(); }
-    if (v && "resting" in v && v.resting !== G.resting) { G.resting = v.resting; if (v.resting) caption(v.resting); }
+    if (v && "resting" in v && v.resting !== G.resting) { G.resting = v.resting; if (v.resting) caption(v.resting, false, 10000); }
     // Only someone watching can see a paused table. A player who comes back has already ended the pause.
     if (v && "paused" in v && !G.token && !!v.paused !== !!G.paused) { G.paused = v.paused; caption(v.paused ? "This table is paused until one of its players comes back." : "", v.paused); }
     if (v && v.drafting && G.view && JSON.stringify(v.drafting) !== JSON.stringify(G.view.drafting)) { G.view.drafting = v.drafting; renderHouses(); }
@@ -980,11 +980,11 @@ function renderClock() {
   c.title = `Time left in ${v.turn === v.you ? "your" : `${who.name}'s`} turn`;
   c.classList.toggle("soon", left <= 30 && v.turn === v.you);
 }
-function caption(text, sticky) {
+function caption(text, sticky, ms = 5000) {
   const c = G.ui?.caption; if (!c) return;
   c.textContent = text; c.classList.toggle("on", !!text);
   clearTimeout(G.captionTimer);
-  if (text && !sticky) G.captionTimer = setTimeout(() => c.classList.remove("on"), 5000);
+  if (text && !sticky) G.captionTimer = setTimeout(() => c.classList.remove("on"), ms);
 }
 
 // ---------------------------------------------------------------- the ledge
@@ -1263,13 +1263,14 @@ function consequences(pv) {
 }
 const formalText = text => h("details", { class: "formal" }, h("summary", {}, "Formal text"), h("pre", { class: "sexp" }, text));
 
+const hasNoWords = st => st === "none" || st === "failed" || st === "strike";
 /** A law's description, which is someone's words. The rule source below it is what counts. Space is
  *  kept for it while it is written, so nothing on the sheet moves when it arrives. */
 function describedOf(d, badge = null) {
   const st = d?.status || "none";
   const line = st === "pack" ? `${d.pack}'s own words` : "Claude's description";
-  if (st === "none" || st === "failed") return h("div", { class: "described" + (st === "failed" ? " held" : "") }, badge ? h("div", { class: "byline" }, badge) : null,
-    h("p", { class: "nowords" }, "Claude has not described this law. The rule source below is what counts."));
+  if (hasNoWords(st)) return h("div", { class: "described" + (st === "none" ? "" : " held") }, badge ? h("div", { class: "byline" }, badge) : null,
+    h("p", { class: "nowords" }, st === "strike" ? "The clerk is on strike, so this law has no description. Sorry, that's on us. The rule source below is what counts." : "Claude has not described this law. The rule source below is what counts."));
   return h("div", { class: "described held" }, h("div", { class: "byline" }, h("span", {}, line), badge),
     st === "writing"
       ? h("div", { class: "ghost", role: "status", "aria-label": "Claude is writing a description" }, h("i"), h("i"), h("i"))
@@ -1303,7 +1304,7 @@ const openSources = new Set();
  *  stays open, because then it is all there is. */
 function sourceOf(text, description) {
   const st = description?.status || "none";
-  if (st === "none" || st === "failed")
+  if (hasNoWords(st))
     return h("div", { class: "source" }, h("div", { class: "byline" }, h("span", {}, "Rule source")), h("pre", { class: "sexp" }, sourceLines(text)));
   return h("details", { class: "source formal", open: openSources.has(text),
       ontoggle: e => { if (e.currentTarget.open) openSources.add(text); else openSources.delete(text); } },
@@ -2017,7 +2018,7 @@ async function pollDraft() {
   try { d = await api(`/api/games/${G.code}/draft`); }
   catch { if (gen === G.draftGen) G.draftPolling = setTimeout(pollDraft, 1000); return; }
   if (gen !== G.draftGen) return;
-  if (d?.id == null) { if (G.draft && !G.draft.outcome && !G.draft.optimistic) { G.draft = { outcome: "failed", reason: "The server lost this draft. Try again.", words: G.ui.words.value }; renderDraft(); } return; }
+  if (d?.id == null) { if (G.draft && !G.draft.outcome && !G.draft.optimistic) { G.draft = { outcome: "failed", reason: "The clerk lost this draft. Sorry, that's on us. Try again.", words: G.ui.words.value }; renderDraft(); } return; }
   const beat = G.draft && (d.text !== G.draft.text || d.thinking !== G.draft.thinking || d.stage !== G.draft.stage);
   G.draft = d; G.draftBeat = beat;
   placeSuggestion(d);
@@ -2054,7 +2055,7 @@ async function cancelDraft() {
   G.ui.words.focus();
 }
 const STAGE_TEXT = {
-  sent: "Sent to Claude. Waiting for a reply.", connected: "Claude has it.", thinking: "Claude is thinking.", drafting: "Claude is writing it out.",
+  sent: "Sent to Claude. Waiting for a reply.", retrying: "The clerk's line is busy. Trying again.", connected: "Claude has it.", thinking: "Claude is thinking.", drafting: "Claude is writing it out.",
   parsing: "Reading the draft.", checking: "Checking it against the constitution.", previewing: "Working out who gains and who pays.", done: "Finished.",
 };
 function renderDraft() {
@@ -2081,6 +2082,10 @@ function renderDraft() {
   U.proposeBar.hidden = true;
   if (!d) { fill(U.draftBody); return; }
   if (running) { fill(U.draftBody, draftingView(d)); return; }
+  if (d.strike) {
+    fill(U.draftBody, strikeView(d));
+    return;
+  }
   if (suggesting && (d.outcome === "refused" || d.outcome === "failed")) {
     fill(U.draftBody, h("p", { class: "fail" }, d.reason));
     return;
@@ -2092,8 +2097,7 @@ function renderDraft() {
     return;
   }
   if (d.outcome === "failed") {
-    fill(U.draftBody, h("p", { class: "fail" }, d.reason),
-      h("details", { class: "formal" }, h("summary", {}, "Write it in formal text"), h("pre", { class: "sexp" }, '(law "A title" (set-bank-rate 3))')));
+    fill(U.draftBody, h("p", { class: "fail" }, d.reason), formalHelp());
     return;
   }
   if (d.outcome === "cancelled") { fill(U.draftBody); return; }
@@ -2111,6 +2115,24 @@ function renderDraft() {
   if (same) {
     fill(bar, h("button", { class: "act gold", disabled: !rv.canPropose, onclick: () => proposeDraft(rv.text) }, "Propose"));
   }
+}
+/** How to write a rule with no clerk. The page redraws, so this keeps the fold open. */
+function formalHelp() {
+  return h("details", { class: "formal", open: !!G.formalHelpOpen, ontoggle: e => { G.formalHelpOpen = e.currentTarget.open; } },
+    h("summary", {}, "Write it in formal text"),
+    h("pre", { class: "sexp" }, '(law "A title" (set-bank-rate 3))'),
+    h("p", { class: "formalnote" }, "Put a rule like this in the box above, then draft it. It does not need the clerk."));
+}
+/** The clerk cannot work, and that is our fault. Ready-made laws and formal text need no clerk, so the way on is right here. */
+function strikeView(d) {
+  const landing = G.refusedShown !== d.id;
+  G.refusedShown = d.id;
+  const samples = (G.view?.samples || []).slice(0, 5);
+  return h("div", { class: "refusal strike" },
+    h("div", { class: "stampword" + (landing ? " fresh" : "") }, "ON STRIKE"),
+    h("p", {}, d.reason),
+    samples.length ? h("div", { class: "strikesamples" }, h("span", {}, "Ready-made laws need no clerk:"), h("div", { class: "samples" }, samples.map(s => h("button", { class: "link", title: s.text, onclick: () => submitDraft(s.id) }, s.title)))) : null,
+    formalHelp());
 }
 function draftingView(d) {
   const stalled = d.quietMs > 15000;
