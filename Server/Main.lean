@@ -144,12 +144,11 @@ def proposalText (body : Json) (seat : Nat) : Except String String := do
     let some other := jNat f "with" | throw "a deal needs another seat"
     let rounds := (jNat f "rounds").getD 1
     let notice := (jNat f "exitNotice").getD 0
-    let give := (jStr f "give").getD ""
-    let giveN := (jNat f "giveN").getD 0
-    let get := match jStr f "get", jNat f "getN" with
-      | some r, some n => if r.isEmpty then none else some (r, n)
-      | _, _ => none
-    return Rules.printProposal (.deal (Rules.formDeal seat other rounds notice give giveN get))
+    let side (k : String) : Except String Bundle :=
+      match jField f k with
+      | some j => Game.bundleOfJson j
+      | none => pure []
+    return Rules.printProposal (.deal (Rules.formDeal seat other rounds notice (← side "give") (← side "get")))
   throw "a proposal needs text, a sample or a deal form"
 
 /-- A scene stream, or nothing if the client says it has these bytes already. Most of what changes a

@@ -188,7 +188,7 @@ def commitRaw (ctx : Ctx) (code : String) (mk : Entry → Except String Json) : 
     match tbl.get? code with
     | none => return .error s!"no game {code}"
     | some e =>
-      match mk e >>= fun ev => (Game.apply e.game ev).map (ev, ·) with
+      match mk e >>= fun ev => (Game.applyLive e.game ev).map (ev, ·) with
       | .error err => return .error err
       | .ok (ev, g') =>
         discard <| e.log.append ev.compress

@@ -1108,9 +1108,12 @@ function renderPrompt() {
 function renderSlips() {
   const v = G.view, U = G.ui;
   const offers = (v.offers || []).filter(o => o.canAccept || o.canCancel || o.to == null || o.to === v.you);
+  const hand = seat(v.you)?.hand;
+  const missing = o => o.canAccept || o.from === v.you || !hand ? null : (o.get || []).find(x => (hand[x.res] || 0) < x.n);
   fill(U.slips, offers.map(o => h("div", { class: "slip vellum" },
     h("div", {}, o.from === v.you ? "Your offer" : `${seat(o.from)?.name} offers`, o.to != null && o.from === v.you ? ` to ${nameOf(o.to)}` : ""),
-    h("div", { class: "terms" }, costOf(o.give), h("span", {}, "for"), costOf(o.get)),
+    h("div", { class: "terms" }, costOf(o.give), h("span", { class: "forline" }, h("span", {}, "for"), costOf(o.get))),
+    missing(o) ? h("div", { class: "fine" }, `You need ${missing(o).n - (hand[missing(o).res] || 0)} more ${missing(o).res}.`) : null,
     h("div", { class: "row" },
       o.canAccept ? h("button", { class: "act gold", onclick: () => postMove({ t: "accept", id: o.id }) }, "Accept") : null,
       o.canCancel ? h("button", { class: "act", onclick: () => postMove({ t: "cancel", id: o.id }) }, "Take back") : null))));
@@ -1209,9 +1212,10 @@ function renderDock() {
     return;
   }
   if (d.t === "trade") {
-    if (G.view.turn !== G.view.you || G.view.phase !== "actions") { closeDock(); return; }
-    // Keep typing in the amount boxes alive across polls.
-    if (!U.sheet.contains(document.activeElement) || !U.sheet.querySelector(".tradesheet")) renderTrade();
+    if (G.view.turn !== G.view.you || G.view.phase !== "actions") { G.tf = null; closeDock(); return; }
+    // A poll leaves the sheet alone while someone types in it, or presses a button: a button replaced under a press loses its click.
+    const inUse = U.sheet.contains(document.activeElement) || U.sheet.querySelector(":active");
+    if (!inUse || !U.sheet.querySelector(".tradesheet")) renderTrade();
     return;
   }
 }
@@ -1917,19 +1921,83 @@ function yourMove() {
 }
 
 // ---------------------------------------------------------------- the trade sheet
+/** The two sides of the form, as the server reads them. */
+const tradeBundle = side => Object.entries(side).map(([res, n]) => ({ res, n }));
+const heldBy = (v, s, r) => seat(s)?.hand?.[r] || 0;
+const countOf = (n, r) => n ? `only ${n} ${r}` : `no ${r}`;
+
+/** Why one more of this good cannot go on this side. Nothing if it can. Each reason is a state of the form,
+ *  so the tile says it before the server has to. */
+function tradeRefusal(v, f, key, r) {
+  const deal = Number(f.rounds) > 1, n = f[key][r] || 0;
+  if (!deal && f[key === "give" ? "get" : "give"][r]) return `${capital(r)} is on the other side.`;
+  if (!deal && key === "give" && n >= heldBy(v, v.you, r)) return `You hold ${countOf(heldBy(v, v.you, r), r)}.`;
+  if (!n && Object.keys(f[key]).length >= (v.maxGoodsPerSide ?? 4)) return `Up to ${v.maxGoodsPerSide ?? 4} kinds on each side.`;
+  return null;
+}
+/** What stops the form going as it stands. It gets here when rounds change after the picks, or the hand changes. */
+function tradeProblem(v, f) {
+  if (Number(f.rounds) > 1) return null;
+  const both = Object.keys(f.give).find(r => f.get[r]);
+  if (both) return `${capital(both)} is on both sides. Take one off.`;
+  const over = Object.keys(f.give).find(r => f.give[r] > heldBy(v, v.you, r));
+  return over ? `You hold ${countOf(heldBy(v, v.you, over), over)}.` : null;
+}
+/** What the engine allows but will not work out as things stand: someone cannot pay yet. It stops nothing. */
+function tradeWarning(v, f) {
+  const rounds = Math.max(1, Number(f.rounds) || 1), deal = rounds > 1;
+  if (deal) {
+    const short = Object.keys(f.give).find(r => f.give[r] * rounds > heldBy(v, v.you, r));
+    if (short) return `The deposit is ${f.give[short] * rounds} ${short}. You hold ${heldBy(v, v.you, short)}.`;
+  }
+  const asked = Object.keys(f.get);
+  if (!asked.length) return null;
+  const canPay = q => asked.every(r => heldBy(v, q, r) >= f.get[r] * rounds);
+  if (f.to !== "") {
+    const q = Number(f.to), r = asked.find(x => heldBy(v, q, x) < f.get[x] * rounds);
+    return r == null ? null : `${nameOf(q)} holds ${countOf(heldBy(v, q, r), r)}.`;
+  }
+  return v.seats.some(s => s.seat !== v.you && canPay(s.seat)) ? null : "Nobody holds all of that now.";
+}
+function changeTrade(key, r, by) {
+  const v = G.view, f = G.tf;
+  const why = by > 0 ? tradeRefusal(v, f, key, r) : null;
+  f.note = why;
+  if (!why) {
+    const n = (f[key][r] || 0) + by;
+    if (n > 0) f[key][r] = n; else delete f[key][r];
+  }
+  renderTrade();
+  const tile = G.ui.sheet.querySelector(`[data-tile="${CSS.escape(`${key}.${r}`)}"]`);
+  if (why) anim(tile, [{ translate: "0 0" }, { translate: "-3px 0" }, { translate: "3px 0" }, { translate: "-2px 0" }, { translate: "0 0" }], { duration: 180 });
+  else if (by > 0) anim(tile?.querySelector(".n"), [{ scale: 1.5 }, { scale: 1 }], { duration: 160, easing: "ease-out" });
+}
 function renderTrade() {
   const v = G.view, U = G.ui;
-  if (!G.tf) G.tf = { give: null, giveN: 1, get: null, getN: 1, to: "", rounds: 1 };
+  if (!G.tf) G.tf = { give: {}, get: {}, to: "", rounds: 1, note: null };
   const f = G.tf;
   const trades = (v.legalMoves || []).filter(m => m.move.t === "bankTrade");
   const byGive = new Map();
   for (const m of trades) { if (!byGive.has(m.move.give)) byGive.set(m.move.give, []); byGive.get(m.move.give).push(m); }
   const others = v.seats.filter(s => s.seat !== v.you);
-  const pick = (key, label) => h("div", { class: "pickrow" }, h("span", { class: "lbl" }, label),
-    goodsInPlay(v).map(r => h("button", { class: f[key] === r ? "on" : "", title: capital(r), "aria-label": r, onclick: () => { f[key] = r; renderTrade(); } }, resIcon(r, "res"))),
-    h("input", { class: "num", type: "number", inputmode: "numeric", min: 1, value: f[key + "N"], "aria-label": `${label} amount`, onchange: e => { f[key + "N"] = Number(e.target.value) || 1; } }));
   const repeat = Number(f.rounds) > 1;
-  const canOffer = f.give && f.get && f.give !== f.get || (f.give && f.get && repeat);
+  const tile = (key, r) => {
+    const n = f[key][r] || 0, left = heldBy(v, v.you, r) - n;
+    const verb = key === "give" ? "Give" : "Ask for";
+    return h("div", { class: "tile" + (n ? " in" : "") + (tradeRefusal(v, f, key, r) ? " off" : ""), "data-tile": `${key}.${r}` },
+      h("button", { class: "add", "data-keep": `${key}.${r}.add`, title: capital(r), "aria-label": `${verb} one more ${r}. ${n} now.`, onclick: () => changeTrade(key, r, 1) },
+        resIcon(r, "res"),
+        n ? h("span", { class: "n" }, String(n)) : null,
+        key === "give" && !repeat ? h("span", { class: "left" }, String(Math.max(0, left))) : null),
+      h("button", { class: "less", "data-keep": `${key}.${r}.less`, disabled: !n, "aria-label": `${verb} one less ${r}`, onclick: () => changeTrade(key, r, -1) }, "−"));
+  };
+  const pick = (key, label) => h("div", { class: "pickrow" }, h("span", { class: "lbl" }, label),
+    h("div", { class: "tiles" }, goodsInPlay(v).map(r => tile(key, r))));
+  const empty = !Object.keys(f.give).length && !Object.keys(f.get).length;
+  const problem = tradeProblem(v, f);
+  const ready = Object.keys(f.give).length && Object.keys(f.get).length && !problem;
+  const note = f.note || problem || tradeWarning(v, f) || (empty ? "Tap to add. Tap again for more." : "");
+  const keep = U.sheet.scrollTop, focus = document.activeElement?.matches(":focus-visible") ? document.activeElement.dataset.keep : null;
   fill(U.sheet, h("div", { class: "tradesheet" },
     h("h3", {}, `The bank takes ${v.bankRate} for 1`),
     byGive.size ? [...byGive.entries()].map(([give, ms]) => h("div", { class: "bankrow" },
@@ -1939,21 +2007,23 @@ function renderTrade() {
     h("div", { class: "offerform" },
       h("h3", {}, "Offer the table"),
       pick("give", "Give"), pick("get", "Get"),
+      h("div", { class: "offernote" + (f.note || problem ? " stop" : ""), role: "status" }, note),
       h("div", { class: "selectline" },
-        h("select", { "aria-label": "To", onchange: e => { f.to = e.target.value; renderTrade(); } },
+        h("select", { "aria-label": "To", onchange: e => { f.to = e.target.value; f.note = null; renderTrade(); } },
           repeat ? null : h("option", { value: "", selected: f.to === "" ? true : null }, "To anyone"),
           others.map(s => h("option", { value: s.seat, selected: String(f.to) === String(s.seat) ? true : null }, `To ${s.name}`))),
-        h("span", {}, "Rounds"), h("input", { class: "num", type: "number", inputmode: "numeric", min: 1, value: f.rounds, title: "1 is a single trade. More is a deal, paid each round from a deposit.", onchange: e => { f.rounds = Math.max(1, Number(e.target.value) || 1); if (f.rounds > 1 && f.to === "") f.to = others[0]?.seat ?? ""; renderTrade(); } })),
+        h("span", {}, "Rounds"), h("input", { class: "num", type: "number", inputmode: "numeric", min: 1, value: f.rounds, title: "1 is a single trade. More is a deal, paid each round from a deposit.", onchange: e => { f.rounds = Math.max(1, Number(e.target.value) || 1); f.note = null; if (f.rounds > 1 && f.to === "") f.to = others[0]?.seat ?? ""; renderTrade(); } })),
       repeat ? h("div", { class: "note-line", style: { margin: 0 } }, "A deal. It binds only those who sign, and pays each round from a deposit.") : null,
-      h("button", { class: "act gold", disabled: !canOffer, onclick: () => submitOffer() }, repeat ? "Propose the deal" : "Make the offer"))));
+      h("button", { class: "act gold", disabled: !ready, onclick: () => submitOffer() }, repeat ? "Propose the deal" : "Make the offer"))));
+  U.sheet.scrollTop = keep;
+  if (focus) U.sheet.querySelector(`[data-keep="${CSS.escape(focus)}"]:not(:disabled)`)?.focus({ preventScroll: true });
 }
 function submitOffer() {
   const f = G.tf;
-  if (Number(f.rounds) > 1) {
-    post("propose", { dealForm: { with: Number(f.to), give: f.give, giveN: f.giveN, get: f.get, getN: f.getN, rounds: Number(f.rounds), exitNotice: 1 } }).then(r => { if (r.ok) closeDock(); });
-  } else {
-    postMove({ t: "offer", to: f.to === "" ? null : Number(f.to), give: [{ res: f.give, n: f.giveN }], get: [{ res: f.get, n: f.getN }] }).then(r => { if (r.ok) closeDock(); });
-  }
+  const sent = Number(f.rounds) > 1 ?
+    post("propose", { dealForm: { with: Number(f.to), give: tradeBundle(f.give), get: tradeBundle(f.get), rounds: Number(f.rounds), exitNotice: 1 } }) :
+    postMove({ t: "offer", to: f.to === "" ? null : Number(f.to), give: tradeBundle(f.give), get: tradeBundle(f.get) });
+  sent.then(r => { if (r.ok) { G.tf = null; closeDock(); } });
 }
 
 // ---------------------------------------------------------------- the drafting desk

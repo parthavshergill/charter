@@ -612,6 +612,35 @@ def start (g : Game) : Except String Game :=
     else
       .error s!"the game cannot start: it needs {minSeats} to {maxSeats} seats and at least one player's nonce"
 
+/-! ## The limit on what one trade carries -/
+
+/-- A trade carries at most this many different resources on each side. This is a limit of the server,
+not a rule of the game: `applyLive` checks it when an event comes in. The engine does not know it, the
+theorems do not mention it, and `apply` does not check it, so a saved log always replays. -/
+def maxGoodsPerSide : Nat := 4
+
+/-- The words for an offer over the limit. -/
+def offerLimitProblem : String :=
+  s!"an offer can carry at most {maxGoodsPerSide} different resources on each side"
+
+/-- Why this deal is over the limit. One seat's side is what it pays or sets aside. -/
+def dealLimitProblems (d : Deal) : List String :=
+  let side (i : Seat) : List Res :=
+    (d.allPays.filter (·.src == i)).map (·.res) ++ (d.deposits.filter (·.1 == i)).map (·.2.1)
+  if d.signers.any fun i => decide (maxGoodsPerSide < (side i).eraseDups.length) then
+    [s!"a deal can ask each signer for at most {maxGoodsPerSide} different resources"]
+  else []
+
+/-- Why this new event from a player is over the limit, if it is. An event that cannot be read is not
+over it: `apply` gives the reason for that one. -/
+def overLimit (g : Game) (j : Json) : Option String :=
+  match eventOfJson g j with
+  | .ok (.move _ (.offer _ give get)) =>
+    let over (b : Bundle) : Bool := decide (maxGoodsPerSide < (b.map (·.1)).eraseDups.length)
+    if over give || over get then some offerLimitProblem else none
+  | .ok (.propose _ (.deal d)) => (dealLimitProblems d).head?
+  | _ => none
+
 /-- Apply one log entry. A rejected entry leaves the game as it was. -/
 def apply (g : Game) (j : Json) : Except String Game := do
   let bump (x : Game) : Game := { x with events := x.events + 1 }
@@ -649,5 +678,12 @@ def apply (g : Game) (j : Json) : Except String Game := do
         decisions := g.decisions ++ (closedLaws g s s' e).toArray
         tabled := nextTabled g s s' e
         opened := opened })
+
+/-- Apply a new event, one that is not yet in the log. Every new event comes through here, whoever sent
+it. A replay uses `apply`, so a limit added later cannot turn away an old table. -/
+def applyLive (g : Game) (j : Json) : Except String Game :=
+  match overLimit g j with
+  | some why => .error why
+  | none => apply g j
 
 end CharterServer.Game
