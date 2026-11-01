@@ -29,9 +29,25 @@ Object.assign(RES, {
 Object.assign(RES, {
   laurel: `<path d="M12 21C6 19 3.500 14 4 7.500c1.800.600 3 1.800 3.500 3.500M12 21c6-2 8.500-7 8-13.500-1.800.600-3 1.800-3.500 3.500" fill="none" stroke="#3f6b35" stroke-width="2"/><path d="M4.500 12.500c1.500-.2 2.700.3 3.500 1.500-1.500.400-2.700 0-3.500-1.500zM6.500 16.500c1.500-.5 2.800-.200 3.800 1-1.500.600-2.800.300-3.800-1zM19.500 12.500c-1.500-.2-2.700.3-3.500 1.500 1.500.400 2.700 0 3.500-1.500zM17.500 16.500c-1.500-.5-2.800-.200-3.800 1 1.500.600 2.800.300 3.800-1z" fill="#4f8042"/>`,
 });
+// A pack's own marks are data: paths and colours that `web/look.js` has checked. They are built with
+// setAttribute, never as markup. A pack that shares a built-in mark names it in `marks`.
+let packIcons = {}, marks = {};
+export function setIconLook(icons, namedMarks) { packIcons = icons; marks = namedMarks; }
+function packIcon(paths, cls) {
+  const t = document.createElementNS(NS, "svg");
+  t.setAttribute("viewBox", "0 0 24 24");
+  t.setAttribute("aria-hidden", "true");
+  if (cls) t.setAttribute("class", cls);
+  for (const p of paths) {
+    const n = document.createElementNS(NS, "path");
+    for (const k of Object.keys(p)) n.setAttribute(k, p[k]);
+    t.append(n);
+  }
+  return t;
+}
 // A resource with no drawn mark still shows something: its first letter.
 const letterMark = r => `<circle cx="12" cy="12" r="9" fill="#d3c295" stroke="#5f4f3b" stroke-width="1.400"/><text x="12" y="16.500" text-anchor="middle" font-size="12" font-family="serif" fill="#2a1f14">${String(r || "?")[0].toUpperCase()}</text>`;
-export const resIcon = (r, cls = "res") => svg("0 0 24 24", RES[r] || letterMark(r), cls);
+export const resIcon = (r, cls = "res") => packIcons[r] ? packIcon(packIcons[r], cls) : svg("0 0 24 24", RES[marks[r]] || letterMark(r), cls);
 
 const UI = {
   quill: `<path d="M21 3c-6.5.4-11 3.7-13.2 9.2-.8 2-1.4 4.3-1.8 6.800l-2 2.5.9.9 2.2-2.200c2.7-.4 5-1 7-2-1.2-.2-2.2-.2-3-.1 1.2-.5 2.7-1.3 4.3-2.5-1-.1-1.9-.1-2.7.1 3.2-2.8 6-7.3 8.3-13.500z" fill="currentColor"/>`,
@@ -52,15 +68,13 @@ const PIECE = {
   city: `<path d="M2.5 21V10h2V8h1.500v2h1.500V8h1.500v2h2v11z" fill="currentColor"/><path d="M11.5 21V6.500L15 2.500l3.5 4V21z" fill="currentColor" opacity=".8"/><path d="M18.5 21v-8h3v8z" fill="currentColor"/><path d="M14 21v-4h2v4z" fill="#00000066"/>`,
   made: `<path d="M12 2.5 14 7h-4zM9.5 8h5l1 11h3v2.500H5.500V19h3z" fill="currentColor"/><path d="M11 10h2v8h-2z" fill="#00000044"/>`,
 };
-// The Belt's pieces have the same roles as the Island's, so they share marks.
-Object.assign(PIECE, { lane: PIECE.road, outpost: PIECE.settlement, station: PIECE.city });
 // Not Catan's pieces.
 Object.assign(PIECE, {
   knight: `<path d="M12 2.500 14 7h-4zM6 8h12v3c0 5-2.500 9-6 11-3.500-2-6-6-6-11z" fill="currentColor"/><path d="M12 10v8M9 13h6" stroke="#00000066" stroke-width="1.600"/>`,
   relic: `<path d="M5 21v-2h2l1.500-9h7L17 19h2v2zM9 8a3 3 0 1 1 6 0z" fill="currentColor"/><path d="M12 12v5" stroke="#00000066" stroke-width="1.600"/>`,
   wreath: `<path d="M12 21C6 19 3.500 14 4 6.500c2.500.800 4 2.500 4.500 5M12 21c6-2 8.500-7 8-14.500-2.500.800-4 2.500-4.500 5" fill="none" stroke="currentColor" stroke-width="2.600"/>`,
 });
-export const pieceIcon = (k, cls = "piece") => svg("0 0 24 24", PIECE[k] || PIECE.made, cls);
+export const pieceIcon = (k, cls = "piece") => packIcons[k] ? packIcon(packIcons[k], cls) : svg("0 0 24 24", PIECE[marks[k]] || PIECE.made, cls);
 
 // Each house has a charge as well as a colour, so colour is never the only cue.
 const CHARGE = [
@@ -87,6 +101,6 @@ export function shield(seat, color, cls = "shield") {
 export function waxSeal(cls = "wax") {
   return svg("0 0 100 100",
     `<path d="M37.5 11.5Q38.8 2.8 44.9 3.8T57.5 4.1Q63.6 3.5 64.7 11.7Q71.1 3.6 74.3 7.4T82.3 13.2Q87 14.9 82.9 22.4Q88.9 22.7 90.3 28.8T94.6 41.1Q97.4 46.8 90.5 50.7Q100.3 55 97.3 60.7T92.7 73Q91.2 79.2 82.6 77.3Q84.8 83 80.4 84.6T72.8 90Q69.9 93.7 65.1 89.2Q64.1 99 57.4 98.4T43.4 98.6Q36.7 99.2 36.1 88.1Q30.7 93.4 27.3 89.4T18.9 83.2Q14.1 81.1 15.7 75.9Q8.1 77.3 7.3 71.9T3.4 61.5Q.5 56.9 9.1 52.9Q1.5 48.9 4.1 42.6T8.5 29Q10.1 22.4 17.4 22.7Q13.6 15 18.6 13.1T27.5 7Q31.2 3.1 37.5 11.5z" fill="var(--wax)"/>` +
-    `<circle cx="50" cy="50" r="30" fill="#7c1812"/>` +
+    `<circle cx="50" cy="50" r="30" fill="var(--wax-0)"/>` +
     `<polygon points="50,31 66.5,40.5 66.5,59.5 50,69 33.5,59.5 33.5,40.5" fill="var(--wax-2)"/>`, cls);
 }

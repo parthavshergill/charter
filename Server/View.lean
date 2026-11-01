@@ -30,12 +30,30 @@ def locOfMove : Move → Option Loc
   | _ => none
 
 /-- The board's fixed shape. Positions are for the 2D fallback and are not in the spec. -/
+def colorHex (c : UInt32) : String :=
+  let digit (n : Nat) : Char := if n < 10 then Char.ofNat (48 + n) else Char.ofNat (87 + n)
+  let n := c.toNat
+  String.ofList ('#' :: ((List.range 6).reverse.map fun i => digit ((n >>> (4 * i)) % 16)))
+
+/-- A pack's words, colours, fonts and marks. The browser checks all of it again. -/
+def lookJson (t : Scene.Theme) : Json :=
+  let pathJson (p : Scene.IconPath) : Json :=
+    Json.mkObj [("d", p.d), ("fill", p.fill), ("stroke", p.stroke), ("width", toJson p.width), ("opacity", toJson p.opacity)]
+  let look := t.look
+  Json.mkObj
+    [ ("tagline", look.tagline)
+    , ("tokens", Json.mkObj (look.tokens.map fun (k, v) => (k, Json.str v)))
+    , ("bodyFont", look.bodyFont), ("displayFont", look.displayFont)
+    , ("icons", Json.mkObj (look.icons.map fun (k, ps) => (k, Json.arr (ps.map pathJson).toArray)))
+    , ("marks", Json.mkObj (look.marks.map fun (k, v) => (k, Json.str v)))
+    , ("quietPieces", toJson look.quietPieces) ]
+
 def boardJson (spec : GameSpec) : Json :=
   let L := spec.layout
   Json.mkObj
     [ ("tiles", Json.arr (L.tiles.map fun t =>
         let (x, y) := t.hex.toPixel 1.0
-        Json.mkObj [("x", toJson x), ("y", toJson y), ("res", toJson t.res), ("number", toJson t.number),
+        Json.mkObj [("x", toJson x), ("y", toJson y), ("res", toJson t.res), ("color", colorHex (L.theme.flat t.res)), ("number", toJson t.number),
           ("pips", toJson ((t.number.map (Scene.chanceOf spec.G)).getD 0))]).toArray)
     , ("spots", Json.arr (L.spots.map fun v =>
         let (x, y) := v.toPixel 1.0
@@ -236,11 +254,6 @@ def lawJson (g : Game) (book : Describe.Book) (x : Nat × Law) : Json :=
         | none => Json.arr #[])
     , ("pick", toJson (Scene.lawPick x.1).toNat) ]
 
-def colorHex (c : UInt32) : String :=
-  let digit (n : Nat) : Char := if n < 10 then Char.ofNat (48 + n) else Char.ofNat (87 + n)
-  let n := c.toNat
-  String.ofList ('#' :: ((List.range 6).reverse.map fun i => digit ((n >>> (4 * i)) % 16)))
-
 /-- Everything one seat sees. A game's own seed stays hidden until the game ends. -/
 def view (g : Game) (code : String) (you : Option Nat) (drafting : List Nat) (book : Describe.Book) : Json :=
   let G := g.spec.G
@@ -252,7 +265,8 @@ def view (g : Game) (code : String) (you : Option Nat) (drafting : List Nat) (bo
     , ("minSeats", toJson g.room.minSeats), ("filled", toJson g.room.filled)
     , ("board", boardJson g.spec)
     , ("resources", toJson (goodsOf G))
-    , ("seatColors", toJson (Scene.seatColors.map colorHex))
+    , ("seatColors", toJson (g.spec.layout.theme.seats.map colorHex))
+    , ("look", lookJson g.spec.layout.theme)
     , ("drafting", toJson drafting)
     , ("described", toJson (Describe.finished book))
     , ("fingerprint", commitmentOf g.serverSeed)

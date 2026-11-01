@@ -1,0 +1,22 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Contact sheet</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  #stats { position: absolute; left: 12px; bottom: 8px; font: 15px ui-monospace, Menlo, monospace; color: #fff; text-shadow: 0 0 3px #000; }
+</style>
+<canvas id="c"></canvas>
+<div id="stats">loading</div>
+<script type="module">
+  // The real player: the same file a game uses, with no other options.
+  import { GpuPlayer } from '/vendor/player.js';
+  const player = new GpuPlayer(document.getElementById('c'));
+  player.render(await (await fetch('/sheet.gpc')).arrayBuffer());
+  const show = () => {
+    const s = player.stats();
+    document.getElementById('stats').textContent =
+      `mesh files: ${s.meshFiles}, stand-ins: ${s.standIns}, draws: ${s.meshes}, labels: ${s.labels}, triangles: ${s.triangles}`;
+  };
+  setInterval(show, 500);
+</script>

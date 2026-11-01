@@ -17,9 +17,9 @@ def headerOf (req : Req) (name : String) : Option String := do
   return v.value
 
 def respond (status : Status) (ctype : String) (body : ByteArray)
-    (headers : List (String × String) := []) : Async Resp := do
+    (headers : List (String × String) := []) (cache : String := "no-store") : Async Resp := do
   let mut b := Response.new |>.status status |>.header! "Content-Type" ctype
-    |>.header! "Cache-Control" "no-store"
+    |>.header! "Cache-Control" cache
   for (k, v) in headers do
     b := b.header! k v
   let r ← b.fromBytes body
@@ -69,5 +69,19 @@ def serveStatic (root : System.FilePath) (segs : List String) (acceptEnc : Strin
     respond .ok mime (← IO.FS.readBinFile path)
   else
     respondErr s!"not found: {String.intercalate "/" segs}" .notFound
+
+/-- Serve a mesh file by its name, which is its hash. A hash names its contents for good, so a browser
+or a cache in front of this server can keep the file for ever. To move the files to other storage, send
+these requests there instead: the player knows only this path. -/
+def serveMeshFile (root : System.FilePath) (name : String) (folderOf : String → Option String) : Async Resp := do
+  let hash := (name.dropEnd 5).toString
+  let hex := hash.length == 64 && hash.toList.all fun c => c.isDigit || ('a' ≤ c && c ≤ 'f')
+  match (if hex && name.endsWith ".mesh" then folderOf hash else none) with
+  | none => respondErr "not found" .notFound
+  | some folder =>
+    let path := root / folder / name
+    if ← path.pathExists then
+      respond .ok "application/octet-stream" (← IO.FS.readBinFile path) [] "public, max-age=31536000, immutable"
+    else respondErr "not found" .notFound
 
 end CharterServer

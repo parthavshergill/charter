@@ -37,3 +37,7 @@ root = "Server.Sim"
 [[lean_exe]]
 name = "charter-measure"
 root = "Server.Measure"
+
+[[lean_exe]]
+name = "charter-contact"
+root = "Server.ContactSheet"

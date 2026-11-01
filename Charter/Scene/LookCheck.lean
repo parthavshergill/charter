@@ -1,0 +1,147 @@
+import Charter.Scene.OfState
+
+/-!
+# Does a pack have a look for everything?
+
+This is a build check, and it is not a theorem. `Server/Spec.lean` runs it on every pack. It says in
+words what is missing, so the person or agent adding a pack can act on the message.
+-/
+
+namespace Charter.Scene
+open GpuCmd
+
+/-- The marks drawn in `web/icons.js`. -/
+def builtinMarks : List String :=
+  [ "grain", "timber", "ore", "wool", "brick", "helium", "alloy", "ice", "crystal", "laurel"
+  , "road", "settlement", "city", "made", "knight", "relic", "wreath" ]
+
+/-- The colour tokens a pack can set, as in `web/look.js`. -/
+def colorTokens : List String :=
+  [ "walnut-0", "walnut-1", "walnut-2", "walnut-3", "brass", "vellum", "vellum-2", "vellum-3"
+  , "ink", "ink-2", "ink-3", "gold", "gold-2", "gold-ink", "wax", "wax-2", "wax-0", "pale", "pale-2"
+  , "sign-ink", "act-hover", "act-hover-2", "field", "bright", "err-ink", "tool-off", "need", "good", "stain"
+  , "roll-0", "roll-1", "roll-2", "roll-3", "roll-4", "roll-5", "roll-6", "roll-7", "roll-8" ]
+
+/-- The fonts a pack can choose, as in `web/look.js`. -/
+def fontNames : List String := ["", "book", "slab", "humanist", "rounded", "typewriter"]
+
+/-- The most mesh file triangles one model and one full board may have. `docs/process/reskins.md` says
+how these were measured. `web/vendor/meshfile.js` also refuses any one file over 12000. -/
+def maxModelTriangles : Nat := 5000
+def maxSceneTriangles : Nat := 200000
+
+def isHexColor (s : String) : Bool :=
+  match s.toList with
+  | '#' :: ds => ds.length == 6 && ds.all fun c => c.isDigit || ('a' ≤ c && c ≤ 'f') || ('A' ≤ c && c ≤ 'F')
+  | _ => false
+
+def isPaint (s : String) : Bool := s == "none" || s == "currentColor" || isHexColor s
+
+def isPathData (s : String) : Bool :=
+  !s.isEmpty && s.length ≤ 4000 && s.toList.all fun c => c.isDigit || "MmLlHhVvCcSsQqTtAaZzeE.,+- ".toList.contains c
+
+/-- How much a text colour stands out from its background, from 1 up. Reading needs about 4.5. -/
+def contrast (a b : String) : Float :=
+  let digit (c : Char) : Nat :=
+    if c.isDigit then c.toNat - 48 else if c.toNat ≥ 97 then c.toNat - 87 else c.toNat - 55
+  let channel (s : String) (i : Nat) : Float :=
+    let ds := s.toList
+    let v := (16 * digit (ds.getD (1 + 2 * i) '0') + digit (ds.getD (2 + 2 * i) '0')).toFloat / 255.0
+    if v ≤ 0.04045 then v / 12.92 else Float.pow ((v + 0.055) / 1.055) 2.4
+  let lum (s : String) : Float := 0.2126 * channel s 0 + 0.7152 * channel s 1 + 0.0722 * channel s 2
+  let (x, y) := (lum a, lum b)
+  (max x y + 0.05) / (min x y + 0.05)
+
+/-- Do these parts show this seat's colour? -/
+def showsColor (parts : List Part) (c : UInt32) : Bool :=
+  parts.any fun p => (p.rgb &&& 0xFFFFFF) == (c &&& 0xFFFFFF)
+
+/-- The model a piece of the game itself has, if it has one. -/
+def pieceModel (t : Theme) (d : PieceDef) (seat : Nat) : Option (List Part) :=
+  match d.placement with
+  | .link => some (t.linkModel d.name seat)
+  | _ =>
+    match t.shape d.name with
+    | some .settlement => some (t.smallModel 7 seat 0)
+    | some .city => some (t.largeModel 7 seat 0)
+    | _ => t.ownModel d.name seat
+
+/-- How many mesh file triangles these commands draw. -/
+def trianglesIn (t : Theme) (cmds : List Cmd) : Nat :=
+  (cmds.map fun
+    | .draw m _ _ _ => ((t.meshTriangles.find? (·.1 == m)).map (·.2)).getD 0
+    | _ => 0).sum
+
+/-- A board as full as the game's limits allow, with a monument for each of 16 laws. -/
+def fullBoard (G : GameDef) (L : Layout) (seats : Nat) : Input :=
+  let count (d : PieceDef) : Nat := d.limit * seats
+  let onSpots := G.pieces.filter fun d => match d.placement with
+    | .link => false
+    | _ => true
+  let spotKinds := (onSpots.flatMap fun d => List.replicate (count d) d)
+  let spotPieces := (spotKinds.zip (List.range spotKinds.length)).filterMap fun (d, i) =>
+    (L.spots[i % max 1 L.spots.length]?).map fun v =>
+      { v, owner := i % seats, id := i
+        shape := (L.theme.shape d.name).getD (.custom d.name (match d.placement with
+          | .attach _ => true
+          | _ => false)) : SpotPiece }
+  let linkKinds := (G.pieces.filter fun d => match d.placement with
+    | .link => true
+    | _ => false).flatMap fun d => List.replicate (count d) d
+  let linkPieces := (linkKinds.zip L.edges).map fun (d, e) => { e, owner := 0, kind := d.name : LinkPiece }
+  { theme := L.theme, tiles := L.tiles, chance := fun _ => 3, spotPieces, linkPieces, round := 20, treasuryTotal := 40
+    laws := (List.range 16).map fun i => (i, MonumentKind.cost) }
+
+/-- Everything a pack's look lacks or has wrong, in words. Empty means it is complete. -/
+def lookProblems (G : GameDef) (L : Layout) : List String :=
+  let t := L.theme
+  let hasMark (n : String) : Bool :=
+    t.look.icons.any (·.1 == n) || t.look.marks.any fun (k, m) => k == n && builtinMarks.contains m
+  let onTiles := L.tiles.filterMap (·.res)
+  let resources := G.resources.flatMap fun r =>
+    (if hasMark r.name then [] else [s!"resource {r.name} has no icon"]) ++
+    (if onTiles.contains r.name && t.ground (some r.name) == t.ground none && (t.tileTop (some r.name) 0).isEmpty
+     then [s!"resource {r.name} has no tile of its own"] else [])
+  let pieces := G.pieces.flatMap fun d =>
+    (if hasMark d.name then [] else [s!"piece {d.name} has no icon"]) ++
+    match pieceModel t d 0 with
+    | none => [s!"piece {d.name} has no model"]
+    | some _ =>
+      let bad := (List.range t.seats.length).filter fun i =>
+        !showsColor ((pieceModel t d i).getD []) (t.seats.getD i 0)
+      if bad.isEmpty then [] else [s!"piece {d.name} does not show the owner's colour for seats {bad}"]
+  let icons := t.look.icons.flatMap fun (n, ps) =>
+    (if ps.isEmpty then [s!"the icon {n} is empty"] else []) ++
+    ps.flatMap fun p =>
+      (if isPathData p.d then [] else [s!"the icon {n} has a path that is not plain path data"]) ++
+      (if isPaint p.fill && isPaint p.stroke then [] else [s!"the icon {n} has a colour that is not #rrggbb, none or currentColor"])
+  let tokens := t.look.tokens.flatMap fun (k, v) =>
+    (if colorTokens.contains k then [] else [s!"{k} is not a colour token"]) ++
+    (if isHexColor v then [] else [s!"the token {k} is not #rrggbb"])
+  let token (k fallback : String) : String := ((t.look.tokens.find? (·.1 == k)).map (·.2)).getD fallback
+  let readable :=
+    (if contrast (token "ink" "#2a1f14") (token "vellum" "#efe4c8") < 4.5 then ["ink on vellum is too hard to read"] else []) ++
+    (if contrast (token "pale" "#e9dcc0") (token "walnut-1" "#1f140c") < 4.5 then ["pale on walnut is too hard to read"] else []) ++
+    (if contrast (token "gold-ink" "#2b1d07") (token "gold" "#e8bb4d") < 4.5 then ["gold-ink on gold is too hard to read"] else []) ++
+    (if contrast (token "sign-ink" "#1c2f6b") (token "vellum" "#efe4c8") < 4.5 then ["a signature on vellum is too hard to read"] else [])
+  let fonts :=
+    [t.look.bodyFont, t.look.displayFont].filterMap fun f =>
+      if fontNames.contains f then none else some s!"{f} is not a font from the fixed list"
+  let monuments :=
+    [("cost", MonumentKind.cost), ("points", .points), ("bank", .bank), ("harvest", .harvest), ("build", .build)
+    , ("round end", .roundEnd), ("roll", .roll), ("new piece", .newPiece "x"), ("repeal", .repeal)].filterMap fun (n, k) =>
+      if (t.monumentModel k).isEmpty then some s!"the {n} monument is empty" else none
+  let meshes := t.meshDefs.filterMap fun
+    | .defineMeshFile id sha _ _ _ =>
+      if id.toNat ≤ 8 then some s!"mesh id {id} is a primitive's id"
+      else if sha.length == 64 && sha.toList.all (fun c => c.isDigit || ('a' ≤ c && c ≤ 'f')) then none
+      else some s!"mesh id {id} does not have a SHA-256"
+    | _ => some "meshDefs holds a command that is not defineMeshFile"
+  let heavy := G.pieces.filterMap fun d =>
+    let n := trianglesIn t (((pieceModel t d 0).getD []).map (·.at 0 0 0))
+    if n > maxModelTriangles then some s!"piece {d.name} has {n} triangles, over the {maxModelTriangles} a model may have" else none
+  let full := trianglesIn t (render (fullBoard G L 4))
+  let scene := if full > maxSceneTriangles then [s!"a full board has {full} triangles, over the {maxSceneTriangles} a scene may have"] else []
+  resources ++ pieces ++ icons ++ tokens ++ readable ++ fonts ++ monuments ++ meshes ++ heavy ++ scene
+
+end Charter.Scene

@@ -35,6 +35,18 @@ theorem readTransform_transformBytes (t : Transform) (rest : List UInt8) :
     readTransform (transformBytes t ++ rest) = some (t, rest) := by
   simp [readTransform, transformBytes, List.append_assoc, readVec3_vec3Bytes, readF32_f32]
 
+def motionBytes (m : Motion) : List UInt8 := f32 m.pulse ++ f32 m.sway ++ f32 m.glow
+
+def readMotion (bs : List UInt8) : Option (Motion × List UInt8) := do
+  let (pulse, bs) ← readF32 bs
+  let (sway, bs) ← readF32 bs
+  let (glow, bs) ← readF32 bs
+  pure (⟨pulse, sway, glow⟩, bs)
+
+theorem readMotion_motionBytes (m : Motion) (rest : List UInt8) :
+    readMotion (motionBytes m ++ rest) = some (m, rest) := by
+  simp [readMotion, motionBytes, List.append_assoc, readF32_f32]
+
 def primBytes : Prim → List UInt8
   | .hexPrism r h => u8 1 ++ f32 r ++ f32 h
   | .box w h d => u8 2 ++ f32 w ++ f32 h ++ f32 d
@@ -88,6 +100,7 @@ def cmdBytes : Cmd → List UInt8
   | .draw m t rgb pick => u8 5 ++ u32 m ++ transformBytes t ++ u32 rgb ++ u32 pick
   | .label s pos size rgb pick => u8 6 ++ str s ++ vec3Bytes pos ++ f32 size ++ u32 rgb ++ u32 pick
   | .highlight pick rgb => u8 7 ++ u32 pick ++ u32 rgb
+  | .defineMeshFile id sha tint m p => u8 8 ++ u32 id ++ str sha ++ u32 tint ++ motionBytes m ++ primBytes p
 
 def readCmd : List UInt8 → Option (Cmd × List UInt8)
   | [] => none
@@ -116,12 +129,17 @@ def readCmd : List UInt8 → Option (Cmd × List UInt8)
     | 7 => do
       let (pick, bs) ← readU32 bs; let (rgb, bs) ← readU32 bs
       pure (.highlight pick rgb, bs)
+    | 8 => do
+      let (id, bs) ← readU32 bs; let (sha, bs) ← readStr bs; let (tint, bs) ← readU32 bs
+      let (m, bs) ← readMotion bs; let (p, bs) ← readPrim bs
+      pure (.defineMeshFile id sha tint m p, bs)
     | _ => none
 
 theorem readCmd_cmdBytes (c : Cmd) (rest : List UInt8) :
     readCmd (cmdBytes c ++ rest) = some (c, rest) := by
   cases c <;> simp [readCmd, cmdBytes, u8, List.append_assoc, readU32_u32, readF32_f32,
-    readVec3_vec3Bytes, readTransform_transformBytes, readPrim_primBytes, readStr_str]
+    readVec3_vec3Bytes, readTransform_transformBytes, readPrim_primBytes, readStr_str,
+    readMotion_motionBytes]
 
 theorem cmdBytes_ne_nil (c : Cmd) : cmdBytes c ≠ [] := by
   cases c <;> simp [cmdBytes, u8]

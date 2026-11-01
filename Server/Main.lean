@@ -338,8 +338,13 @@ def route (ctx : Ctx) (req : Req) : ContextAsync Resp := do
   | ["api", "defs"] =>
     respondJson (Json.arr (gameSpecs.map fun d =>
       Json.mkObj [("id", d.id), ("name", d.name), ("blurb", d.blurb), ("minSeats", toJson d.minSeats),
-        ("maxSeats", toJson d.maxSeats)]).toArray)
+        ("maxSeats", toJson d.maxSeats), ("look", View.lookJson d.layout.theme)]).toArray)
+  | ["api", "defs", id, "scene"] =>
+    match specOf? (some id) with
+    | some d => respond .ok "application/octet-stream" (Scene.sceneBytes d.layout (emptyBoard d) none .none)
+    | none => respondErr "unknown game" .notFound
   | "api" :: _ => respondErr "unknown route" .notFound
+  | ["assets", name] => serveMeshFile (ctx.webRoot.parent.getD ".") name meshFolderOf
   | rest => serveStatic ctx.webRoot rest
 
 def handler (ctx : Ctx) (req : Req) : ContextAsync Resp := do
@@ -353,7 +358,7 @@ def handler (ctx : Ctx) (req : Req) : ContextAsync Resp := do
 clerk first needs them, and a missing one would then look like an empty prompt. So check them at start. -/
 def requiredFiles : List String :=
   ["Server/formalizer.md", "Server/describer.md", "Server/player_rules.md", "web/index.html", "web/app.js", "web/app.css",
-   "web/board2d.js", "web/icons.js", "web/vendor/player.js"]
+   "web/board2d.js", "web/icons.js", "web/look.js", "web/vendor/player.js", "web/vendor/meshfile.js"]
 
 /-- Stop now, and say why. -/
 def die {α : Type} (msg : String) : IO α := do
@@ -368,6 +373,8 @@ def checkRequiredFiles (root : System.FilePath) : IO Unit := do
     let good ← if !(← path.pathExists) then pure false
       else pure !(← IO.FS.readFile path).trimAscii.isEmpty
     if !good then missing := missing ++ [f]
+  for f in meshFiles do
+    if !(← (root / f).pathExists) then missing := missing ++ [f]
   if !missing.isEmpty then
     die s!"these files are missing or empty under {root}: {", ".intercalate missing}. Set CHARTER_ROOT to the folder that holds them."
 
