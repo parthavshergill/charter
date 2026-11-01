@@ -1031,6 +1031,7 @@ function closeDock(byHand) {
 }
 function renderDock() {
   const U = G.ui, d = G.dock;
+  if (d && !U.dock.classList.contains("open")) closeTip();
   U.dock.classList.toggle("open", !!d);
   U.ledge.classList.toggle("sheetup", !!d);
   if (!d) return;

@@ -920,12 +920,15 @@ export class GpuPlayer {
     const exact = at(px, py);
     if (exact && this.clickable(exact)) return exact;
     for (const r of [7, 14, 22]) {
-      const seen = new Map();
+      const seen = new Set();
       for (let k = 0; k < 12; k++) {
         const id = at(px + r * Math.cos(k * Math.PI / 6), py + r * Math.sin(k * Math.PI / 6));
-        if (id && this.clickable(id)) seen.set(id, (seen.get(id) || 0) + 1);
+        if (id && this.clickable(id)) seen.add(id);
       }
-      if (seen.size) return [...seen.entries()].sort((a, b) => b[1] - a[1])[0][0];
+      if (seen.size) {
+        const away = (id) => { const p = this.screenOf(id); return p ? Math.hypot(p.x - px, p.y - py) : Infinity; };
+        return [...seen].sort((a, b) => away(a) - away(b))[0];
+      }
     }
     return exact;
   }

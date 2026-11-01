@@ -590,6 +590,8 @@ svg.seal { position: absolute; left: 50%; top: 100%; width: 52px; height: 52px; 
   .replaybar .scrub { min-height: 44px; }
   .menu .link { justify-content: flex-start; }
   .banner { touch-action: manipulation; cursor: pointer; }
+  /* A vote can always be cast, however long the rule is. */
+  .votebar { position: sticky; bottom: calc(-1 * var(--s4)); z-index: 1; margin: var(--s2) calc(-1 * var(--s4)) calc(-1 * var(--s4)); padding: var(--s2) var(--s4) var(--s3); background: var(--paper), var(--vellum-2); box-shadow: 0 -1px 0 var(--vellum-3); }
   .sheet, .titlepage, .shelflist, .tray, .hand, .rail { overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
   /* Long words in a law's source, a name or a chat line never push the page sideways. */
   .sheet { overflow-wrap: anywhere; }
@@ -728,6 +730,7 @@ svg.seal { position: absolute; left: 50%; top: 100%; width: 52px; height: 52px; 
   .kb .dock { top: auto; bottom: var(--kb); max-height: calc(var(--seen) - var(--s1)); }
   .prompt { bottom: calc(var(--ledge) + 4px); padding: 2px var(--s3); font-size: 14px; white-space: normal; }
   .pennant { bottom: calc(var(--ledge) + var(--s1)); }
+  .prompt.dock-open, .pennant.dock-open { display: none; }
   .declared { left: calc(var(--s2) + var(--safe-l)); bottom: calc(var(--ledge) + var(--s1)); }
   .slips { top: 80px; left: calc(var(--s2) + var(--safe-l)); }
   .menu { right: calc(var(--rail) + var(--safe-r) + var(--s1)); bottom: var(--s1); max-height: calc(100dvh - var(--s2)); overflow-y: auto; }

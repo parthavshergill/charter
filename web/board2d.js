@@ -76,7 +76,7 @@ export function renderBoard2D(svg, view, seatColor, onPick) {
   svg._home = home;
   // A redraw keeps where the person has moved to.
   svg.setAttribute("viewBox", same && svg._box ? svg._box : `${home.x} ${home.y} ${home.w} ${home.h}`);
-  const pickFor = pick => () => { if (!(performance.now() - (svg._dragged || -1000) < 80)) onPick(pick); };
+  const pickFor = pick => e => { if (!(performance.now() - (svg._dragged || -1000) < 80)) onPick(pick, e.clientX, e.clientY); };
   for (const t of b.tiles) {
     const [cx, cy] = xy(t);
     const pts = [0, 1, 2, 3, 4, 5].map(i => {
