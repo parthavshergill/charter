@@ -97,7 +97,7 @@ def lawDinner : Law :=
           , .forEach (.lt (.lit 1) (held .each "down")) [pay .each .bank "down" (.sub (held .each "down") (.lit 1))] ]
       , .onRoundEnd
           [ .forEach isDown [pay .each .bank "gas" (.lit 1), pay .each .treasury "cash" (.lit 1)]
-          , .when dinnerOn [.forEach isDown [pay .treasury .each "lore" share]] ]
+          , .forEach (.and isDown dinnerOn) [pay .treasury .each "lore" share] ]
       , .setWorth "lore" 1 ] }
 
 /-- **Hosting.** A potluck feeds everyone, not only the host. -/

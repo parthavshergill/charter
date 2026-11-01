@@ -18,7 +18,7 @@ namespace Charter.Games.HillAndChill
 def foundingWords : List (Law × String × String) :=
   [ (lawMaybe, "5e20fb43",
       "Anyone who is not down at the round's end gets 1 clout, whether or not dinner happens. Each clout you hold is worth 1 point.")
-  , (lawDinner, "8389b921",
+  , (lawDinner, "87db653d",
       "Everyone holds one down card. To commit to dinner, declare 1 down on your turn. Being down costs the ride and your share of the bill, 1 gas and 1 cash, whether or not dinner happens. If more than half the table is down, but not everyone, dinner happens, and the diners share the memories: 3 lore for each seat that was needed. At a table of four, that is exactly three diners, 3 lore each. If too few are down, the restaurant keeps the cash as a no-show fee. If everyone is down, nobody can agree on a place, and that falls through too. Each lore you hold is worth 1 point.")
   , (lawPotluck, "b69ed2fe",
       "Whoever hosts a potluck feeds the whole house: every seat gets 1 lore.") ]
