@@ -36,6 +36,8 @@ const touch = () => matchMedia("(pointer: coarse)").matches;
 const narrow = () => matchMedia("(max-width: 760px) and (orientation: portrait)").matches;
 /** A phone on its side: the rail and the dock stay at the right, and the ledge is one thin row. */
 const short = () => matchMedia("(max-height: 500px) and (orientation: landscape)").matches;
+/** Too small for the scroll, the list of worlds and the board side by side. As the rule of this name in app.css. */
+const pickerSheeted = () => matchMedia("(max-width: 999px), (max-height: 500px) and (orientation: landscape)").matches;
 // The seat token goes in a header, not the address, so it stays out of anything that logs addresses.
 let seatToken = null;
 /** One request. A connection that says nothing must not hold the page, so each one has a time limit. */
@@ -109,6 +111,27 @@ function myNonce() {
   return (a & 0xfffff) * 2 ** 32 + b;
 }
 
+/** Pulling a sheet's top edge down puts it away. */
+function pullToClose(grab, sheet, close) {
+  let pull = null;
+  grab.addEventListener("pointerdown", e => { grab.setPointerCapture(e.pointerId); pull = { y: e.clientY, t: performance.now(), dy: 0 }; sheet.classList.add("pulled"); });
+  grab.addEventListener("pointermove", e => {
+    if (!pull) return;
+    pull.dy = Math.max(0, e.clientY - pull.y);
+    sheet.style.transform = `translateY(${pull.dy}px)`;
+  });
+  const letGo = e => {
+    if (!pull) return;
+    const fast = pull.dy / Math.max(1, performance.now() - pull.t) > .6, far = pull.dy > Math.min(110, sheet.offsetHeight / 3);
+    sheet.classList.remove("pulled");
+    sheet.style.transform = "";
+    if (e.type === "pointerup" && pull.dy > 8 && (fast || far)) close();
+    pull = null;
+  };
+  grab.addEventListener("pointerup", letGo);
+  grab.addEventListener("pointercancel", letGo);
+}
+
 // ---------------------------------------------------------------- the scroll
 /** The document a table is founded on: a sheet, with a roller and the seal at its foot. */
 const scrollSheet = (...kids) => h("div", { class: "scroll" },
@@ -139,6 +162,10 @@ function openScroll(scroll, whole) {
   return () => scroll.classList.remove("waiting");
 }
 const TURN_MS = 520; // as .scroll.turning in app.css
+// The base games, in the order the list shows them. Every other world is in the Library.
+const BASE_WORLDS = ["island", "not-catan"];
+const PICKER_MARGIN = 20; // the scroll's left edge never goes nearer the window than this: its roller sticks out 10
+const PICKER_MIN_BOARD = 420; // the width at which a board's numbers can still be read
 
 // ---------------------------------------------------------------- the constitution
 /** What the game promises a player, as one short document, on the title scroll and in the dock. The words
@@ -178,44 +205,161 @@ async function lobby() {
     }
   };
   showSeats();
-  const packList = h("div", { class: "packs", role: "group", "aria-label": "World" });
+  // The line on the sheet shows the chosen world, and opens the list of them.
+  const worldName = h("span", { class: "worldname" });
+  const worldButton = h("button", { class: "worldbutton", disabled: true, "aria-haspopup": "listbox", "aria-expanded": "false", "aria-controls": "worlds", onclick: () => pickerOpen ? closePicker(true) : openPicker() },
+    worldName, h("span", { class: "chevron", "aria-hidden": "true" }, "\u203a"));
+  const packList = h("div", { class: "packs" }, h("span", { class: "smallcaps lbl", "aria-hidden": "true" }, "World"), worldButton);
   const packNote = h("p", { class: "packnote" });
   // The chosen game's line and empty board. The base game is first, so the sheet starts with its line.
   const tagline = h("p", { class: "sub" }, "Settle an island. Rewrite its rules. The constitution holds.");
-  let stagePlayer = null, stageShown = null, stageLoad = null;
-  const showBackdrop = d => {
+  let stagePlayer = null, stageWanted = null, stageDrawn = null;
+  const scenes = new Map();
+  /** A world's scene with its mesh files loaded, so that it draws at once and with no stand-ins. Nothing shows
+   *  until it is drawn. A load that fails gives null, and the next try starts again. */
+  const loadScene = id => {
     if (!stagePlayer) return null;
-    if (stageShown === d.id) return stageLoad;
-    stageShown = d.id;
-    return (stageLoad = api(`/api/defs/${d.id}/scene`).then(buf => { if (stageShown === d.id && buf.byteLength > 4) stagePlayer.render(buf); }, e => console.warn("backdrop", e)));
+    if (!scenes.has(id)) scenes.set(id, api(`/api/defs/${id}/scene`).then(async buf => {
+      if (!(buf.byteLength > 4)) throw new Error("no scene");
+      const { decodeStream } = await import("./vendor/player.js");
+      const files = [];
+      for (const c of decodeStream(buf)) if (c.op === "meshFile" && !stagePlayer.meshFiles.has(c.sha)) files.push(stagePlayer._loadMeshFile(c.sha));
+      // A slow file does not hold the board up. It draws as its stand-in, and the player swaps it in when it comes.
+      await Promise.race([Promise.all(files), new Promise(done => setTimeout(done, 4000))]);
+      return buf;
+    }).catch(e => { console.warn("backdrop", e); scenes.delete(id); return null; }));
+    return scenes.get(id);
   };
-  // The row shows the first three games, and the chosen game if it is further along.
-  // Every game after the first three is on the Library's shelf.
-  const libraryLink = h("button", { class: "link library", onclick: () => turnTo("shelf") }, "Library");
+  // The old board stays until the new one is ready. Only the world chosen last is drawn, however the loads finish.
+  const showBackdrop = d => {
+    const load = loadScene(d.id);
+    if (!load) return null;
+    stageWanted = d.id;
+    return load.then(buf => {
+      if (!buf || stageWanted !== d.id || stageDrawn === d.id) return;
+      try { stagePlayer.render(buf); stageDrawn = d.id; } catch (e) { console.warn("backdrop", e); }
+    });
+  };
   const showPacks = () => {
-    const row = defs.filter((d, i) => i < 3 || d.id === game);
-    fill(packList, h("span", { class: "smallcaps lbl" }, "World"), row.map(d =>
-      h("button", { class: "pack" + (d.id === game ? " on" : ""), "aria-pressed": d.id === game ? "true" : "false", onclick: () => { game = d.id; showPacks(); showSeats(); packList.querySelector(".pack.on").focus(); } }, d.name)), libraryLink);
-    packNote.textContent = defs.find(d => d.id === game)?.blurb || "";
     const d = defs.find(x => x.id === game);
+    worldButton.disabled = !d;
+    worldName.textContent = d?.name || "";
+    worldButton.setAttribute("aria-label", d ? `World: ${d.name}` : "World");
+    packNote.textContent = d?.blurb || "";
     if (d) { applyLook(d.look); tagline.textContent = d.look.tagline; showBackdrop(d); }
+    for (const [id, row] of worldRows) {
+      row.setAttribute("aria-selected", id === game ? "true" : "false");
+      row.tabIndex = id === game ? 0 : -1;
+    }
   };
-  showPacks();
-  // A server that was asleep can take a while to wake, and this is the first thing that waits for it.
-  const defsLoaded = api("/api/defs", undefined, 130000).then(list => { defs = list; game = list[0]?.id ?? null; showPacks(); showSeats(); }, () => { err.textContent = NO_SERVER; });
+  const choose = d => { game = d.id; showPacks(); showSeats(); };
   const seatRange = d => d.minSeats === d.maxSeats ? plural(d.minSeats, "seat") : `${d.minSeats} to ${d.maxSeats} seats`;
-  // One row of the shelf. A picture can go after .shelftext later: the row leaves no gap without one.
-  const shelfRow = d => h("button", { class: "shelfrow" + (d.id === game ? " on" : ""), "aria-pressed": d.id === game ? "true" : "false", onclick: () => { game = d.id; showPacks(); showSeats(); turnTo("form", () => packList.querySelector(".pack.on")); } },
+
+  // The list of worlds: a second sheet behind the first. Choosing a world shows it at once, and the list stays
+  // open, so that worlds can be compared. A hover or focus only starts loading the scene.
+  // One row. A picture can go after .shelftext later: the row leaves no gap without one.
+  const shelfRow = d => h("button", { class: "shelfrow", role: "option", tabindex: "-1", onclick: () => choose(d), onpointerenter: () => loadScene(d.id), onfocus: () => loadScene(d.id) },
     waxSeal("seal small"),
     h("span", { class: "shelftext" }, h("span", { class: "shelfname" }, d.name), h("span", { class: "shelfblurb" }, d.blurb), h("span", { class: "smallcaps" }, seatRange(d))));
-  const libraryHead = h("h2", { tabindex: "-1" }, "Library");
-  const shelf = h("div", { class: "shelf", hidden: true, onkeydown: e => { if (e.key === "Escape") turnTo("form"); } });
-  const showShelf = () => {
-    const rest = defs.slice(3);
-    fill(shelf, libraryHead,
-      rest.length ? h("div", { class: "shelflist" }, rest.map(shelfRow)) : h("p", { class: "shelfempty" }, "No charters are shelved here yet."),
-      h("button", { class: "link shelfback", onclick: () => turnTo("form") }, "Back to the charter"));
+  const worldRows = new Map();
+  const worldGroup = (label, worlds) => worlds.length ? h("div", { role: "group", "aria-label": label },
+    h("div", { class: "smallcaps worldgroup", "aria-hidden": "true" }, label),
+    worlds.map(d => { const row = shelfRow(d); worldRows.set(d.id, row); return row; })) : null;
+  const showWorlds = () => {
+    const base = BASE_WORLDS.map(id => defs.find(d => d.id === id)).filter(Boolean);
+    worldRows.clear();
+    fill(worldList, worldGroup("Base games", base), worldGroup("Library", defs.filter(d => !base.includes(d))));
   };
+  const worldKeys = e => {
+    const rows = [...worldRows.values()], ids = [...worldRows.keys()];
+    const focused = rows.indexOf(document.activeElement), at = focused >= 0 ? focused : ids.indexOf(game);
+    const to = { ArrowDown: at + 1, ArrowUp: at - 1, Home: 0, End: rows.length - 1 }[e.key];
+    if (to !== undefined) {
+      e.preventDefault();
+      if (!rows[to]) return;
+      rows[to].focus({ preventScroll: true });
+      rows[to].scrollIntoView({ block: "nearest" });
+      choose(defs.find(d => d.id === ids[to]));
+    } else if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); closePicker(true); }
+  };
+  const worldList = h("div", { class: "worldlist", id: "worlds", role: "listbox", "aria-label": "World", tabindex: "-1", onkeydown: worldKeys });
+  const pickerGrab = h("div", { class: "grab", "aria-hidden": "true" });
+  const picker = h("div", { class: "picker vellum" },
+    h("div", { class: "pickerhead" }, pickerGrab, h("button", { class: "x", title: "Close (Esc)", "aria-label": "Close the list of worlds", onclick: () => closePicker(true) }, uiIcon("close"))),
+    worldList);
+  pullToClose(pickerGrab, picker, () => closePicker(true));
+  let pickerOpen = false, pickerEnd = 0;
+  /** The board's part of the window. With the list open, that is what the scroll and the list leave free. */
+  const frameBoard = () => {
+    if (!stagePlayer) return;
+    const usual = { l: innerWidth <= 560 ? 16 : Math.min(innerWidth * .46, 480), r: 16, t: 16, b: 16 };
+    const to = !pickerOpen ? usual
+      : !pickerSheeted() ? { ...usual, l: pickerEnd + 8 }
+      : short() ? { l: picker.offsetWidth + 8, r: 8, t: 8, b: 8 }
+      : { l: 8, r: 8, t: 8, b: picker.offsetHeight + 8 };
+    stagePlayer.setInsets(to);
+    if (reduced()) Object.assign(stagePlayer.insets, to);
+  };
+  // Where everything goes with the list open. The list is as tall as the scroll and starts behind it. The scroll
+  // moves left only as far as it must for the board to keep its usual size, and stops at the window's edge. In a
+  // tight window it also draws back, down to 80%, so that the board keeps enough size to read its numbers.
+  const placePicker = () => {
+    if (pickerSheeted()) {
+      picker.style.cssText = "";
+      page.style.removeProperty("--pick-shift");
+      page.style.removeProperty("--pick-scale");
+    } else {
+      const left = page.offsetLeft, width = page.offsetWidth, W = innerWidth;
+      const drawer = Math.round(Math.min(Math.max(W * .22, 240), 320));
+      const scale = Math.max(Math.min((W - PICKER_MARGIN - drawer - 24 - PICKER_MIN_BOARD) / width, 1), .8);
+      const seen = width * scale, height = page.offsetHeight * scale;
+      const usual = W - Math.min(W * .46, 480) - 16, v = stagePlayer?.view;
+      const board = v ? Math.min(usual, (innerHeight - 32) * v.radius / (v.radius * Math.sin(v.elev) + .45)) : usual;
+      const shift = Math.round(Math.min(Math.max(board - (W - left - seen - drawer - 24), 0), left - PICKER_MARGIN));
+      pickerEnd = left - shift + seen + drawer;
+      Object.assign(picker.style, { left: `${left + width - drawer}px`, top: `${(innerHeight - height) / 2}px`, width: `${drawer}px`, height: `${height}px` });
+      picker.style.setProperty("--pick-slide", `${seen - width + drawer - shift}px`);
+      page.style.setProperty("--pick-shift", `${-shift}px`);
+      page.style.setProperty("--pick-scale", String(scale));
+    }
+    frameBoard();
+  };
+  const openPicker = () => {
+    if (turning || !worldRows.size) return;
+    pickerOpen = true;
+    worldButton.setAttribute("aria-expanded", "true");
+    placePicker();
+    picker.classList.add("open");
+    page.classList.add("picking");
+    // On a phone the sheet stands in for the scroll, which has moved away.
+    page.inert = pickerSheeted();
+    frameBoard();
+    const row = worldRows.get(game);
+    row.scrollIntoView({ block: "nearest" });
+    row.focus({ preventScroll: true });
+  };
+  const closePicker = refocus => {
+    if (!pickerOpen) return;
+    pickerOpen = false;
+    worldButton.setAttribute("aria-expanded", "false");
+    picker.classList.remove("open");
+    page.classList.remove("picking");
+    page.inert = false;
+    frameBoard();
+    if (refocus) worldButton.focus({ preventScroll: true });
+  };
+  // A click anywhere else closes the list, and goes on to do what it does. Waiting for the click and not the
+  // press matters: the scroll moves when the list closes, and the button under the pointer must not move away.
+  document.addEventListener("click", e => {
+    if (!pickerOpen || picker.contains(e.target) || worldButton.contains(e.target)) return;
+    closePicker(false);
+    if (document.activeElement === document.body) worldButton.focus({ preventScroll: true });
+  }, true);
+  document.addEventListener("keydown", e => { if (e.key === "Escape") closePicker(true); });
+  addEventListener("resize", () => { if (pickerOpen) { placePicker(); page.inert = pickerSheeted(); } else frameBoard(); });
+  showPacks();
+  // A server that was asleep can take a while to wake, and this is the first thing that waits for it.
+  const defsLoaded = api("/api/defs", undefined, 130000).then(list => { defs = list; game = list[0]?.id ?? null; showWorlds(); showPacks(); showSeats(); }, () => { err.textContent = NO_SERVER; });
   // The numerals on the sheet open the constitution at that promise, and going back returns to the numeral.
   let cameFrom = null;
   const backFromPromises = () => turnTo("form", () => cameFrom);
@@ -231,27 +375,23 @@ async function lobby() {
     const to = e.key === "ArrowRight" ? at + 1 : e.key === "ArrowLeft" ? at - 1 : -1;
     if (all[to]) { e.preventDefault(); all[at].tabIndex = -1; all[to].tabIndex = 0; all[to].focus(); }
   };
-  // Change between the form and the Library: the sheet rolls up and comes down again with the other side.
-  // Its top stays where it is. The Library is never taller than the form, so a long list scrolls inside it.
-  // The constitution takes the height it needs, down to the window's foot, and scrolls only past that.
+  // Change between the form and the constitution: the sheet rolls up and comes down again with the other side.
+  // Its top stays where it is. The constitution takes the height it needs, down to the window's foot, and
+  // scrolls only past that.
   let turning = false;
   const turnTo = (side, focusTarget) => {
     if (turning) return;
-    const sheet = page.firstChild;
-    const toLibrary = side === "shelf", away = side !== "form";
+    const sheet = page.firstChild, away = side !== "form";
     const swap = () => {
       turning = false;
       if (away) {
         const top = page.getBoundingClientRect().top;
         Object.assign(page.style, { top: `${top}px`, transform: "none", maxHeight: `calc(100dvh - ${top + 36}px)` });
-        if (toLibrary) { sheet.style.maxHeight = `${sheet.offsetHeight}px`; showShelf(); }
-      } else page.style.top = page.style.transform = page.style.maxHeight = sheet.style.maxHeight = "";
-      page.classList.toggle("shelved", toLibrary);
-      form.hidden = away; shelf.hidden = !toLibrary; promises.hidden = side !== "promises";
+      } else page.style.top = page.style.transform = page.style.maxHeight = "";
+      form.hidden = away; promises.hidden = !away;
       sheet.scrollTop = 0;
-      if (toLibrary) shelf.querySelector(".shelfrow.on")?.scrollIntoView({ block: "nearest" });
-      if (side === "promises") promises.querySelector(".here")?.scrollIntoView({ block: "center" });
-      (focusTarget?.() ?? (toLibrary ? libraryHead : libraryLink)).focus({ preventScroll: true });
+      if (away) promises.querySelector(".here")?.scrollIntoView({ block: "center" });
+      focusTarget().focus({ preventScroll: true });
     };
     if (reduced()) { swap(); return; }
     turning = true;
@@ -283,6 +423,7 @@ async function lobby() {
     h("label", { class: "field signature" }, name, h("span", { class: "signlabel" }, "Sign your name")),
     seg, packList, packNote,
     h("button", { class: "act gold", onclick: e => {
+      closePicker(false);
       if (!nameOk()) return;
       busyWhile(e.currentTarget, (async () => {
         let r;
@@ -292,10 +433,11 @@ async function lobby() {
         await join(r.code);
       })());
     } }, "Found a table"),
-    h("div", { class: "joinline" }, joinCode, h("button", { class: "act", onclick: e => nameOk() && busyWhile(e.currentTarget, join(joinCode.value)) }, "Join")),
+    h("div", { class: "joinline" }, joinCode, h("button", { class: "act", onclick: e => { closePicker(false); if (nameOk()) busyWhile(e.currentTarget, join(joinCode.value)); } }, "Join")),
     err, tables);
-  const page = scrollSheet(form, shelf, promises);
-  app.replaceChildren(stage, page);
+  const page = scrollSheet(form, promises);
+  app.replaceChildren(stage, page, picker);
+  new ResizeObserver(() => { if (pickerOpen) placePicker(); }).observe(page);
   name.addEventListener("keydown", e => { if (e.key === "Enter") e.target.closest(".titlepage").querySelector(".act.gold").click(); });
   // The signature font loads before it is needed, so the first letter typed is already in ink.
   document.fonts?.load('32px "Mrs Saint Delafield"').catch(() => {});
@@ -307,8 +449,8 @@ async function lobby() {
   if (whole && !reduced()) { store.set("charter.opened", "1"); setTimeout(release, 1200); }
   const showBoard = () => loadPlayer(stage.querySelector("canvas")).then(async p => {
     if (!p) { release(); return; }
-    p.setInsets({ l: innerWidth <= 560 ? 16 : Math.min(innerWidth * .46, 480), r: 16, t: 16, b: 16 });
     stagePlayer = p;
+    frameBoard();
     await defsLoaded;
     const d = defs.find(x => x.id === game);
     if (d) await showBackdrop(d);
@@ -630,24 +772,7 @@ function applyMode() {
 /** The things a tap can do on a phone that a pointer does by hovering. */
 function bindTouch() {
   const U = G.ui;
-  // Pulling the sheet's top edge down puts it away.
-  let pull = null;
-  U.grab.addEventListener("pointerdown", e => { U.grab.setPointerCapture(e.pointerId); pull = { y: e.clientY, t: performance.now(), dy: 0 }; U.dock.classList.add("pulled"); });
-  U.grab.addEventListener("pointermove", e => {
-    if (!pull) return;
-    pull.dy = Math.max(0, e.clientY - pull.y);
-    U.dock.style.transform = `translateY(${pull.dy}px)`;
-  });
-  const letGo = e => {
-    if (!pull) return;
-    const fast = pull.dy / Math.max(1, performance.now() - pull.t) > .6, far = pull.dy > Math.min(110, U.dock.offsetHeight / 3);
-    U.dock.classList.remove("pulled");
-    U.dock.style.transform = "";
-    if (e.type === "pointerup" && pull.dy > 8 && (fast || far)) closeDock(true);
-    pull = null;
-  };
-  U.grab.addEventListener("pointerup", letGo);
-  U.grab.addEventListener("pointercancel", letGo);
+  pullToClose(U.grab, U.dock, () => closeDock(true));
   if (!touch()) return;
   // A tap on nothing in particular closes what a tap opened.
   addEventListener("pointerdown", e => {
