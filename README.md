@@ -66,6 +66,18 @@ Nothing proves the server, the screen or the clerk's drafting. CI checks the pro
 - **The board** is drawn by three.js from a stream of commands that Lean sends. A world's look is data in Lean, too. The menus and panels are about 2,400 lines of JavaScript.
 - **Build checks** cover what doesn't need a full proof. Lean's `#guard` and similar checks stop the build if a piece has no model, a board goes over its triangle budget, or a shipped extension pack's rules aren't valid.
 
+## Sounds
+
+The game makes its sounds itself. `scripts/sound/render.py` writes them from simple synthesis and from single notes of the MuseScore General SoundFont, played by FluidSynth. No sample packs are used. [web/audio/SOURCES.md](web/audio/SOURCES.md) lists them.
+
+MuseScore_General.sf2 is under the MIT license, and these notices go with anything made from it:
+
+- FluidR3 (original version) by Frank Wen, Copyright (c) 2000-02
+- FluidR3Mono by Michael Cowgill, Copyright (c) 2014-17
+- Adaptation for MuseScore_General.sf2 by S. Christian Collins, Copyright (c) 2018-19
+- Temple Blocks instrument provided by Ethan Winer, Copyright (c) 2002
+- Drumline Cymbals provided by Michael Schorsch, Copyright (c) 2016
+
 ## Run it yourself
 
 You need [elan](https://github.com/leanprover/elan), which installs Lean.

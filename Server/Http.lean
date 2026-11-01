@@ -46,6 +46,7 @@ def mimeOf (path : String) : String :=
   | "png" => "image/png"
   | "jpg" | "jpeg" => "image/jpeg"
   | "woff2" => "font/woff2"
+  | "mp3" => "audio/mpeg"
   | "ico" => "image/x-icon"
   | "bin" => "application/octet-stream"
   | "wasm" => "application/wasm"

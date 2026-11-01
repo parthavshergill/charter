@@ -249,6 +249,7 @@ def theme : Theme :=
       | _ => 0xC6A06A
     look :=
       { tagline := "Ooze along the log. Outvote the other moulds."
+        music := "slime"
         bodyFont := "humanist"
         displayFont := "rounded"
         tokens :=

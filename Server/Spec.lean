@@ -188,4 +188,12 @@ info: [("not-catan", ["piece relic does not show the owner's colour for seats [0
 #guard_msgs in
 #eval (gameSpecs.map fun d => (d.id, Scene.lookProblems d.G d.layout)).filter (!·.2.isEmpty)
 
+/-! `Scene.lookProblems` checks that a pack names a track on the list. This checks that each one on the list
+has its file. -/
+
+/-- info: [] -/
+#guard_msgs in
+#eval Scene.musicTracks.filterM fun t => do
+  return !(← (System.FilePath.mk s!"web/audio/music/{t}.mp3").pathExists)
+
 end CharterServer

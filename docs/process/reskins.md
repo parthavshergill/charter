@@ -12,6 +12,7 @@ A pack's `Theme` holds all of this:
 - The seat colours.
 - The screen, through `Theme.look`: the tagline on the scroll, the colour tokens at the top of `web/app.css`, fonts from the fixed list in `web/look.js`, and icons as path data and colours. The word Charter on the scroll keeps its own face. The browser checks all of these again and sets them with `setAttribute`.
 - The 2D board's colours, through `Theme.flat`.
+- The world's music, through `Theme.look`: `music` names a loop in `web/audio/music`. A pack with none gets the default. To add a loop, write it in `scripts/sound/render.py` and add its name to `musicTracks` in `Charter/Scene/LookCheck.lean`. The sound effects are the same in every world.
 
 A pack can colour the voting panel, the preview numbers, the rule source and the constitution page. It cannot reword or hide them. The screen's structure and move flows do not change. The board stays a hex layout: pieces stand on the corners, and links lie on the sides.
 
