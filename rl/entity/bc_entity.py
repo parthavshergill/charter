@@ -46,6 +46,7 @@ def collect(games, out, seed=7):
             acts.append(a)
             game_ids.append(k)
             g.step(a)
+    os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
     np.savez_compressed(out, obs=np.stack(obs), mask=np.stack(masks), action=np.array(acts, np.int16),
                         game=np.array(game_ids, np.int32))
     print(f"{len(acts)} decisions from {games} games, wrote {out}", flush=True)
