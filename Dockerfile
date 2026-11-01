@@ -27,6 +27,9 @@ COPY --from=build /src/web /app/web
 COPY --from=build /src/packs /app/packs
 COPY --from=build /src/Server/formalizer.md /src/Server/describer.md /src/Server/player_rules.md /app/Server/
 ENV PORT=8080 CHARTER_BIND=0.0.0.0 CHARTER_ROOT=/app CHARTER_DATA=/data/games
+# In this stage only, so that a new commit does not build the Lean code again.
+ARG CHARTER_COMMIT=unknown
+ENV CHARTER_COMMIT=$CHARTER_COMMIT
 USER charter
 EXPOSE 8080
 ENTRYPOINT ["/app/charter-server"]
