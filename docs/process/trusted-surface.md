@@ -14,9 +14,9 @@ The ten commandments and the five supporting promises mention 275 definitions in
 
 | Text a reader must review | Size |
 |---|---|
-| The commandments | 241 lines in `Constitution.lean` |
-| The named parts | 439 lines in `Constitution/Promises.lean` |
-| The words | 1,540 lines, in 15 files by topic |
+| The commandments | 253 lines in `Constitution.lean` |
+| The named parts | 497 lines in `Constitution/Promises.lean` |
+| The words | 2,062 lines, in 16 files by topic. `Fast.lean` holds faster code that is proved equal to the plain words, and a reader can skip all of it but `settle` |
 | SHA-256 | 111 lines |
 
 Three kinds of text are outside the surface: setup placement, which is in the engine; the tiny games, in `Games/Tiny.lean`; and the examples and rejection tests, in `Constitution/Examples.lean`.

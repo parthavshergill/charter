@@ -21,8 +21,9 @@ structure Options where
   resources : Nat := maxResources
   kinds : Nat := maxPieceKinds
   stock : Nat := maxStock
-  laws : Nat := maxLawsInForce
-  lawSize : Nat := maxLawSize
+  -- As many laws as the caps on payments and reads allow at this size. Together they reach both caps.
+  laws : Nat := 42
+  lawSize : Nat := 30
   entries : Nat := maxPlannedEntries
   total : Nat := maxPlannedTotal
   rounds : Nat := maxRoundsAllowed

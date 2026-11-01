@@ -189,7 +189,7 @@ The total stayed at 256 and not the 512 first tried, because a preview works out
 
 A new limit, `maxReadsTotal` of 8192, caps how many numbers and tests all the laws in force read on one trigger. `limits_hold` states it. Most of a harvest's time goes on these reads. Size and payments did not bound them: a law of 128 nodes reads each node once per seat, and a `forEach` holding only empty `forEach`s plans no payments at all. The parser cannot write that last law, but `lawProblems` now refuses it too.
 
-Measured on the worst turn at the new limits, on the laptop that builds the game: a turn change took 27 ms, the moves a seat can make took 22 ms, and a preview of a law that reacts to harvests took 284 ms. A law that reacts only to a build or a round's end needs no dice, so its preview takes far less, unless the current turn closes the round. A preview runs once per open law and per seat, each time the game changes. The deployed container has a quarter of a CPU, so expect those figures to be several times larger there. This was not measured there.
+Measured on the worst turn at the new limits, on the laptop that builds the game: a turn change took 61 ms, the moves a seat can make took 34 ms, and a preview of a law that reacts to harvests took 294 ms. A law that reacts only to a build or a round's end needs no dice, so its preview takes far less, unless the current turn closes the round. A preview runs once per open law and per seat, each time the game changes. The deployed container has a quarter of a CPU, so expect those figures to be several times larger there. This was not measured there.
 
 ## Measures
 
