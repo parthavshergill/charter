@@ -3,8 +3,11 @@
 // rl/puffer/README section of rl/README.md says how to build it. The game itself is rl/build/libcharter_rl.so,
 // reached only through rl/env/charter_rl.h, so nvcc never parses lean.h.
 //
-// Seats: agent i plays game seat seat_of[i], drawn afresh each game, so no agent always sits first. A waiting agent
-// sees zeros and a mask with only the no-op. With num_agents = 1 (the bot ladder), bots fill the other seats:
+// Seats: each game has a seat count drawn from `seats` (for example "2-6" or "4"), limited to what the game allows.
+// Agent i plays game seat seat_of[i], drawn afresh each game, so no agent always sits first; agents past the seat
+// count sit the game out. num_agents must be the most seats `seats` names. A waiting agent sees zeros and a mask with
+// only the no-op; its observation is written once when it starts waiting, not on every tick.
+// With num_agents = 1 (the bot ladder), bots fill the other seats:
 // bot_policy 0 plays random legal actions, 1 is hand, 2 fair, 3 closed, 4 champion, 5 champion-closed. With no offers
 // made, 1, 2 and 3 play the same. champion makes and accepts offers among bot seats; 5 is the same without offers.
 // bot_share: in self-play (num_agents = 4), each game has this chance that agents 1 to 3 sit out and bot_policy bots
@@ -20,11 +23,12 @@ typedef float obs_t;
 #include "pufferenv.h"
 #include "charter_rl.h"
 
-#define SEATS 4
+#define SEATS 6              // the most seats a game can have (Charter.maxSeats)
 #define MAX_GAMES 8
-#define CHARTER_ACTS 695
-#define CHARTER_BASE_OBS 4434
-#define CHARTER_FULL_OBS 7122
+// Layout version 2 (rl/layout.json). puf_init checks these against the library.
+#define CHARTER_ACTS 515
+#define CHARTER_BASE_OBS 11465
+#define CHARTER_FULL_OBS 15177
 #ifdef CHARTER_MOVE_ROWS
 #define OBS_SIZE CHARTER_FULL_OBS
 #else
@@ -42,7 +46,7 @@ struct Log {
     float perf, score, policy_0_score, draw_rate;
     float episode_return, episode_length, win_seat0, win_seat1, win_seat2, win_seat3;
     float points, points_share, rounds, decisions, invalid_rate, laws_proposed, laws_passed;
-    float hist_score, hist_n;
+    float hist_score, hist_n, seats;
     float bot_score, bot_n;   // games where bot_share put bots in the other seats
     float n;
 };
@@ -56,7 +60,11 @@ struct Env {
     unsigned int rng;
     int bot_policy;
     float bot_share;
-    int playing;           // agents in this game: num_agents, or 1 when bots took the others' seats
+    int playing;           // agents in this game: the seat count, or 1 when bots took the others' seats
+    int seats;             // seats in this game
+    int seat_choices[SEATS];
+    int num_seat_choices;
+    int zeroed[SEATS];     // this agent's observation is all zeros already
     int num_games;
     void* games[MAX_GAMES];
     int current;
@@ -119,10 +127,13 @@ static void write_outputs(Env* env) {
             charter_obs(G(env), a->observations, OBS_SIZE);
             charter_mask(G(env), a->action_mask, CHARTER_ACTS);
             a->action_mask[NOOP_ACTION] = 0;
-        } else {
+            env->zeroed[i] = 0;
+        } else if (!env->zeroed[i]) {
+            // A waiting agent's rows stay zero until it decides again, so they are written once.
             memset(a->observations, 0, OBS_SIZE * sizeof(obs_t));
             memset(a->action_mask, 0, CHARTER_ACTS);
             a->action_mask[NOOP_ACTION] = 1;
+            env->zeroed[i] = 1;
         }
     }
 }
@@ -145,7 +156,7 @@ static void finish(Env* env) {
     int me = env->seat_of[0];
     float won = winner == me ? 1.0f : 0.0f;
     float total = 0;
-    for (int s = 0; s < SEATS; s++) {
+    for (int s = 0; s < env->seats; s++) {
         total += info[9 + s];
     }
     Log* l = &env->log;
@@ -155,10 +166,13 @@ static void finish(Env* env) {
     l->draw_rate += winner < 0 ? 1.0f : 0.0f;
     l->episode_return += env->returns[0];
     l->episode_length += env->moves;
-    float* by_seat[SEATS] = {&l->win_seat0, &l->win_seat1, &l->win_seat2, &l->win_seat3};
-    *by_seat[me] += won;
+    float* by_seat[4] = {&l->win_seat0, &l->win_seat1, &l->win_seat2, &l->win_seat3};
+    if (me < 4) {
+        *by_seat[me] += won;
+    }
+    l->seats += env->seats;
     l->points += info[9 + me];
-    l->points_share += total > 0 ? info[9 + me] / total : 0.25f;
+    l->points_share += total > 0 ? info[9 + me] / total : 1.0f / env->seats;
     l->rounds += info[2];
     l->decisions += info[7];
     l->invalid_rate += env->moves ? (float)env->invalid / env->moves : 0.0f;
@@ -181,26 +195,39 @@ static void finish(Env* env) {
 static void start_game(Env* env) {
     charter_thread_init();
     env->current = env->num_games > 1 ? rand_r(&env->rng) % env->num_games : 0;
-    int seats = charter_seats(G(env));
-    assert(seats == SEATS);
+    // A seat count this game allows, from the choices.
+    int lo = charter_min_seats(G(env)), hi = charter_max_seats(G(env));
+    int ok[SEATS], n_ok = 0;
+    for (int c = 0; c < env->num_seat_choices; c++) {
+        int n = env->seat_choices[c];
+        if (n >= lo && n <= hi && (env->num_agents == 1 || n <= env->num_agents)) {
+            ok[n_ok++] = n;
+        }
+    }
+    if (n_ok == 0) {
+        fprintf(stderr, "charter: none of the seat counts in [env] seats fits a game that takes %d to %d\n", lo, hi);
+        abort();
+    }
+    int seats = ok[rand_r(&env->rng) % n_ok];
+    env->seats = seats;
     // A fresh seat for each agent.
     int perm[SEATS];
-    for (int s = 0; s < SEATS; s++) {
+    for (int s = 0; s < seats; s++) {
         perm[s] = s;
     }
-    for (int s = SEATS - 1; s > 0; s--) {
+    for (int s = seats - 1; s > 0; s--) {
         int j = rand_r(&env->rng) % (s + 1);
         int t = perm[s];
         perm[s] = perm[j];
         perm[j] = t;
     }
-    char lineup[128] = {0};
+    char lineup[256] = {0};
     for (int s = 0; s < SEATS; s++) {
         env->agent_at[s] = -1;
         env->random_seat[s] = 0;
     }
     // Agents beyond `playing` sit this game out. Their seat_of is never read.
-    env->playing = env->num_agents;
+    env->playing = env->num_agents < seats ? env->num_agents : seats;
     if (env->num_agents > 1 && env->bot_share > 0 &&
         (float)rand_r(&env->rng) / (float)RAND_MAX < env->bot_share) {
         env->playing = 1;
@@ -209,7 +236,7 @@ static void start_game(Env* env) {
         env->seat_of[i] = perm[i];
         env->agent_at[perm[i]] = i;
     }
-    for (int s = 0; s < SEATS; s++) {
+    for (int s = 0; s < seats; s++) {
         const char* who = env->agent_at[s] >= 0 ? "caller" : BOT_NAMES[env->bot_policy];
         if (env->agent_at[s] < 0 && env->bot_policy == BOT_RANDOM) {
             env->random_seat[s] = 1;
@@ -312,7 +339,35 @@ void puf_init(Env* env, Dict* kwargs) {
     assert(env->bot_policy >= 0 && env->bot_policy < NUM_BOT_POLICIES);
     env->bot_share = (float)opt_num(kwargs, "bot_share", 0.0);
     env->playing = env->num_agents;
-    assert(env->num_agents == 1 || env->num_agents == SEATS);
+    assert(env->num_agents >= 1 && env->num_agents <= SEATS);
+    // Seat counts: "4", "2-6" or "3,4,5".
+    env->num_seat_choices = 0;
+    {
+        char text[64];
+        snprintf(text, sizeof(text), "%s", opt_str(kwargs, "seats", "4"));
+        char* save = NULL;
+        for (char* tok = strtok_r(text, ",", &save); tok; tok = strtok_r(NULL, ",", &save)) {
+            int a = atoi(tok), b = a;
+            char* dash = strchr(tok, '-');
+            if (dash) {
+                b = atoi(dash + 1);
+            }
+            for (int n = a; n <= b && env->num_seat_choices < SEATS; n++) {
+                if (n >= 2 && n <= SEATS) {
+                    env->seat_choices[env->num_seat_choices++] = n;
+                }
+            }
+        }
+        assert(env->num_seat_choices > 0 && "[env] seats names no seat count from 2 to 6");
+        int most = 0;
+        for (int c = 0; c < env->num_seat_choices; c++) {
+            most = env->seat_choices[c] > most ? env->seat_choices[c] : most;
+        }
+        assert((env->num_agents == 1 || env->num_agents == most) && "[env] num_agents must be the most seats in seats");
+    }
+    for (int i = 0; i < SEATS; i++) {
+        env->zeroed[i] = 0;
+    }
     int move_rows = (int)opt_num(kwargs, "move_rows", 0);
 #ifdef CHARTER_MOVE_ROWS
     assert(move_rows && "built with CHARTER_MOVE_ROWS: set env.move_rows = 1");
@@ -327,16 +382,27 @@ void puf_init(Env* env, Dict* kwargs) {
     char* save = NULL;
     for (char* id = strtok_r(games, ",", &save); id; id = strtok_r(NULL, ",", &save)) {
         assert(env->num_games < MAX_GAMES);
+        // The first lineup this game takes: 4 callers, else another count. start_game picks the real one.
+        static const int tries[] = {4, 3, 2, 5, 6};
         char cfg[1024];
-        snprintf(cfg, sizeof(cfg),
-            "{\"game\": \"%s\", \"lineup\": [\"caller\", \"caller\", \"caller\", \"caller\"], \"seed\": %u, "
-            "\"vote_mode\": \"%s\", \"slot_order\": \"%s\", \"move_rows\": %s, \"law_every\": %d, "
-            "\"random_map\": %s, \"preview\": %s, \"reward_win\": %g, \"reward_standing\": %g, \"shaping_points\": %g}",
-            id, env->rng, vote, slots, move_rows ? "true" : "false", (int)opt_num(kwargs, "law_every", 8),
-            opt_num(kwargs, "random_map", 1) ? "true" : "false", opt_num(kwargs, "preview", 1) ? "true" : "false",
-            opt_num(kwargs, "reward_win", 1.0), opt_num(kwargs, "reward_standing", 0.25),
-            opt_num(kwargs, "shaping_points", 0.0));
         char err[512];
+        for (int t = 0; t < 5; t++) {
+            char lineup[128] = {0};
+            for (int s = 0; s < tries[t]; s++) {
+                strcat(lineup, s ? ", \"caller\"" : "\"caller\"");
+            }
+            snprintf(cfg, sizeof(cfg),
+                "{\"game\": \"%s\", \"lineup\": [%s], \"seed\": %u, "
+                "\"vote_mode\": \"%s\", \"slot_order\": \"%s\", \"move_rows\": %s, \"law_every\": %d, "
+                "\"random_map\": %s, \"preview\": %s, \"reward_win\": %g, \"reward_standing\": %g, \"shaping_points\": %g}",
+                id, lineup, env->rng, vote, slots, move_rows ? "true" : "false", (int)opt_num(kwargs, "law_every", 8),
+                opt_num(kwargs, "random_map", 1) ? "true" : "false", opt_num(kwargs, "preview", 1) ? "true" : "false",
+                opt_num(kwargs, "reward_win", 1.0), opt_num(kwargs, "reward_standing", 0.25),
+                opt_num(kwargs, "shaping_points", 0.0));
+            if (!charter_error(cfg, err, sizeof(err))) {
+                break;
+            }
+        }
         if (charter_error(cfg, err, sizeof(err))) {
             fprintf(stderr, "charter: bad [env] settings: %s\n", err);
             exit(1);
@@ -370,6 +436,7 @@ void puf_log(Log* log, Dict* out) {
     dict_set(out, "laws_passed", log->laws_passed);
     dict_set(out, "hist_score", log->hist_score);
     dict_set(out, "hist_n", log->hist_n);
+    dict_set(out, "seats", log->seats);
     dict_set(out, "bot_score", log->bot_n > 0 ? log->bot_score / log->bot_n : 0.0f);
     dict_set(out, "bot_n", log->bot_n);
 }

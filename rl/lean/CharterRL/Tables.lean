@@ -168,16 +168,14 @@ def allTables : Array Tables := gameSpecs.toArray.map Tables.ofSpec
 /-- The training games and the held-out games, in `rl/games.json`. -/
 def tablesOf? (id : String) : Option Tables := allTables.find? (·.id == id)
 
-/-- Why this game does not fit the layout, if it does not. -/
+/-- Why this game does not fit the layout, if it does not. The layout's limits are the engine's, so a game that
+passes `G.Valid` always fits; this says why a game that does not pass would fail here. -/
 def Tables.problems (T : Tables) : List String :=
   let G := T.G
-  let linkKinds := (G.pieces.filter fun d => match d.placement with | .link => true | _ => false).length
+  (if G.checks then [] else ["the game does not pass G.checks"]) ++
   (if G.resources.length ≤ maxRes then [] else [s!"{G.resources.length} resources, and the limit is {maxRes}"]) ++
-  (if linkKinds ≤ maxLinkKinds then [] else [s!"{linkKinds} kinds of link piece, and the limit is {maxLinkKinds}"]) ++
-  (if G.pieces.length - linkKinds ≤ maxSpotKinds then [] else [s!"{G.pieces.length - linkKinds} kinds of spot piece, and the limit is {maxSpotKinds}"]) ++
+  (if G.pieces.length ≤ maxKinds then [] else [s!"{G.pieces.length} kinds of piece, and the limit is {maxKinds}"]) ++
   (if G.map.spotCount ≤ maxSpots then [] else [s!"{G.map.spotCount} spots, and the limit is {maxSpots}"]) ++
-  (if G.map.links.length ≤ maxLinks then [] else [s!"{G.map.links.length} links, and the limit is {maxLinks}"]) ++
-  (if G.map.regions.length ≤ maxTiles then [] else [s!"{G.map.regions.length} tiles, and the limit is {maxTiles}"]) ++
   (if G.foundingLaws.length ≤ maxLaws then [] else [s!"{G.foundingLaws.length} founding laws, and the limit is {maxLaws}"])
 
 /-! ## Opponents -/
@@ -200,7 +198,9 @@ def opponents : List Opponent :=
   [ { name := "fair", strategy := hand, weights := { acceptGoods := 1, acceptNeed := 1, acceptMargin := 1 } }
   , { name := "closed", strategy := hand, weights := { acceptMargin := 10 } }
   , { name := "champion", strategy := Champion.strategy, weights := Champion.weights }
-  , { name := "champion-closed", strategy := Champion.strategy, weights := Champion.closedWeights } ]
+  , { name := "champion-closed", strategy := Champion.strategy, weights := Champion.closedWeights }
+  -- The champion as written, slower. Only for the test that `champion` decides the same.
+  , { name := "champion-ref", strategy := ChampionRef.strategy, weights := ChampionRef.weights } ]
 
 /-- What plays a seat. `none` is the caller. `setup` plays until the setup turns are over, and `play` after. -/
 structure SeatPlan where
@@ -267,15 +267,13 @@ structure Episode where
 def Episode.resRow? (ep : Episode) (r : Res) : Option Nat := ep.rowRes.findIdx? (· == r)
 def Episode.kindRow? (ep : Episode) (k : PieceKind) : Option Nat := ep.rowKind.findIdx? (· == k)
 
-/-- Rows for pieces that do not have one yet: a link piece in the link rows, and any other in the spot rows. -/
+/-- Rows for pieces that do not have one yet: the first empty row. A game has at most `maxKinds` kinds, counting
+those laws add, so there is always one. -/
 def Episode.seat (ep : Episode) (pieces : List PieceDef) : Episode :=
   { ep with rowKind := pieces.foldl (fun rows d =>
       if rows.contains d.name then rows else
-      let isLink := match d.placement with | .link => true | _ => false
-      let start := if isLink then 0 else maxLinkKinds
-      let stop := if isLink then maxLinkKinds else maxKinds
-      match (List.range (stop - start)).find? (fun i => rows.getD (start + i) "x" == "") with
-      | some i => rows.setIfInBounds (start + i) d.name
+      match (List.range maxKinds).find? (fun i => rows.getD i "x" == "") with
+      | some i => rows.setIfInBounds i d.name
       | none => rows) ep.rowKind }
 
 /-- A number fixed by a seed and an index. It uses nothing of the game's dice. -/
@@ -292,23 +290,20 @@ def shuffled {α : Type} (xs : Array α) (seed : Nat) : Array α := Id.run do
     i := i - 1
   return a
 
-/-- The rows of a game: the resources in some order, and its pieces in some order within the link and spot rows. -/
+/-- The rows of a game: the resources in some order, and its pieces in some order. -/
 def Episode.make (G : GameDef) (order : SlotOrder) (seed : Nat) : Episode :=
   let names := (G.resources.map (·.name)).toArray
-  let isLink (d : PieceDef) : Bool := match d.placement with | .link => true | _ => false
-  let linkKinds := (G.pieces.filter isLink).toArray
-  let spotKinds := (G.pieces.filter (!isLink ·)).toArray
-  let (rowRes, linkKinds, spotKinds) := match order with
-    | .game => (names, linkKinds, spotKinds)
-    | .shuffled => (shuffled names (seed + 1), shuffled linkKinds (seed + 2), shuffled spotKinds (seed + 3))
+  let kinds := G.pieces.toArray
+  let (rowRes, kinds) := match order with
+    | .game => (names, kinds)
+    | .shuffled => (shuffled names (seed + 1), shuffled kinds (seed + 2))
   let empty : Array String := Array.replicate maxKinds ""
   let ep : Episode := { rowRes, rowKind := empty, spotRes := #[], tileRes := #[] }
   let rowRes' := fun (r : Res) => (rowRes.findIdx? (· == r)).getD 0
   let pay := paidRegions G
   let spotRes := (List.range G.map.spotCount).toArray.map fun v =>
     (pay.filter fun (t : Region) => t.spots.contains v).map fun (t : Region) => (rowRes' t.res, pips G t.number)
-  ({ ep with spotRes, tileRes := (G.map.regions.map fun (t : Region) => rowRes' t.res).toArray }).seat
-    (linkKinds.toList ++ spotKinds.toList)
+  ({ ep with spotRes, tileRes := (G.map.regions.map fun (t : Region) => rowRes' t.res).toArray }).seat kinds.toList
 
 /-! ## Maps -/
 

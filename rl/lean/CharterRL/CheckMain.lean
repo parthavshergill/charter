@@ -16,7 +16,8 @@ def report (bad : IO.Ref Nat) (ok : Bool) (what : String) : IO Unit := do
 
 def maskLine (c : MaskCount) : String :=
   s!"decisions={c.decisions} actions={c.actions} offered={c.offered} offered_refused={c.offeredRefused} " ++
-  s!"missing={c.missing} declare_not_offered={c.declareNotOffered} move_while_voting={c.moveWhileVoting}" ++
+  s!"missing={c.missing} declare_not_offered={c.declareNotOffered} move_while_voting={c.moveWhileVoting} " ++
+  s!"placements={c.placements} place_overflow={c.placeOverflow}" ++
   (if c.firstError == "" then "" else s!" first_error=\"{c.firstError}\"")
 
 def main (args : List String) : IO UInt32 := do
@@ -44,12 +45,35 @@ def main (args : List String) : IO UInt32 := do
     report bad (e1.errors > 0) s!"mask {id} seeded error (end turn always offered) caught: {maskLine e1}"
     let e2 := maskTest T policyVotes 4 2 maskDropLast
     report bad (e2.errors > 0) s!"mask {id} seeded error (last action dropped) caught: {maskLine e2}"
-  -- The held-out games, more briefly.
+    let e3 := maskTest T policyVotes 4 2 (·.mask) 400 placesDropLast
+    report bad (e3.errors > 0) s!"mask {id} seeded error (last placement has no row) caught: {maskLine e3}"
+  -- The held-out games, more briefly, at every seat count they allow.
   for id in allIds.filter (!trainIds.contains ·) do
     let some T := tablesOf? id | continue
-    let seats := min 4 T.maxSeats
-    let c := maskTest T policyVotes seats 2 (·.mask) 150
-    report bad (c.errors == 0 && c.offered > 0) s!"mask {id} (held out): {maskLine c}"
+    for seats in (List.range (T.maxSeats + 1)).filter (T.minSeats ≤ ·) do
+      let c := maskTest T policyVotes seats 1 (·.mask) 100
+      report bad (c.errors == 0 && c.offered > 0) s!"mask {id} (held out), {seats} seats: {maskLine c}"
+  -- Can it play: every game, and made-up games at the engine's limits and at odd small sizes, at every seat count,
+  -- to the end, with random legal actions.
+  let made : List String := ["gen-limits-1", "gen-limits-2", "gen-tiny-1", "gen-tiny-2", "gen-tiny-3"] ++
+    (List.range (if quick then 4 else 12)).map (s!"gen-odd-{·}")
+  for id in allIds ++ made do
+    let T ← match tablesOf? id, Gen.tables? id with
+      | some T, _ => pure T
+      | none, some (.ok T) => pure T
+      | none, some (.error err) => report bad false s!"play {id}: {err}"; continue
+      | none, none => report bad false s!"play {id}: no such game"; continue
+    report bad T.problems.isEmpty s!"layout {id} fits {T.problems}"
+    for seats in (List.range (T.maxSeats + 1)).filter (T.minSeats ≤ ·) do
+      let c := playTest T policyVotes seats (if quick then 1 else 2) (if id.startsWith "gen-limits" then 8 else 30)
+      let G := T.G
+      report bad (c.errors == 0)
+        (s!"play {id}, {seats} seats ({G.resources.length} resources, {G.pieces.length} kinds, {G.map.spotCount} spots, " ++
+         s!"{G.map.links.length} links, {G.map.regions.length} tiles, {G.foundingLaws.length} founding laws): " ++
+         s!"games={c.games} ended={c.ended} decisions={c.decisions} no_action={c.noAction} refused={c.refused} " ++
+         s!"stuck={c.stuck} most_places={c.mostPlaces} place_overflow={c.overflow} mask_errors={c.mask.errors}" ++
+         (if c.firstError == "" then "" else s!" first_error=\"{c.firstError}\"") ++
+         (if c.mask.firstError == "" then "" else s!" mask_error=\"{c.mask.firstError}\""))
   -- Determinism, the seed, renaming.
   for id in allIds do
     let some T := tablesOf? id | continue
@@ -84,6 +108,53 @@ def main (args : List String) : IO UInt32 := do
       let (d, n) := sideBySide a b 17
       report bad (d > 0) s!"renaming {id} seeded error (rows follow the game's list order) caught: {d} of {n} differ"
     | .error e, _ | _, .error e => report bad false s!"renaming {id} seeded: {e}"
+  -- Votes worked out once per law for all seats give the same games as `lawOk` for each voter.
+  for id in allIds do
+    let some T := tablesOf? id | continue
+    let seats := min 4 T.maxSeats
+    let hand := (opponents.find? (·.name == "hand")).get!
+    let champ := (opponents.find? (·.name == "champion")).get!
+    let mixed : Array SeatPlan := #[{ setup := none, play := none }, { setup := some hand, play := some hand },
+      { setup := some champ, play := some champ }] ++ Array.replicate (seats - 3) { setup := none, play := none }
+    let botVotes : Settings := { voteMode := .bot, lawEvery := 2 }
+    let mut diffs := 0
+    let mut n := 0
+    for g in [0:(if quick then 3 else 8)] do
+      match Env.start T botVotes mixed (600 + g), Env.start T botVotes mixed (600 + g) (shareVotes := false) with
+      | .ok a, .ok b =>
+        let (d, k) := sideBySide a b (700 + g) 2000
+        diffs := diffs + d
+        n := n + k
+      | _, _ => report bad false s!"shared votes {id}: the game did not start"
+    report bad (diffs == 0 && n > 0) s!"shared votes {id}: {diffs} of {n} decisions differ from lawOk per voter"
+    -- And a preview worked out once per law gives the same observations as one per voter.
+    let mut pd := 0
+    let mut pn := 0
+    for g in [0:(if quick then 2 else 6)] do
+      match Env.start T { policyVotes with lawEvery := 2 } (callers seats) (650 + g),
+            Env.start T { policyVotes with lawEvery := 2 } (callers seats) (650 + g) (shareVotes := false) with
+      | .ok a, .ok b =>
+        let (d, k) := sideBySide a b (750 + g) 1500
+        pd := pd + d
+        pn := pn + k
+      | _, _ => report bad false s!"shared preview {id}: the game did not start"
+    report bad (pd == 0 && pn > 0) s!"shared preview {id}: {pd} of {pn} decisions differ from a preview per voter"
+  -- The fast champion decides as the champion as written does.
+  for id in allIds do
+    let some T := tablesOf? id | continue
+    let seats := min 4 T.maxSeats
+    let byName (n : String) : SeatPlan := let o := (opponents.find? (·.name == n)).get!; { setup := some o, play := some o }
+    let lineup (n : String) : Array SeatPlan := #[{ setup := none, play := none }] ++ Array.replicate (seats - 1) (byName n)
+    let mut diffs := 0
+    let mut n := 0
+    for g in [0:(if quick then 3 else 10)] do
+      match Env.start T policyVotes (lineup "champion") (800 + g), Env.start T policyVotes (lineup "champion-ref") (800 + g) with
+      | .ok a, .ok b =>
+        let (d, k) := sideBySide a b (810 + g) 2000
+        diffs := diffs + d
+        n := n + k
+      | _, _ => report bad false s!"champion {id}: the game did not start"
+    report bad (diffs == 0 && n > 0) s!"champion {id}: {diffs} of {n} decisions differ from the champion as written"
   -- Random maps pass the full checks.
   for id in allIds do
     let some T := tablesOf? id | continue
@@ -99,6 +170,7 @@ def main (args : List String) : IO UInt32 := do
         [ ("self-play, mask only", ({} : Settings), callers 4, false)
         , ("self-play, mask and obs", ({} : Settings), callers 4, true)
         , ("self-play, mask and obs, move rows", ({ moveRows := true } : Settings), callers 4, true)
+        , ("self-play, most seats, mask and obs", ({} : Settings), callers T.maxSeats, true)
         , ("self-play, mask and obs, no preview", ({ preview := false } : Settings), callers 4, true)
         , ("self-play, mask and obs, no laws", ({ lawEvery := 0 } : Settings), callers 4, true)
         , ("one seat against 3 hand, mask and obs", ({ voteMode := .bot } : Settings), vsHand, true) ] do

@@ -31,6 +31,8 @@ int charter_over(void* game);      // 1 when the game is over
 int charter_refused(void* game);   // 1 when the last step was refused
 int charter_voting(void* game);    // 1 when the deciding seat is voting
 int charter_seats(void* game);
+int charter_min_seats(void* game);  // the fewest and most seats this game allows
+int charter_max_seats(void* game);
 // Each copies at most cap numbers and returns how many there are.
 int charter_obs(void* game, float* out, int cap);
 int charter_mask(void* game, uint8_t* out, int cap);

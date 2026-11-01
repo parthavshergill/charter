@@ -24,6 +24,8 @@ lean_object* charter_rl_rewards(lean_object* e);
 lean_object* charter_rl_info(lean_object* e);
 uint32_t charter_rl_suggest(lean_object* e, lean_object* name);
 uint32_t charter_rl_seats(lean_object* e);
+uint32_t charter_rl_min_seats(lean_object* e);
+uint32_t charter_rl_max_seats(lean_object* e);
 lean_object* charter_rl_saved_log(lean_object* e, lean_object* code, lean_object* names);
 lean_object* charter_rl_saved_state(lean_object* e);
 uint32_t charter_rl_obs_size(lean_object* e);
@@ -97,6 +99,8 @@ int charter_over(void* e) { return charter_rl_over(READ(e)); }
 int charter_refused(void* e) { return charter_rl_refused(READ(e)); }
 int charter_voting(void* e) { return charter_rl_voting(READ(e)); }
 int charter_seats(void* e) { return (int)charter_rl_seats(READ(e)); }
+int charter_min_seats(void* e) { return (int)charter_rl_min_seats(READ(e)); }
+int charter_max_seats(void* e) { return (int)charter_rl_max_seats(READ(e)); }
 int charter_obs(void* e, float* out, int cap) { return copy_floats(charter_rl_obs(READ(e)), out, cap); }
 int charter_rewards(void* e, float* out, int cap) { return copy_floats(charter_rl_rewards(READ(e)), out, cap); }
 int charter_info(void* e, float* out, int cap) { return copy_floats(charter_rl_info(READ(e)), out, cap); }

@@ -38,12 +38,12 @@ PUFFER = "/opt/pufferlib"
 REPO = "/repo"      # the Lean sources and the built library, baked into the image
 SRC = "/src/rl"     # the rest of rl/, added at start, so a Python change does not rebuild Lean
 VOL = "/vol"
-GPU = "T4"
+GPU = os.environ.get("CHARTER_RL_GPU", "T4")
 CUDA = "12-9"
 CUDA_REPO = "https://developer.download.nvidia.com/compute/cuda/repos/debian12/x86_64"
 
 # Modal list prices, dollars per second. Kept high on purpose: they bound spend, they do not predict it.
-PRICE = {"T4": 0.000164, "cpu": 0.0000131, "gib": 0.00000222}
+PRICE = {"T4": 0.000164, "L4": 0.000222, "A10G": 0.000306, "cpu": 0.0000131, "gib": 0.00000222}
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -199,8 +199,10 @@ def write_metas(out, ckpt_dir, run, train_args, move_rows, encoder, meta_extra, 
             c = os.path.join(dp, f)
             if not f.endswith(".bin") or os.path.exists(c + ".json"):
                 continue
+            layout = json.load(open(f"{SRC}/layout.json"))
             meta = {"name": f"{run}/{f}", "format": f"puffer-{encoder}", "encoder": encoder,
-                    "obs_size": 7122 if move_rows else 4434, "act_size": 696, "hidden": hidden, "layers": layers,
+                    "layout": layout["version"], "obs_size": layout["full_size"] if move_rows else layout["base_size"],
+                    "act_size": layout["act_size"] + 1, "hidden": hidden, "layers": layers,
                     "steps": base_steps + int(f[:-4]), "settings": {"vote_mode": "bot", "move_rows": move_rows}}
             meta.update(json.loads(meta_extra) if meta_extra else {})
             meta["train_args"] = train_args
@@ -315,7 +317,7 @@ def bc(out: str, games: int = 2000, args: str = "", data: str = ""):
     if not os.path.exists(data):
         per = games // 8
         code, text = sh(f"cd {SRC}/.. && for i in 0 1 2 3 4 5 6 7; do python3 rl/imitation/collect.py --games {per} "
-                        f"--seed $((i + 11)) --out /tmp/part$i.npz & done; wait; ls -la /tmp/part*.npz")
+                        f"--seed $((i + 11)) --seats 2-6 --out /tmp/part$i.npz & done; wait; ls -la /tmp/part*.npz")
         import numpy as np
         parts = [np.load(f"/tmp/part{i}.npz") for i in range(8)]
         z = {k: np.concatenate([p[k] for p in parts]) for k in parts[0].files}

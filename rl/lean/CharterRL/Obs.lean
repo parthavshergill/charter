@@ -34,11 +34,10 @@ private def oGlobal := offsetOf "global"
 private def oSeats := offsetOf "seats"
 private def oRes := offsetOf "resources"
 private def oKinds := offsetOf "kinds"
-private def oTiles := offsetOf "tiles"
 private def oSpots := offsetOf "spots"
-private def oLinks := offsetOf "links"
 private def oLaws := offsetOf "laws"
 private def oProposal := offsetOf "proposal"
+private def oPlaces := offsetOf "places"
 private def oMoves := baseSize
 
 private def cG (name : String) := tGlobal.col name
@@ -58,6 +57,10 @@ private def gTurnPos := cG "turn_pos"
 private def gMyPos := cG "my_pos"
 private def gLaws := cG "laws"
 private def gOver := cG "moves_overflow"
+private def gPlaces := cG "places"
+private def gPlaceOver := cG "place_overflow"
+private def gSpots := cG "spots"
+private def gLinks := cG "links"
 
 private def cS (name : String) := tSeats.col name
 private def sCurrent := cS "current"
@@ -100,24 +103,16 @@ private def kRoom := cK "my_room"
 private def kCost := cK "cost"
 private def kCount := cK "count"
 
-private def cT (name : String) := tTiles.col name
-private def tX := cT "x"
-private def tY := cT "y"
-private def tNumber := cT "number"
-private def tPips := cT "pips"
-private def tStock := cT "stock"
-private def tDemand := cT "demand"
-private def tWorth := cT "worth"
-private def tMyIncome := cT "my_income"
-private def tMyHolding := cT "my_holding"
-private def tRes := cT "res"
-
 private def cP (name : String) := tSpots.col name
 private def pX := cP "x"
 private def pY := cP "y"
 private def pDegree := cP "degree"
 private def pPips := cP "pips"
 private def pGoods := cP "goods"
+private def pTiles := cP "tiles"
+private def pLinksOpen := cP "links_open"
+private def pLinksMine := cP "links_mine"
+private def pLinksOf := cP "links_of"
 private def pDemand := cP "demand_value"
 private def pNew := cP "new_for_me"
 private def pFree := cP "free"
@@ -129,16 +124,26 @@ private def pAttached := cP "attached"
 private def pOwner := cP "owner"
 private def pByRes := cP "pips_by_res"
 
-private def cL (name : String) := tLinks.col name
-private def lX := cL "x"
-private def lY := cL "y"
-private def lA := cL "end_a"
-private def lB := cL "end_b"
-private def lTaken := cL "taken"
-private def lReach := cL "reach_me"
-private def lFreeEnds := cL "free_ends"
-private def lBest := cL "best_end_pips"
-private def lOwner := cL "owner"
+private def cPl (name : String) := tPlaces.col name
+private def plLink := cPl "on_link"
+private def plSpot := cPl "on_spot"
+private def plUpgrade := cPl "on_upgrade"
+private def plAttach := cPl "on_attach"
+private def plAt := cPl "at"
+private def plAtB := cPl "at_b"
+private def plX := cPl "x"
+private def plY := cPl "y"
+private def plPips := cPl "pips"
+private def plGoods := cPl "goods"
+private def plDemand := cPl "demand_value"
+private def plNew := cPl "new_for_me"
+private def plFreeEnds := cPl "free_ends"
+private def plReach := cPl "reach_me"
+private def plPoints := cPl "points_gain"
+private def plYield := cPl "yield_gain"
+private def plCostTotal := cPl "cost_total"
+private def plShort := cPl "my_short"
+private def plKind := cPl "kind"
 
 private def lawFounding := tLaws.col "founding"
 private def lawShapeAt := tLaws.col "on_harvest"
@@ -235,34 +240,12 @@ def template (T : Tables) (ep : Episode) (G : GameDef) (seats : Nat) (moveRows :
     a := put a tSpots oSpots v pDegree (ofNat (T.board.neighbours.getD v []).length / 3)
     a := put a tSpots oSpots v pPips (ofNat (bestEnd v) / 15)
     a := put a tSpots oSpots v pGoods (ofNat (pay.map (·.1)).eraseDups.length / 3)
+    a := put a tSpots oSpots v pTiles (ofNat pay.length / 3)
     for (r, n) in pay do
       let c := pByRes + r
       a := put a tSpots oSpots v c (a.get! (oSpots + v * tSpots.width + c) + ofNat n / 6)
-  -- Tiles. A tile's place is the middle of its spots.
-  for row in [0:tiles.size] do
-    let t := tiles[row]!
-    let count := Float.ofNat (max 1 t.spots.length)
-    let (x, y) := t.spots.foldl (fun (p : Float × Float) v =>
-      let (x, y) := spotXY.getD v (0, 0)
-      (p.1 + x, p.2 + y)) (0, 0)
-    a := put a tTiles oTiles row real 1
-    a := put a tTiles oTiles row tX (x / count)
-    a := put a tTiles oTiles row tY (y / count)
-    a := put a tTiles oTiles row tNumber (ofNat t.number / 24)
-    a := put a tTiles oTiles row tPips (ofNat (pips G t.number) / 6)
-    a := put a tTiles oTiles row tStock (amt (G.stockOf t.res))
-    a := put a tTiles oTiles row (tRes + ep.tileRes.getD row 0) 1
-  -- Links.
-  for i in [0:T.links.size] do
-    let (p, q) := T.links[i]!
-    let (x1, y1) := spotXY.getD p (0, 0)
-    let (x2, y2) := spotXY.getD q (0, 0)
-    a := put a tLinks oLinks i real 1
-    a := put a tLinks oLinks i lX ((x1 + x2) / 2)
-    a := put a tLinks oLinks i lY ((y1 + y2) / 2)
-    a := put a tLinks oLinks i lA (ofNat p / ofNat maxSpots)
-    a := put a tLinks oLinks i lB (ofNat q / ofNat maxSpots)
-    a := put a tLinks oLinks i lBest (ofNat (max (bestEnd p) (bestEnd q)) / 15)
+  a := put a tGlobal oGlobal 0 gSpots (ofNat spotCount / ofNat maxSpots)
+  a := put a tGlobal oGlobal 0 gLinks (ofNat T.links.size / 300)
   return writeLaws a G G.startingLaws
 
 /-! ## One decision -/
@@ -312,9 +295,63 @@ private def expectedTurn (ep : Episode) (s : State G) (me seats : Nat) (sign : F
     addEntries ep me seats (Engine.predictNextTurn G s r) (sign * ofNat (pips G r) / ofNat (max 1 ways)) acc.1 acc.2)
     (net, myRes)
 
-/-- The columns of the open proposal. -/
-private def writeProposal (a : FloatArray) (ep : Episode) (preview : Bool) (s : State G) (me seats id : Nat) (L : Law) :
-    FloatArray := Id.run do
+/-- What a law would change, for every seat, in the game's own seat order. It is the same for every voter, so it is
+worked out once per law and turn (`Env.await`), and each voter's view reads it in its own order. -/
+structure Preview where
+  id : Nat
+  rollsMade : Nat
+  turnsTaken : Nat
+  /-- Each seat's expected net at the next turn change, with the law less without it. -/
+  net : Array Float
+  /-- The same, by seat and row of `resources`: `seat * maxRes + row`. -/
+  res : Array Float
+  /-- What the law pays each seat now, if it acts at once. -/
+  now : Array Float
+  points : Array Float
+  bank : Float
+  /-- The change in each kind row's total cost. -/
+  cost : Array Float
+  deriving Inhabited
+
+/-- `addEntries` for every seat at once, in the game's seat order. Each number gets the same additions in the same
+order as there, so the floats are the same. -/
+private def addEntriesAll (ep : Episode) (es : List Entry) (sign : Float) (net res : Array Float) :
+    Array Float × Array Float :=
+  es.foldl (fun (acc : Array Float × Array Float) e =>
+    let amount := sign * ofNat e.amount
+    let row := (ep.resRow? e.res).getD 0
+    let (net, res) := acc
+    let (net, res) := match e.dst with
+      | .player q => (net.modify q (· + amount), res.modify (q * maxRes + row) (· + amount))
+      | _ => (net, res)
+    match e.src with
+    | .player q => (net.modify q (· - amount), res.modify (q * maxRes + row) (· - amount))
+    | _ => (net, res)) (net, res)
+
+private def expectedTurnAll (ep : Episode) (s : State G) (sign : Float) (net res : Array Float) :
+    Array Float × Array Float :=
+  let rolls := Scene.rollsOf G
+  let ways := rolls.foldl (fun n r => n + pips G r) 0
+  rolls.foldl (fun (acc : Array Float × Array Float) r =>
+    addEntriesAll ep (Engine.predictNextTurn G s r) (sign * ofNat (pips G r) / ofNat (max 1 ways)) acc.1 acc.2)
+    (net, res)
+
+/-- What this law would change, for every seat. -/
+def previewOf (ep : Episode) (s : State G) (seats id : Nat) (L : Law) : Preview :=
+  let s' := s.withLaw id L
+  let zero (n : Nat) : Array Float := Array.replicate n 0
+  let (net, res) := expectedTurnAll ep s (-1) (zero maxSeats) (zero (maxSeats * maxRes))
+  let (net, res) := expectedTurnAll ep s' 1 net res
+  let (now, _) := addEntriesAll ep (s.decreeEntries L) 1 (zero maxSeats) (zero (maxSeats * maxRes))
+  let total (x : State G) (k : String) : Nat := (x.costOf k).foldl (fun n y => n + y.2) 0
+  { id, rollsMade := s.rollsMade, turnsTaken := s.turnsTaken, net, res, now
+    points := (List.range seats).toArray.map fun q => ofNat (s'.pointsOf q) - ofNat (s.pointsOf q)
+    bank := ofNat s'.rules.bankRate - ofNat s.rules.bankRate
+    cost := ep.rowKind.map fun k => if k == "" then 0 else ofNat (total s' k) - ofNat (total s k) }
+
+/-- The columns of the open proposal. `pv` is its preview, if previews are on. -/
+private def writeProposal (a : FloatArray) (ep : Episode) (pv : Option Preview) (s : State G) (me seats id : Nat)
+    (L : Law) : FloatArray := Id.run do
   let mut a := a
   let w := tProposal
   let at_ (a : FloatArray) (c : Nat) (x : Float) := put a w oProposal 0 c x
@@ -332,26 +369,19 @@ private def writeProposal (a : FloatArray) (ep : Episode) (preview : Bool) (s : 
   a := at_ a qNeeded (ofNat (needed - min needed p.yesCount) / ofNat maxSeats)
   a := at_ a qDeciding (if Engine.isDecidingVote s p me true then 1 else 0)
   a := at_ a qEnds (if L.clauses.any Clause.isEndGame then 1 else 0)
-  if !preview then return a
+  let some pv := pv | return a
   a := at_ a qPreviewed 1
-  let s' := s.withLaw id L
-  let zero (n : Nat) : Array Float := Array.replicate n 0
-  let (net, myRes) := expectedTurn ep s me seats (-1) (zero maxSeats) (zero maxRes)
-  let (net, myRes) := expectedTurn ep s' me seats 1 net myRes
-  let (nowNet, _) := addEntries ep me seats (s.decreeEntries L) 1 (zero maxSeats) (zero maxRes)
   for i in [0:seats] do
     let q := (me + i) % seats
-    a := at_ a (qNet + i) (net[i]! / 4)
-    a := at_ a (qNow + i) (nowNet[i]! / 4)
-    a := at_ a (qPoints + i) ((ofNat (s'.pointsOf q) - ofNat (s.pointsOf q)) / 5)
+    a := at_ a (qNet + i) (pv.net[q]! / 4)
+    a := at_ a (qNow + i) (pv.now[q]! / 4)
+    a := at_ a (qPoints + i) (pv.points[q]! / 5)
   for r in [0:ep.rowRes.size] do
-    a := at_ a (qMyNet + r) (myRes[r]! / 4)
-  a := at_ a qBank ((ofNat s'.rules.bankRate - ofNat s.rules.bankRate) / 8)
+    a := at_ a (qMyNet + r) (pv.res[me * maxRes + r]! / 4)
+  a := at_ a qBank (pv.bank / 8)
   for row in [0:maxKinds] do
-    let k := ep.rowKind[row]!
-    if k != "" then
-      let total (x : State G) : Nat := (x.costOf k).foldl (fun n y => n + y.2) 0
-      a := at_ a (qCost + row) ((ofNat (total s') - ofNat (total s)) / 8)
+    if ep.rowKind[row]! != "" then
+      a := at_ a (qCost + row) (pv.cost[row]! / 8)
   return a
 
 /-- The class of an event, as its column in the table of moves. -/
@@ -415,9 +445,72 @@ private def writeMoves (a : FloatArray) (ep : Episode) (rules : Rules) (s : Stat
     row := row + 1
   return a
 
+/-- The table of legal placements, in `placeOrder`. -/
+private def writePlaces (a : FloatArray) (T : Tables) (ctx : Ctx G) (ep : Episode) (rules : Rules) (s : State G) (me : Nat)
+    (places : Array Move) (free reach : Array Bool) (demand : Array Nat) (held income : Array Nat) : FloatArray :=
+    Id.run do
+  let mut a := a
+  let w := tPlaces
+  let nres := ep.rowRes.size
+  let n := min places.size maxPlaceRows
+  a := put a tGlobal oGlobal 0 gPlaces (ofNat n / ofNat maxPlaceRows)
+  if places.size > maxPlaceRows then a := put a tGlobal oGlobal 0 gPlaceOver 1
+  let pipsAt (v : Nat) := ctx.board.spotPips.getD v 0
+  for row in [0:n] do
+    let some (Move.place k loc) := places[row]? | continue
+    let some e := rules.piece? k | continue
+    let at_ (a : FloatArray) (c : Nat) (x : Float) := put a w oPlaces row c x
+    a := at_ a real 1
+    a := at_ a (match e.placement with
+      | .link => plLink | .spot => plSpot | .upgrade _ => plUpgrade | .attach _ => plAttach) 1
+    if let some r := ep.kindRow? k then a := at_ a (plKind + r) 1
+    -- The spot the row describes: the spot itself, or the link's better free end.
+    let (v, others) := match loc with
+      | .spot v => (v, Option.none)
+      | .link (p, q) =>
+        let score (x : Nat) := (if free.getD x false then 1000 else 0) + pipsAt x
+        if score q > score p then (q, some p) else (p, some q)
+    a := at_ a plAt (ofNat v / ofNat maxSpots)
+    if let some o := others then
+      a := at_ a plAtB (ofNat o / ofNat maxSpots)
+      let ends := (if free.getD v false then 1 else 0) + (if free.getD o false then 1 else 0)
+      a := at_ a plFreeEnds (ofNat ends / 2)
+      if reach.getD v false || reach.getD o false then a := at_ a plReach 1
+    else if reach.getD v false then a := at_ a plReach 1
+    let pay := ep.spotRes.getD v []
+    let (x, y) := T.spotXY.getD v (0, 0)
+    a := at_ a plX x
+    a := at_ a plY y
+    a := at_ a plPips (ofNat (pipsAt v) / 15)
+    a := at_ a plGoods (ofNat (pay.map (·.1)).eraseDups.length / 3)
+    let mut value := 0
+    let mut fresh := 0
+    for (r, n) in pay do
+      value := value + n * demand[r]!
+      if income[me * nres + r]! == 0 then fresh := fresh + n
+    a := at_ a plDemand (ofNat value / 60)
+    a := at_ a plNew (ofNat fresh / 15)
+    let under : Option PieceDef := match e.placement with
+      | .upgrade j => rules.piece? j
+      | _ => Option.none
+    let (up, uy) := match under with
+      | some u => (u.points, u.yield)
+      | Option.none => (0, 0)
+    a := at_ a plPoints ((ofNat e.points - ofNat up) / 5)
+    a := at_ a plYield ((ofNat e.yield - ofNat uy) / 3)
+    let mut total := 0
+    let mut short := 0
+    for (r, c) in s.costOf k do
+      total := total + c
+      if let some col := ep.resRow? r then
+        short := short + (c - min c held[me * nres + col]!)
+    a := at_ a plCostTotal (ofNat total / 8)
+    a := at_ a plShort (ofNat short / 8)
+  return a
+
 /-- The whole observation for the seat that must decide. `base` is the game's template. -/
 def observe (T : Tables) (ep : Episode) (ctx : Ctx G) (settings : Settings) (base : FloatArray) (s : State G)
-    (d : Decision) : FloatArray := Id.run do
+    (d : Decision) (places : Array Move) (free reach : Array Bool) (pv : Option Preview) : FloatArray := Id.run do
   let some me := d.seat? | return base
   let mut a := base
   let seats := s.turnOrder.length
@@ -463,18 +556,7 @@ def observe (T : Tables) (ep : Episode) (ctx : Ctx G) (settings : Settings) (bas
       a := put a tResources oRes row (rDeclared + i) (amt (s.declared q r))
       goodsBySeat := goodsBySeat.modify q (· + h)
       incomeBySeat := incomeBySeat.modify q (· + inc)
-  -- Tiles.
-  let tileCount := G.map.regions.length
-  for row in [0:tileCount] do
-    let r := ep.tileRes[row]!
-    a := put a tTiles oTiles row tDemand (ofNat demand[r]! / 8)
-    let worth := ((rules.worth.find? (·.1 == (ep.rowRes[r]!))).map (·.2)).getD 0
-    a := put a tTiles oTiles row tWorth (ofNat worth / 4)
-    a := put a tTiles oTiles row tMyIncome (ofNat income[me * nres + r]! / 36)
-    a := put a tTiles oTiles row tMyHolding (amt held[me * nres + r]!)
   -- Spots and links, from the map first, then from each piece.
-  let free := freeMap ctx s
-  let reach := reachMap ctx s me
   let spotCount := G.map.spotCount
   for v in [0:spotCount] do
     if free.getD v false then a := put a tSpots oSpots v pFree 1
@@ -487,12 +569,22 @@ def observe (T : Tables) (ep : Episode) (ctx : Ctx G) (settings : Settings) (bas
       if income[me * nres + r]! == 0 then fresh := fresh + n
     a := put a tSpots oSpots v pDemand (ofNat value / 60)
     a := put a tSpots oSpots v pNew (ofNat fresh / 15)
-  let linkCount := T.links.size
-  for i in [0:linkCount] do
-    let (p, q) := T.links[i]!
-    if reach.getD p false || reach.getD q false then a := put a tLinks oLinks i lReach 1
-    let ends := (if free.getD p false then 1 else 0) + (if free.getD q false then 1 else 0)
-    a := put a tLinks oLinks i lFreeEnds (ofNat ends / 2)
+  -- Links with no piece on them, at each end.
+  let linkIdx (p q : Nat) : Option Nat :=
+    match (T.linkFrom.getD p []).find? (·.1 == q) with
+    | some (_, k) => some k
+    | Option.none => ((T.linkFrom.getD q []).find? (·.1 == p)).map (·.2)
+  let mut taken : Array Bool := Array.replicate T.links.size false
+  for x in s.pieces do
+    if let .link (p, q) := x.loc then
+      if let some k := linkIdx p q then taken := taken.set! k true
+  let mut openAt : Array Nat := Array.replicate spotCount 0
+  for k in [0:T.links.size] do
+    if !taken[k]! then
+      let (p, q) := T.links[k]!
+      openAt := (openAt.modify p (· + 1)).modify q (· + 1)
+  for v in [0:spotCount] do
+    a := put a tSpots oSpots v pLinksOpen (ofNat openAt[v]! / 3)
   let mut kindCount : Array Nat := Array.replicate (maxKinds * maxSeats) 0
   let mut spotPieces : Array Nat := Array.replicate seats 0
   let mut linkPieces : Array Nat := Array.replicate seats 0
@@ -512,13 +604,13 @@ def observe (T : Tables) (ep : Episode) (ctx : Ctx G) (settings : Settings) (bas
       match e.map (·.placement) with
       | some (Placement.attach _) => a := a.set! (off + pAttached) (a.get! (off + pAttached) + 1 / 3)
       | _ => pure ()
-    | .link l =>
+    | .link (p, q) =>
       linkPieces := linkPieces.modify x.owner (· + 1)
-      match (T.linkFrom.getD l.1 []).find? (·.1 == l.2) with
-      | some (_, k) =>
-        a := put a tLinks oLinks k lTaken 1
-        a := put a tLinks oLinks k (lOwner + i) 1
-      | none => pure ()
+      for v in [p, q] do
+        if v < maxSpots then
+          let off := oSpots + v * tSpots.width
+          a := a.set! (off + pLinksOf + i) (a.get! (off + pLinksOf + i) + 1 / 3)
+          if i == 0 then a := a.set! (off + pLinksMine) (a.get! (off + pLinksMine) + 1 / 3)
   -- Seats.
   for q in [0:seats] do
     let i := ego me seats q
@@ -565,10 +657,13 @@ def observe (T : Tables) (ep : Episode) (ctx : Ctx G) (settings : Settings) (bas
     a := put a w oKinds row kRoom (if kindCount[row * maxSeats]! < e.limit then 1 else 0)
   -- The open proposal, when this seat is voting on it.
   match d with
-  | .vote _ id L => a := writeProposal a ep settings.preview s me seats id L
+  | .vote _ id L => a := writeProposal a ep (if settings.preview then pv else Option.none) s me seats id L
   | _ => pure ()
+  -- The legal placements.
+  if let .turn _ := d then
+    a := writePlaces a T ctx ep rules s me places free reach demand held income
   if settings.moveRows then
-    a := writeMoves a ep rules s me seats (legal T ep ctx s d) held income
+    a := writeMoves a ep rules s me seats (legal T ep places s d) held income
   return a
 
 end CharterRL

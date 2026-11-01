@@ -22,11 +22,18 @@ def main():
     ap.add_argument("--games", type=int, default=400)
     ap.add_argument("--out", default="results/imitation/hand.npz")
     ap.add_argument("--seed", type=int, default=1)
+    ap.add_argument("--seats", default="4", help="seat counts to cycle through, for example 2-6 or 4")
     args = ap.parse_args()
     obs, masks, acts, game_ids, seats, fallback = [], [], [], [], [], 0
+    lo, _, hi = args.seats.partition("-")
+    counts = list(range(int(lo), int(hi or lo) + 1))
     for k in range(args.games):
         gid = TRAIN[k % len(TRAIN)]
-        g = Game({"game": gid, "lineup": ["caller"] * 4, "seed": args.seed * 100000 + k, "vote_mode": "bot"})
+        n = counts[(k // len(TRAIN)) % len(counts)]
+        try:
+            g = Game({"game": gid, "lineup": ["caller"] * n, "seed": args.seed * 100000 + k, "vote_mode": "bot"})
+        except ValueError:
+            g = Game({"game": gid, "lineup": ["caller"] * 4, "seed": args.seed * 100000 + k, "vote_mode": "bot"})
         while not g.over:
             m = g.mask()
             a = g.suggest("hand")
