@@ -5,6 +5,7 @@
 import { renderBoard2D } from "./board2d.js";
 import { resIcon, uiIcon, pieceIcon, shield, chargeOf, waxSeal } from "./icons.js";
 import { applyLook } from "./look.js";
+import { CONSTITUTION } from "./constitution.js";
 
 const app = document.getElementById("app");
 const params = new URLSearchParams(location.search);
@@ -97,6 +98,19 @@ function openScroll(scroll, whole) {
 }
 const TURN_MS = 520; // as .scroll.turning in app.css
 
+// ---------------------------------------------------------------- the constitution
+/** What the game promises a player, as one short document, on the title scroll and in the dock. The words
+ *  are in constitution.js. Each promise opens to its theorem's name and any small print. */
+const constitutionDoc = (...after) => h("div", { class: "constitution" },
+  h("h2", { tabindex: "-1" }, CONSTITUTION.heading),
+  h("p", { class: "opening" }, CONSTITUTION.opening),
+  h("ol", { class: "promises" }, CONSTITUTION.promises.map(p => h("li", {},
+    h("details", { name: "promise", "data-n": p.n },
+      h("summary", {}, h("span", { class: "numeral" }, p.n), h("span", { class: "promise" }, p.line)),
+      h("div", { class: "behind" }, h("code", {}, p.theorem.split(/(?<=_)/).map(w => [w, h("wbr")])), p.small ? h("p", {}, p.small) : null))))),
+  h("p", { class: "notpromised" }, CONSTITUTION.notPromised),
+  after);
+
 // ---------------------------------------------------------------- title page
 async function lobby() {
   const stage = h("div", { class: "stage" }, h("canvas"), h("div", { class: "vignette" }));
@@ -135,7 +149,7 @@ async function lobby() {
   };
   // The row shows the first three games, and the chosen game if it is further along.
   // Every game after the first three is on the Library's shelf.
-  const libraryLink = h("button", { class: "link library", onclick: () => turnTo(true) }, "Library");
+  const libraryLink = h("button", { class: "link library", onclick: () => turnTo("shelf") }, "Library");
   const showPacks = () => {
     const row = defs.filter((d, i) => i < 3 || d.id === game);
     fill(packList, h("span", { class: "smallcaps lbl" }, "World"), row.map(d =>
@@ -148,35 +162,52 @@ async function lobby() {
   const defsLoaded = api("/api/defs").then(list => { defs = list; game = list[0]?.id ?? null; showPacks(); showSeats(); });
   const seatRange = d => d.minSeats === d.maxSeats ? plural(d.minSeats, "seat") : `${d.minSeats} to ${d.maxSeats} seats`;
   // One row of the shelf. A picture can go after .shelftext later: the row leaves no gap without one.
-  const shelfRow = d => h("button", { class: "shelfrow" + (d.id === game ? " on" : ""), "aria-pressed": d.id === game ? "true" : "false", onclick: () => { game = d.id; showPacks(); showSeats(); turnTo(false, () => packList.querySelector(".pack.on")); } },
+  const shelfRow = d => h("button", { class: "shelfrow" + (d.id === game ? " on" : ""), "aria-pressed": d.id === game ? "true" : "false", onclick: () => { game = d.id; showPacks(); showSeats(); turnTo("form", () => packList.querySelector(".pack.on")); } },
     waxSeal("seal small"),
     h("span", { class: "shelftext" }, h("span", { class: "shelfname" }, d.name), h("span", { class: "shelfblurb" }, d.blurb), h("span", { class: "smallcaps" }, seatRange(d))));
   const libraryHead = h("h2", { tabindex: "-1" }, "Library");
-  const shelf = h("div", { class: "shelf", hidden: true, onkeydown: e => { if (e.key === "Escape") turnTo(false); } });
+  const shelf = h("div", { class: "shelf", hidden: true, onkeydown: e => { if (e.key === "Escape") turnTo("form"); } });
   const showShelf = () => {
     const rest = defs.slice(3);
     fill(shelf, libraryHead,
       rest.length ? h("div", { class: "shelflist" }, rest.map(shelfRow)) : h("p", { class: "shelfempty" }, "No charters are shelved here yet."),
-      h("button", { class: "link shelfback", onclick: () => turnTo(false) }, "Back to the charter"));
+      h("button", { class: "link shelfback", onclick: () => turnTo("form") }, "Back to the charter"));
+  };
+  // The numerals on the sheet open the constitution at that promise, and going back returns to the numeral.
+  let cameFrom = null;
+  const backFromPromises = () => turnTo("form", () => cameFrom);
+  const promises = h("div", { class: "promisesheet", hidden: true, onkeydown: e => { if (e.key === "Escape") backFromPromises(); } },
+    constitutionDoc(h("button", { class: "link shelfback", onclick: backFromPromises }, "Back to the charter")));
+  const openPromise = (n, from) => {
+    cameFrom = from;
+    for (const x of promises.querySelectorAll("details")) { x.open = false; x.classList.toggle("here", x.dataset.n === n); }
+    turnTo("promises", () => promises.querySelector(".here summary"));
+  };
+  const numeralKeys = e => {
+    const all = [...e.currentTarget.children], at = all.indexOf(document.activeElement);
+    const to = e.key === "ArrowRight" ? at + 1 : e.key === "ArrowLeft" ? at - 1 : -1;
+    if (all[to]) { e.preventDefault(); all[at].tabIndex = -1; all[to].tabIndex = 0; all[to].focus(); }
   };
   // Change between the form and the Library: the sheet rolls up and comes down again with the other side.
   // Its top stays where it is. The Library is never taller than the form, so a long list scrolls inside it.
+  // The constitution takes the height it needs, down to the window's foot, and scrolls only past that.
   let turning = false;
-  const turnTo = (toLibrary, focusTarget) => {
+  const turnTo = (side, focusTarget) => {
     if (turning) return;
     const sheet = page.firstChild;
+    const toLibrary = side === "shelf", away = side !== "form";
     const swap = () => {
       turning = false;
-      if (toLibrary) {
+      if (away) {
         const top = page.getBoundingClientRect().top;
         Object.assign(page.style, { top: `${top}px`, transform: "none", maxHeight: `calc(100dvh - ${top + 36}px)` });
-        sheet.style.maxHeight = `${sheet.offsetHeight}px`;
-        showShelf();
+        if (toLibrary) { sheet.style.maxHeight = `${sheet.offsetHeight}px`; showShelf(); }
       } else page.style.top = page.style.transform = page.style.maxHeight = sheet.style.maxHeight = "";
       page.classList.toggle("shelved", toLibrary);
-      form.hidden = toLibrary; shelf.hidden = !toLibrary;
+      form.hidden = away; shelf.hidden = !toLibrary; promises.hidden = side !== "promises";
       sheet.scrollTop = 0;
       if (toLibrary) shelf.querySelector(".shelfrow.on")?.scrollIntoView({ block: "nearest" });
+      if (side === "promises") promises.querySelector(".here")?.scrollIntoView({ block: "center" });
       (focusTarget?.() ?? (toLibrary ? libraryHead : libraryLink)).focus({ preventScroll: true });
     };
     if (reduced()) { swap(); return; }
@@ -202,7 +233,8 @@ async function lobby() {
   const form = h("div", {},
     h("h1", {}, "Charter"),
     tagline,
-    h("div", { class: "numerals", "aria-hidden": "true" }, ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"].map(n => h("span", {}, n))),
+    h("div", { class: "numerals", role: "group", "aria-label": "The constitution's ten promises", onkeydown: numeralKeys }, CONSTITUTION.promises.map((p, i) =>
+      h("button", { tabindex: i ? "-1" : "0", title: `The constitution: ${p.line}`, "aria-label": `Promise ${p.n}: ${p.line}`, onclick: e => openPromise(p.n, e.currentTarget) }, p.n))),
     h("label", { class: "field signature" }, name, h("span", { class: "signlabel" }, "Sign your name")),
     seg, packList, packNote,
     h("button", { class: "act gold", onclick: async () => {
@@ -213,7 +245,7 @@ async function lobby() {
     } }, "Found a table"),
     h("div", { class: "joinline" }, joinCode, h("button", { class: "act", onclick: () => nameOk() && join(joinCode.value) }, "Join")),
     err, tables);
-  const page = scrollSheet(form, shelf);
+  const page = scrollSheet(form, shelf, promises);
   app.replaceChildren(stage, page);
   name.addEventListener("keydown", e => { if (e.key === "Enter") e.target.closest(".titlepage").querySelector(".act.gold").click(); });
   // The signature font loads before it is needed, so the first letter typed is already in ink.
@@ -406,7 +438,7 @@ async function gameScreen(code) {
     menu: h("div", { class: "menu vellum", hidden: true }),
     center: h("div"),
   };
-  U.sheet = h("div", { class: "sheet" });
+  U.sheet = h("div", { class: "sheet", onscroll: () => { if (U.sheet.firstChild === U.constitution) G.constitutionTop = U.sheet.scrollTop; } });
   U.dock.append(h("button", { class: "x", title: "Close (Esc)", "aria-label": "Close", onclick: () => closeDock(true) }, uiIcon("close")), U.sheet);
   buildDraftDesk();
   buildLedge();
@@ -678,6 +710,7 @@ function renderRail() {
     v.phase !== "lobby" ? h("button", { class: d?.t === "talk" ? "on" : "", title: "Table talk (M)", "aria-label": "Table talk", onclick: () => toggleDock({ t: "talk" }) }, uiIcon("talk"), G.talk.length > G.talkSeen && d?.t !== "talk" ? h("span", { class: "count" }, String(G.talk.length - G.talkSeen)) : null) : null,
     v.phase === "ended" ? h("button", { class: d?.t === "end" ? "on" : "", title: "The result", "aria-label": "The result", onclick: () => toggleDock({ t: "end" }) }, uiIcon("seal")) : null,
     h("div", { class: "spacer" }),
+    h("button", { class: "numeralsmark" + (d?.t === "constitution" ? " on" : ""), title: "The constitution", "aria-label": "The constitution", onclick: () => toggleDock({ t: "constitution" }) }, "I–X"),
     h("button", { class: G.menu ? "on" : "", title: "This table", "aria-label": "This table", onclick: () => { G.menu = !G.menu; renderMenu(); renderRail(); } }, uiIcon("dots")));
 }
 function renderMenu() {
@@ -722,6 +755,12 @@ function renderDock() {
     fill(U.sheet, voteDoc(p));
     U.sheet.scrollTop = keep;
     settleHopeless();
+    return;
+  }
+  // One document, kept for the whole game, so that a poll or a passing moment leaves it as it was.
+  if (d.t === "constitution") {
+    U.constitution ??= constitutionDoc();
+    if (U.sheet.firstChild !== U.constitution) { fill(U.sheet, U.constitution); U.sheet.scrollTop = G.constitutionTop || 0; }
     return;
   }
   if (d.t === "moment") { fill(U.sheet, momentDoc(G.moment)); return; }
@@ -850,14 +889,15 @@ function dealDoc(p) {
     p.canSign ? h("div", { class: "votebar" }, h("button", { class: "act gold", onclick: () => post("sign", { id: p.id }) }, "Sign")) : null);
 }
 
+const constitutionLink = words => h("button", { class: "link constitutionlink", onclick: () => openDock({ t: "constitution" }) }, words);
 /** Laws and running deals: a compact home, with the terms one line each. */
 function lawsDoc() {
   const v = G.view;
   const laws = v.laws || [], deals = v.deals || [];
   return h("div", {},
-    h("h2", {}, "In force"),
+    h("div", { class: "lawshead" }, h("h2", {}, "In force"), laws.length || deals.length ? constitutionLink("Under the constitution") : null),
     v.game?.blurb && (v.laws || []).some(l => l.by == null) ? h("p", { class: "note-line" }, `${v.game.name}: ${v.game.blurb}`) : null,
-    !laws.length && !deals.length ? h("p", { class: "empty" }, "Only the constitution.") : null,
+    !laws.length && !deals.length ? h("p", { class: "empty" }, "Only ", constitutionLink("the constitution"), ".") : null,
     laws.map(l => h("div", { class: "lawrow" + (l.by == null ? " founding" : ""), "data-pick": l.pick },
       h("div", { class: "head" }, h("span", { class: "ttl" }, l.title), h("span", { class: "num" }, `Law ${l.id}`)),
       describedOf(l.description),
@@ -1017,7 +1057,7 @@ function trackProposals(prev, v) {
     if (G.seenProposals.has(p.id)) continue;
     G.seenProposals.add(p.id);
     if (p.kind === "law") for (const x of p.votes) G.stampsSeen.add(`${p.id}:${x.seat}`);
-    const busy = G.moment || (G.dock?.t === "draft" && (document.activeElement === G.ui.words || (G.draft && !G.draft.outcome)));
+    const busy = G.moment || G.dock?.t === "constitution" || (G.dock?.t === "draft" && (document.activeElement === G.ui.words || (G.draft && !G.draft.outcome)));
     if (!busy && (p.kind === "law" || p.canSign)) { G.dock = { t: "vote", id: p.id }; }
     else caption(`${seat(p.by)?.name} proposed: ${p.kind === "deal" ? p.english : p.description?.text || `"${p.title}"`}`);
   }
