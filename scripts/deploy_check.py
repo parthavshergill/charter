@@ -171,7 +171,13 @@ class Server:
     def stop(self, sig=signal.SIGTERM):
         if self.proc.poll() is None:
             self.proc.send_signal(sig)
-            self.proc.wait(timeout=30)
+            try:
+                self.proc.wait(timeout=30)
+            except subprocess.TimeoutExpired:
+                # A later stop in a `finally` must not hide this, so the process goes now.
+                self.proc.kill()
+                self.proc.wait()
+                raise SystemExit(f"FAILED: the server did not stop within 30 seconds of {signal.Signals(sig).name}. The end of its log:\n{self.logs()[-4000:]}")
         return self.proc.returncode
 
 
