@@ -1,0 +1,48 @@
+{
+ "constants": [
+  {
+   "default": 3,
+   "max": 20,
+   "min": 0,
+   "name": "demandWeight"
+  },
+  {
+   "default": 2,
+   "max": 10,
+   "min": 0,
+   "name": "expandWeight"
+  },
+  {
+   "default": 8,
+   "max": 40,
+   "min": 0,
+   "name": "myResBonus"
+  }
+ ],
+ "id": "g10w44",
+ "strategy": "s9x0",
+ "weights": {
+  "accGoodsW": 1,
+  "accMargin": 3,
+  "accNeedW": 1,
+  "acceptGoods": 1,
+  "acceptMargin": 1,
+  "acceptNeed": 0,
+  "acceptOtherPoints": 0,
+  "acceptScarcity": 2,
+  "demandWeight": 3,
+  "expandWeight": 1,
+  "leaderGap": 0,
+  "myOfferLimit": 4,
+  "myResBonus": 0,
+  "newKindBonus": 4,
+  "offerLimit": 3,
+  "prioAttach": 4,
+  "prioRoad": 0,
+  "rareWeight": 3,
+  "resourceBonus": 8,
+  "sortTargets": 1,
+  "spotFirst": 1,
+  "twoForOne": 1
+ }
+}
