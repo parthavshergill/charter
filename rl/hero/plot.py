@@ -92,104 +92,92 @@ def can_play_line(run, steps):
     return None
 
 
+SONNET_ROWS = [  # (weights label in data/sonnet.csv steps, row label)
+    (0, "imitation start"),
+    (29491200, "v2-fix, 29.5M"),
+    (44236800, "v2-fix, 44.2M"),
+    (BEST_TOTAL, "best (Candidate 4)"),
+]
+
+
+def style(a, t):
+    a.set_facecolor(t["bg"])
+    for side in ("top", "right"):
+        a.spines[side].set_visible(False)
+    a.tick_params(length=0)
+
+
 def draw(theme_name, rows, sonnet, out_paths):
     t = THEMES[theme_name]
     plt.rcParams.update({"font.family": "DejaVu Sans", "font.size": 15, "text.color": t["ink"],
                          "axes.labelcolor": t["ink2"], "xtick.color": t["ink2"], "ytick.color": t["ink2"],
                          "axes.edgecolor": t["grid"], "svg.fonttype": "none"})
     fig = plt.figure(figsize=(16, 9), facecolor=t["bg"])
-    gs = fig.add_gridspec(1, 2, width_ratios=[2.15, 1], left=0.065, right=0.975, top=0.80, bottom=0.27, wspace=0.33)
-    ax = fig.add_subplot(gs[0])
-    bx = fig.add_subplot(gs[1])
-    for a in (ax, bx):
-        a.set_facecolor(t["bg"])
-        for side in ("top", "right"):
-            a.spines[side].set_visible(False)
-        a.tick_params(length=0)
-
+    ax = fig.add_axes([0.065, 0.20, 0.45, 0.60])     # main chart
+    bx = fig.add_axes([0.815, 0.53, 0.165, 0.27])     # held-out worlds
+    sx = fig.add_axes([0.815, 0.20, 0.165, 0.22])     # Sonnet
+    for a in (ax, bx, sx):
+        style(a, t)
     M = 1e6
     main = {o: series(rows, MAIN_RUN, o, TRAIN) for o in ("random", "hand", "champion-closed")}
-    last_x = max([p[0] for s in main.values() for p in s] + [BEST_TOTAL], default=60 * M) / M
+    xmax = BEST_TOTAL / M + 3
 
-    # equal-player line
+    # references: an equal player, and our rule-based bot's own score on the same seeds
     ax.axhline(25, color=t["ink2"], lw=1.5, ls=(0, (4, 3)), zorder=1)
-    ax.text(6.5, 26.3, "equal player: 25%", color=t["ink2"], fontsize=14, ha="left", va="bottom")
     ref = series(rows, REF_RUN, "hand", TRAIN)
     if ref:
         _, rp, rlo, rhi, _, _ = ref[0]
-        ax.axhspan(100 * rlo, 100 * rhi, color=t["ink2"], alpha=0.07, lw=0, zorder=1)
-        ax.text(6.5, 100 * rlo - 0.8, f"our rule-based bot itself: {100 * rp:.0f}%", color=t["ink2"], fontsize=12,
-                ha="left", va="top")
+        ax.axhspan(100 * rlo, 100 * rhi, color=t["ink2"], alpha=0.09, lw=0, zorder=1)
 
     # from-scratch PPO, same network, a separate run: grey dotted lines
     scratch = {o: series(rows, SCRATCH_RUN, o, TRAIN) for o in ("random", "hand")}
     for o, s in scratch.items():
         if s:
-            ax.plot([p[0] / M for p in s], [100 * p[1] for p in s], color=t["muted"], lw=2, ls=(0, (1, 2.2)),
+            ax.plot([q[0] / M for q in s], [100 * q[1] for q in s], color=t["muted"], lw=2, ls=(0, (1, 2.2)),
                     zorder=2, dash_capstyle="round")
     if scratch["random"] and scratch["hand"]:
         r, h = scratch["random"][-1], scratch["hand"][-1]
-        ax.annotate(f"dotted: the same network trained with PPO from scratch\n(a separate run): "
-                    f"{100 * r[1]:.0f}% vs random, {100 * h[1]:.0f}% vs rule-based bots",
-                    xy=(r[0] / M * 0.62, 100 * scratch["random"][-2][1] + 0.5), xytext=(14, 55), color=t["ink2"],
-                    fontsize=12.5, arrowprops=dict(arrowstyle="-", color=t["muted"], lw=1))
+        ax.annotate(f"dotted: the same network, PPO from scratch (a separate run):\n"
+                    f"{100 * r[1]:.0f}% vs random players, {100 * h[1]:.0f}% vs rule-based bots",
+                    xy=(30, 100 * scratch["random"][2][1] + 0.8), xytext=(22, 52), color=t["ink2"], fontsize=12.5,
+                    arrowprops=dict(arrowstyle="-", color=t["muted"], lw=1))
 
     # the main run
-    ends = []
+    labels = []
     for o, s in main.items():
         if not s:
             continue
-        xs = [p[0] / M for p in s]
-        ax.fill_between(xs, [100 * p[2] for p in s], [100 * p[3] for p in s], color=t[o], alpha=0.18, lw=0, zorder=2)
-        ax.plot(xs, [100 * p[1] for p in s], color=t[o], lw=2.6, zorder=3, solid_capstyle="round")
-        ax.plot(xs, [100 * p[1] for p in s], "o", color=t[o], ms=6, mec=t["bg"], mew=1.5, zorder=4)
-        ends.append((o, xs[-1], 100 * s[-1][1]))
-    placed = []
-    for o, x, y in sorted(ends, key=lambda e: -e[2]):
-        ly = y
-        for q in placed:          # keep labels at least 6 points apart
-            ly = min(ly, q - 6)
-        placed.append(ly)
-        ax.text(x + 1.0, ly, f"{y:.0f}%  {LABEL[o]}", color=t["ink"], fontsize=14, ha="left", va="center",
-                fontweight="bold" if o == "hand" else "normal")
+        xs = [q[0] / M for q in s]
+        ax.fill_between(xs, [100 * q[2] for q in s], [100 * q[3] for q in s], color=t[o], alpha=0.18, lw=0, zorder=2)
+        ax.plot(xs, [100 * q[1] for q in s], color=t[o], lw=2.6, zorder=3, solid_capstyle="round")
+        ax.plot(xs, [100 * q[1] for q in s], "o", color=t[o], ms=6, mec=t["bg"], mew=1.5, zorder=4)
+        y = 100 * s[-1][1]
+        labels.append((y, f"{y:.0f}%  {LABEL[o]}", t["ink"], "bold" if o == "hand" else "normal", t[o]))
 
     # Candidate 4: the best checkpoint of another lineage, one point at its total PPO steps
-    c4 = [s for s in series(rows, BEST_RUN, "hand", TRAIN) if s[0] == BEST_STEPS]
+    c4 = [q for q in series(rows, BEST_RUN, "hand", TRAIN) if q[0] == BEST_STEPS]
     if c4:
         _, cp_, clo, chi, _, _ = c4[0]
         x = BEST_TOTAL / M
         ax.plot([x, x], [100 * clo, 100 * chi], color=t["hand"], lw=2, zorder=5)
         ax.plot([x], [100 * cp_], "s", ms=10, color=t["bg"], mec=t["hand"], mew=2.4, zorder=6)
-        ax.annotate(f"best checkpoint, another run:\n{100 * cp_:.0f}% vs rule-based bots", xy=(x, 100 * chi),
-                    xytext=(x - 2, 100 * chi + 9), color=t["ink2"], fontsize=12, ha="right",
-                    arrowprops=dict(arrowstyle="-", color=t["muted"], lw=1))
+        labels.append((100 * cp_, f"{100 * cp_:.0f}%  best checkpoint, another run", t["ink2"], "normal", t["hand"]))
+    labels.append((25, "25%  an equal player", t["ink2"], "normal", t["ink2"]))
+    if ref:
+        labels.append((100 * rp, f"{100 * rp:.0f}%  our rule-based bot itself", t["ink2"], "normal", t["ink2"]))
 
-    # Sonnet points (Island only): diamonds with their 95% intervals; labels join the line labels on the right
-    for arm, fill in (("restricted", True), ("full", False)):
-        pts = sorted((r for r in sonnet if r["arm"] == arm), key=lambda r: r["steps"])
-        for r in pts:
-            lo, hi = wilson(r["wins"], r["games"])
-            y = 100 * r["wins"] / r["games"]
-            x = r["steps"] / M + (1.2 if arm == "full" else 0)
-            ax.plot([x, x], [100 * lo, 100 * hi], color=t["sonnet"], lw=1.4, alpha=0.45, zorder=4,
-                    solid_capstyle="round")
-            ax.plot([x], [y], "D", ms=10, color=t["sonnet"], mfc=t["sonnet"] if fill else t["bg"], mec=t["sonnet"],
-                    mew=2, zorder=6)
-            ax.text(x + 0.9, y, f"{r['wins']}/{r['games']}", color=t["sonnet"], fontsize=11, va="center",
-                    ha="left", zorder=6)
-        if pts:
-            r = pts[-1]
-            y = 100 * r["wins"] / r["games"]
-            ly = max(min([y] + [q - 6 for q in placed]), 5)
-            placed.append(ly)
-            name = "vs 3 Sonnet, same moves" if arm == "restricted" else "vs 3 Sonnet, full game"
-            ax.text(last_x + 1.0, ly, f"{y:.0f}%  {name}\n       (Island, {r['games']} games: wide bars)", color=t["sonnet"],
-                    fontsize=13, ha="left", va="center")
+    # direct labels in a column right of the chart, kept 4.5 points apart
+    placed = []
+    for y, text, color, weight, mark in sorted(labels, key=lambda l: -l[0]):
+        ly = min([y] + [q - 4.5 for q in placed])
+        placed.append(ly)
+        ax.annotate(text, xy=(xmax, y), xytext=(xmax + 3, ly), color=color, fontsize=13, fontweight=weight,
+                    va="center", ha="left", annotation_clip=False,
+                    arrowprops=dict(arrowstyle="-", color=mark, lw=1, shrinkA=0, shrinkB=0))
 
     ax.annotate("start: imitation of\nour rule-based bot", xy=(0, 100 * main["hand"][0][1]) if main["hand"] else (0, 10),
-                xytext=(1.5, 36), color=t["ink2"], fontsize=12,
-                arrowprops=dict(arrowstyle="-", color=t["muted"], lw=1))
-    ax.set_xlim(-1.5, last_x * 1.42)
+                xytext=(2, 38), color=t["ink2"], fontsize=12, arrowprops=dict(arrowstyle="-", color=t["muted"], lw=1))
+    ax.set_xlim(-2, xmax)
     ax.set_ylim(0, 102)
     ax.set_yticks([0, 25, 50, 75, 100])
     ax.set_yticklabels(["0%", "25%", "50%", "75%", "100%"])
@@ -199,62 +187,82 @@ def draw(theme_name, rows, sonnet, out_paths):
     ax.set_axisbelow(True)
     ax.set_title("Training worlds (Island, Not Catan)", loc="left", fontsize=15, color=t["ink2"], pad=10)
 
-    # panel 2: worlds it never trained on, best checkpoint, vs our rule-based bots
+    # held-out worlds, best checkpoint of the main run, vs our rule-based bots: real wins solid, round-limit faded
     best = main["hand"][-1][0] if main["hand"] else None
-    worlds = list(HELD_OUT)
-    for i, g in enumerate(worlds):
+    for i, g in enumerate(HELD_OUT):
         sel = [r for r in rows if r["run"] == MAIN_RUN and r["steps"] == best and r["game"] == g
                and r["opponent"] == "hand"]
         if not sel:
             continue
         r = sel[0]
         tw, lw_, n = r["target_wins"], r["wins"] - r["target_wins"], r["games"]
-        y = len(worlds) - 1 - i
+        y = len(HELD_OUT) - 1 - i
         bx.barh(y, 100 * tw / n, color=t["hand"], height=0.42, zorder=3)
         bx.barh(y, 100 * lw_ / n, left=100 * tw / n, color=t["hand"], alpha=0.22, height=0.42, zorder=3, lw=0)
         note = f"{100 * tw / n:.0f}% real wins"
         if round(100 * lw_ / n):
-            note += f"  (+{100 * lw_ / n:.0f}% at the round limit)"
-        bx.text(0, y + 0.29, note, fontsize=12, color=t["ink2"], va="bottom", ha="left", zorder=5,
+            note += f"  (+{100 * lw_ / n:.0f}% at round limit)"
+        bx.text(0, y + 0.29, note, fontsize=11, color=t["ink2"], va="bottom", ha="left", zorder=5,
                 bbox=dict(boxstyle="square,pad=0.1", fc=t["bg"], ec="none"))
     bx.axvline(25, color=t["ink2"], lw=1.5, ls=(0, (4, 3)), zorder=4)
-    bx.set_yticks(range(len(worlds)))
-    bx.set_yticklabels([WORLD[g] + ("\n(10 rounds)" if ROUNDS[g] <= 10 else "") for g in reversed(worlds)],
-                       fontsize=13)
-    bx.set_ylim(-0.5, len(worlds) - 0.2)
+    bx.set_yticks(range(len(HELD_OUT)))
+    bx.set_yticklabels([WORLD[g] + ("\n(10 rounds)" if ROUNDS[g] <= 10 else "") for g in reversed(HELD_OUT)],
+                       fontsize=12)
+    bx.set_ylim(-0.5, len(HELD_OUT) - 0.2)
     bx.set_xlim(0, 100)
     bx.set_xticks([0, 25, 50, 100])
-    bx.set_xticklabels(["0", "25%", "50", "100"])
-    bx.set_xlabel("win rate vs 3 rule-based bots")
-    bx.set_title("Worlds it never trained on", loc="left", fontsize=15, color=t["ink2"], pad=10)
+    bx.set_xticklabels(["0", "25%", "50", "100"], fontsize=12)
+    bx.set_title("Worlds it never trained on\n(vs 3 rule-based bots)", loc="left", fontsize=14, color=t["ink2"],
+                 pad=8)
     cp = can_play_line(MAIN_RUN, best)
     if cp:
         status, games, ended, refused = cp
-        bx.text(-0.02, -0.16, f"Can it play any world? {games} made-up worlds,\n"
-                f"2 to 6 seats: {'all' if ended == games else ended} finished, {refused} illegal moves", fontsize=13, color=t["ink"], va="top",
-                transform=bx.transAxes, linespacing=1.4)
+        fig.text(0.065, 0.115, f"Can it play any world? {games} made-up worlds at 2 to 6 seats: "
+                 f"{'all' if ended == games else ended} finished, {refused} illegal moves.", fontsize=13,
+                 color=t["ink"])
+
+    # Sonnet: three Sonnet seats against one bot seat, Tutorial Island
+    rows_s = []
+    for steps, name in SONNET_ROWS:
+        for arm in ("restricted", "full"):
+            r = [q for q in sonnet if q["steps"] == steps and q["arm"] == arm]
+            if r:
+                rows_s.append((name + ("" if arm == "restricted" else ", full game"), r[0], arm))
+    for i, (name, r, arm) in enumerate(rows_s):
+        y = len(rows_s) - 1 - i
+        lo, hi = wilson(r["wins"], r["games"])
+        p_ = 100 * r["wins"] / r["games"]
+        sx.plot([100 * lo, 100 * hi], [y, y], color=t["sonnet"], lw=2, alpha=0.45, solid_capstyle="round")
+        sx.plot([p_], [y], "D", ms=9, color=t["sonnet"], mfc=t["sonnet"] if arm == "restricted" else t["bg"],
+                mec=t["sonnet"], mew=2, zorder=5)
+        sx.text(100 * hi + 3, y, f"{r['wins']}/{r['games']}", fontsize=11, color=t["ink2"], va="center")
+    sx.axvline(25, color=t["ink2"], lw=1.5, ls=(0, (4, 3)))
+    sx.set_yticks(range(len(rows_s)))
+    sx.set_yticklabels([n for n, _, _ in reversed(rows_s)], fontsize=12)
+    sx.set_ylim(-0.6, max(len(rows_s), 1) - 0.4)
+    sx.set_xlim(0, 100)
+    sx.set_xticks([0, 25, 50, 100])
+    sx.set_xticklabels(["0", "25%", "50", "100"], fontsize=12)
+    sx.set_title("vs 3 Claude Sonnet seats\n(Island; only our bot's moves)", loc="left", fontsize=14,
+                 color=t["ink2"], pad=8)
 
     # title and footnote
     h = main["hand"]
     if h:
-        ref = series(rows, REF_RUN, "hand", TRAIN)
-        best = max(h, key=lambda s: s[1])
-        beats = bool(ref) and best[2] > ref[0][3]       # its interval clears the rule-based bot's own
+        best_pt = max(h, key=lambda s: s[1])
+        beats = bool(ref) and best_pt[2] > ref[0][3]       # its interval clears the rule-based bot's own
         verdict = "beating the bot it copied" if beats else "level with the bot it copied"
         fig.text(0.065, 0.93, f"PPO lifts our bot from {100 * h[0][1]:.0f}% to {100 * h[-1][1]:.0f}%, {verdict}",
                  fontsize=26, fontweight="bold", color=t["ink"])
     fig.text(0.065, 0.875, "Warm-started by imitating our rule-based bot, then PPO against itself and an evolved rival*. "
              "95% intervals; 800 games per point.", fontsize=15, color=t["ink2"])
     foot = ("* Evolved rival: made by evolutionary program synthesis [read: Claude keeps rewriting the bot and we keep "
-            "whatever wins].\nIt trades in training; here it plays with trading off, since our bot can't trade. Our bot never "
-            "proposes laws or talks; it votes by the rule-based bot's rule.\n"
-            "Wins at the round limit (most of them on the 10-round worlds) don't count as strength.")
-    if sonnet:
-        foot += ("\nSonnet: three Claude Sonnet seats on Tutorial Island, our bot in every seat in turn. 'Same moves': "
-                 "the seat client gives Sonnet only our bot's moves (build, bank trade, end turn).")
-    fig.text(0.065, 0.025, foot, fontsize=11, color=t["muted"], va="bottom", linespacing=1.5)
-    for p in out_paths:
-        fig.savefig(p, facecolor=t["bg"], dpi=120)
+            "whatever wins]. It trades in training; here it plays with trading off, since our bot can't trade.\n"
+            "Our bot never proposes laws, talks or trades with players; it votes by the rule-based bot's rule. "
+            "Wins at the round limit don't count as strength. Sonnet: our bot in every seat in turn; bars are wide.")
+    fig.text(0.065, 0.025, foot, fontsize=10.5, color=t["muted"], va="bottom", linespacing=1.5)
+    for path in out_paths:
+        fig.savefig(path, facecolor=t["bg"], dpi=120)
     plt.close(fig)
 
 
