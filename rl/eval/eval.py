@@ -136,7 +136,7 @@ def play_table(task):
     wins, by_seat, points, rounds, refused, decisions, ended = 0, [0] * SEATS, 0.0, 0.0, 0, 0, 0
     base = {"game": game_id, "lineup": ["caller"] * SEATS, "seed": 1, "vote_mode": vote_mode,
             "law_every": 8 if laws else 0}
-    for key in ("slot_order", "move_rows", "random_map", "preview"):
+    for key in ("slot_order", "move_rows", "random_map", "preview", "declare_always"):
         if key in settings:
             base[key] = settings[key]
     plain = Game(base)

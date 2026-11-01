@@ -327,6 +327,7 @@ private def Env.reckon (e : Env) : Env := Id.run do
 /-- Start a game with this seed. The map, the dice, the row order and the laws all follow from the seed. -/
 def Env.start (T : Tables) (settings : Settings) (lineup : Array SeatPlan) (seed : Nat) (shareVotes : Bool := true) :
     Except String Env := do
+  let T := if settings.declareAlways then { T with declares := true } else T
   let seats := lineup.size
   let G := if settings.randomMap then randomMap T.G seed else T.G
   if settings.randomMap && !G.shapeChecks then
@@ -460,7 +461,7 @@ private def readBool (j : Json) (k : String) (dflt : Bool) : Except String Bool 
 /-- The settings of a configuration. An unknown key is an error, so a misspelt switch cannot pass unnoticed. -/
 def readSettings (j : Json) : Except String Settings := do
   let known := ["game", "seats", "lineup", "seed", "law_every", "vote_mode", "move_rows", "preview", "random_map",
-    "slot_order", "reward_win", "reward_standing", "shaping_points", "record"]
+    "slot_order", "reward_win", "reward_standing", "shaping_points", "record", "declare_always"]
   match j.getObj? with
   | .error _ => throw "a configuration must be an object"
   | .ok kvs =>
@@ -493,7 +494,8 @@ def readSettings (j : Json) : Except String Settings := do
       rewardWin := ← readFloat j "reward_win" d.rewardWin
       rewardStanding := ← readFloat j "reward_standing" d.rewardStanding
       shapingPoints := ← readFloat j "shaping_points" d.shapingPoints
-      record := ← readBool j "record" d.record }
+      record := ← readBool j "record" d.record
+      declareAlways := ← readBool j "declare_always" d.declareAlways }
 
 /-- One seat of a lineup: `caller`, a strategy's name, or `first+then` for one thing in setup and another after. -/
 def readSeat (text : String) : Except String SeatPlan := do

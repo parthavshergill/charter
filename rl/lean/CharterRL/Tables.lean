@@ -248,6 +248,9 @@ structure Settings where
   shapingPoints : Float := 0.0
   /-- Keep every event of the game, in the server's log format, for `Env.savedLog`. Off in training. -/
   record : Bool := false
+  /-- Offer declarations in every game, also where no law reads them (the engine accepts them there and they change
+  nothing). Off by default. On, a policy trained on such games still learns what its declaration outputs do. -/
+  declareAlways : Bool := false
   deriving Inhabited
 
 /-! ## One game's rows -/
