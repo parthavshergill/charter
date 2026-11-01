@@ -18,7 +18,10 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-MAIN_RUN = "v2-fix"           # imitation warm start, then PPO; waiting-row fix; hand bots in 50% of games
+MAIN_RUN = "hero-v2"          # imitation warm start, then PPO; waiting-row fix; champion bots in 50% of games
+BEST_RUN, BEST_STEPS = "v2-long-champ", 39321600   # Candidate 4: a separate lineage, drawn as one labelled point
+BEST_TOTAL = 59965440 + 39321600                     # its total PPO steps: 60M in v2-stale, then 39.3M
+REF_RUN = "ref"               # rl/eval with `hand` itself as the subject, the same seeds
 SCRATCH_RUN = "v2-mix"        # the same network, PPO from random weights, hand bots in 25% of games
 TRAIN = ["island", "not-catan"]
 HELD_OUT = ["slime-parliament", "ai-bubble", "strike-the-earth", "pirate-republic"]
@@ -106,11 +109,17 @@ def draw(theme_name, rows, sonnet, out_paths):
 
     M = 1e6
     main = {o: series(rows, MAIN_RUN, o, TRAIN) for o in ("random", "hand", "champion-closed")}
-    last_x = max((p[0] for s in main.values() for p in s), default=60 * M) / M
+    last_x = max([p[0] for s in main.values() for p in s] + [BEST_TOTAL], default=60 * M) / M
 
     # equal-player line
     ax.axhline(25, color=t["ink2"], lw=1.5, ls=(0, (4, 3)), zorder=1)
     ax.text(6.5, 26.3, "equal player: 25%", color=t["ink2"], fontsize=14, ha="left", va="bottom")
+    ref = series(rows, REF_RUN, "hand", TRAIN)
+    if ref:
+        _, rp, rlo, rhi, _, _ = ref[0]
+        ax.axhspan(100 * rlo, 100 * rhi, color=t["ink2"], alpha=0.07, lw=0, zorder=1)
+        ax.text(6.5, 100 * rlo - 0.8, f"our rule-based bot itself: {100 * rp:.0f}%", color=t["ink2"], fontsize=12,
+                ha="left", va="top")
 
     # from-scratch PPO, same network, a separate run: grey dotted lines
     scratch = {o: series(rows, SCRATCH_RUN, o, TRAIN) for o in ("random", "hand")}
@@ -143,6 +152,17 @@ def draw(theme_name, rows, sonnet, out_paths):
         placed.append(ly)
         ax.text(x + 1.0, ly, f"{y:.0f}%  {LABEL[o]}", color=t["ink"], fontsize=14, ha="left", va="center",
                 fontweight="bold" if o == "hand" else "normal")
+
+    # Candidate 4: the best checkpoint of another lineage, one point at its total PPO steps
+    c4 = [s for s in series(rows, BEST_RUN, "hand", TRAIN) if s[0] == BEST_STEPS]
+    if c4:
+        _, cp_, clo, chi, _, _ = c4[0]
+        x = BEST_TOTAL / M
+        ax.plot([x, x], [100 * clo, 100 * chi], color=t["hand"], lw=2, zorder=5)
+        ax.plot([x], [100 * cp_], "s", ms=10, color=t["bg"], mec=t["hand"], mew=2.4, zorder=6)
+        ax.annotate(f"best checkpoint, another run:\n{100 * cp_:.0f}% vs rule-based bots", xy=(x, 100 * chi),
+                    xytext=(x - 2, 100 * chi + 9), color=t["ink2"], fontsize=12, ha="right",
+                    arrowprops=dict(arrowstyle="-", color=t["muted"], lw=1))
 
     # Sonnet points (Island only): diamonds with their 95% intervals; labels join the line labels on the right
     for arm, fill in (("restricted", True), ("full", False)):
@@ -217,12 +237,17 @@ def draw(theme_name, rows, sonnet, out_paths):
     # title and footnote
     h = main["hand"]
     if h:
-        fig.text(0.065, 0.93, f"PPO lifts our bot from {100 * h[0][1]:.0f}% to {100 * h[-1][1]:.0f}%, level with the bot it copied", fontsize=26, fontweight="bold", color=t["ink"])
-    fig.text(0.065, 0.875, "Warm-started by imitating our rule-based bot, then trained with PPO against itself and that "
-             "bot. 95% intervals; 800 games per point.", fontsize=15, color=t["ink2"])
-    foot = ("* Evolved rival: never seen in training. Made by evolutionary program synthesis [read: Claude keeps rewriting the "
-            "bot and we keep whatever wins].\nShown with trading off, since our bot can't trade. "
-            "Our bot never proposes laws, talks or trades with players; it votes by the rule-based bot's rule.\n"
+        ref = series(rows, REF_RUN, "hand", TRAIN)
+        best = max(h, key=lambda s: s[1])
+        beats = bool(ref) and best[2] > ref[0][3]       # its interval clears the rule-based bot's own
+        verdict = "beating the bot it copied" if beats else "level with the bot it copied"
+        fig.text(0.065, 0.93, f"PPO lifts our bot from {100 * h[0][1]:.0f}% to {100 * h[-1][1]:.0f}%, {verdict}",
+                 fontsize=26, fontweight="bold", color=t["ink"])
+    fig.text(0.065, 0.875, "Warm-started by imitating our rule-based bot, then PPO against itself and an evolved rival*. "
+             "95% intervals; 800 games per point.", fontsize=15, color=t["ink2"])
+    foot = ("* Evolved rival: made by evolutionary program synthesis [read: Claude keeps rewriting the bot and we keep "
+            "whatever wins].\nIt trades in training; here it plays with trading off, since our bot can't trade. Our bot never "
+            "proposes laws or talks; it votes by the rule-based bot's rule.\n"
             "Wins at the round limit (most of them on the 10-round worlds) don't count as strength.")
     if sonnet:
         foot += ("\nSonnet: three Claude Sonnet seats on Tutorial Island, our bot in every seat in turn. 'Same moves': "
