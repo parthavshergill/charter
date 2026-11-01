@@ -451,8 +451,8 @@ def prairie():
 
 
 # blocks of the city, far off, as (x, z, width, height)
-BLOCKS = [(-9.6 + i * 1.15, -7.4 - (i % 3) * .5, .9, .5 + .25 * ((i * 5) % 4)) for i in range(13)]
-BLOCKS += [(-8.6, -4.0, 1.1, .6), (-9.4, -2.2, .9, .45), (-8.2, -5.6, 1.0, .8), (3.0, -8.6, 1.0, .7), (4.4, -8.2, .9, .55)]
+BLOCKS = [(-13.5 + i * 1.15, -11.2 - (i % 3) * .5, .9, .5 + .25 * ((i * 5) % 4)) for i in range(15)]
+BLOCKS += [(-12.4, -7.6, 1.1, .6), (-13.2, -5.6, .9, .45), (-12.0, -9.4, 1.0, .8), (3.4, -12.6, 1.0, .7), (4.8, -12.2, .9, .55)]
 
 
 def city():
@@ -468,7 +468,7 @@ def city():
                 m.box(x + a * cs + .401 * sn, .06 + r * .16, z + .401 * cs - a * sn, .06, .08, .006, C(0x2A2018) if (i + j + r) % 5 else C(0xF0C060), rot=pi / 4)
         m.ring(x - .2, z - .2, [(.05, h, BRICK2), (.04, h + .4, BRICK2)], 6)
     # the Board of Trade building, with its clock tower, the tallest thing in the city
-    bx, bz = -5.2, -6.6
+    bx, bz = -8.6, -10.2
     m.box(bx, 0, bz, 2.0, 1.1, 1.3, GRANITE2, top=C(0x3A3A40), front=GRANITE, rot=pi / 4)
     m.box(bx, 0, bz, .6, 2.6, .6, GRANITE2, top=GRANITE, front=GRANITE, rot=pi / 4)
     m.ring(bx, bz, [(.34, 2.6, C(0x3A3A40)), (.0, 3.4, C(0x3A3A40))], 4, a0=pi / 4)
