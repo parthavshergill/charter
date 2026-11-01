@@ -7,7 +7,6 @@ import Charter.EngineTests
 import Charter.Games.Tiny
 import Charter.Games.Island
 import Charter.Games.IslandTests
-import Charter.Games.Belt
 import Charter.Games.NotCatan
 import Charter.Games.NotCatanTests
 import Charter.Games.SlimeParliament
@@ -21,7 +20,6 @@ import Charter.Games.StrikeTheEarthTests
 import Charter.Games.PirateRepublic
 import Charter.Games.PirateRepublicTests
 import Charter.Games.PirateRepublicWords
-import Charter.Scene.Belt
 import Charter.Games.Witnesses
 import Charter.Scene.OfState
 import Charter.Scene.LookCheck

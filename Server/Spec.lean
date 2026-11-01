@@ -1,5 +1,4 @@
 import Charter.Games.Island
-import Charter.Games.Belt
 import Charter.Games.NotCatan
 import Charter.Games.NotCatanWords
 import Charter.Games.SlimeParliamentWords
@@ -7,7 +6,6 @@ import Charter.Games.AIBubbleWords
 import Charter.Games.StrikeTheEarthWords
 import Charter.Games.PirateRepublicWords
 import Charter.Scene.OfState
-import Charter.Scene.Belt
 import Charter.Scene.LookCheck
 
 /-!
@@ -70,7 +68,7 @@ structure GameSpec where
 
 def islandSpec : GameSpec :=
   { id := "island"
-    name := "The Island"
+    name := "Tutorial Island"
     blurb := "The base game: settle an island, then change its rules."
     G := Games.Island.island
     valid := Games.Island.island_valid
@@ -78,16 +76,6 @@ def islandSpec : GameSpec :=
       { tiles := Games.Island.tiles, spots := Games.Island.spots, edges := Games.Island.edges
         links := Games.Island.links, theme := Scene.islandTheme, word := "the island" }
     samples := true }
-
-def beltSpec : GameSpec :=
-  { id := "belt"
-    name := "The Belt"
-    blurb := "A shorter game among the asteroids, with four resources and small dice."
-    G := Games.Belt.belt
-    valid := Games.Belt.belt_valid
-    layout :=
-      { tiles := Games.Belt.tiles, spots := Games.Belt.spots, edges := Games.Belt.edges
-        links := Games.Belt.links, theme := Scene.BeltLook.theme, word := "the belt" } }
 
 def notCatanSpec : GameSpec :=
   { id := "not-catan"
@@ -166,7 +154,7 @@ def strikeSpec : GameSpec :=
 instance : Inhabited GameSpec := ⟨islandSpec⟩
 
 /-- Every game this server can run. The first is the default. -/
-def gameSpecs : List GameSpec := [islandSpec, beltSpec, notCatanSpec, slimeSpec, bubbleSpec, strikeSpec, pirateSpec]
+def gameSpecs : List GameSpec := [islandSpec, notCatanSpec, slimeSpec, bubbleSpec, strikeSpec, pirateSpec]
 
 /-- The game with this id. A log entry with no id is from before there was a choice: it is the Island. -/
 def specOf? (id : Option String) : Option GameSpec :=
@@ -206,13 +194,11 @@ def paidRegions (G : GameDef) : List Region := G.map.regions.filter (!markRes G 
 
 /-! ## Does every pack have a look?
 
-A new pack's problems print here, and the build stops. Add what they name. The two lines below are old
-gaps, kept so the older packs look as they did: the Belt's dock wears a law-made model with its name
-over it, and Not Catan's relic is gold whoever owns it. -/
+A new pack's problems print here, and the build stops. Add what they name. The line below is an old
+gap, kept so the older pack looks as it did: Not Catan's relic is gold whoever owns it. -/
 
 /--
-info: [("belt", ["piece dock has no model"]),
- ("not-catan", ["piece relic does not show the owner's colour for seats [0, 1, 2, 3, 4, 5]"])]
+info: [("not-catan", ["piece relic does not show the owner's colour for seats [0, 1, 2, 3, 4, 5]"])]
 -/
 #guard_msgs in
 #eval (gameSpecs.map fun d => (d.id, Scene.lookProblems d.G d.layout)).filter (!·.2.isEmpty)

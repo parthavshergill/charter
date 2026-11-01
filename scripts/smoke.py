@@ -197,7 +197,7 @@ def extension_pack(srv):
     limited, a counter stays off the screen, and bots play it to the end. Returns a table to check after
     a restart."""
     defs = {d["id"]: d for d in srv.get("/api/defs")}
-    check(list(defs) == ["island", "belt", "not-catan", "slime-parliament", "ai-bubble", "strike-the-earth", "pirate-republic"], "the lobby lists the base game first, then the packs")
+    check(list(defs) == ["island", "not-catan", "slime-parliament", "ai-bubble", "strike-the-earth", "pirate-republic"], "the lobby lists the base game first, then the packs")
     check(all(d["name"] and d["blurb"] for d in defs.values()), "each pack has a name and a sentence")
     check(defs["not-catan"]["minSeats"] == 3 and defs["not-catan"]["maxSeats"] == 4, "a pack says how many seats it supports")
     for n in (2, 5):
@@ -231,30 +231,27 @@ def extension_pack(srv):
 
 
 def second_game(srv):
-    """The Belt is a different game: other resources, pieces, map and dice. Bots play it to the end at
+    """Slime Parliament is a different game: other resources, pieces and laws. Bots play it to the end at
     each table size, and its scenes draw. Returns a table to check after a restart."""
     check(srv.post("/api/games", {"seats": 4, "game": "no-such-game"})["ok"] is False, "a table cannot play a game that does not exist")
     code = None
-    for n in (2, 4, 6):
-        code, v = bots_only(srv, n, "belt", "outpost")
-        check(v["game"]["id"] == "belt" and v["resources"] == ["helium", "alloy", "ice", "crystal"], "the view says which game this is")
-        check({d["name"] for d in v["pieceDefs"]} >= {"lane", "outpost", "station", "dock"}, "the view lists the game's own pieces")
-        check(v["target"] == 8 and v["rounds"] == 20, "the game has its own target and rounds")
-        check(any(l.get("number") == 5 and l.get("pips") == 4 for l in v["board"]["tiles"]), "a token's dots come from this game's dice")
-        check(len(v["board"]["tiles"]) == 13, "the board has this game's hexes")
+    for n in (2, 4):
+        code, v = bots_only(srv, n, "slime-parliament", "node")
+        check(v["game"]["id"] == "slime-parliament" and v["resources"] == ["oatmeal", "dew", "rot", "pollen"], "the view says which game this is")
+        check({d["name"] for d in v["pieceDefs"]} >= {"tendril", "node", "swelling", "puffball"}, "the view lists the game's own pieces")
         SCENES.append((srv.raw(f"/api/games/{code}/scene"), [], []))
-    t = srv.post("/api/games", {"seats": 2, "game": "belt"})["code"]
+    t = srv.post("/api/games", {"seats": 2, "game": "slime-parliament"})["code"]
     token = srv.post(f"/api/games/{t}/join", {"name": "Mara", "nonce": 1})["token"]
     srv.post(f"/api/games/{t}/join", {"name": "Ada", "nonce": 2})
     v = srv.get(f"/api/games/{t}/view?token={token}")
     m = [x for x in v["legalMoves"] if x["move"]["t"] == "place"]
     picks = [x["pick"] for x in m if x["pick"] is not None]
-    check(len(picks) > 0, "the Belt offers places to build")
+    check(len(picks) > 0, "the game offers places to build")
     SCENES.append((srv.raw(f"/api/games/{t}/scene?token={token}"), picks, []))
-    r = srv.post(f"/api/games/{t}/check", {"token": token, "text": '(law "x" (set-cost lane (bundle (grain 1))))'})
-    check(r["ok"] is False and "helium, alloy, ice and crystal" in r["error"] if "error" in r else False, "a law in the Belt cannot name the Island's resources")
-    r = srv.post(f"/api/games/{t}/check", {"token": token, "text": '(law "x" (set-cost lane (bundle (ice 1))))'})
-    check(r["ok"] is True and not r["problems"], "a law in the Belt can name its own resources")
+    r = srv.post(f"/api/games/{t}/check", {"token": token, "text": '(law "x" (set-cost tendril (bundle (grain 1))))'})
+    check(r["ok"] is False and "oatmeal, dew, rot and pollen" in r["error"] if "error" in r else False, "a law in this game cannot name the Island's resources")
+    r = srv.post(f"/api/games/{t}/check", {"token": token, "text": '(law "x" (set-cost tendril (bundle (dew 1))))'})
+    check(r["ok"] is True and not r["problems"], "a law in this game can name its own resources")
     return code
 
 
@@ -788,7 +785,7 @@ def main():
         SCENES.append((srv.raw(f"/api/games/{code}/scene?token={token}"), [], labels))
         for n in (2, 3):
             bots_only(srv, n)
-        belt = second_game(srv)
+        second = second_game(srv)
         pack = extension_pack(srv)
         slime_pack(srv)
         bubble_pack(srv)
@@ -813,9 +810,9 @@ def main():
         with open(err_path) as f:
             err_text = f.read()
         check(not any(o in codes for o in old) and code in codes and table3 in codes, "a saved game that no longer replays is left out, and the others load")
-        check(belt in codes and claude_table in codes, "tables of other games and with other seats load")
+        check(second in codes and claude_table in codes, "tables of other games and with other seats load")
         check(pack in codes and srv.get(f"/api/games/{pack}/view")["game"]["id"] == "not-catan", "a pack's table replays from its log after a restart")
-        check(srv.get(f"/api/games/{belt}/view")["game"]["id"] == "belt", "a replay from the log runs the game named in the log")
+        check(srv.get(f"/api/games/{second}/view")["game"]["id"] == "slime-parliament", "a replay from the log runs the game named in the log")
         check(srv.get(f"/api/games/{code}/talk")["lines"][-1]["text"] == "Good game.", "talk survives a restart")
         check(all(f"[{o}] this saved game was not loaded" in err_text for o in old), "the server says which saved games it left out, and why")
         v2 = srv.get(f"/api/games/{code}/view?token={token}")

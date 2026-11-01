@@ -58,7 +58,7 @@ def regionOf (t : TileDef) : Option Region :=
 
 /-- The Island game: first to 10 points, within 24 rounds. -/
 def island : GameDef where
-  name := "The Island"
+  name := "Tutorial Island"
   resources := [⟨"grain", 30⟩, ⟨"timber", 30⟩, ⟨"ore", 30⟩, ⟨"wool", 30⟩, ⟨"brick", 30⟩]
   pieces :=
     [ { name := "road", cost := [("timber", 1), ("brick", 1)], points := 0

@@ -1,3 +1,4 @@
+import Charter.Games.Tiny
 import Server.Clerk
 import Server.Formalize
 import Server.Rules
@@ -389,18 +390,18 @@ end
 
 section Games
 
--- The dice odds, for the two games' dice.
+-- The dice odds, for two kinds of dice.
 #guard (List.range 14).map (Scene.chanceOf islandSpec.G) == [0, 0, 1, 2, 3, 4, 5, 6, 5, 4, 3, 2, 1, 0]
-#guard (List.range 10).map (Scene.chanceOf beltSpec.G) == [0, 0, 1, 2, 3, 4, 3, 2, 1, 0]
+#guard (List.range 6).map (Scene.chanceOf Charter.tinySpace) == [0, 0, 1, 2, 1, 0]
 #guard Scene.rollsOf islandSpec.G == [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
-#guard Scene.rollsOf beltSpec.G == [2, 3, 4, 5, 6, 7, 8]
+#guard Scene.rollsOf Charter.tinySpace == [2, 3, 4]
 
 -- The layout agrees with the definition it draws.
 #guard gameSpecs.all fun d =>
   d.layout.links == d.G.map.links && d.layout.spots.length == d.G.map.spotCount &&
     d.layout.edges.length == d.G.map.links.length
 #guard (specOf? none).map (·.id) == some "island"
-#guard (specOf? (some "belt")).map (·.id) == some "belt"
+#guard (specOf? (some "not-catan")).map (·.id) == some "not-catan"
 #guard (specOf? (some "nowhere")).isNone
 
 -- A pack has a name, a sentence and seats. The base game comes first, and its table sizes have not changed.
@@ -410,17 +411,16 @@ section Games
 #guard (notCatanSpec.minSeats, notCatanSpec.maxSeats) == (3, 4)
 
 -- New packs go at the end of the list, and only a pack's own mesh files can be served.
-#guard gameSpecs.map (·.id) == ["island", "belt", "not-catan", "slime-parliament", "ai-bubble", "strike-the-earth", "pirate-republic"]
+#guard gameSpecs.map (·.id) == ["island", "not-catan", "slime-parliament", "ai-bubble", "strike-the-earth", "pirate-republic"]
 #guard (meshFolderOf "no-such-hash").isNone
 #guard slimeSpec.meshHashes.all fun h => meshFolderOf h == some slimeSpec.meshFolder
 #guard bubbleSpec.meshHashes.all fun h => meshFolderOf h == some bubbleSpec.meshFolder
 #guard strikeSpec.meshHashes.all fun h => meshFolderOf h == some strikeSpec.meshFolder
 #guard pirateSpec.meshHashes.all fun h => meshFolderOf h == some pirateSpec.meshFolder
-#guard islandSpec.meshHashes.isEmpty && beltSpec.meshHashes.isEmpty && notCatanSpec.meshHashes.isEmpty
+#guard islandSpec.meshHashes.isEmpty && notCatanSpec.meshHashes.isEmpty
 
 -- A game with no counter has all its resources on the screen, so old games read as they did.
 #guard islandSpec.G.resources.map (·.name) == goodsOf islandSpec.G
-#guard beltSpec.G.resources.map (·.name) == goodsOf beltSpec.G
 #guard goodsOf notCatanSpec.G == ["timber", "grain", "ore", "wool", "brick", "laurel"]
 #guard (paidRegions notCatanSpec.G).length == 18
 
@@ -442,8 +442,8 @@ def withCounter : GameDef :=
   , "The third knight or sixth road earns a wreath", "A harvest that empties the bank pays nobody" ]
 
 -- A law can use only the resources of its own game.
-#guard (Rules.parseProposal "(law \"x\" (set-cost city (bundle (ice 1))))").toOption.isNone
-#guard (Rules.parseProposal "(law \"x\" (set-cost lane (bundle (ice 1))))" (beltSpec.G.resources.map (·.name))).toOption.isSome
+#guard (Rules.parseProposal "(law \"x\" (set-cost city (bundle (dew 1))))").toOption.isNone
+#guard (Rules.parseProposal "(law \"x\" (set-cost tendril (bundle (dew 1))))" (slimeSpec.G.resources.map (·.name))).toOption.isSome
 
 end Games
 
