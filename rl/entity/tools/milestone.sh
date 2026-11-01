@@ -7,7 +7,7 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 export SSL_CERT_FILE=${SSL_CERT_FILE:-/root/.ccr/ca-bundle.crt} CHARTER_RL_NAME=entity2 CHARTER_RL_BUDGET=${CHARTER_RL_BUDGET:-25}
 CKPT=$1; LABEL=$2; EXTRA=$3; GAMES=${4:-200}
-RUN=$(dirname "$(dirname "$(dirname "$CKPT")")")   # entity2/<run>
+RUN=$(dirname "$(dirname "$(dirname "$(dirname "$CKPT")")")")   # entity2/<run>
 META=$(python3 -c "import json,sys; d={'format':'puffer-entity','encoder':'entity','obs_size':4434,'act_size':696,'layers':1,'settings':{'vote_mode':'bot','move_rows':False}}; d.update(json.loads(sys.argv[1])); print(json.dumps(d))" "$EXTRA")
 modal run entity/tools/modal_extra.py::meta_main --ckpt "$CKPT" --extra "$META" | tail -1
 modal run modal_app.py --action eval --run "$RUN" --eval-name "eval-$LABEL" --subjects "$CKPT" --games "$GAMES" --quick \
