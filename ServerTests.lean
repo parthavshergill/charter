@@ -410,11 +410,12 @@ section Games
 #guard (notCatanSpec.minSeats, notCatanSpec.maxSeats) == (3, 4)
 
 -- New packs go at the end of the list, and only a pack's own mesh files can be served.
-#guard gameSpecs.map (·.id) == ["island", "belt", "not-catan", "slime-parliament", "ai-bubble", "strike-the-earth"]
+#guard gameSpecs.map (·.id) == ["island", "belt", "not-catan", "slime-parliament", "ai-bubble", "strike-the-earth", "pirate-republic"]
 #guard (meshFolderOf "no-such-hash").isNone
 #guard slimeSpec.meshHashes.all fun h => meshFolderOf h == some slimeSpec.meshFolder
 #guard bubbleSpec.meshHashes.all fun h => meshFolderOf h == some bubbleSpec.meshFolder
 #guard strikeSpec.meshHashes.all fun h => meshFolderOf h == some strikeSpec.meshFolder
+#guard pirateSpec.meshHashes.all fun h => meshFolderOf h == some pirateSpec.meshFolder
 #guard islandSpec.meshHashes.isEmpty && beltSpec.meshHashes.isEmpty && notCatanSpec.meshHashes.isEmpty
 
 -- A game with no counter has all its resources on the screen, so old games read as they did.
@@ -581,9 +582,10 @@ def lawOf (text : String) : Law :=
 #guard (packWords slimeSpec).length == 4
 #guard (packWords bubbleSpec).length == 4
 #guard (packWords strikeSpec).length == 4
+#guard (packWords pirateSpec).length == 4
 #guard (packWords islandSpec).isEmpty
 #eval show IO Unit from do
-  let problems := packProblems notCatanSpec ++ packProblems slimeSpec ++ packProblems bubbleSpec ++ packProblems strikeSpec
+  let problems := packProblems notCatanSpec ++ packProblems slimeSpec ++ packProblems bubbleSpec ++ packProblems strikeSpec ++ packProblems pirateSpec
   if !problems.isEmpty then throw (IO.userError ("\n".intercalate problems))
 
 /-- A law that changed after its words were written has no words. -/

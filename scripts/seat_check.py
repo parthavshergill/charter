@@ -207,6 +207,16 @@ def main():
     port = free_port()
     srv = Server(port, data, api_port)
     try:
+        # An answer that places a piece in setup cannot also end the turn: the next piece's places show only then.
+        reset()
+        q = Table(srv)
+        spot = [m for m in q.view()["legalMoves"] if m["move"]["t"] == "place"][-1]["move"]["spot"]
+        StandIn.seat_replies.extend([answer([{"action": "place", "kind": "settlement", "spot": spot}, {"action": "end_turn"}])])
+        q.my_setup_turn()
+        wait_for(lambda: len(StandIn.seat_requests) >= 2, "the seat to be asked again after placing in setup")
+        check("road" in user_text(StandIn.seat_requests[1]) and any(e.get("t") == "move" and e["move"].get("t") == "place" for e in q.srv.get(f"/api/games/{q.code}/events")),
+              "a seat that places and ends its turn in one setup answer is asked again, and can place its next piece")
+        wait_for(lambda: q.view()["turn"] == q.human, "that seat to finish its turn", 30)
         # What a seat's request looks like, and what it sees.
         reset()
         t = Table(srv)
@@ -237,6 +247,7 @@ def main():
         check("The corners of the map" in first["system"][0]["text"], "the rules block holds the game's facts")
         check(FAKE_KEY not in json.dumps(first), "the key is not in the request body")
         check("<game>" in user_text(first) and "<what_you_can_do_on_the_board>" in user_text(first), "the seat sees the game and its legal moves")
+        check("always available" in user_text(first).split("<what_you_can_do_on_the_board>")[1], "the seat's move list says draft is always available")
         check("<rejected_answer>" in user_text(second), "an answer that does not read is asked for again, with the reason")
         check("Refused:" in user_text(third) and "<what_happened_to_your_last_actions>" in user_text(third), "the seat is told what the engine refused")
         check("Mara looks friendly." in user_text(third) and "<your_memory>" in user_text(third), "the seat's note comes back in its memory")

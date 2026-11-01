@@ -272,7 +272,12 @@ def legalBlock (sit : Situation) : String :=
   let declares := if readsDeclared && s.phase == .actions && s.isTurnOf sit.seat then
       [s!"- declare: set your public number for a resource, from 0 to {maxDeclared}"] else []
   let lines := places ++ bank ++ accepts ++ cancels ++ declares ++ ending
-  if lines.isEmpty then "nothing on the board" else "\n".intercalate lines
+  let board := if lines.isEmpty then "nothing on the board" else "\n".intercalate lines
+  -- These two take words and goods, so they are never on the list above. Seats took that to mean they had lost them.
+  let always := if s.phase == .actions && s.isTurnOf sit.seat then
+      "draft and offer are always available on your turn, even when this list is short"
+    else "draft is always available, even when this list is short, and offer is available on your turn"
+  s!"{board}\n- {always}"
 
 /-- The game as it is now. All of it is public. -/
 def gameBlock (sit : Situation) (book : Describe.Book) : String :=
@@ -639,6 +644,12 @@ def claudePlayer (ctx : Ctx) (code : String) (seat : Nat) : Player :=
               | .proposeDraft => formal.map fun t =>
                 Json.mkObj [("t", "propose"), ("seat", toJson seat), ("text", t)]
               | .draft _ => none
+            -- A later setup piece's places show only after the earlier piece stands. So an answer that places a
+            -- piece in setup cannot also end the turn: the seat is asked again, and it sees where the next one goes.
+            let placesHere := events.any fun ev => ((jField ev "move").bind (jStr · "t")) == some "place"
+            let events := if sit.state.phase == .setup && placesHere then
+                events.filter fun ev => ((jField ev "move").bind (jStr · "t")) != some "endTurn"
+              else events
             if formal.isNone && before.any (fun | .proposeDraft => true | _ => false) then
               modifyMind ctx code seat fun m =>
                 { m with results := m.results ++ ["You have no draft to propose. Use draft first."] }
