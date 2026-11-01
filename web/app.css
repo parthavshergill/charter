@@ -116,6 +116,10 @@ svg.shield { width: 16px; height: 19px; flex: none; vertical-align: -4px; clip-p
 .hand { display: flex; gap: var(--s1); }
 .rcard { position: relative; width: 50px; height: 72px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; background: var(--paper), var(--vellum); color: var(--ink); font-size: 20px; line-height: 1; }
 .rcard svg.res { width: 28px; height: 28px; }
+.hand.many { display: grid; grid-template-rows: 1fr 1fr; grid-auto-flow: column; grid-auto-columns: 44px; flex: none; }
+.hand.many .rcard { width: 44px; height: 32px; flex-direction: row; font-size: 14px; }
+.hand.many .rcard svg.res { width: 16px; height: 16px; }
+.hand.many .rcard.none { background: none; }
 .rcard.none { background: none; }
 .rcard.none svg, .rcard.none b { display: none; }
 .rcard b { font-weight: 600; }

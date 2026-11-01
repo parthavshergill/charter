@@ -576,6 +576,8 @@ function renderLedge() {
     const n = hand[r] || 0;
     return h("div", { class: "rcard" + (n ? "" : " none"), "data-res": r, title: n ? `${n} ${r}` : "" }, resIcon(r), h("b", {}, String(n)));
   }));
+  // A game can have 16 goods, and the hand was drawn for five. Past six, the cards shrink into two rows.
+  U.hand.classList.toggle("many", inPlay.length > 6);
   const moves = v.legalMoves || [];
   const end = moves.find(m => m.move.t === "endTurn");
   const mine = v.turn === v.you;

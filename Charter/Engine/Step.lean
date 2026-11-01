@@ -48,8 +48,10 @@ def candidateMoves {G : GameDef} (s : State G) : List Move :=
   s.offers.map (fun o => .accept o.id) ++
   s.offers.map (fun o => .cancel o.id)
 
-/-- The moves `step` accepts from this seat now, except offers. -/
+/-- The moves `step` accepts from this seat now, except offers. `step` adds to the journal and never reads
+it, so these tries leave it out. Otherwise each one would copy the whole journal. -/
 def legalMoves (G : GameDef) (s : State G) (p : Seat) : List Move :=
-  (candidateMoves s).filter fun m => (step G s (.move p m)).toOption.isSome
+  let probe : State G := { s with journal := [] }
+  (candidateMoves s).filter fun m => (step G probe (.move p m)).toOption.isSome
 
 end Charter.Engine

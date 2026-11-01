@@ -150,6 +150,36 @@ Three changes to what the model reads did the most. Each payment says `from` and
 
 The price and the time are for the call alone, with its one retry if the reply is too long. Eight real descriptions through the running server came 1.0 seconds after the draft at the median, and 1.8 seconds at the longest.
 
+## Bigger limits
+
+A political economy needs more goods, more laws and longer games. A harvest runs every law once per payment, so the numbers came from timing the worst turn. `make measure` builds that turn: 6 seats, the Island's map, 16 kinds of piece on as many corners as fit, and every law as big as the limits allow, all reacting to each payment.
+
+The first measurement was bad at the old limits: a turn change took 4.4 seconds and one preview took 33 seconds. Three causes explain this, and none of them is in a promise.
+
+| Cause | Change |
+|---|---|
+| Each entry posted made every later read of the books one step longer | `Books.postAll` writes a list of entries into one table, and `record` keeps a table of the whole books each time the journal passes a multiple of 128 |
+| `settle` added up an account's requests once per request | `settleFast` adds them up once |
+| `legalMoves` copied the whole journal for each move it tried | It tries moves on a state with an empty journal. `step` never reads the journal |
+
+Each faster function in `Words/Fast.lean` has a `@[csimp]` theorem that proves it equal to the plain one, and the compiler then runs it. Proofs and promises still read the plain definitions. So no promise changed for this, and the Lean kernel checks each equality.
+
+| Limit | Old | New |
+|---|---|---|
+| `maxResources`, `maxPieceKinds` | 8 | 16 |
+| `maxStock` | 200 | 2000 |
+| `maxLawsInForce` | 16 | 48 |
+| `maxLawSize` | 64 | 128 |
+| `maxPlannedEntries` | 64 | 128 |
+| `maxPlannedTotal` | 128 | 256 |
+| `maxRoundsAllowed` | 30 | 60 |
+
+The total stayed at 256 and not the 512 first tried, because a preview works out about 22 harvests, and at 512 one preview took 840 ms. This also caps how long a journal can grow, and that is the game's memory.
+
+A new limit, `maxReadsTotal` of 8192, caps how many numbers and tests all the laws in force read on one trigger. `limits_hold` states it. Most of a harvest's time goes on these reads. Size and payments did not bound them: a law of 128 nodes reads each node once per seat, and a `forEach` holding only empty `forEach`s plans no payments at all. The parser cannot write that last law, but `lawProblems` now refuses it too.
+
+Measured on the worst turn at the new limits, on the laptop that builds the game: a turn change took 27 ms, the moves a seat can make took 22 ms, and a preview of a law that reacts to harvests took 284 ms. A law that reacts only to a build or a round's end needs no dice, so its preview takes far less, unless the current turn closes the round. A preview runs once per open law and per seat, each time the game changes. The deployed container has a quarter of a CPU, so expect those figures to be several times larger there. This was not measured there.
+
 ## How the checks work
 
 - **Axiom audit:** `make audit` fails if any theorem in a `Charter` module rests on an axiom other than `propext`, `Classical.choice` and `Quot.sound`. So a `sorry` fails it. It also replays the proofs through `leanchecker`, and scans for banned constructs.

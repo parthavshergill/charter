@@ -197,6 +197,17 @@ theorem laws_change_valid {s s' : State G} {e : Event} (h : Engine.step G s e = 
 structure PlannedInv (s : State G) : Prop where
   each : ∀ x ∈ s.laws, x.2.plannedEntries s.turnOrder.length ≤ maxPlannedEntries
   total : plannedTotal s.laws s.turnOrder.length ≤ maxPlannedTotal
+  reads : readsTotal s.laws s.turnOrder.length ≤ maxReadsTotal
+
+theorem readsTotal_enact (laws : List (Nat × Law)) (id : Nat) (L : Law) (n : Nat) :
+    readsTotal (enact laws id L) n = readsTotal (enact laws 0 L) n := by
+  simp [enact, readsTotal]
+
+theorem lawProblems_reads {s : State G} {L : Law} (h : lawProblems G s L = []) :
+    readsTotal (enact s.laws 0 L) s.turnOrder.length ≤ maxReadsTotal := by
+  by_cases hc : readsTotal (enact s.laws 0 L) s.turnOrder.length ≤ maxReadsTotal
+  · exact hc
+  · simp [lawProblems, hc] at h
 
 theorem plannedTotal_enact (laws : List (Nat × Law)) (id : Nat) (L : Law) (n : Nat) :
     plannedTotal (enact laws id L) n = plannedTotal (enact laws 0 L) n := by
@@ -217,14 +228,16 @@ theorem PlannedInv.step {s s' : State G} {e : Event} (hp : PlannedInv s)
     (h : Engine.step G s e = .ok s') : PlannedInv s' := by
   have hT := step_turnOrder h
   by_cases hsame : s'.laws = s.laws
-  · refine ⟨?_, ?_⟩
+  · refine ⟨?_, ?_, ?_⟩
     · rw [hT, hsame]
       exact hp.each
     · rw [hT, hsame]
       exact hp.total
+    · rw [hT, hsame]
+      exact hp.reads
   · obtain ⟨id, L, hprob, hl⟩ := laws_change_valid h hsame
     obtain ⟨h1, h2⟩ := lawProblems_planned hprob
-    refine ⟨?_, ?_⟩
+    refine ⟨?_, ?_, ?_⟩
     · rw [hT, hl]
       intro x hx
       rcases mem_enact hx with hm | rfl
@@ -232,6 +245,8 @@ theorem PlannedInv.step {s s' : State G} {e : Event} (hp : PlannedInv s)
       · exact h1
     · rw [hT, hl, plannedTotal_enact]
       exact h2
+    · rw [hT, hl, readsTotal_enact]
+      exact lawProblems_reads hprob
 
 /-! ## A new game's founding laws -/
 
@@ -241,6 +256,7 @@ structure FoundingFacts (G : GameDef) (n : Nat) (laws : List (Nat × Law)) : Pro
   size : ∀ x ∈ laws, x.2.size ≤ maxLawSize
   each : ∀ x ∈ laws, x.2.plannedEntries n ≤ maxPlannedEntries
   total : plannedTotal laws n ≤ maxPlannedTotal
+  reads : readsTotal laws n ≤ maxReadsTotal
   prices : ∀ x ∈ laws, ∀ c ∈ x.2.clauses, ClausePriceOk G c
 
 theorem FoundingFacts.enact {n : Nat} {laws : List (Nat × Law)} {L : Law} (hf : FoundingFacts G n laws)
@@ -249,8 +265,9 @@ theorem FoundingFacts.enact {n : Nat} {laws : List (Nat × Law)} {L : Law} (hf :
   have hn := lawProblems_nil hp
   have hl := lawProblems_planned hp
   have hc := lawProblems_price hp
-  simp only [initialState, List.length_range] at hn hl
-  refine ⟨?_, ?_, ?_, ?_, ?_⟩
+  have hr := lawProblems_reads hp
+  simp only [initialState, List.length_range] at hn hl hr
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
   · rw [enact_length]
     exact hn.2
   · intro x hx
@@ -263,6 +280,8 @@ theorem FoundingFacts.enact {n : Nat} {laws : List (Nat × Law)} {L : Law} (hf :
     · exact hl.1
   · rw [plannedTotal_enact]
     exact hl.2
+  · rw [readsTotal_enact]
+    exact hr
   · intro x hx
     rcases mem_enact hx with hm | rfl
     · exact hf.prices x hm
@@ -281,7 +300,8 @@ theorem foundingFacts_all {n : Nat} (Ls : List Law) : ∀ (laws : List (Nat × L
 theorem startingLaws_facts (hG : G.Valid) {n : Nat} (h1 : minSeats ≤ n) (h2 : n ≤ maxSeats) :
     FoundingFacts G n G.startingLaws :=
   foundingFacts_all _ _ _ (valid_founding hG h1 h2)
-    ⟨by simp [maxLawsInForce], by simp, by simp, by simp [plannedTotal, maxPlannedTotal], by simp⟩
+    ⟨by simp [maxLawsInForce], by simp, by simp, by simp [plannedTotal, maxPlannedTotal],
+      by simp [readsTotal, maxReadsTotal], by simp⟩
 
 theorem Limits.start (hG : G.Valid) (seats : Nat) (serverSeed : UInt64) (nonces : List UInt64)
     (h1 : minSeats ≤ seats) (h2 : seats ≤ maxSeats) :
@@ -298,9 +318,10 @@ theorem PlannedInv.start (hG : G.Valid) (seats : Nat) (serverSeed : UInt64) (non
     (h1 : minSeats ≤ seats) (h2 : seats ≤ maxSeats) :
     PlannedInv (initialState G seats serverSeed nonces) := by
   have hf := startingLaws_facts hG h1 h2
-  refine ⟨?_, ?_⟩ <;> simp only [initialState, List.length_range]
+  refine ⟨?_, ?_, ?_⟩ <;> simp only [initialState, List.length_range]
   · exact hf.each
   · exact hf.total
+  · exact hf.reads
 
 /-! ## The dice -/
 

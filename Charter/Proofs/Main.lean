@@ -181,9 +181,10 @@ theorem limits_hold (G : GameDef) (_hG : G.Valid) (s : State G) (hs : Inv G s) :
     (∀ seat, (s.openProposals.filter (·.by_ == seat)).length ≤ maxOpenPerSeat) ∧
     s.deals.length ≤ maxActiveDeals ∧
     (∀ x ∈ s.laws, x.2.plannedEntries s.turnOrder.length ≤ maxPlannedEntries) ∧
-    plannedTotal s.laws s.turnOrder.length ≤ maxPlannedTotal :=
+    plannedTotal s.laws s.turnOrder.length ≤ maxPlannedTotal ∧
+    readsTotal s.laws s.turnOrder.length ≤ maxReadsTotal :=
   ⟨hs.limits.laws_len, hs.limits.laws_size, hs.limits.open_len, hs.limits.deals_len,
-    hs.planned.each, hs.planned.total⟩
+    hs.planned.each, hs.planned.total, hs.planned.reads⟩
 
 theorem every_other_event_is_exact (G : GameDef) (_hG : G.Valid) (s s' : State G) (e : Event)
     (hs : Inv G s) (h : Engine.step G s e = .ok s') :

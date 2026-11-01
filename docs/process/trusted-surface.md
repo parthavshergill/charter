@@ -78,7 +78,8 @@ All ten commandments rest on the same 121 definitions: the data types of a game,
 ## What is trusted
 
 - **The Lean kernel and compiler.** The kernel checks the proofs. The compiler builds the server that runs `Engine.step`. No proof uses `native_decide`, so no proof trusts the compiler.
-- **Lean's own library.** Lists, numbers and strings come from it.
+- **Lean's own library.** Lists, numbers and strings come from it. So does the hash table in `Charter/Words/Fast.lean`, whose lemmas the `@[csimp]` theorems use.
+- **`@[csimp]`.** The compiler runs the faster function that each such theorem proves equal to a plain one. The kernel checks the equality. The compiler is already trusted to do the replacement.
 - **The server's duties.** The theorems cannot see four things. The server must decide who may send an event for a seat. It must decide who may send `forceEndTurn`. It must publish the fingerprint first, use each player's own nonce, when the player supplies one, and keep its seed from clients until the game ends. It must check `G.Valid` before it runs a game, because the engine never checks it. For the Island, `island_valid` proves that check.
 - **The seed's size.** `commitmentOf` hashes a 64-bit seed with no salt. A very large search could find the seed from its fingerprint.
 - **SHA-256, to hide the seed.** Neither side alone can choose the dice, assuming four things. The server publishes the fingerprint before players add nonces. It uses each player's own nonce, when the player supplies one. It keeps its seed secret until the game ends. SHA-256 hides the seed. These assumptions are not proved.

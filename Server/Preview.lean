@@ -88,9 +88,16 @@ what it would have left, so there are no exact figures to give. -/
 def canPay (x : State G) (p : Nat) (k : PieceKind) : Bool :=
   (x.books.postAll (x.costEntries p k)).isSome
 
+/-- A law that reacts only to the end of a round or to a build cannot change what a roll pays, unless the
+turn that just ended closes the round. So its preview need not work out the dice. -/
+def rollsCannotChange (s : State G) (L : Law) : Bool :=
+  !s.isLastTurn && L.clauses.all fun
+    | .onRoundEnd _ | .onBuild .. => true
+    | _ => false
+
 /-- Rolls that change something, likeliest first, with equal cases joined. -/
-def rollSections (s s' : State G) : List Section :=
-  let rolls := Scene.rollsOf G
+def rollSections (s s' : State G) (L : Law) : List Section :=
+  let rolls := if rollsCannotChange s L then [] else Scene.rollsOf G
   let cases := (rolls.map fun r => (r, rollRows s s' r)).filter (!·.2.isEmpty)
   let grouped : List (List Nat × List Row) := cases.foldl (fun acc (r, rows) =>
     if acc.any (·.2 == rows) then
@@ -155,7 +162,7 @@ def lawPreview (s : State G) (id : Nat) (L : Law) (you : Option Nat) (names : Na
     if a == b then none else
     some (Json.mkObj [("seat", toJson p), ("from", toJson a), ("to", toJson b),
       ("wins", toJson (decide (G.targetPoints ≤ b)))])
-  let rolls := rollSections s s'
+  let rolls := rollSections s s' L
   let sections := roundEndSections s s' ++ buildSections s s' you names ++ rolls.take 3
   let actor := (you.orElse fun _ => s.turnOrder.head?).getD 0
   let refused := match lawProblems G s L with

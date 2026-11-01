@@ -1,4 +1,5 @@
 import Charter.Words.Turns
+import Charter.Words.Fast
 
 /-!
 # What a law does
@@ -111,18 +112,6 @@ def Trigger.env : Trigger → LawEnv
 /-- The transfers one law asks for on this trigger, in clause order. -/
 def Law.plan {G : GameDef} (s : State G) (t : Trigger) (L : Law) : List Entry :=
   L.clauses.flatMap fun c => Effect.planAll s (c.bodyFor t) t.env
-
-/-- A request from an account to itself moves nothing, so it is dropped and does not count.
-If an account is asked for more than it holds, each request from it shrinks in proportion,
-rounding down. Requests that shrink to zero vanish, so a shortfall can round down to nobody being
-paid, even if the account holds something. Nothing depends on who asked first. -/
-def settle {G : GameDef} (s : State G) (es : List Entry) : List Entry :=
-  let moving := es.filter fun e => e.src != e.dst
-  (moving.map fun e =>
-    let demand := ((moving.filter fun x => x.src == e.src && x.res == e.res).map (·.amount)).sum
-    let held := s.balance e.src e.res
-    { e with amount := if demand ≤ held then e.amount else e.amount * held / demand }).filter
-    (·.amount != 0)
 
 /-- What every law in force does for a trigger, all planned from the same moment. -/
 def lawEntries {G : GameDef} (s : State G) (t : Trigger) : List Entry :=

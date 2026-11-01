@@ -26,7 +26,7 @@ theorem the_winner_earned_it (G : GameDef) (hG : G.Valid) (s : State G) (hs : Re
 
 /-- **The limits hold.** The fixed limits hold in every game: laws in force and their size, open
 proposals per seat, and running deals. Each law, and all the laws together, ask for a limited number
-of payments on any one trigger.
+of payments on any one trigger. All the laws together read a limited number of numbers and tests.
 
 Why it matters: no law can stall the game by making a turn too slow to run. -/
 theorem limits_hold (G : GameDef) (hG : G.Valid) (s : State G) (hs : Reachable G s) :
@@ -35,7 +35,8 @@ theorem limits_hold (G : GameDef) (hG : G.Valid) (s : State G) (hs : Reachable G
     (∀ seat, (s.openProposals.filter (·.by_ == seat)).length ≤ maxOpenPerSeat) ∧
     s.deals.length ≤ maxActiveDeals ∧
     (∀ x ∈ s.laws, x.2.plannedEntries s.turnOrder.length ≤ maxPlannedEntries) ∧
-    plannedTotal s.laws s.turnOrder.length ≤ maxPlannedTotal :=
+    plannedTotal s.laws s.turnOrder.length ≤ maxPlannedTotal ∧
+    readsTotal s.laws s.turnOrder.length ≤ maxReadsTotal :=
   Proofs.limits_hold G hG s (hs.inv hG)
 
 /-- **What most other events do.** With commandments VII and X, this and V's rule for accepted offers

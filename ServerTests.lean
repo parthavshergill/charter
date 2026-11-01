@@ -321,10 +321,10 @@ def manyTransfers (n : Nat) : String :=
   s!"(law \"x\" (on-round-end (for-each-player true {" ".intercalate (List.replicate n one)})))"
 
 -- The limit on planned payments counts one payment per seat per transfer.
-#guard problems table6 (manyTransfers 10) == []
-#guard refusedFor table6 (manyTransfers 11) "too many payments"
-#guard problems table4 (manyTransfers 16) == []
-#guard refusedFor table4 (manyTransfers 17) "too many payments"
+#guard problems table6 (manyTransfers 21) == []
+#guard refusedFor table6 (manyTransfers 22) "too many payments"
+#guard problems table4 (manyTransfers 32) == []
+#guard refusedFor table4 (manyTransfers 33) "too many payments"
 
 -- A promise not to trade can name a seat that does not sign.
 #guard problems table4 "(deal \"E\" (signers 0 1) (rounds 3) (exit-notice 1) (deposits) (no-trade 0 2) (no-trade 1 2))" == []

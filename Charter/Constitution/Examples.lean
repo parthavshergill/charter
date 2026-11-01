@@ -523,21 +523,21 @@ def wideRollLaw (transfers : Nat) : Law :=
 def sixSeatGame (laws : List (Nat × Law)) : State tinySettlers :=
   { initialState tinySettlers 6 42 [25283273] with phase := .actions, laws := laws }
 
-/-- A roll law counts against the limit on one law. At 6 seats, 10 transfers for each seat pass. -/
-example : lawProblems tinySettlers (sixSeatGame []) (wideRollLaw 10) = [] := by decide +kernel
+/-- A roll law counts against the limit on one law. At 6 seats, 21 transfers for each seat pass. -/
+example : lawProblems tinySettlers (sixSeatGame []) (wideRollLaw 21) = [] := by decide +kernel
 
-/-- At 6 seats, 11 transfers for each seat ask for 66 payments on one roll, over the limit of 64. -/
+/-- At 6 seats, 22 transfers for each seat ask for 132 payments on one roll, over the limit of 128. -/
 theorem roll_law_over_the_cap_is_rejected :
     "this law could make too many payments at once" ∈
-      lawProblems tinySettlers (sixSeatGame []) (wideRollLaw 11) := by
+      lawProblems tinySettlers (sixSeatGame []) (wideRollLaw 22) := by
   decide +kernel
 
-/-- Roll laws count against the limit on all laws in force. Two laws of 60 payments are in force. A
-third would make 180, over the limit of 128. -/
+/-- Roll laws count against the limit on all laws in force. Two laws of 126 payments are in force. A
+third would make 378, over the limit of 256. -/
 theorem roll_laws_over_the_total_cap_are_rejected :
     "the laws in force could make too many payments at once" ∈
-      lawProblems tinySettlers (sixSeatGame [(0, wideRollLaw 10), (1, wideRollLaw 10)])
-        (wideRollLaw 10) := by
+      lawProblems tinySettlers (sixSeatGame [(0, wideRollLaw 21), (1, wideRollLaw 21)])
+        (wideRollLaw 21) := by
   decide +kernel
 
 /-- The conditions the theorems assume can be met: this new game is reachable. -/

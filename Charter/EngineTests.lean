@@ -2186,11 +2186,13 @@ def sixSeats : State tinySettlers := testStart tinySettlers 6 42
 #guard (deepLaw 30).size == 63
 #guard (deepLaw 30).size ≤ maxLawSize
 #guard (deepLaw 30).plannedEntries 2 == 2 ^ 30
--- It is now rejected, for these two reasons: it is too big alone, and so is the total.
+-- It is now rejected, for these three reasons: it is too big alone, the total is too big, and so is what
+-- the laws would read.
 #guard after (settlers2 seat0HasGrain) fun s =>
   lawProblems tinySettlers s (deepLaw 30) ==
     ["this law could make too many payments at once",
-     "the laws in force could make too many payments at once"]
+     "the laws in force could make too many payments at once",
+     "the laws in force would read too many numbers at once"]
 #guard rejects (settlers2 seat0HasGrain) (.propose 0 (.law (deepLaw 30)))
 -- Sensible laws still pass, in the smallest and the largest game.
 #guard accepts (settlers2 seat0HasGrain) (.propose 0 (.law (deepLaw 1)))
@@ -2200,19 +2202,19 @@ def sixSeats : State tinySettlers := testStart tinySettlers 6 42
 #guard accepts (settlers2 seat0HasGrain) (.propose 0 (.law brickSweep))
 #guard (lawProblems tinySettlers sixSeats rentLaw).isEmpty
 #guard (lawProblems tinySettlers sixSeats (deepLaw 2)).isEmpty
--- The limit, at 6 seats. Ten transfers per seat pass, and eleven do not.
-#guard (wideLaw 10).plannedEntries 6 == 60
-#guard (lawProblems tinySettlers sixSeats (wideLaw 10)).isEmpty
-#guard (wideLaw 11).plannedEntries 6 == 66
-#guard !(lawProblems tinySettlers sixSeats (wideLaw 11)).isEmpty
+-- The limit, at 6 seats. 21 transfers per seat pass, and 22 do not.
+#guard (wideLaw 21).plannedEntries 6 == 126
+#guard (lawProblems tinySettlers sixSeats (wideLaw 21)).isEmpty
+#guard (wideLaw 22).plannedEntries 6 == 132
+#guard !(lawProblems tinySettlers sixSeats (wideLaw 22)).isEmpty
 -- Three levels pass at 2 seats and fail at 6, because the cost depends on the seats.
 #guard after (settlers2 seat0HasGrain) fun s => (lawProblems tinySettlers s (deepLaw 3)).isEmpty
 #guard !(lawProblems tinySettlers sixSeats (deepLaw 3)).isEmpty
 -- A law at the limit plays through a round's end, and the claims hold.
 #guard traceFailures tinySettlers 2 42
-  (settlersRound2 ++ [.propose 0 (.law (deepLaw 6)), .vote 0 0 true, .vote 1 0 true, endT 0, endT 1]) == []
-#guard after (settlers2 (settlersRound2 ++ [.propose 0 (.law (deepLaw 6)), .vote 0 0 true, .vote 1 0 true]))
-  fun s => (deepLaw 6).plannedEntries 2 == 64 && s.laws.length == 1
+  (settlersRound2 ++ [.propose 0 (.law (deepLaw 7)), .vote 0 0 true, .vote 1 0 true, endT 0, endT 1]) == []
+#guard after (settlers2 (settlersRound2 ++ [.propose 0 (.law (deepLaw 7)), .vote 0 0 true, .vote 1 0 true]))
+  fun s => (deepLaw 7).plannedEntries 2 == 128 && s.laws.length == 1
 
 /-! ## Laws that would do nothing -/
 
@@ -2422,13 +2424,13 @@ def penaltyGame : Option (State tinySevens) :=
 #guard lawAccepted [.onRoundEnd [.transfer .bank .treasury (.lit "grain") .harvestedAmount]]
 -- Roll clauses count in both payment caps.
 #guard (badLaw [.onRoll [nestedEach 0, .forEach .yes [nestedEach 0]]]).plannedEntries 6 == 7
-#guard !(lawProblems tinySettlers sixSeats (badLaw [.onRoll [.forEach .yes (List.replicate 11 (nestedEach 0))]])).isEmpty
-#guard (lawProblems tinySettlers sixSeats (badLaw [.onRoll [.forEach .yes (List.replicate 10 (nestedEach 0))]])).isEmpty
+#guard !(lawProblems tinySettlers sixSeats (badLaw [.onRoll [.forEach .yes (List.replicate 22 (nestedEach 0))]])).isEmpty
+#guard (lawProblems tinySettlers sixSeats (badLaw [.onRoll [.forEach .yes (List.replicate 21 (nestedEach 0))]])).isEmpty
 #guard plannedTotal [(0, badLaw [.onRoll [.forEach .yes [nestedEach 0]]])] 6 == 6
 #guard (lawProblems tinySettlers
-    { sixSeats with laws := [(0, badLaw [.onRoll [.forEach .yes (List.replicate 10 (nestedEach 0))]]),
-                             (1, badLaw [.onRoll [.forEach .yes (List.replicate 10 (nestedEach 0))]])] }
-    (badLaw [.onRoll [.forEach .yes (List.replicate 10 (nestedEach 0))]])) ==
+    { sixSeats with laws := [(0, badLaw [.onRoll [.forEach .yes (List.replicate 21 (nestedEach 0))]]),
+                             (1, badLaw [.onRoll [.forEach .yes (List.replicate 21 (nestedEach 0))]])] }
+    (badLaw [.onRoll [.forEach .yes (List.replicate 21 (nestedEach 0))]])) ==
   ["the laws in force could make too many payments at once"]
 -- A roll law cannot change the roll: the dice are the same with and without one.
 #guard after (sevens2 (forced 5)) fun s =>
@@ -2526,24 +2528,38 @@ def simpleLaws (count transfers : Nat) : List (Nat × Law) :=
 def withLaws (seats : Nat) (laws : List (Nat × Law)) : State tinySettlers :=
   { testStart tinySettlers seats 42 with laws := laws, phase := .actions }
 
--- 16 simple laws fit at 6 seats. The 16th passes with 15 in force.
-#guard plannedTotal (simpleLaws 16 1) 6 == 96
-#guard plannedTotal (simpleLaws 16 1) 6 ≤ maxPlannedTotal
-#guard (lawProblems tinySettlers (withLaws 6 (simpleLaws 15 1)) (wideLaw 1)).isEmpty
+-- 42 simple laws fit at 6 seats. The 42nd passes with 41 in force.
+#guard plannedTotal (simpleLaws 42 1) 6 == 252
+#guard plannedTotal (simpleLaws 42 1) 6 ≤ maxPlannedTotal
+#guard (lawProblems tinySettlers (withLaws 6 (simpleLaws 41 1)) (wideLaw 1)).isEmpty
 -- The limit is exact. At 2 seats, a `forEach` with `k` transfers plans `2 * k` entries.
-#guard (lawProblems tinySettlers (withLaws 2 (simpleLaws 1 32)) (wideLaw (maxPlannedTotal / 2 - 32))).length ≤ 1
-#guard (lawProblems tinySettlers (withLaws 2 (simpleLaws 2 16 ++ [(9, wideLaw 16)])) (wideLaw 16)).isEmpty
-#guard plannedTotal (simpleLaws 2 16 ++ [(9, wideLaw 16)] ++ [(0, wideLaw 16)]) 2 == maxPlannedTotal
-#guard (lawProblems tinySettlers (withLaws 2 (simpleLaws 2 16 ++ [(9, wideLaw 16), (8, wideLaw 16)])) (wideLaw 1)) ==
+#guard (lawProblems tinySettlers (withLaws 2 (simpleLaws 1 64)) (wideLaw (maxPlannedTotal / 2 - 64))).length ≤ 1
+#guard (lawProblems tinySettlers (withLaws 2 (simpleLaws 2 32 ++ [(9, wideLaw 32)])) (wideLaw 32)).isEmpty
+#guard plannedTotal (simpleLaws 2 32 ++ [(9, wideLaw 32)] ++ [(0, wideLaw 32)]) 2 == maxPlannedTotal
+#guard (lawProblems tinySettlers (withLaws 2 (simpleLaws 2 32 ++ [(9, wideLaw 32), (8, wideLaw 32)])) (wideLaw 1)) ==
   ["the laws in force could make too many payments at once"]
+-- The cap on reads is exact too. A law that plans little can read a lot, inside a number.
+def readingLaw (n : Nat) : Law :=
+  badLaw [.onRoundEnd [.forEach .yes [.transfer .each .treasury (.lit "grain")
+    ((List.range n).foldl (fun e _ => .add e (.lit 0)) (.lit 1))]]]
+#guard (readingLaw 61).reads 6 == 751
+#guard (lawProblems tinySettlers
+    { sixSeats with laws := (List.range 9).map fun i => (i, readingLaw 61) } (readingLaw 61)).isEmpty
+#guard (lawProblems tinySettlers
+    { sixSeats with laws := (List.range 10).map fun i => (i, readingLaw 61) } (readingLaw 61)) ==
+  ["the laws in force would read too many numbers at once"]
+-- Nested `forEach`s with empty bodies plan nothing, but they count here, so they cannot stall a turn.
+#guard (lawProblems tinySettlers sixSeats (badLaw [.onRoundEnd [nestedEach 0,
+    (List.range 20).foldl (fun e _ => Effect.forEach .yes [e]) (Effect.forEach .yes [])]])).contains
+  "the laws in force would read too many numbers at once"
 -- A full budget still lets a law pass if it plans nothing, or if it repeals enough to fit.
-#guard (lawProblems tinySettlers (withLaws 2 (simpleLaws 2 16 ++ [(9, wideLaw 16), (8, wideLaw 16)]))
+#guard (lawProblems tinySettlers (withLaws 2 (simpleLaws 2 32 ++ [(9, wideLaw 32), (8, wideLaw 32)]))
   (badLaw [.setBankRate 2])).isEmpty
-#guard (lawProblems tinySettlers (withLaws 2 (simpleLaws 2 16 ++ [(9, wideLaw 16), (8, wideLaw 16)]))
+#guard (lawProblems tinySettlers (withLaws 2 (simpleLaws 2 32 ++ [(9, wideLaw 32), (8, wideLaw 32)]))
   (badLaw [.repeal 9, .onRoundEnd [nestedEach 1]])).isEmpty
 -- The check runs again at the deciding vote: a law that no longer fits closes and is not enacted.
 def fullBudgetVote : State tinySettlers :=
-  { withLaws 2 (simpleLaws 2 16 ++ [(9, wideLaw 16), (8, wideLaw 16)]) with
+  { withLaws 2 (simpleLaws 2 32 ++ [(9, wideLaw 32), (8, wideLaw 32)]) with
     openProposals := [{ id := 20, by_ := 0, body := .law (wideLaw 1), votes := [(0, true)], signed := [] }]
     nextProposalId := 21 }
 

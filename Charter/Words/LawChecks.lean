@@ -98,6 +98,28 @@ def Law.plannedEntries (L : Law) (seats : Nat) : Nat :=
 def plannedTotal (laws : List (Nat × Law)) (seats : Nat) : Nat :=
   (laws.map fun x => x.2.plannedEntries seats).sum
 
+mutual
+  /-- How many numbers and tests an effect reads when it runs, when every condition is true. A
+  `forEach` reads what is inside it once per seat. -/
+  def Effect.reads (seats : Nat) : Effect → Nat
+    | .transfer _ _ _ amount => amount.size + 1
+    | .forEach c body => seats * (c.size + Effect.readsAll seats body) + 1
+    | .when c body => c.size + Effect.readsAll seats body + 1
+
+  /-- How many numbers and tests a list of effects reads. -/
+  def Effect.readsAll (seats : Nat) : List Effect → Nat
+    | [] => 0
+    | e :: es => e.reads seats + Effect.readsAll seats es
+end
+
+/-- How many numbers and tests a law reads on one trigger, counting all its clauses. -/
+def Law.reads (L : Law) (seats : Nat) : Nat :=
+  (L.clauses.map fun c => Effect.readsAll seats c.effects).sum
+
+/-- How many numbers and tests a list of laws reads together on one trigger. -/
+def readsTotal (laws : List (Nat × Law)) (seats : Nat) : Nat :=
+  (laws.map fun x => x.2.reads seats).sum
+
 /-- This number divides by zero somewhere. -/
 def Expr.dividesByZero : Expr → Bool
   | .add a b | .sub a b | .mul a b | .min a b | .max a b => a.dividesByZero || b.dividesByZero
@@ -178,6 +200,8 @@ def lawProblems (G : GameDef) (s : State G) (L : Law) : List String :=
    else ["this law could make too many payments at once"]) ++
   (if plannedTotal (enact s.laws 0 L) s.turnOrder.length ≤ maxPlannedTotal then []
    else ["the laws in force could make too many payments at once"]) ++
+  (if readsTotal (enact s.laws 0 L) s.turnOrder.length ≤ maxReadsTotal then []
+   else ["the laws in force would read too many numbers at once"]) ++
   (if decide (L.clauses.filterMap Clause.ruleSet).Nodup then []
    else ["this law sets the same rule twice, so the first would do nothing"]) ++
   (if decide L.repeals.Nodup then [] else ["this law repeals a law twice"]) ++

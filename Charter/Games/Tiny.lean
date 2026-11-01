@@ -103,7 +103,7 @@ def tinySevens : GameDef :=
 theorem tinySevens_valid : tinySevens.Valid := by decide +kernel
 
 /-- A law that pays each seat from each seat, three levels deep. That is 8 payments at 2 seats and 216
-at 6, which is over the limit of 64. -/
+at 6, which is over the limit of 128. -/
 def tooManyPayments : Law :=
   { title := "Everyone pays everyone"
     clauses := [.onRoundEnd [.forEach .yes [.forEach .yes [.forEach .yes

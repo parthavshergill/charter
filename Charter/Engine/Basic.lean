@@ -21,6 +21,26 @@ def record (s : State G) (es : List Entry) : Except String (State G) :=
   | some b => .ok { s with books := b, journal := s.journal ++ es }
   | none => .error "an entry cannot be posted in full"
 
+/-- `record`, keeping a table of the books each time the journal passes a multiple of 128. So a read never
+walks back through more than a few dozen steps, however long the game has run. -/
+def recordFast (s : State G) (es : List Entry) : Except String (State G) :=
+  match s.books.postAll es with
+  | some b =>
+    let n := s.journal.length
+    if n / 128 == (n + es.length) / 128 then .ok { s with books := b, journal := s.journal ++ es }
+    else
+      let t := b.table s.tableKeys
+      .ok { s with books := Books.ofTable t b, journal := s.journal ++ es }
+  | none => .error "an entry cannot be posted in full"
+
+/-- The faster `record` gives the same result, so the compiler can run it instead. -/
+@[csimp] theorem record_eq_recordFast : @record = @recordFast := by
+  funext G s es
+  simp only [record, recordFast]
+  split
+  · simp only [Books.ofTable_table]; split <;> rfl
+  · rfl
+
 /-- Count an accepted event against the seat that sent it. -/
 def countAction (s : State G) (seat : Seat) : State G :=
   { s with
