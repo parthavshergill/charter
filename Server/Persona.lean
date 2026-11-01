@@ -72,7 +72,14 @@ def casts : List (String × List (String × String)) :=
       [ ("Odile Marchetti", "the head of Larkspur Foundry, a former concert pianist who speaks in measured, serene sentences about inevitability")
       , ("Tunde Bell", "the head of Ninefold, an ex-commodities trader who counts everything out loud and trusts no number he did not write down")
       , ("Greta Nyland", "the head of Tessera Works, a safety-minded engineer who warns about the crash while building as fast as anyone")
-      , ("Cassius Oyelaran", "the head of Brightwater Cognition, a relentless showman who has never met a slide he could not improve") ]) ]
+      , ("Cassius Oyelaran", "the head of Brightwater Cognition, a relentless showman who has never met a slide he could not improve") ])
+  , ("strike-the-earth",
+      [ ("Durgna Cold-Anvil", "a clan matriarch who counts every ingot and has buried three husbands in the walls")
+      , ("Ottar Slagbeard", "a huge smith who shouts, weeps at songs and cannot pass a bad idea without shaking its hand")
+      , ("Hilde Nine-Lamps", "a soft-spoken lamp-keeper who has read the old accounts of every fort that fell")
+      , ("Bram Undermine", "a cheerful sapper who judges all things by how well they would collapse")
+      , ("Sigrun Ashdelve", "a young shaft captain who talks like the saga is already being written about her")
+      , ("Old Korbo", "a mushroom farmer who has seen it all flood twice and says so") ]) ]
 
 /-- One seat's persona. -/
 structure Persona where

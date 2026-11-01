@@ -41,7 +41,16 @@ def actualRows (s : State G) (withLaw without : List Entry) : List Row := rowsOf
 /-- Laws to try, by game. They read holdings, act at a round's end, change prices, make pieces and react
 to the roll. -/
 def lawsFor (spec : GameSpec) : List String :=
-  if spec.id == slimeSpec.id then
+  if spec.id == strikeSpec.id then
+    [ "(law \"Half on a workshop\" (on-build workshop (transfer actor treasury ore (/ (holding actor ore) 2))))"
+    , "(law \"Half on a tunnel\" (on-build tunnel (transfer actor treasury ember (/ (holding actor ember) 2))))"
+    , "(law \"Half on a hall\" (on-build hall (transfer actor treasury fungus (/ (holding actor fungus) 2))))"
+    , "(law \"Ember levy\" (on-round-end (for-each-player true (transfer each treasury ember (/ (holding each ember) 2)))))"
+    , "(law \"Tithe\" (on-harvest (transfer actor treasury res (/ amount 2))))"
+    , "(law \"Cheap tunnels\" (set-cost tunnel (bundle (stone 1))))"
+    , "(law \"Danger pays\" (on-round-end (for-each-player (<= 3 (holding treasury danger)) (transfer bank each renown 1))))"
+    , "(law \"Vaults\" (new-piece vault (bundle (stone 2) (ore 1)) (points 2) (attach hall) (yield 1) (limit 2)))" ]
+  else if spec.id == slimeSpec.id then
     [ "(law \"Half on a swelling\" (on-build swelling (transfer actor treasury oatmeal (/ (holding actor oatmeal) 2))))"
     , "(law \"Half on a tendril\" (on-build tendril (transfer actor treasury dew (/ (holding actor dew) 2))))"
     , "(law \"Half on a node\" (on-build node (transfer actor treasury rot (/ (holding actor rot) 2))))"

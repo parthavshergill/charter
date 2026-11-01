@@ -15,6 +15,9 @@ import Charter.Games.SlimeParliamentWords
 import Charter.Games.AIBubble
 import Charter.Games.AIBubbleWords
 import Charter.Games.AIBubbleTests
+import Charter.Games.StrikeTheEarth
+import Charter.Games.StrikeTheEarthWords
+import Charter.Games.StrikeTheEarthTests
 import Charter.Scene.Belt
 import Charter.Games.Witnesses
 import Charter.Scene.OfState

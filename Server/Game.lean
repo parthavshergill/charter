@@ -219,7 +219,9 @@ def isSpotKind (G : GameDef) (k : String) : Bool := ((spotPiece G).map (·.name)
 
 /-- Told once in a game: the first of a kind of building in this world. -/
 def firstOnIsland (g : Game) (s : State G) (k : String) : String :=
-  if !isLinkKind G k && (s.pieces.filter (·.kind == k)).isEmpty then s!", the first on {g.spec.layout.word}" else ""
+  let told := s!" {k}, the first on {g.spec.layout.word}"
+  let toldBefore := g.chronicle.any fun l => (l.text.splitOn told).length > 1
+  if !isLinkKind G k && (s.pieces.filter (·.kind == k)).isEmpty && !toldBefore then s!", the first on {g.spec.layout.word}" else ""
 
 /-- This vote closes a law that passes `lawProblems`, so it passed. A law of only `now` clauses does not join
 the laws in force, so the list of laws cannot say this. -/
