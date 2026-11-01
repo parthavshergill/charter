@@ -183,7 +183,8 @@ svg.shield { width: 16px; height: 19px; flex: none; vertical-align: -4px; clip-p
 /* Room for about 40 words, kept while they are being written, so that nothing below them moves. */
 .described { margin: var(--s2) 0 var(--s3); }
 .described.held { min-height: calc(18px + 4 * 1.32 * 17px); }
-.described .words { margin: 0; font-size: 17px; line-height: 1.32; }
+.lawrow .described.held, .momentdoc .described.held { min-height: 0; }
+.described .saying { margin: 0; font-size: 17px; line-height: 1.32; }
 .described .nowords { margin: 0; font-size: 14px; color: var(--ink-2); }
 .described .ghost { display: grid; gap: calc(1.32 * 17px - 9px); padding-top: 7px; }
 .described .ghost i { display: block; height: 9px; background: var(--vellum-3); opacity: .55; }
@@ -194,6 +195,7 @@ svg.shield { width: 16px; height: 19px; flex: none; vertical-align: -4px; clip-p
 @keyframes ghost { 50% { opacity: .25; } }
 .source { margin: var(--s3) 0; }
 .source .sexp { margin-top: 0; }
+.srcline { display: block; }
 .advice { margin: 0 0 var(--s3); padding: var(--s2) var(--s3); background: rgba(120, 88, 40, .12); font-size: 14px; line-height: 1.4; color: var(--ink-2); }
 .advice p { margin: 0; font-style: italic; }
 .advicehead { margin-bottom: 2px; font-size: 12px; letter-spacing: .04em; color: var(--ink-3); }

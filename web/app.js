@@ -247,7 +247,7 @@ function tipFor(id) {
   }
   if (id >= 9000) {
     const l = (v.laws || []).find(x => x.pick === id);
-    return l ? [h("h4", {}, `Law ${l.id}: ${l.title}`), l.description?.text ? h("div", { class: "english" }, l.description.text) : h("pre", { class: "sexp" }, laidOut(l.text))] : null;
+    return l ? [h("h4", {}, `Law ${l.id}: ${l.title}`), l.description?.text ? h("div", { class: "english" }, l.description.text) : h("pre", { class: "sexp" }, sourceLines(l.text))] : null;
   }
   if (id >= 7000) {
     const t = v.board?.tiles?.[id - 7000];
@@ -674,13 +674,13 @@ const formalText = text => h("details", { class: "formal" }, h("summary", {}, "F
  *  kept for it while it is written, so nothing on the sheet moves when it arrives. */
 function describedOf(d, badge = null) {
   const st = d?.status || "none";
-  const line = st === "pack" ? `The pack's words: ${d.pack}` : "Claude's description";
+  const line = st === "pack" ? `${d.pack}'s own words` : "Claude's description";
   if (st === "none" || st === "failed") return h("div", { class: "described" + (st === "failed" ? " held" : "") }, badge ? h("div", { class: "byline" }, badge) : null,
     h("p", { class: "nowords" }, "Claude has not described this law. The rule source below is what counts."));
   return h("div", { class: "described held" }, h("div", { class: "byline" }, h("span", {}, line), badge),
     st === "writing"
       ? h("div", { class: "ghost", role: "status", "aria-label": "Claude is writing a description" }, h("i"), h("i"), h("i"))
-      : h("p", { class: "words" }, d.text));
+      : h("p", { class: "saying" }, d.text));
 }
 /** The rule source, as it prints, with line breaks added so that it can be read. */
 const SOURCE_LINES = new Set(["new-piece", "repeal", "for-each-player", "if", "transfer"]);
@@ -699,7 +699,12 @@ function laidOut(text) {
   }
   return out;
 }
-const sourceOf = text => h("div", { class: "source" }, h("div", { class: "byline" }, h("span", {}, "Rule source")), h("pre", { class: "sexp" }, laidOut(text)));
+/** The source on the screen. A long line wraps with an indent, so the shape of the law stays clear. */
+const sourceLines = text => laidOut(text).split("\n").map(line => {
+  const indent = line.length - line.trimStart().length;
+  return h("span", { class: "srcline", style: { paddingLeft: `${indent + 2}ch`, textIndent: "-2ch" } }, line.trimStart());
+});
+const sourceOf = text => h("div", { class: "source" }, h("div", { class: "byline" }, h("span", {}, "Rule source")), h("pre", { class: "sexp" }, sourceLines(text)));
 
 /** The charter at a vote: the description, consequences and source the proposer saw, then the signatures. */
 function voteDoc(p) {

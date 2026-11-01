@@ -234,7 +234,7 @@ def run (cfg : Settings) (code : String) (L : Law) : IO (Option String) := do
     let body := requestBody cfg system (userMessage L retry)
     let outcome ← Formalize.runRequest job (Formalize.curlConfig cfg.api key body maxSeconds) cfg.api.model
     if !usable outcome then
-      IO.eprintln s!"[{code}] no description: {(Formalize.failureOf outcome).getD "the reply did not finish"}"
+      IO.eprintln s!"[{code}] no description from {cfg.api.model}: {(Formalize.failureOf outcome).getD "the reply did not finish"}"
       return none
     let text := clean (← job.state.get).text
     if text.isEmpty then
