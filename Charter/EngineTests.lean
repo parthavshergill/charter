@@ -358,7 +358,7 @@ def claimVII (s : State G) (p : Seat) (k : PieceKind) (loc : Loc) : List String 
       ((refunds.all (·.reason == .refund)) && (refunds.isEmpty || s2.phase == .ended))
   | .error _ => claim "VII: a build that canPlace allows is accepted" (!s.canPlace p k loc)
 
-/-- The rules of a setup placement, for one possible placement. These are tests only. -/
+/-- The rules of a setup placement, for one possible placement. `bank_trades_and_setup_are_exact` proves these. They run here as well, on every state a game reaches. -/
 def claimSetup (s : State G) (p : Seat) (k : PieceKind) (loc : Loc) : List String :=
   if s.phase != .setup then [] else
   match step G s (.move p (.place k loc)) with
@@ -368,8 +368,9 @@ def claimSetup (s : State G) (p : Seat) (k : PieceKind) (loc : Loc) : List Strin
     claim "setup: a placement moves no resources" (newEntries s s2).isEmpty
   | .error _ => claim "setup: a placement that canSetupPlace allows is accepted" (!s.canSetupPlace p k loc)
 
-/-- What a trade does, for one step and for every open offer. These are tests only. No theorem states
-them. Each is written out in full here, so it does not depend on the spec's definition of a trade. -/
+/-- What a trade does, for one step and for every open offer. `bank_trades_and_setup_are_exact` proves the
+claims about a bank trade, and they also run here. Each is written out in full, so it does not depend on the
+spec's definition of a trade. -/
 def claimTrades (s s' : State G) (e : Event) : List String :=
   (match e with
    | .move p (.bankTrade give get) =>

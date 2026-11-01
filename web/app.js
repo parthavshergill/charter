@@ -752,9 +752,16 @@ function afterView(prev, v) {
   if (v.turn !== prev?.turn) closePickMenu();
   const newLaw = trackDecisions(v);
   trackProposals(prev, v);
+  // A roll lands first. What it does to the board and the scores shows when the die stops.
+  const rolling = prev?.seats && v.rollsMade !== prev.rollsMade && !reduced() && !G.replay;
+  if (rolling) {
+    clearTimeout(G.landTimer);
+    G.scoresHeld = Object.fromEntries(prev.seats.map(s => [s.seat, G.scoresHeld?.[s.seat] ?? s.points]));
+    G.landTimer = setTimeout(() => { G.scoresHeld = null; renderHouses(); refreshScene(); }, DIE_MS);
+  }
   renderAll();
   showFoundingLaws(prev, v);
-  if (!newLaw) refreshScene();
+  if (!newLaw && !rolling) refreshScene();
   else if (!G.player) refreshScene();
   animateChanges(prev, v);
   if (G.dock?.t === "draft" && G.draft?.outcome === "ready") refreshDraftReview();
@@ -785,12 +792,21 @@ function bannerCloth(s) {
   cloth.append(art);
   return cloth;
 }
+/** Goods with so few in the whole game that who holds one matters to everyone, such as a captain's hat. */
+function rareGoods(v) {
+  return (v.resources || []).filter(r => {
+    const all = v.seats.reduce((n, s) => n + (s.hand?.[r] || 0), 0) + (v.bank?.[r] || 0) + (v.treasury?.[r] || 0);
+    return all > 0 && all <= RARE_GOOD;
+  });
+}
 function renderHouses() {
   const v = G.view, U = G.ui;
   if (v.phase === "lobby") { fill(U.houses); return; }
+  const rare = rareGoods(v);
   morphKids(U.houses, v.seats.map(s => {
     const cloth = bannerCloth(s.seat);
-    cloth.append(h("span", { class: "score" }, String(s.points)));
+    cloth.append(h("span", { class: "score" }, String(G.scoresHeld?.[s.seat] ?? s.points)));
+    cloth.append(...rare.filter(r => s.hand?.[r] > 0).map(r => h("span", { class: "worn", "data-res": r }, resIcon(r))));
     const held = Object.entries(s.hand || {}).filter(([r, n]) => n > 0 && v.resources.includes(r));
     const built = Object.entries(s.pieces || {}).filter(([, n]) => n > 0);
     const drafting = (v.drafting || []).includes(s.seat);
@@ -1494,6 +1510,10 @@ const FLIGHT_MS = 620;   // a card's way from the table to its seat
 const CARD_GAP_MS = 70;  // between one card and the next
 const LAND_MS = 300;     // a new piece's fall in the 3D table, from the view until it meets the board
 const MANY_CARDS = 4;    // a payout this big is a payday
+const RARE_GOOD = 4;     // a good with at most this many in the whole game is worn on its holder's banner
+const BIG_FALL = 12;     // a treasury that loses this much at once bursts where it stands
+const BIG_LOSS = 5;      // a score that falls this far at once flashes
+const TREASURY_PICK = 8999; // the treasury's pick number in the scene, from Charter/Scene/Render.lean
 
 const boardEl = () => showing3D() ? G.ui.canvas : G.ui.svg;
 /** Where a point on the board is on the screen, on either board. */
@@ -1548,6 +1568,35 @@ function animateChanges(prev, v) {
       if (at && !standing.has(JSON.stringify(at))) setTimeout(() => ring(boardPoint(at), "law small"), LAND_MS);
     }
   }
+  // Something big just fell. Several pieces at once shake the board, and a treasury emptied by a law bursts.
+  if (!G.holdScene && !reduced() && lawTold.length) {
+    const delay = rolled ? DIE_MS : 0;
+    const standing = new Set((v.pieces || []).map(p => JSON.stringify(pieceAt(p, v))));
+    const fallen = (prev.pieces || []).map(p => pieceAt(p, v)).filter(at => at && !standing.has(JSON.stringify(at)));
+    if (fallen.length >= 2) {
+      rumble(boardEl(), delay);
+      anim(boardEl(), [{ filter: "brightness(.45)" }, { filter: "brightness(1)" }], { duration: 700, delay, easing: "ease-in" });
+      for (const at of fallen) setTimeout(() => burst(boardPoint(at), 14, 110, "dust"), delay);
+    }
+    const pile = t => Object.values(t || {}).reduce((a, n) => a + n, 0);
+    if (pile(prev.treasury) - pile(v.treasury) >= BIG_FALL) {
+      const at = G.player?.screenOf?.(TREASURY_PICK);
+      rumble(boardEl(), delay);
+      anim(boardEl(), [{ filter: "brightness(2)" }, { filter: "brightness(1)" }], { duration: 480, delay, easing: "ease-out" });
+      if (at) setTimeout(() => { ring(at, "law"); burst({ x: at.x, y: at.y - 50 }, 20, 190); }, delay);
+    }
+  }
+
+  // A rare good goes from banner to banner, where everyone can see it.
+  const rare = rareGoods(v);
+  if (!reduced()) for (const r of rare) {
+    const to = changes.find(c => c.r === r && c.d > 0), from = changes.find(c => c.r === r && c.d < 0);
+    if (!to) continue;
+    const delay = rolled ? DIE_MS : 0, cloth = bannerOf(to.seat)?.querySelector(".cloth");
+    const start = from ? middleOf(bannerOf(from.seat)) : boardPoint(squareOf(v));
+    anim(cloth?.querySelector(`.worn[data-res="${CSS.escape(r)}"]`), [{ opacity: 0 }, { opacity: 0, offset: .97 }, { opacity: 1 }], { duration: delay + FLIGHT_MS, easing: "linear" });
+    if (cloth) flight(h("div", { class: "flight wornflight" }, resIcon(r)), start, middleOf(cloth), delay, () => thump(cloth, 10));
+  }
 
   // Cards. Those that come from the table fly. A trade drops them in from above the hand.
   let wait = rolled ? DIE_MS : byLaw.length ? 120 : 0;
@@ -1558,9 +1607,14 @@ function animateChanges(prev, v) {
     if (s === v.you && cardOf(r)) {
       if (d < 0) takeCards(r, -d, mineBuilt && boardPoint(mineBuilt.at));
       else wait += payCards(r, d, from(), wait) * CARD_GAP_MS;
-    } else if (d > 0 && earned && !reduced()) {
+    } else if (earned && !reduced() && !rare.includes(r)) {
+      // What a law takes from a seat leaves its banner, and what the table pays it goes there.
       const banner = bannerOf(s);
-      if (banner) flight(h("div", { class: "flight chip" }, resIcon(r, "res small"), `+${d}`), from(), middleOf(banner), wait);
+      if (banner && d > 0) flight(h("div", { class: "flight chip" }, resIcon(r, "res small"), `+${d}`), from(), middleOf(banner), wait);
+      else if (banner && byLaw.length) {
+        flight(h("div", { class: "flight chip lost" }, resIcon(r, "res small"), `−${-d}`), middleOf(banner), boardPoint(squareOf(v)), wait);
+        wait += CARD_GAP_MS * 2;
+      }
     }
   }
   if (gained >= MANY_CARDS && !reduced()) setTimeout(() => thump(G.ui.hand, 4), wait + FLIGHT_MS);
@@ -1568,7 +1622,7 @@ function animateChanges(prev, v) {
   // Scores, then what is yours to do.
   for (const s of v.seats) {
     const was = prev.seats?.find(x => x.seat === s.seat);
-    if (was && was.points !== s.points) scoreMoved(s.seat, s.points - was.points);
+    if (was && was.points !== s.points) setTimeout(() => scoreMoved(s.seat, s.points - was.points), rolled ? DIE_MS : 0);
   }
   const yourTurn = v.turn === v.you && v.phase !== "ended";
   if (yourTurn && prev.turn !== v.you) yourMove();
@@ -1697,6 +1751,21 @@ function scoreMoved(s, d) {
   markCard(b.querySelector(".cloth"), `${d > 0 ? "+" : "−"}${Math.abs(d)}`, d > 0, true);
   thump(b.querySelector(".cloth"), 8);
   anim(b.querySelector(".score"), [{ scale: 1 }, { scale: 1.45, offset: .3 }, { scale: 1 }], { duration: 460 });
+  if (d <= -BIG_LOSS) anim(b.querySelector(".cloth"), [{ filter: "brightness(2.6)" }, { filter: "none" }], { duration: 620, easing: "ease-out" });
+}
+/** The ground shakes for a moment. */
+function rumble(el, delay = 0) {
+  anim(el, [{ translate: "0 0" }, { translate: "-7px 5px" }, { translate: "6px -6px" }, { translate: "-5px -4px" }, { translate: "5px 5px" }, { translate: "-3px 3px" }, { translate: "0 0" }], { duration: 520, delay, easing: "linear" });
+}
+/** Bits fly out from a point. */
+function burst(at, n, reach, kind = "") {
+  if (!at) return;
+  for (let i = 0; i < n; i++) {
+    const a = (i + Math.random() * .7) / n * Math.PI * 2, far = reach * (.55 + Math.random() * .45);
+    anim(spawn(h("div", { class: `shard ${kind}`, style: { left: `${at.x}px`, top: `${at.y}px` } }), 900),
+      [{ translate: "0 0", scale: 1, opacity: 1 }, { translate: `${Math.cos(a) * far}px ${Math.sin(a) * far}px`, scale: .3, opacity: 0 }],
+      { duration: 520 + Math.random() * 280, easing: "cubic-bezier(.1,.7,.3,1)", fill: "both" });
+  }
 }
 
 /** It has become your turn. The line that says what to do, or a pennant if none shows, and your tools come up. */

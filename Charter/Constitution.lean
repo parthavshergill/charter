@@ -23,7 +23,7 @@ How to read them:
 Where to look next:
 
 * `Constitution/Promises.lean` defines the named parts below. `Words.lean` lists the other words.
-* `Constitution/Supporting.lean` has five more promises.
+* `Constitution/Supporting.lean` has six more promises.
 * `Constitution/Examples.lean` has full games, and bad steps that the promises reject.
 * `docs/process/trusted-surface.md` lists every definition a reader must trust.
 

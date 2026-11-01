@@ -78,14 +78,6 @@ def lawsFor (spec : GameSpec) : List String :=
     , "(law \"Roller's gift\" (on-roll (transfer bank actor rum 1)))"
     , "(law \"Sack on a 7\" (on-roll (for-each-player (and (= rolled 7) (< (points actor) (points each))) (move-piece each actor wharf))))"
     , "(law \"Lighthouses\" (new-piece lighthouse (bundle (powder 2) (timber 2)) (points 2) (attach wharf) (yield 1) (limit 2)))" ]
-  else if spec.id == beltSpec.id then
-    [ "(law \"Half on a station\" (on-build station (transfer actor treasury ice (/ (holding actor ice) 2))))"
-    , "(law \"Half on an outpost\" (on-build outpost (transfer actor treasury helium (/ (holding actor helium) 2))))"
-    , "(law \"Ice levy\" (on-round-end (for-each-player true (transfer each treasury ice (/ (holding each ice) 2)))))"
-    , "(law \"Tithe\" (on-harvest (transfer actor treasury res (/ amount 2))))"
-    , "(law \"Cheap lanes\" (set-cost lane (bundle (ice 1))))"
-    , "(law \"Roller's gift\" (on-roll (transfer bank actor ice 1)))"
-    , "(law \"Ice levy on a 7\" (on-roll (for-each-player (= rolled 7) (transfer each treasury ice (/ (holding each ice) 2)))))" ]
   else
     [ "(law \"Half on a city\" (on-build city (transfer actor treasury grain (/ (holding actor grain) 2))))"
     , "(law \"Half on a road\" (on-build road (transfer actor treasury timber (/ (holding actor timber) 2))))"

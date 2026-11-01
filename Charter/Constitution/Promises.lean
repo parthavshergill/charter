@@ -402,6 +402,116 @@ def BuildChargesExactly (s s' : State G) (p : Seat) (k : PieceKind) : Prop :=
     (∀ x ∈ refunds, x.reason = .refund) ∧
     (refunds = [] ∨ s'.phase = .ended)
 
+/-! ## Bank trades and setup placements -/
+
+/-- The action counts after seat `p` acts: 1 more for `p`, and the same for every other seat. -/
+def countsAfter (s : State G) (p : Seat) : Seat → Nat :=
+  fun q => if q = p then s.actionsThisTurn q + 1 else s.actionsThisTurn q
+
+/-- What seat `p` gets back in `r` if the game ends now: its unspent deposits in every running deal. -/
+def refundsTo (s : State G) (p : Seat) (r : Res) : Nat :=
+  (((s.deals.flatMap s.refundEntries).filter fun x => x.dst == .player p && x.res == r).map
+    (·.amount)).sum
+
+/-- Seat `p` can trade `give` for `get` with the bank now. All of these must hold:
+* It is the actions phase and it is `p`'s turn.
+* `p` is under its action limit.
+* `give` and `get` are different, and both are real resources.
+* `p` holds at least the current rate of `give`.
+* The bank holds at least 1 of `get`.
+
+Nothing else matters. In particular, no deal can stop a bank trade. -/
+def BankTradeIsAllowed (s : State G) (p : Seat) (give get : Res) : Prop :=
+  s.phase = .actions ∧ s.currentSeat = some p ∧ s.actionsThisTurn p < maxActionsPerTurn ∧
+  give ≠ get ∧ G.isRes give = true ∧ G.isRes get = true ∧
+  s.rules.bankRate ≤ s.balance (.player p) give ∧ 1 ≤ s.balance .bank get
+
+/-- What an accepted bank trade does. The seat pays the bank the current rate of `give`. The bank pays
+the seat 1 of `get`. No piece changes. The seat's balance shows both payments, so a trade cannot take
+goods and pay nothing back.
+
+If the game goes on, those are the only entries. The action and the event are counted, and nothing else
+in the state changes.
+
+If the game ends, because a seat is at the target, every running deal refunds after the trade. The seat's
+balance also gains its own refunds. A winner is named, and no deal, offer or proposal stays open. -/
+def BankTradeIsExact (s s' : State G) (p : Seat) (give get : Res) : Prop :=
+  s'.pieces = s.pieces ∧
+  (s'.phase ≠ .ended →
+    newEntries s s' = s.bankTradeEntries p give get ∧
+    s'.balance (.player p) give + s.rules.bankRate = s.balance (.player p) give ∧
+    s'.balance (.player p) get = s.balance (.player p) get + 1 ∧
+    s' = { s with
+      books := s'.books
+      journal := s.journal ++ s.bankTradeEntries p give get
+      actionsThisTurn := countsAfter s p
+      eventsApplied := s.eventsApplied + 1 }) ∧
+  (s'.phase = .ended →
+    newEntries s s' = s.bankTradeEntries p give get ++ s.deals.flatMap s.refundEntries ∧
+    s'.balance (.player p) give + s.rules.bankRate =
+      s.balance (.player p) give + refundsTo s p give ∧
+    s'.balance (.player p) get = s.balance (.player p) get + 1 + refundsTo s p get ∧
+    ∃ w, s' = { s with
+      books := s'.books
+      journal := s.journal ++ s.bankTradeEntries p give get ++ s.deals.flatMap s.refundEntries
+      actionsThisTurn := countsAfter s p
+      eventsApplied := s.eventsApplied + 1
+      phase := .ended
+      winner := some w
+      deals := []
+      offers := []
+      openProposals := [] })
+
+/-- Where a setup piece can go. A spot piece needs a real, empty spot with no piece one link away. It need
+not touch the seat's own pieces. Any other piece follows the normal rule, `placementOk`. -/
+def FitsInSetup (s : State G) (p : Seat) (d : PieceDef) (loc : Loc) : Prop :=
+  match d.placement, loc with
+  | .spot, .spot v =>
+      v < G.map.spotCount ∧ (s.pieceAt v).isNone = true ∧
+        ∀ w ∈ s.neighbours v, (s.pieceAt w).isNone = true
+  | _, _ => s.placementOk p d loc = true
+
+/-- Seat `p` can place this piece in setup now. All of these must hold:
+* It is `p`'s turn.
+* `p` is under its action limit.
+* `k` is the next piece on the game's setup list, counted by `p`'s actions this turn.
+* The rules have a piece `k`, and `p` is under that piece's limit.
+* The piece fits there, as `FitsInSetup` says.
+
+A setup piece has no cost, so what a seat holds does not matter. -/
+def SetupPlacementIsAllowed (s : State G) (p : Seat) (k : PieceKind) (loc : Loc) : Prop :=
+  s.currentSeat = some p ∧ s.actionsThisTurn p < maxActionsPerTurn ∧
+  G.setupPieces[s.actionsThisTurn p]? = some k ∧
+  ∃ d, s.rules.piece? k = some d ∧ s.countOf p k < d.limit ∧ FitsInSetup s p d loc
+
+/-- What an accepted setup placement does. The new piece goes last. Only a piece that upgrades another
+also removes the piece it replaces, as `placedPieces` says. No resources move, and the journal gets no
+entry.
+
+If the game goes on, the action and the event are counted, and nothing else in the state changes. So the
+turn stays with `p`, and the seat's count moves it to the next piece on the setup list.
+
+The game ends here only if a seat is at the target. Then the only other changes are the phase and the
+winner. -/
+def SetupPlacementIsExact (s s' : State G) (p : Seat) (k : PieceKind) (loc : Loc) : Prop :=
+  s'.pieces = s.placedPieces p k loc ∧
+  ((∀ old, (s.rules.piece? k).map (·.placement) ≠ some (.upgrade old)) →
+    s'.pieces = s.pieces ++ [⟨p, k, loc⟩]) ∧
+  newEntries s s' = [] ∧
+  s'.books = s.books ∧
+  (s'.phase ≠ .ended →
+    s' = { s with
+      pieces := s.placedPieces p k loc
+      actionsThisTurn := countsAfter s p
+      eventsApplied := s.eventsApplied + 1 }) ∧
+  (s'.phase = .ended → ∃ w,
+    s' = { s with
+      pieces := s.placedPieces p k loc
+      actionsThisTurn := countsAfter s p
+      eventsApplied := s.eventsApplied + 1
+      phase := .ended
+      winner := some w })
+
 /-! ## VIII. Nobody controls the dice -/
 
 /-- The game's seed comes from the server's seed and the players' nonces, and the public fingerprint

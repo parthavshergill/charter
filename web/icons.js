@@ -18,13 +18,6 @@ const RES = {
   wool: `<g><path d="M6.5 16.500a3.3 3.3 0 0 1-.8-6.4 3.6 3.6 0 0 1 5.1-3 3.8 3.8 0 0 1 6 1.1 3.3 3.3 0 0 1 2.3 5.9 3 3 0 0 1-3.6 2.400z" fill="#f6f1e2" stroke="#6d7f3e" stroke-width="1.1"/><path d="M4.4 11.300c-1.5-.1-2.4 1-2.4 2.3 0 1.1.8 1.9 1.9 1.9.8 0 1.3-.3 1.8-.9z" fill="#3a302b"/><rect x="8" y="16.3" width="1.7" height="4.2" fill="#3a302b"/><rect x="14.3" y="16.3" width="1.7" height="4.2" fill="#3a302b"/></g>`,
   brick: `<g fill="#a9502e"><rect x="2.5" y="6" width="9" height="5"/><rect x="12.5" y="6" width="9" height="5"/><rect x="7.5" y="12" width="9" height="5" fill="#bd6239"/><rect x="2.5" y="12" width="4" height="5" fill="#8f4226"/><rect x="17.5" y="12" width="4" height="5" fill="#8f4226"/><rect x="2.5" y="18" width="9" height="3" fill="#8f4226"/><rect x="12.5" y="18" width="9" height="3" fill="#8f4226"/></g>`,
 };
-// The Belt's resources.
-Object.assign(RES, {
-  helium: `<circle cx="12" cy="12" r="8.500" fill="#b7a6e0" stroke="#5a4a78" stroke-width="1.400"/><circle cx="9.200" cy="9.200" r="2.200" fill="#efe9fb"/>`,
-  alloy: `<path d="M3 17 8 7h13l-5 10z" fill="#a8b0bc" stroke="#5f6670" stroke-width="1.400"/><path d="M8 7 3 17" stroke="#fff" stroke-width="1"/>`,
-  ice: `<path d="M12 2.500 19 8l-2 10-5 3.500L7 18 5 8z" fill="#d7ecf7" stroke="#5f93ad" stroke-width="1.400"/><path d="M12 2.500V21.500M5 8l14 0" stroke="#8dbdd4" stroke-width="1"/>`,
-  crystal: `<path d="M12 2 18 9l-6 13L6 9z" fill="#d65fb8" stroke="#7a3e6e" stroke-width="1.400"/><path d="M6 9h12M12 2v20" stroke="#f3b6e0" stroke-width="1"/>`,
-});
 // Not Catan's own resources.
 Object.assign(RES, {
   laurel: `<path d="M12 21C6 19 3.500 14 4 7.500c1.800.600 3 1.800 3.500 3.500M12 21c6-2 8.500-7 8-13.500-1.800.600-3 1.800-3.500 3.500" fill="none" stroke="#3f6b35" stroke-width="2"/><path d="M4.500 12.500c1.500-.2 2.700.3 3.500 1.500-1.500.400-2.700 0-3.500-1.500zM6.500 16.500c1.500-.5 2.800-.200 3.800 1-1.500.600-2.800.300-3.800-1zM19.500 12.500c-1.500-.2-2.700.3-3.500 1.500 1.500.400 2.700 0 3.500-1.500zM17.500 16.500c-1.500-.5-2.800-.200-3.800 1 1.500.600 2.800.300 3.800-1z" fill="#4f8042"/>`,

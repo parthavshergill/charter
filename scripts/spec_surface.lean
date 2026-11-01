@@ -29,7 +29,8 @@ def commandments : List Name :=
 
 def supporting : List Name :=
   [`Charter.the_winner_earned_it, `Charter.limits_hold, `Charter.every_other_event_is_exact,
-   `Charter.proposals_are_accepted, `Charter.deals_can_start]
+   `Charter.bank_trades_and_setup_are_exact, `Charter.proposals_are_accepted,
+   `Charter.deals_can_start]
 
 def moduleOf (env : Environment) (c : Name) : Option Name :=
   (env.getModuleIdxFor? c).bind fun i => env.header.moduleNames[i.toNat]?
@@ -72,7 +73,7 @@ def isWritten (env : Environment) (c : Name) : Bool :=
    | _ => false) &&
   !c.isInternal && !Meta.isMatcherCore env c && !(env.isProjectionFn c) &&
   !isAuxRecursor env c && !isNoConfusion env c &&
-  !["ctorIdx", "below", "brecOn", "casesOn", "recOn"].contains last &&
+  !["ctorIdx", "ctorElimType", "noConfusionType", "below", "brecOn", "casesOn", "recOn"].contains last &&
   !last.startsWith "below_" && !last.startsWith "brecOn_" &&
   !c.components.any (fun x => x.toString.startsWith "brecOn") &&
   !last.startsWith "instDecidableEq" && !last.startsWith "instRepr" && !last.startsWith "decEq"

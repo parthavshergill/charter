@@ -466,17 +466,17 @@ def main():
         env = dict(os.environ, CHARTER_ROOT=ROOT, ANTHROPIC_API_KEY=FAKE_KEY, ANTHROPIC_BASE_URL=f"http://127.0.0.1:{api_port}",
                    CHARTER_SEAT_CALLS_PER_TURN="2", CHARTER_SEAT_TIMEOUT_S="2", CHARTER_SEAT_BUDGET_S="4")
         out = os.path.join(data, "sim")
-        r = subprocess.run([SIM, "--games", "2", "--seats", "2", "--game", "belt", "--seed", "5", "--out", out], env=env, capture_output=True, text=True, timeout=300)
+        r = subprocess.run([SIM, "--games", "2", "--seats", "2", "--game", "slime-parliament", "--seed", "5", "--out", out], env=env, capture_output=True, text=True, timeout=300)
         check(r.returncode == 0, f"the runner finishes two games: {r.stderr[-300:]}")
         run = glob.glob(os.path.join(out, "*"))[0]
         summaries = [json.load(open(p)) for p in glob.glob(os.path.join(run, "*.summary.json"))]
-        check(len(summaries) == 2 and all(s["status"] == "finished" and s["game"] == "belt" for s in summaries), "each game has a summary")
+        check(len(summaries) == 2 and all(s["status"] == "finished" and s["game"] == "slime-parliament" for s in summaries), "each game has a summary")
         check(all(s["calls"] > 0 and s["input"] > 0 and s["wallMs"] > 0 and s["runSeed"] is not None and s["personaSeed"] is not None for s in summaries), "a summary has the seeds, token use and timing")
         check(all(os.path.exists(os.path.join(run, f"{s['code']}.{x}")) for s in summaries for x in ("events.jsonl", "talk.jsonl", "seats.jsonl")), "each game's events, talk and seat records are written out")
         names = [[x["persona"]["name"] for x in s["seats"]] for s in summaries]
         again = os.path.join(data, "sim2")
         reset(answer([{"action": "end_turn"}]))
-        r = subprocess.run([SIM, "--games", "2", "--seats", "2", "--game", "belt", "--seed", "5", "--out", again], env=env, capture_output=True, text=True, timeout=300)
+        r = subprocess.run([SIM, "--games", "2", "--seats", "2", "--game", "slime-parliament", "--seed", "5", "--out", again], env=env, capture_output=True, text=True, timeout=300)
         names2 = [[x["persona"]["name"] for x in json.load(open(p))["seats"]] for p in glob.glob(os.path.join(glob.glob(os.path.join(again, "*"))[0], "*.summary.json"))]
         check(sorted(names) == sorted(names2), "the same seed seats the same personas")
         # Out of time, then resumed.

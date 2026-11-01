@@ -1,7 +1,8 @@
 import Charter.Constitution
+import Charter.Proofs.BankSetup
 
 /-!
-# Five supporting promises
+# Six supporting promises
 
 These back up the ten commandments. An engine that rejects every event would keep most of the
 promises about what cannot happen. So some of these show that events are really accepted. The others
@@ -43,9 +44,9 @@ theorem limits_hold (G : GameDef) (hG : G.Valid) (s : State G) (hs : Reachable G
     readsTotal s.laws s.turnOrder.length ≤ maxReadsTotal :=
   Proofs.limits_hold G hG s (hs.inv hG)
 
-/-- **What most other events do.** With commandments VII and X, this and V's rule for accepted offers
-cover every event except a bank trade and a setup placement. Commandment V limits what those take from
-a seat. Only the tests check their entries in full.
+/-- **What most other events do.** With commandments VII and X, `bank_trades_and_setup_are_exact` and V's
+rule for accepted offers, this says what entries every event makes. VII covers a build, X covers a turn
+change, and no event is left to the tests alone.
 
 An exit and a proposal make no entries. An offer or a cancelled offer makes none either, unless a seat
 is at the target and the game ends, which makes only refunds. A signature makes no entries, unless it is the last, which makes exactly the deal's deposits.
@@ -84,6 +85,30 @@ theorem every_other_event_is_exact (G : GameDef) (hG : G.Valid) (s s' : State G)
         eventsApplied := s.eventsApplied + 1 }) ∧
     DeclarationsKept s s' e :=
   Proofs.every_other_event_is_exact G hG s s' e (hs.inv hG) h
+
+/-- **Bank trades and setup placements are exact.** The bank rate is always at least 2.
+
+A bank trade is accepted exactly when `BankTradeIsAllowed` says so, and it does exactly what
+`BankTradeIsExact` says: the seat pays the current rate of one resource, and gets 1 of the other. In the
+setup phase, a placement is accepted exactly when `SetupPlacementIsAllowed` says so, and it does exactly
+what `SetupPlacementIsExact` says: the piece goes on the board and no resources move.
+
+Why it matters: commandment V limits what can leave a seat's account, but not what must come back. Without
+this, an engine that took a seat's goods in a bank trade and paid nothing would keep every other promise. -/
+theorem bank_trades_and_setup_are_exact (G : GameDef) (hG : G.Valid) (s : State G) (hs : Reachable G s)
+    (p : Seat) :
+    2 ≤ s.rules.bankRate ∧
+    (∀ give get,
+      ((∃ s', Engine.step G s (.move p (.bankTrade give get)) = .ok s') ↔
+        BankTradeIsAllowed s p give get) ∧
+      ∀ s', Engine.step G s (.move p (.bankTrade give get)) = .ok s' →
+        BankTradeIsExact s s' p give get) ∧
+    (∀ k loc, s.phase = .setup →
+      ((∃ s', Engine.step G s (.move p (.place k loc)) = .ok s') ↔
+        SetupPlacementIsAllowed s p k loc) ∧
+      ∀ s', Engine.step G s (.move p (.place k loc)) = .ok s' →
+        SetupPlacementIsExact s s' p k loc) :=
+  Proofs.bank_trades_and_setup_are_exact G hG s hs p
 
 -- This proof needs neither `hG` nor `hs`. The statement keeps them, so it matches the others.
 set_option linter.unusedVariables false in

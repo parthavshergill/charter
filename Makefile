@@ -9,7 +9,7 @@
 # make sim          plays complete games with no browser. See below.
 # make spectate     opens a finished run in the browser, as a spectator.
 #
-# make sim GAMES=1 SEATS=4 [GAME=island|belt|not-catan] [SEED=n] [PERSONAS=trader,schemer,...] [KINDS=claude,bot]
+# make sim GAMES=1 SEATS=4 [GAME=island|not-catan|...] [SEED=n] [PERSONAS=trader,schemer,...] [KINDS=claude,bot]
 #          [MAX_MINUTES=360] [RESUME=results/<run>] [STOP_ROUND=n] [BRIEFS=path.json] [OUT=results]
 # STOP_ROUND stops a game when that round has ended. BRIEFS gives each seat a name, a voice and a private
 # goal: see Persona.parseBriefs. PERSONAS=griefer asks for the griefer, which is never chosen otherwise.
