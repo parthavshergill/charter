@@ -51,15 +51,18 @@ def held (p : Party) (r : Res) : Expr := .holding p (.lit r)
 /-- The bubble is what the treasury holds of it. -/
 def bubble : Expr := held .treasury "bubble"
 
+/-- The dice plus a third of the bubble reach 20. -/
+def pops : Cond := .le (.lit 20) (.add .rolled (.div bubble 3))
+
 /-- **The crash.** One number says how close it is: the dice plus a third of the bubble. From 24 on the
 bubble can pop on a 12, and each 3 more brings a lower roll in. From 54 on any roll pops it. It wipes out hype
 and empties the bubble, and nothing else. The first clause sets the law's monument. -/
 def lawCrash : Law :=
   { title := "Hype is worth a point each, until the crash"
     clauses :=
-      [ .onRoll [.when (.le (.lit 20) (.add .rolled (.div bubble 3)))
-          [ .forEach .yes [.transfer .each .bank (.lit "hype") (held .each "hype")]
-          , .transfer .treasury .bank (.lit "bubble") bubble ]]
+      [ .onRoll
+          [ .forEach pops [.transfer .each .bank (.lit "hype") (held .each "hype")]
+          , .when pops [.transfer .treasury .bank (.lit "bubble") bubble] ]
       , .setWorth "hype" 1 ] }
 
 /-- What a seat turns into money this round: what it declared in capital, up to the hype it holds. -/

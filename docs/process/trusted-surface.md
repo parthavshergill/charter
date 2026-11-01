@@ -111,7 +111,7 @@ Promise X is proved from the `Law` value onward. People and Claude seats read th
 - Every law and deal a seat proposes. The server gets proposals only from the parser, and `Rules.readable_of_parse` proves that whatever the parser returns meets it. `Rules.parse_of_print_of_parse` states this with no condition.
 - Every deal that `dealProblems` accepts: `Rules.parse_of_print_of_dealProblems`.
 - Not every law that `lawProblems` accepts. `lawProblems` allows deeper nesting, empty `if`s beside other effects, and made-up resources in a transfer or a `res-is`. Only a law written as a Lean value can reach these, which means a founding law.
-- **Four founding laws do not meet it.** One in AI Bubble and three in Pirate Republic have an `if` around a `for-each-player`. The engine runs them and the screen prints them, but the parser refuses that text, so no theorem connects their text to their value. `ServerTests.lean` names them and fails if the list changes.
+- Every founding law of every game. `lawProblems` does not make this true, so `ServerTests.lean` checks it, and fails if a founding law stops reading back.
 
 **What is only tested.** The characters. `SExp.render` and `SExp.read` have no theorem. A value can pass `Readable` and still fail in the text: a piece named `two words` or `12` does not survive printing. The parser cannot produce such a name, and no game has one. `Rules.survivesText` and `ServerTests.lean` test this layer.
 

@@ -371,15 +371,9 @@ def unreadableFoundingLaws : List String :=
     let rs := d.G.resources.map (·.name)
     (d.G.foundingLaws.filter (!foundingLawReads rs ·)).map (·.title)
 
--- These four founding laws have an `if` around a `for-each-player`. The engine runs them and the screen
--- prints them, but the parser refuses that text. So `Rules.parse_of_print` does not cover them, and a seat
--- cannot propose the same law again. Every other founding law reads back. If you change the parser or
--- these laws, change this list.
-#guard unreadableFoundingLaws ==
-  [ "Hype is worth a point each, until the crash"
-  , "The crew votes for a captain each round"
-  , "Plunder is worth a point, and the hat takes a double share"
-  , "The Navy comes at the end of round 5: take the pardon, fight or burn" ]
+-- Every founding law of every game reads back, so `Rules.parse_of_print` covers each one, and a seat can
+-- propose the same law again.
+#guard unreadableFoundingLaws == []
 
 -- `Readable.law` picks out the same founding laws as the parser does.
 #guard gameSpecs.all fun d =>
