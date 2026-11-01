@@ -35,7 +35,7 @@ Charter is inspired by:
 
 **[Play Charter here](https://charter.parthavshergill.workers.dev).** It's free and needs no account. Like Among Us, you share a game code with your friends. If you're short a player, Claude can take a seat. I think it's pretty fun.
 
-Start with **Not Catan** if you've played Catan, or **Tutorial Island** if you're new to the genre. Then try the extensions in the Library: **The AI Bubble**, **The Pirate Republic**, **Strike the Earth** (inspired by Dwarf Fortress) and **Slime Parliament** (because why not). More are coming soon.
+Start with **Not Catan** if you've played Catan, or **Tutorial Island** if you're new to the genre. Then try the extensions in the Library: **The AI Bubble**, **The Pirate Republic**, **Strike the Earth** (inspired by Dwarf Fortress), **Slime Parliament** (because why not) and **Omertà** (a crime family where everybody swears and somebody talks). More are coming soon.
 
 <img src="docs/screens/readme-island.jpg" width="49%" alt="A late game on Tutorial Island"> <img src="docs/screens/readme-ai-bubble.jpg" width="49%" alt="Datacenters and solar fields in The AI Bubble">
 <img src="docs/screens/readme-pirate-republic.jpg" width="49%" alt="Forts and pirate flags in The Pirate Republic"> <img src="docs/screens/readme-slime-parliament.jpg" width="49%" alt="Slime moulds in wigs in Slime Parliament">

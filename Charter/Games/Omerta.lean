@@ -87,8 +87,7 @@ def theRaid (pot : Expr) : List Effect :=
       [ pay .treasury .each "cash" (.divBy pot talkers)
       , pay .each .treasury "dirt" (held .each "dirt")
       , closeOne, closeOne, closeOne, closeOne ]
-  , .when (.lt (.lit 0) talkers)
-      [ .forEach (.and (.not talksNow) runsRacket) [closeOne] ] ]
+  , .forEach (.and (.lt (.lit 0) talkers) (.and (.not talksNow) runsRacket)) [closeOne] ]
 
 /-! ## The founding laws -/
 
