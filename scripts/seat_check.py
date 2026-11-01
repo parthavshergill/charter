@@ -517,9 +517,12 @@ def main():
         check(r.returncode == 0 and s5b["status"] == "stopped-round" and s5b["round"] == 5, "a stopped game replays from its log and goes on")
         check(s5b["seats"][0]["persona"]["goal"] == "SECRET-GOAL-A", "a goal survives the replay")
         # A wrong key stops the run at once.
+        # Each refused seat plays a fallback, so with instant refusals the game can end before the runner's first look.
         reset({"status": 401, "type": "authentication_error"})
+        StandIn.delay = 1.0
         r = subprocess.run([SIM, "--seats", "2", "--seed", "7", "--out", os.path.join(data, "sim4")], env=env, capture_output=True, text=True, timeout=60)
-        check(r.returncode == 1 and "refused" in r.stderr, "a refused key stops the run with a clear message")
+        StandIn.delay = 0.0
+        check(r.returncode == 1 and "refused" in r.stderr, f"a refused key stops the run with a clear message (exit code {r.returncode}): {r.stderr[-200:]}")
     finally:
         try:
             srv.stop()
