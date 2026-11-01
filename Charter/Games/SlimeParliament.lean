@@ -236,7 +236,7 @@ def theme : Theme :=
     meshDefs := defs
     meshTriangles := triangles
     tileTop := tileTop
-    hotParts := [{ mesh := mCyl, y := 0.002, sx := 0.84, sy := 0.006, sz := 0.84, rgb := withAlpha 0xF4F27A 0.45 }]
+    hotParts := [{ mesh := mCyl, y := 0.002, sx := 0.84, sy := 0.006, sz := 0.84, rgb := withAlpha 0xF4F27A 0.3 }]
     monumentModel := fruiting
     square := [m speaker 0 0 0]
     roadside := fun _ => []
