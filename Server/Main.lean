@@ -331,7 +331,9 @@ def route (ctx : Ctx) (req : Req) : ContextAsync Resp := do
   | ["api", "island"] =>
     respond .ok "application/octet-stream" (Scene.sceneBytes islandSpec.layout (emptyBoard islandSpec) none .none)
   | ["api", "defs"] =>
-    respondJson (Json.arr (gameSpecs.map fun d => Json.mkObj [("id", d.id), ("name", d.G.name)]).toArray)
+    respondJson (Json.arr (gameSpecs.map fun d =>
+      Json.mkObj [("id", d.id), ("name", d.name), ("blurb", d.blurb), ("minSeats", toJson d.minSeats),
+        ("maxSeats", toJson d.maxSeats)]).toArray)
   | "api" :: _ => respondErr "unknown route" .notFound
   | rest => serveStatic ctx.webRoot rest
 

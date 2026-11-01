@@ -470,7 +470,7 @@ def main():
              "When a 12 is rolled, every player gets 1 wool from the bank."),
             ("On a 7, a seat holding more than 7 resources in total pays half of each resource to the bank.",
              '(law "Seven penalty" (on-roll (for-each-player (and (= rolled 7) (< 7 (+ (holding each grain) (+ (holding each timber) (+ (holding each ore) (+ (holding each wool) (holding each brick))))))) (transfer each bank grain (/ (holding each grain) 2)) (transfer each bank timber (/ (holding each timber) 2)) (transfer each bank ore (/ (holding each ore) 2)) (transfer each bank wool (/ (holding each wool) 2)) (transfer each bank brick (/ (holding each brick) 2)))))',
-             "When a 7 is rolled, players with more than 7 grain, timber, ore, wool and brick in total pay half of their grain,"),
+             "When a 7 is rolled, for each player, if their grain, timber, ore, wool and brick together is more than 7, they pay half of their grain, timber, ore, wool and brick, each rounded down, to the bank."),
         ]
         for words, formal, statement in ROLL_LAWS:
             check(words in block, f"the clerk has an example for: {words}")

@@ -121,8 +121,8 @@ The first run in a browser found three weak points, and they are fixed.
 | Finding | Change |
 |---|---|
 | A roll law's payments were minor lines, so the chronicle hid them by default and no caption told them | One line for each roll, which the chronicle and the caption both show |
-| The read-back wrote a double comma for three amounts that round down | Amounts that all round down share the words "each rounded down" |
-| A sum of holdings read as "7 is less than their grain plus their wool" | It reads as "more than 7 grain and wool in total" |
+| The read-back wrote a double comma for three amounts that round down | Amounts that all round down share the words "each rounded down", and halves read as "half of their grain and ore" |
+| A sum of holdings read as "7 is less than their grain plus their timber plus their ore" | With three or more goods, it reads as "their grain, timber and ore together is more than 7", which the packs needed too |
 
 ## How the checks work
 

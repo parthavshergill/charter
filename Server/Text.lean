@@ -147,6 +147,21 @@ def fraction : Nat → Option String
   | 4 => some "a quarter of"
   | _ => none
 
+/-- The terms of a sum, flattened. -/
+def sumTerms : Expr → List Expr
+  | .add a b => sumTerms a ++ sumTerms b
+  | e => [e]
+
+/-- Three or more goods of one party added up, as a list: its party and the goods. -/
+def holdingsSum (e : Expr) : Option (Party × List Res) :=
+  match sumTerms e with
+  | .holding p (.lit r) :: rest =>
+    let others := rest.filterMap fun
+      | .holding q (.lit x) => if q == p then some x else none
+      | _ => none
+    if others.length == rest.length && 2 ≤ rest.length then some (p, r :: others) else none
+  | _ => none
+
 def exprText (c : Ctx) : Expr → String
   | .lit n => toString n
   | .harvestedAmount =>
@@ -169,7 +184,12 @@ def exprText (c : Ctx) : Expr → String
     if !c.bound p then missingParty p
     else if isSeatParty p then s!"{possessive c p} {pluralWord k}"
     else s!"0 ({noun c p} owns no pieces)"
-  | .add a b => s!"{wrapIn isAdd a (exprText c a)} plus {wrapIn isAdd b (exprText c b)}"
+  | e@(.add a b) =>
+    match holdingsSum e with
+    | some (p, rs) =>
+      if c.bound p then s!"{possessive c p} {andList rs} together"
+      else s!"{wrapIn isAdd a (exprText c a)} plus {wrapIn isAdd b (exprText c b)}"
+    | none => s!"{wrapIn isAdd a (exprText c a)} plus {wrapIn isAdd b (exprText c b)}"
   | .sub a b =>
     if isQuantity a then s!"{exprText c a} above {wrap b (exprText c b)}"
     else s!"{wrap a (exprText c a)} minus {wrap b (exprText c b)}, stopping at 0"
@@ -239,27 +259,9 @@ structure Measure where
   /-- Counted, like roads and points, not measured, like grain. -/
   counted : Bool
 
-/-- The party and resources of a sum of one party's holdings, such as their grain plus their wool. -/
-def holdingsSum : Expr → Option (Party × List Res)
-  | .holding p (.lit r) => some (p, [r])
-  | .add a b => do
-    let (p, xs) ← holdingsSum a
-    let (q, ys) ← holdingsSum b
-    if p == q then some (p, xs ++ ys) else none
-  | _ => none
-
 def measure (c : Ctx) : Expr → Option Measure
   | .holding p (.lit r) =>
     if c.bound p then some ⟨p, "hold", "holds", r, r, false⟩ else none
-  | e@(.add ..) =>
-    match holdingsSum e with
-    | some (p, rs) =>
-      -- The same resource twice is not a total, so it keeps the longer sentence.
-      if c.bound p && rs.eraseDups.length == rs.length then
-        let total := s!"{andList rs} in total"
-        some ⟨p, "hold", "holds", total, total, false⟩
-      else none
-    | none => none
   | .points p =>
     if c.bound p && isSeatParty p then some ⟨p, "have", "has", "point", "points", true⟩ else none
   | .count p k =>
@@ -377,6 +379,9 @@ def sentText (c : Ctx) : Cond → String
       match cond with
       | .lt (.lit n) .rolled => s!"{exprText c .rolled} is more than {n}"
       | .le (.lit n) .rolled => s!"{exprText c .rolled} is at least {n}"
+      | .lt (.lit n) b =>
+        if (holdingsSum b).isSome then s!"{exprText c b} {isWord b} more than {n}"
+        else s!"{n} is less than {exprText c b}"
       | .lt a b => s!"{exprText c a} {isWord a} less than {exprText c b}"
       | .le a b => s!"{exprText c a} {isWord a} at most {exprText c b}"
       | .eq a b => s!"{exprText c a} {isWord a} equal to {exprText c b}"
@@ -620,15 +625,27 @@ structure Phrase where
 /-- An amount that ends in "rounded down" needs a comma before the words that follow it. -/
 def closeAmount (a : String) : String := if a.endsWith "rounded down" then a ++ "," else a
 
-/-- The amounts of one phrase. Several that all round down share the words "each rounded down". -/
-def amountList (amounts : List String) : String :=
-  let suffix := ", rounded down"
-  if 1 < amounts.length && amounts.all (·.endsWith suffix) then
-    s!"{andList (amounts.map fun a => (a.dropEnd suffix.length).toString)}, each rounded down,"
-  else andList (amounts.map closeAmount)
+/-- "half of their timber, rounded down" and so on, as one phrase, if every amount reads that way. -/
+def halves (amounts : List String) : Option String :=
+  let head := "half of their "
+  let tail := ", rounded down"
+  if amounts.length < 2 || !amounts.all (fun a => a.startsWith head && a.endsWith tail) then none
+  else
+    let names := amounts.map fun a => ((a.drop head.length).dropEnd tail.length).toString
+    some s!"half of their {andList names}, each rounded down,"
+
+/-- Several amounts that all round down, but not all by half, share the words "each rounded down". -/
+def allRoundDown (amounts : List String) : Option String :=
+  let tail := ", rounded down"
+  if amounts.length < 2 || !amounts.all (·.endsWith tail) then none
+  else some s!"{andList (amounts.map fun a => (a.dropEnd tail.length).toString)}, each rounded down,"
 
 def Phrase.render (plural : Bool) (p : Phrase) : String :=
-  s!"{if plural then p.verb else p.verb ++ "s"} {amountList p.amounts} {p.tail}"
+  let amounts := match p.amounts.reverse with
+    | [] => []
+    | last :: rest => (closeAmount last :: rest).reverse
+  let what := ((halves p.amounts).orElse fun _ => allRoundDown p.amounts).getD (andList amounts)
+  s!"{if plural then p.verb else p.verb ++ "s"} {what} {p.tail}"
 
 /-- Join phrases that share a verb and a tail. -/
 def joinPhrases (plural : Bool) (ps : List Phrase) : String :=

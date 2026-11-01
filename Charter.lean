@@ -8,6 +8,8 @@ import Charter.Games.Tiny
 import Charter.Games.Island
 import Charter.Games.IslandTests
 import Charter.Games.Belt
+import Charter.Games.NotCatan
+import Charter.Games.NotCatanTests
 import Charter.Scene.Belt
 import Charter.Games.Witnesses
 import Charter.Scene.OfState

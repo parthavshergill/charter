@@ -293,9 +293,8 @@ def getGrain (amount : String) : String :=
 #guard law "(on-roll (for-each-player (= rolled 12) (transfer bank each wool 1)))" ==
   "When a 12 is rolled, every player gets 1 wool from the bank."
 #guard sample "seven-penalty" ==
-  "When a 7 is rolled, players with more than 7 grain, timber, ore, wool and brick in total pay " ++
-  "half of their grain, half of their timber, half of their ore, half of their wool and half of " ++
-  "their brick, each rounded down, to the bank."
+  "When a 7 is rolled, for each player, if their grain, timber, ore, wool and brick together is more " ++
+  "than 7, they pay half of their grain, timber, ore, wool and brick, each rounded down, to the bank."
 -- The same rule written another way reads the same.
 #guard law "(on-roll (if (= 7 rolled) (transfer bank treasury grain 1)))" ==
   "When a 7 is rolled, the bank pays 1 grain to the treasury."
@@ -361,14 +360,17 @@ def rollTexts : List String :=
   | .ok p => Rules.printProposal p == t
   | .error _ => false
 
--- A sum of one player's holdings reads as a total. Other sums keep the longer sentence.
+-- Three or more goods of one player read as one list. Two read as a sum, and so does a repeated good
+-- with another party's.
+#guard law "(on-round-end (for-each-player (< 7 (+ (holding each grain) (+ (holding each wool) (holding each ore)))) (transfer each treasury grain 1)))" ==
+  s!"Each round, for each player, if their grain, wool and ore together is more than 7, they pay 1 grain to the treasury. / {short}"
 #guard law "(on-round-end (for-each-player (< 7 (+ (holding each grain) (holding each wool))) (transfer each treasury grain 1)))" ==
-  s!"Each round, players with more than 7 grain and wool in total pay 1 grain to the treasury. / {short}"
-#guard law "(on-round-end (for-each-player (< 7 (+ (holding each grain) (holding each grain))) (transfer each treasury grain 1)))" ==
-  s!"Each round, for each player, if 7 is less than their grain plus their grain, they pay 1 grain to the treasury. / {short}"
--- Amounts that all round down share the words.
+  s!"Each round, for each player, if 7 is less than their grain plus their wool, they pay 1 grain to the treasury. / {short}"
+-- Amounts that all round down share the words, and halves share more of them.
 #guard law "(on-round-end (for-each-player true (transfer each treasury grain (/ (holding each grain) 2)) (transfer each treasury ore (/ (holding each ore) 2))))" ==
-  "Each round, every player pays half of their grain and half of their ore, each rounded down, to the treasury."
+  "Each round, every player pays half of their grain and ore, each rounded down, to the treasury."
+#guard law "(on-round-end (for-each-player true (transfer each treasury grain (/ (holding each grain) 3)) (transfer each treasury ore (/ (holding each ore) 3)) (transfer each treasury wool (/ (holding each wool) 3))))" ==
+  "Each round, every player pays a third of their grain, a third of their ore and a third of their wool, each rounded down, to the treasury."
 
 /-! ## Prices, points, the bank, repeal, new pieces, and many clauses -/
 
@@ -795,6 +797,28 @@ section Games
 #guard (specOf? none).map (·.id) == some "island"
 #guard (specOf? (some "belt")).map (·.id) == some "belt"
 #guard (specOf? (some "nowhere")).isNone
+
+-- A pack has a name, a sentence and seats. The base game comes first, and its table sizes have not changed.
+#guard gameSpecs.head?.map (·.id) == some islandSpec.id
+#guard gameSpecs.all fun d => !d.name.isEmpty && !d.blurb.isEmpty && minSeats ≤ d.minSeats && d.maxSeats ≤ maxSeats
+#guard (islandSpec.minSeats, islandSpec.maxSeats) == (minSeats, maxSeats)
+#guard (notCatanSpec.minSeats, notCatanSpec.maxSeats) == (3, 4)
+
+-- A game with no counter has all its resources on the screen, so old games read as they did.
+#guard islandSpec.G.resources.map (·.name) == goodsOf islandSpec.G
+#guard beltSpec.G.resources.map (·.name) == goodsOf beltSpec.G
+#guard goodsOf notCatanSpec.G == ["timber", "grain", "ore", "wool", "brick", "laurel"]
+#guard (paidRegions notCatanSpec.G).length == 18
+
+-- Founding laws can be read back from the formal text the screen shows, and their sentences name the laws' goods.
+#guard notCatanSpec.G.foundingLaws.all fun L =>
+  match Rules.parseProposal (Rules.printProposal (.law L)) (notCatanSpec.G.resources.map (·.name)) with
+  | .ok (.law L') => Rules.printProposal (.law L') == Rules.printProposal (.law L)
+  | _ => false
+#guard notCatanSpec.G.foundingLaws.all fun L => !(Text.lawText L).isEmpty
+#guard ((Text.lawText Games.NotCatan.lawAlarm).splitOn ",,").length == 1
+#guard ((Text.lawText Games.NotCatan.lawAlarm).splitOn "their timber, grain, ore, wool and brick together is more than 7").length == 2
+#guard ((Text.lawText Games.NotCatan.lawAlarm).splitOn "half of their timber, grain, ore, wool and brick, each rounded down, to the bank").length == 2
 
 -- A law can use only the resources of its own game.
 #guard (Rules.parseProposal "(law \"x\" (set-cost city (bundle (ice 1))))").toOption.isNone

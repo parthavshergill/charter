@@ -149,9 +149,10 @@ def tableContext (g : Game) (s : State g.spec.G) (seat : Nat) : String :=
     let n := s.balance .treasury r
     if n == 0 then none else some s!"{n} {r}"
   let treasuryText := if treasury.isEmpty then "nothing" else ", ".intercalate treasury
+  let guide := if g.spec.guide.isEmpty then "" else s!"\n\n{g.spec.guide}"
   Clerk.neutralize s!"Round {s.round} of {G.rounds}. First to {G.targetPoints} points wins. The bank trades {s.rules.bankRate} for 1. The treasury holds {treasuryText}. The dice show {G.diceCount} to {G.diceCount * G.diceSides}.
 
-The resources of this game: {", ".intercalate g.resources}.
+The resources of this game: {", ".intercalate g.resources}.{guide}
 
 Seats:
 {seats}
