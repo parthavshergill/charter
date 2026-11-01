@@ -72,7 +72,7 @@ structure Usage where
 
 /-- Settings for Claude seats. -/
 structure SeatSettings where
-  model : String := "claude-opus-5-5"
+  model : String := "claude-sonnet-5-5"
   effort : String := "medium"
   maxTokens : Nat := 12000
   /-- The longest one request can take. -/
@@ -173,7 +173,7 @@ def Ctx.new (tbl : Std.HashMap String Entry) (root dataDir : System.FilePath) (b
 def seatSettingsFromEnv : IO SeatSettings := do
   let num (k : String) (d : Nat) : IO Nat := do return ((← IO.getEnv k).bind String.toNat?).getD d
   return {
-    model := (← IO.getEnv "CHARTER_SEAT_MODEL").getD "claude-opus-5-5"
+    model := (← IO.getEnv "CHARTER_SEAT_MODEL").getD "claude-sonnet-5-5"
     effort := (← IO.getEnv "CHARTER_SEAT_EFFORT").getD "medium"
     maxTokens := ← num "CHARTER_SEAT_MAX_TOKENS" 12000
     timeoutS := ← num "CHARTER_SEAT_TIMEOUT_S" 120
