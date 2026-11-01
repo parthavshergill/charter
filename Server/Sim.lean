@@ -16,6 +16,11 @@ writes them as `.jsonl` files, and a `.summary.json`.
 
 Every event is on disk when it is accepted. So a run that stops, for any reason, can go on with
 `--resume <folder>`. A game that runs out of wall-clock time stops cleanly, with status `stopped`.
+
+`--stop-round N` stops a game when round N has ended, with status `stopped-round`. The driver checks this
+before each action, so the log ends with the event that ended that round. Each seat is then interviewed,
+as after a game that ended. `--briefs <file>` gives seats names, voices and private goals: see
+`Persona.parseBriefs`.
 -/
 
 namespace CharterServer.Sim
@@ -33,6 +38,10 @@ structure Options where
   personas : List String := []
   maxMinutes : Nat := 360
   resume : Option String := none
+  /-- Stop each game when this round has ended. -/
+  stopRound : Option Nat := none
+  /-- A JSON file with a name, a voice and a private goal for each seat. -/
+  briefs : Option String := none
   /-- Check that the bots still choose what this saved game's bots chose. -/
   checkBotLog : Option String := none
   /-- Check law previews against what the engine does, in real games. -/
@@ -48,6 +57,11 @@ def parseArgs : List String → Options → Except String Options
   | "--kinds" :: k :: r, o => parseArgs r { o with kinds := k.splitOn "," }
   | "--personas" :: k :: r, o => parseArgs r { o with personas := k.splitOn "," }
   | "--max-minutes" :: n :: r, o => parseArgs r { o with maxMinutes := n.toNat?.getD o.maxMinutes }
+  | "--stop-round" :: n :: r, o =>
+    match n.toNat? with
+    | some k => parseArgs r { o with stopRound := some k }
+    | none => .error s!"--stop-round needs a round number, not {n}"
+  | "--briefs" :: f :: r, o => parseArgs r { o with briefs := some f }
   | "--resume" :: d :: r, o => parseArgs r { o with resume := some d }
   | "--check-bot-log" :: f :: r, o => parseArgs r { o with checkBotLog := some f }
   | "--check-previews" :: r, o => parseArgs r { o with checkPreviews := true }
@@ -65,7 +79,7 @@ def stamp : IO String := do
 /-! ## Setting a table -/
 
 /-- Create a table and seat it. Everything random comes from the seed, and goes in the log. -/
-def seatTable (ctx : Ctx) (o : Options) (seed : Nat) : IO (Except String String) := do
+def seatTable (ctx : Ctx) (o : Options) (briefs : List Persona.Brief) (seed : Nat) : IO (Except String String) := do
   let code ← randomCode
   let personaSeed := derive seed 1
   let create := Json.mkObj
@@ -75,7 +89,8 @@ def seatTable (ctx : Ctx) (o : Options) (seed : Nat) : IO (Except String String)
   match ← addGame ctx create with
   | .error err => return .error err
   | .ok _ =>
-    let personas := Persona.pick (UInt64.ofNat personaSeed) o.seats o.personas
+    let personas := Persona.withBriefs
+      (Persona.pick (UInt64.ofNat personaSeed) o.seats o.personas o.game Persona.allStyles) briefs
     let botNames := Bots.botNames
     for i in List.range o.seats do
       let kind := o.kinds.getD (i % o.kinds.length) "claude"
@@ -167,6 +182,15 @@ def progressLine (ctx : Ctx) (code : String) : IO String := do
     | none => "lobby"
   return s!"[{code}] {where_}; {e.game.events} events, {e.talk.size} talk lines; {u.calls} calls, {u.input}+{u.cacheRead}+{u.cacheWrite} in, {u.output} out; {u.retries} retries, {u.fallbacks} fallbacks"
 
+/-- Ask each Claude seat what it thought, for a game stopped before its end. The driver does this for a
+game that ended. -/
+def interviewAll (ctx : Ctx) (code : String) (g : Game) : IO Unit := do
+  let mut tasks := []
+  for seat in g.claudeSeats do
+    if !(← Seat.getMind ctx code seat).interviewed then
+      tasks := (← IO.asTask (prio := .dedicated) (Seat.interview ctx code seat)) :: tasks
+  for t in tasks do discard <| IO.wait t
+
 /-- Drive these tables to the end, or to their time limit. Returns false if any of them did not end. -/
 def runTables (ctx : Ctx) (codes : List String) (maxMinutes : Nat) : IO Bool := do
   let start ← IO.monoMsNow
@@ -195,8 +219,12 @@ def runTables (ctx : Ctx) (codes : List String) (maxMinutes : Nat) : IO Bool := 
           | some s => s.phase == .ended
           | none => false
         let stopped := (← ctx.stopped.get).contains code
-        let status := if ended then "finished" else if stopped then "stopped" else "stuck"
-        if !ended then ok := false
+        let atStopRound := ctx.pastStopRound e.game
+        let status :=
+          if ended then "finished" else if atStopRound then "stopped-round"
+          else if stopped then "stopped" else "stuck"
+        if !ended && !atStopRound then ok := false
+        if atStopRound then interviewAll ctx code e.game
         let summary ← writeOut ctx code status (now - start)
         IO.println s!"[{code}] {status}: {summary.pretty}"
         out.flush
@@ -239,10 +267,11 @@ def checkBotLog (path : String) : IO Bool := do
 
 /-- A context for the runner. Rate limits can make a turn slow, and no person is waiting, so a Claude
 seat gets more time for a turn here than at a table with people. -/
-def simCtx (tbl : Std.HashMap String Entry) (root dataDir : System.FilePath) (seat : SeatSettings) : IO Ctx := do
+def simCtx (tbl : Std.HashMap String Entry) (root dataDir : System.FilePath) (seat : SeatSettings)
+    (stopRound : Option Nat) : IO Ctx := do
   let ctx ← Ctx.new tbl root dataDir 0 0 seat
   let turnMs := ((← IO.getEnv "CHARTER_CLAUDE_TURN_MS").bind String.toNat?).getD 1500000
-  return { ctx with claudeTurnMs := turnMs }
+  return { ctx with claudeTurnMs := turnMs, stopRound }
 
 def run (o : Options) : IO UInt32 := do
   if let some path := o.checkBotLog then
@@ -256,7 +285,7 @@ def run (o : Options) : IO UInt32 := do
   | some dir =>
     let dataDir : System.FilePath := dir
     let tbl ← loadAll dataDir
-    let ctx ← simCtx tbl root dataDir seat
+    let ctx ← simCtx tbl root dataDir seat o.stopRound
     let codes := tbl.toList.filterMap fun (code, e) =>
       match e.game.state with
       | some s => if s.phase == .ended then none else some code
@@ -274,15 +303,23 @@ def run (o : Options) : IO UInt32 := do
     if o.kinds.contains "claude" && (← Formalize.settings root).key.isNone then
       IO.eprintln "no API key: set ANTHROPIC_API_KEY, or CHARTER_ENV_FILE to a file that has it"
       return 1
+    let briefs ← match o.briefs with
+      | none => pure []
+      | some path =>
+        match Persona.parseBriefs (← IO.FS.readFile path) with
+        | .ok b => pure b
+        | .error err =>
+          IO.eprintln s!"could not read {path}: {err}"
+          return 2
     let seed ← match o.seed with
       | some n => pure n
       | none => randomNat64
     let dataDir : System.FilePath := o.out ++ "/" ++ (← stamp) ++ s!"-s{seed % 100000}"
     IO.FS.createDirAll dataDir
-    let ctx ← simCtx {} root dataDir seat
+    let ctx ← simCtx {} root dataDir seat o.stopRound
     let mut codes : List String := []
     for i in List.range o.games do
-      match ← seatTable ctx o (derive seed (1000 + i)) with
+      match ← seatTable ctx o briefs (derive seed (1000 + i)) with
       | .error err =>
         IO.eprintln s!"could not set a table: {err}"
         return 1

@@ -478,6 +478,31 @@ def main():
         check(json.load(open(glob.glob(os.path.join(run3, "*.summary.json"))[0]))["status"] == "stopped", "its summary says it stopped")
         r = subprocess.run([SIM, "--resume", run3], env=env, capture_output=True, text=True, timeout=300)
         check(r.returncode == 0 and json.load(open(glob.glob(os.path.join(run3, "*.summary.json"))[0]))["status"] == "finished", "a stopped game can go on from its log")
+        # A brief reaches only its own seat, and a game can stop at a round.
+        briefed = os.path.join(data, "sim5")
+        brief_file = os.path.join(data, "briefs.json")
+        with open(brief_file, "w") as f:
+            json.dump([{"name": "Nim", "voice": "a test voice", "goal": "SECRET-GOAL-A", "style": "griefer"},
+                       {"name": "Ona", "goal": "SECRET-GOAL-B"}], f)
+        reset(answer([{"action": "end_turn"}], say="Next."))
+        r = subprocess.run([SIM, "--seats", "2", "--seed", "8", "--out", briefed, "--stop-round", "2", "--briefs", brief_file], env=env, capture_output=True, text=True, timeout=120)
+        check(r.returncode == 0, f"a game that reaches its stop round is a success: {r.stderr[-300:]}")
+        run5 = glob.glob(os.path.join(briefed, "*"))[0]
+        s5 = json.load(open(glob.glob(os.path.join(run5, "*.summary.json"))[0]))
+        check(s5["status"] == "stopped-round" and s5["round"] == 3, "the game stops when that round has ended")
+        check([x["name"] for x in s5["seats"]] == ["Nim", "Ona"] and s5["seats"][0]["persona"]["style"] == "griefer", "a brief names the seats and sets a style")
+        reqs = [json.dumps(q) for q in StandIn.seat_requests]
+        check(any("SECRET-GOAL-A" in q for q in reqs) and any("SECRET-GOAL-B" in q for q in reqs), "each goal reaches its seat's prompt")
+        check(not any("SECRET-GOAL-A" in q and "SECRET-GOAL-B" in q for q in reqs), "no prompt holds both goals")
+        check(all("SECRET-GOAL" not in user_text(q) for q in StandIn.seat_requests), "a goal is only in the system message")
+        talk5 = [json.loads(x) for x in open(glob.glob(os.path.join(run5, "*.talk.jsonl"))[0])]
+        check(sum(1 for x in talk5 if x["kind"] == "interview") == 2, "each seat is interviewed when a game stops at a round")
+        events5 = open(glob.glob(os.path.join(run5, "*.events.jsonl"))[0]).read()
+        check("SECRET-GOAL" not in events5, "the written event log holds no goal")
+        r = subprocess.run([SIM, "--resume", run5, "--stop-round", "4"], env=env, capture_output=True, text=True, timeout=120)
+        s5b = json.load(open(glob.glob(os.path.join(run5, "*.summary.json"))[0]))
+        check(r.returncode == 0 and s5b["status"] == "stopped-round" and s5b["round"] == 5, "a stopped game replays from its log and goes on")
+        check(s5b["seats"][0]["persona"]["goal"] == "SECRET-GOAL-A", "a goal survives the replay")
         # A wrong key stops the run at once.
         reset({"status": 401, "type": "authentication_error"})
         r = subprocess.run([SIM, "--seats", "2", "--seed", "7", "--out", os.path.join(data, "sim4")], env=env, capture_output=True, text=True, timeout=60)

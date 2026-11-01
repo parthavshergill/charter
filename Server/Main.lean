@@ -86,7 +86,7 @@ def handleClaude (ctx : Ctx) (req : Req) (code : String) (body : Json) : Context
   let mk : Entry → Except String Json := fun e =>
     let used := e.game.room.occupants.map (·.name)
     let usedStyles := e.game.personas.toList.filterMap (·.map (·.style))
-    let choices := Persona.pick (UInt64.ofNat seed) 10 only
+    let choices := Persona.pick (UInt64.ofNat seed) 10 only e.game.spec.id
     let unused := choices.filter fun p => !used.contains p.name
     let fresh := unused.filter fun p => !usedStyles.contains p.style
     match (fresh ++ unused).head? with
@@ -161,6 +161,18 @@ def respondScene (req : Req) (bytes : ByteArray) : Async Resp := do
   else
     respond .ok sceneType bytes [("X-Scene-Tag", tag)]
 
+/-- How many real tokens this table's Claude seats spent, from its seat log. Only for a finished table
+with Claude seats: anything else has no such line. It is a record of what happened, and no rule reads it. -/
+def realTokens (ctx : Ctx) (code : String) (g : Game) : IO Json := do
+  let ended := match g.state with
+    | some s => s.phase == .ended
+    | none => false
+  if !ended || !(List.range g.kinds.size).any g.isClaude then return Json.null
+  let records ← seatRecords ctx code
+  let spent := records.toList.filter fun r => jStr r "k" == some "call" || jStr r "k" == some "draft"
+  let sum (k : String) : Nat := (spent.map fun r => (jNat r k).getD 0).sum
+  return toJson (sum "input" + sum "cacheRead" + sum "cacheWrite" + sum "output")
+
 def route (ctx : Ctx) (req : Req) : ContextAsync Resp := do
   let segs := req.line.uri.path.toDecodedSegments.toList.filter (· != "")
   let q := req.line.uri.query
@@ -191,7 +203,7 @@ def route (ctx : Ctx) (req : Req) : ContextAsync Resp := do
         match gameAt e at_ with
         | .error err => respondErr err
         | .ok g =>
-          respondJson (View.withReplay (View.view g code none [] (← bookOf ctx code)) at_ e.events.size)
+          respondJson (View.withField (View.withReplay (View.view g code none [] (← bookOf ctx code)) at_ e.events.size) "realTokens" (← realTokens ctx code g))
       | none =>
         -- This is how the server knows who is here. A table with no people, held since a restart,
         -- waits only for someone to watch it.
@@ -214,7 +226,7 @@ def route (ctx : Ctx) (req : Req) : ContextAsync Resp := do
             ("resting", resting), ("paused", paused)])
         else
           let v := View.withTalkCount (View.view e.game code (seatOf e token) (← draftingSeats ctx code) book) e.talk.size
-          respondJson (View.withField (View.withField (View.withField v "turnLeftMs" (toJson left)) "resting" resting) "paused" paused)
+          respondJson (View.withField (View.withField (View.withField (View.withField v "turnLeftMs" (toJson left)) "resting" resting) "paused" paused) "realTokens" (← realTokens ctx code e.game))
     | "talk", false =>
       let some e ← findEntry ctx code | respondErr s!"no game {code}" .notFound
       let at_ := (q.get "at").bind String.toNat?
