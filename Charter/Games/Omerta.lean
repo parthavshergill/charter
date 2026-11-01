@@ -126,7 +126,7 @@ def game : GameDef where
         placement := .link, yield := 0, limit := 12 }
     , { name := "front", cost := [("wine", 1), ("cement", 1), ("fish", 1)], points := 1
         placement := .spot, yield := 1, limit := 5 }
-    , { name := "club", cost := [("cement", 2), ("cash", 3), ("dirt", 1)], points := 2
+    , { name := "club", cost := [("cement", 2), ("cash", 2), ("dirt", 1)], points := 2
         placement := .upgrade "front", yield := 2, limit := 3 }
     , { name := "racket", cost := [("wine", 2), ("fish", 1)], points := 1
         placement := .attach "front", yield := 0, limit := 4 } ]
@@ -136,8 +136,8 @@ def game : GameDef where
       regions := regionsOf tiles }
   diceCount := 2
   diceSides := 6
-  targetPoints := 30
-  rounds := 9
+  targetPoints := 25
+  rounds := 8
   bankRate := 4
   setupPieces := ["front", "street"]
   foundingLaws := foundingLaws
