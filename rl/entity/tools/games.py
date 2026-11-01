@@ -25,25 +25,22 @@ LEVELS = LAYOUT["declare_levels"]
 
 
 def name(a):
-    """A readable name for action index `a` (rl/layout.json `actions`)."""
+    """A readable name for action index `a` (rl/layout.json `actions`, layout 2)."""
     if a == START["end_turn"]:
         return "end_turn"
     if a == START["vote_no"]:
         return "vote_no"
     if a == START["vote_yes"]:
         return "vote_yes"
-    if a >= START["spot"]:
-        i = a - START["spot"]
-        return f"spot {i % LIM['spots']} kind {i // LIM['spots']}"
-    if a >= START["link"]:
-        i = a - START["link"]
-        return f"link {i % LIM['links']}" + (f" kind {i // LIM['links']}" if i >= LIM["links"] else "")
+    nres = LIM["resources"]
+    if a >= START["place"]:
+        return f"place row {a - START['place']}"
     if a >= START["declare"]:
         i = a - START["declare"]
         return f"declare res {i // len(LEVELS)} level {LEVELS[i % len(LEVELS)]}"
     if a >= START["bank"]:
         i = a - START["bank"]
-        return f"bank give {i // LIM['resources']} get {i % LIM['resources']}"
+        return f"bank give {i // nres} get {i % nres}"
     return f"noop {a}"
 
 
