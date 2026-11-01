@@ -196,7 +196,7 @@ def writeLaws (a : FloatArray) (G : GameDef) (laws : List (Nat × Law)) : FloatA
       a := put a tLaws oLaws row real 1
       a := put a tLaws oLaws row lawFounding (if id < founding then 1 else 0)
       let mut c := lawShapeAt
-      for x in L.shape do
+      for x in Law.shape L do
         a := put a tLaws oLaws row c x
         c := c + 1
   return a
@@ -320,7 +320,7 @@ private def writeProposal (a : FloatArray) (ep : Episode) (preview : Bool) (s : 
   let at_ (a : FloatArray) (c : Nat) (x : Float) := put a w oProposal 0 c x
   a := at_ a real 1
   let mut c := qShape
-  for x in L.shape do
+  for x in Law.shape L do
     a := at_ a c x
     c := c + 1
   let some p := s.openProposal? id | return a
@@ -362,9 +362,9 @@ private def moveClass (rules : Rules) : Event → Nat
   | .move _ (.declare ..) => mDeclare
   | .move _ (.place k _) =>
     match (rules.piece? k).map (·.placement) with
-    | some .link => mLink
-    | some .spot => mSpot
-    | some (.upgrade _) => mUpgrade
+    | some Placement.link => mLink
+    | some Placement.spot => mSpot
+    | some (Placement.upgrade _) => mUpgrade
     | _ => mAttach
   | _ => mEnd
 
@@ -510,7 +510,7 @@ def observe (T : Tables) (ep : Episode) (ctx : Ctx G) (settings : Settings) (bas
       a := a.set! (off + pPiecePoints) (a.get! (off + pPiecePoints) + ofNat ((e.map (·.points)).getD 0) / 5)
       a := a.set! (off + pPieceYield) (a.get! (off + pPieceYield) + ofNat ((e.map (·.yield)).getD 0) / 3)
       match e.map (·.placement) with
-      | some (.attach _) => a := a.set! (off + pAttached) (a.get! (off + pAttached) + 1 / 3)
+      | some (Placement.attach _) => a := a.set! (off + pAttached) (a.get! (off + pAttached) + 1 / 3)
       | _ => pure ()
     | .link l =>
       linkPieces := linkPieces.modify x.owner (· + 1)

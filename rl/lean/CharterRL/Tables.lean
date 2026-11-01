@@ -99,6 +99,9 @@ def Law.shape (L : Law) : Array Float :=
 
 /-! ## A game's tables -/
 
+instance : Inhabited Region := ⟨{ res := "", number := 0, spots := [] }⟩
+
+
 /-- What never changes for a game. -/
 structure Tables where
   id : String
@@ -116,7 +119,13 @@ structure Tables where
   library : Array Law
   /-- Some law can read a declared number, so declaring can matter. -/
   declares : Bool
-  deriving Inhabited
+
+/-- The Island's tables. Only a default for `Inhabited`; nothing plays it by this name. -/
+instance : Inhabited Tables where
+  default :=
+    let G := islandSpec.G
+    { id := "", G, minSeats := 2, maxSeats := 6, board := Board.of G, spotXY := #[], links := #[]
+      linkFrom := #[], library := #[], declares := false }
 
 /-- A game's own laws and library decide whether declaring is offered. -/
 def declaresIn (G : GameDef) (library : Array Law) : Bool :=
@@ -263,14 +272,12 @@ def mix (seed index : Nat) : UInt64 :=
   scramble (scramble (UInt64.ofNat seed ^^^ 0x5851F42D4C957F2D) + UInt64.ofNat index)
 
 /-- This list in an order fixed by the seed. -/
-def shuffled {α : Type} [Inhabited α] (xs : Array α) (seed : Nat) : Array α := Id.run do
+def shuffled {α : Type} (xs : Array α) (seed : Nat) : Array α := Id.run do
   let mut a := xs
   let mut i := a.size
   while i > 1 do
     let j := (mix seed i).toNat % i
-    let x := a[i - 1]!
-    a := a.setIfInBounds (i - 1) a[j]!
-    a := a.setIfInBounds j x
+    a := a.swapIfInBounds (i - 1) j
     i := i - 1
   return a
 
@@ -288,8 +295,8 @@ def Episode.make (G : GameDef) (order : SlotOrder) (seed : Nat) : Episode :=
   let rowRes' := fun (r : Res) => (rowRes.findIdx? (· == r)).getD 0
   let pay := paidRegions G
   let spotRes := (List.range G.map.spotCount).toArray.map fun v =>
-    (pay.filter (·.spots.contains v)).map fun t => (rowRes' t.res, pips G t.number)
-  ({ ep with spotRes, tileRes := (G.map.regions.map fun t => rowRes' t.res).toArray }).seat
+    (pay.filter fun (t : Region) => t.spots.contains v).map fun (t : Region) => (rowRes' t.res, pips G t.number)
+  ({ ep with spotRes, tileRes := (G.map.regions.map fun (t : Region) => rowRes' t.res).toArray }).seat
     (linkKinds.toList ++ spotKinds.toList)
 
 /-! ## Maps -/

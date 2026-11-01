@@ -51,7 +51,7 @@ structure Env where
   decisions : Nat := 0
 
 instance : Inhabited Env := ⟨
-  { T := default, settings := {}, lineup := #[], seed := 0, G := default.G, ctx := default,
+  { T := default, settings := {}, lineup := #[], seed := 0, G := (default : Tables).G, ctx := default,
     setupTable := default, playTable := default,
     play := Play.start (initialState (default : Tables).G 0 0 []) 0, ep := default,
     base := FloatArray.empty, draws := 0, rewards := FloatArray.empty }⟩
@@ -104,18 +104,19 @@ private def Env.lawFits (e : Env) (L : Law) : Bool :=
 /-- At the start of a turn in play, by chance, the seat whose turn it is proposes a law from the library. The engine
 may refuse one, for example if it is already in force, so this tries each in turn from a random place. -/
 private def Env.injectLaw (e : Env) : Env :=
-  let s := e.play.state
-  if e.settings.lawEvery == 0 || s.phase != .actions || s.turnsTaken == e.lawTurn then e else
-  let e := { e with lawTurn := s.turnsTaken }
+  let s0 := e.play.state
+  if e.settings.lawEvery == 0 || s0.phase != .actions || s0.turnsTaken == e.lawTurn then e else
+  let e := { e with lawTurn := s0.turnsTaken }
   let (x, e) := e.draw
   let lib := e.T.library
   if x.toNat % e.settings.lawEvery != 0 || lib.isEmpty then e else
   let (y, e) := e.draw
+  let s := e.play.state
   match s.currentSeat with
   | Option.none => e
   | some seat =>
     let start := y.toNat % lib.size
-    let tries := (List.range lib.size).map fun i => lib[(start + i) % lib.size]!
+    let tries := (List.range lib.size).filterMap fun i => lib[(start + i) % lib.size]?
     let found := tries.findSome? fun L =>
       if e.lawFits L then
         match Engine.step e.G s (.propose seat (.law L)) with
@@ -138,22 +139,22 @@ private def Env.noteOpening (e : Env) : Env :=
 
 /-- Cast a vote that is not the caller's to choose, or that is the caller's under a vote mode that handles it. -/
 private def Env.castVote (e : Env) (seat id : Nat) (L : Law) : Option Env :=
-  let s := e.play.state
-  let wanted : Bool × Env := match e.planOf seat with
+  let (yes, e) : Bool × Env := match e.planOf seat with
     | some o =>
       let c := ctxOf e.ctx.board o
-      let yes := (o.strategy.decide c s [seat]).findSome? fun
+      let yes := (o.strategy.decide c e.play.state [seat]).findSome? fun
         | .vote q i y => if q == seat && i == id then some y else Option.none
         | _ => Option.none
       (yes.getD false, e)
     | Option.none =>
       match e.settings.voteMode with
-      | .bot => (lawOk e.ctx s seat id L, e)
+      | .bot => (lawOk e.ctx e.play.state seat id L, e)
       | _ =>
         let (x, e) := e.draw
         (x % 2 == 0, e)
-  match Engine.step e.G s (.vote seat id wanted.1) with
-  | .ok s' => some { wanted.2 with play := wanted.2.play.commit {} wanted.2.playTable (.vote seat id wanted.1) s' }
+  let s := e.play.state
+  match Engine.step e.G s (.vote seat id yes) with
+  | .ok s' => some { e with play := e.play.commit {} e.playTable (.vote seat id yes) s' }
   | .error _ =>
     match Engine.step e.G s (.vote seat id false) with
     | .ok s' => some { e with play := e.play.commit {} e.playTable (.vote seat id false) s' }

@@ -50,6 +50,7 @@ name = "charter-arena"
 root = "Server.Arena"
 
 # The training environment. It is not a default target, and the server does not import it. See rl/README.md.
+# rl/env/build.sh builds its C library, rl/build/libcharter_rl.so.
 [[lean_lib]]
 name = "CharterRL"
 srcDir = "rl/lean"
@@ -58,9 +59,3 @@ srcDir = "rl/lean"
 name = "charter-rl-check"
 srcDir = "rl/lean"
 root = "CharterRL.CheckMain"
-
-[[lean_exe]]
-name = "charter-rl-shared"
-srcDir = "rl/lean"
-root = "CharterRL.Capi"
-moreLinkArgs = ["-shared", "rl/build/capi.o"]
