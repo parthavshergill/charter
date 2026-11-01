@@ -51,7 +51,7 @@ Each law on your screen comes with its rule source, such as `(law "Toll" (on-bui
 ## The rules
 The dice are rolled at the start of each turn. Each hex with that number pays its resource from the bank to every piece on its corners, by that piece's yield. So a good corner touches hexes with likely numbers and resources you need.
 
-The game starts with setup: each seat places its free setup pieces, once in turn order and once in reverse, with no roll. A piece on a spot must have no piece on a neighbouring spot, and after setup it must connect to your links.
+The game starts with setup: each seat places its free setup pieces, once in turn order and once in reverse, with no roll. A piece on a spot must have no piece on a neighbouring spot, and after setup it must connect to your links. In setup, place each free piece in its own answer, and wait for the next answer before you end your turn, because the legal places for a later piece appear only after the earlier piece stands. A setup turn does not come back, so a free piece you do not place is lost.
 
 You win the moment you reach the target points, after a move or a vote. A turn change does not check, and ending a turn does not either. So a seat that reaches the target by holding goods from a harvest wins at the next move or vote by anyone. If nobody reaches it by the last round, the most points wins. Points come from the pieces you own, and from what you hold of any resource a law has made worth points. A deposit does not count.
 

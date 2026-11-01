@@ -5,6 +5,7 @@ import Charter.Games.NotCatanWords
 import Charter.Games.SlimeParliamentWords
 import Charter.Games.AIBubbleWords
 import Charter.Games.StrikeTheEarthWords
+import Charter.Games.PirateRepublicWords
 import Charter.Scene.OfState
 import Charter.Scene.Belt
 import Charter.Scene.LookCheck
@@ -132,6 +133,20 @@ def bubbleSpec : GameSpec :=
     meshFolder := "packs/ai-bubble/meshes"
     foundingWords := Games.AIBubble.foundingWords
     guide := "You run a rival AI lab on a dark desert grid. Silicon, power and concrete come from the map. Capital comes from selling inference and from raising money. The founding laws bind, and they say all of this: Hype in your hand is worth 1 point each. When the dice pay your pieces, you also get that much inference. At each round's end, all inference held is sold, and customers pay 16 capital in all, split by each lab's share of what was sold. More supply means a lower price for everyone. At each round's end from round 2, you pay 1 power per datacenter and 2 per campus. If you hold less than that, you pay what you have and your newest datacenter is destroyed. To raise money, use declare on your turn with res capital and n the amount of hype to sell. At the round's end, that hype, up to what you hold, goes to the bank, you get twice as much capital, and it goes onto the bubble. The declaration clears each round. Building a datacenter pays you 2 hype and adds 1 to the bubble. A campus adds 2. The bubble is what the treasury holds of it. At each round's end every lab also gets 1 hype, plus 1 more for each 10 on the bubble. The crash: on any roll, if the dice plus a third of the bubble, rounded down, come to 20 or more, all hype in every hand goes to the bank and the bubble empties. Pieces and capital survive. A bubble of 24 can pop on a 12, 27 on an 11 or more, 39 on a 7 or more, 54 on anything. The first lab to 25 points, hype included, wins at once, even with the bubble still up. Otherwise the most points after round 10 wins. Regulation: 3 of 4 seats can call the crash early, or change anything else, by law. For example (law \"Emergency audit\" (now (for-each-player true (transfer each bank hype (holding each hype))) (transfer treasury bank bubble (holding treasury bubble)))) wipes all hype at once. Adding (end-game) to it ends the game on the spot, and a law can also repeal any founding law. So each vote on a regulation is a vote on who gets out in time. Deals can carry circular investment between labs: payments each round, or payments when a seat builds, in any resource." }
+def pirateSpec : GameSpec :=
+  { id := "pirate-republic"
+    name := "The Pirate Republic"
+    blurb := "Nassau, 1715. Elect a captain, make promises, and depose the captain when they break them."
+    G := Games.PirateRepublic.game
+    valid := Games.PirateRepublic.game_valid
+    layout :=
+      { tiles := Games.PirateRepublic.tiles, spots := Games.PirateRepublic.spots, edges := Games.PirateRepublic.edges
+        links := Games.PirateRepublic.links, theme := Games.PirateRepublic.theme, word := "the Bahamas" }
+    minSeats := 3
+    maxSeats := 4
+    meshFolder := "packs/pirate-republic/meshes"
+    foundingWords := Games.PirateRepublic.foundingWords
+    guide := "You are a pirate of Nassau. Rum, powder and timber are goods, and each plunder is worth 1 point. From round 2 each seat starts each round with 1 ballot, and ballots can be traded. To stand for captain, declare a number of ballot on your turn. The seat that alone declared the most ballots it really holds at the round's end takes the hat, and a tie leaves the hat where it is. A ballot can be bought from another seat with an offer on your turn, so one bought ballot beats a lone declaration. The hat gets a copy of all plunder the dice pay anyone. Whoever holds the hat can declare rum, up to 3, and each other seat pays that much to the captain at the round's end. In round 5 declare pardon, or declare and hold 3 powder, or lose your newest wharf at the round's end. A fort is not a wharf." }
 
 def strikeSpec : GameSpec :=
   { id := "strike-the-earth"
@@ -151,7 +166,7 @@ def strikeSpec : GameSpec :=
 instance : Inhabited GameSpec := ⟨islandSpec⟩
 
 /-- Every game this server can run. The first is the default. -/
-def gameSpecs : List GameSpec := [islandSpec, beltSpec, notCatanSpec, slimeSpec, bubbleSpec, strikeSpec]
+def gameSpecs : List GameSpec := [islandSpec, beltSpec, notCatanSpec, slimeSpec, bubbleSpec, strikeSpec, pirateSpec]
 
 /-- The game with this id. A log entry with no id is from before there was a choice: it is the Island. -/
 def specOf? (id : Option String) : Option GameSpec :=

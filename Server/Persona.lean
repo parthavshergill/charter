@@ -79,7 +79,14 @@ def casts : List (String × List (String × String)) :=
       , ("Hilde Nine-Lamps", "a soft-spoken lamp-keeper who has read the old accounts of every fort that fell")
       , ("Bram Undermine", "a cheerful sapper who judges all things by how well they would collapse")
       , ("Sigrun Ashdelve", "a young shaft captain who talks like the saga is already being written about her")
-      , ("Old Korbo", "a mushroom farmer who has seen it all flood twice and says so") ]) ]
+      , ("Old Korbo", "a mushroom farmer who has seen it all flood twice and says so") ])
+  , ("pirate-republic",
+      [ ("Bess Harrow", "a quartermaster with a silver tongue who has an answer for everything and a speech for every occasion")
+      , ("Silas Crake", "a one-time castaway who talks low and slow and has not forgiven a single captain he ever sailed under")
+      , ("Nan Tolliver", "a purser who talks in sums and quotes back what you said three rounds ago")
+      , ("Ezekiel Thorn", "a master gunner and lay preacher who thunders about the Articles and the Republic")
+      , ("Marisol Vane", "a smuggler from Havana who is courteous, amused and never quite answers the question")
+      , ("Jory Quick", "a young powder monkey who has never been to sea this long and says so, loudly") ]) ]
 
 /-- One seat's persona. -/
 structure Persona where

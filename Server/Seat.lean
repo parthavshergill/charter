@@ -639,6 +639,12 @@ def claudePlayer (ctx : Ctx) (code : String) (seat : Nat) : Player :=
               | .proposeDraft => formal.map fun t =>
                 Json.mkObj [("t", "propose"), ("seat", toJson seat), ("text", t)]
               | .draft _ => none
+            -- A later setup piece's places show only after the earlier piece stands. So an answer that places a
+            -- piece in setup cannot also end the turn: the seat is asked again, and it sees where the next one goes.
+            let placesHere := events.any fun ev => ((jField ev "move").bind (jStr · "t")) == some "place"
+            let events := if sit.state.phase == .setup && placesHere then
+                events.filter fun ev => ((jField ev "move").bind (jStr · "t")) != some "endTurn"
+              else events
             if formal.isNone && before.any (fun | .proposeDraft => true | _ => false) then
               modifyMind ctx code seat fun m =>
                 { m with results := m.results ++ ["You have no draft to propose. Use draft first."] }

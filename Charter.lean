@@ -18,6 +18,9 @@ import Charter.Games.AIBubbleTests
 import Charter.Games.StrikeTheEarth
 import Charter.Games.StrikeTheEarthWords
 import Charter.Games.StrikeTheEarthTests
+import Charter.Games.PirateRepublic
+import Charter.Games.PirateRepublicTests
+import Charter.Games.PirateRepublicWords
 import Charter.Scene.Belt
 import Charter.Games.Witnesses
 import Charter.Scene.OfState
