@@ -21,13 +21,18 @@ def allowed : List Name := [``propext, ``Classical.choice, ``Quot.sound]
 /-- The module with the proof about the text of laws. -/
 def roundTrip : Name := `Server.RoundTrip
 
+/-- The modules about what a seat may know. -/
+def secrecy : List Name :=
+  [`Server.Secrecy, `Server.SecrecyProofs, `Server.SecrecyPromise, `Server.SecrecyExamples, `Server.SecrecyReach]
+
 /-- This module's theorems are checked. -/
-def isChecked (m : Name) : Bool := (`Charter).isPrefixOf m || m == roundTrip
+def isChecked (m : Name) : Bool := (`Charter).isPrefixOf m || m == roundTrip || secrecy.contains m
 
 /-- This theorem is one a reader of the constitution sees, or a public one about the text of laws. -/
 def isShown (m n : Name) : Bool :=
   (m == `Charter.Constitution || m == `Charter.Constitution.Supporting ||
-    m == `Charter.Constitution.Examples || m == `Charter.Proofs.IslandWitness || m == roundTrip) &&
+    m == `Charter.Constitution.Examples || m == `Charter.Proofs.IslandWitness || m == roundTrip ||
+    m == `Server.SecrecyPromise || m == `Server.SecrecyExamples || m == `Server.SecrecyReach) &&
   !n.isInternal && !isPrivateName n &&
   match n with
   | .str _ s => !s.startsWith "eq_" && s != "induct" && s != "mutual_induct"
@@ -63,9 +68,13 @@ partial def axiomsOf (env : Environment) (c : Name) : StateM Seen NameSet := do
 unsafe def main : IO UInt32 := do
   initSearchPath (← findSysroot)
   enableInitializersExecution
-  let env ← importModules #[{ module := `Charter }, { module := roundTrip }] {} (loadExts := true)
+  let env ← importModules #[{ module := `Charter }, { module := roundTrip }, { module := `Server.SecrecyExamples },
+    { module := `Server.SecrecyReach }] {} (loadExts := true)
   unless env.contains `Charter.Rules.parse_of_print do
     IO.eprintln "NOT FOUND: Charter.Rules.parse_of_print"
+    return 1
+  unless env.contains `CharterServer.Secrecy.nobody_sees_what_is_hidden do
+    IO.eprintln "NOT FOUND: CharterServer.Secrecy.nobody_sees_what_is_hidden"
     return 1
   let mut seen : Seen := {}
   let mut total := 0

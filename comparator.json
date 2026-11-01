@@ -23,7 +23,10 @@
     "Charter.Proofs.a_founded_game_exists",
     "Charter.Proofs.a_full_island_game_exists",
     "Charter.Proofs.island_starts_with_no_laws",
-    "Charter.Proofs.a_finished_island_game_can_happen"
+    "Charter.Proofs.a_finished_island_game_can_happen",
+    "CharterServer.Secrecy.nobody_sees_what_is_hidden",
+    "CharterServer.Secrecy.the_end_reveals_everything",
+    "CharterServer.Secrecy.unmarked_games_hide_only_the_seed"
   ],
   "permitted_axioms": [
     "propext",

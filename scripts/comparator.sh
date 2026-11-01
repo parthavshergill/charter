@@ -28,6 +28,7 @@ echo "Checking commit $(git rev-parse --short HEAD). Uncommitted files: $(git st
 # macOS tar must not add its own metadata to the files.
 COPYFILE_DISABLE=1 tar --exclude .lake -cf - \
     lakefile.toml lake-manifest.json lean-toolchain comparator.json Charter.lean Charter Comparator packages forks \
+    Server/Secrecy.lean Server/SecrecyProofs.lean Server/SecrecyPromise.lean \
   | docker run --rm -i --privileged --name charter-comparator-run \
       --cpuset-cpus "${COMPARATOR_CPUSET:-0-7}" --memory "${COMPARATOR_MEMORY:-14g}" \
       --volume charter-comparator:/work charter-comparator bash -c '

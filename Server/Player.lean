@@ -32,9 +32,10 @@ structure Situation where
   /-- It is this seat's turn. -/
   myTurn : Bool
 
-/-- Build the situation of a seat. -/
-def situation (g : Game) (s : State g.spec.G) (seat : Nat) : Situation :=
+/-- Build the situation of a seat, from what it may know: the state goes through `observe`. -/
+def situation (g : Game) (s0 : State g.spec.G) (seat : Nat) : Situation :=
   let G := g.spec.G
+  let s := observe g.secrecy (some seat) s0
   { game := g, seat, state := s
     legal := Thunk.mk fun _ => Engine.legalMoves G s seat
     votes := s.openProposals.filter fun p =>

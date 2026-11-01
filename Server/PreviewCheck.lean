@@ -69,6 +69,11 @@ def lawsFor (spec : GameSpec) : List String :=
     , "(law \"Margin call\" (on-roll (for-each-player (<= 10 rolled) (transfer each treasury hype (/ (holding each hype) 2)))))"
     , "(law \"Bailout\" (on-round-end (for-each-player (< (points each) 5) (transfer bank each capital 3))))"
     , "(law \"Radomes\" (new-piece radome (bundle (silicon 2) (capital 2)) (points 2) (attach datacenter) (yield 1) (limit 2)))" ]
+  else if spec.id == highCardSpec.id then
+    [ "(law \"Ante\" (on-round-end (for-each-player true (transfer each treasury chips 1))))"
+    , "(law \"Show the cards\" (on-round-end (for-each-player (< 9 (holding each card)) (transfer bank each chips 1))))"
+    , "(law \"Roller's gift\" (on-roll (transfer bank actor chips 1)))"
+    , "(law \"Bet tax\" (on-round-end (for-each-player (< 0 (declared each chips)) (transfer each treasury chips 1))))" ]
   else if spec.id == pirateSpec.id then
     [ "(law \"Half on a fort\" (on-build fort (transfer actor treasury powder (/ (holding actor powder) 2))))"
     , "(law \"Half on a sloop\" (on-build sloop (transfer actor treasury rum (/ (holding actor rum) 2))))"

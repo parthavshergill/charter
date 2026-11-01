@@ -9,6 +9,7 @@ import Server.Persona
 import Server.Rules
 import Server.Text
 import Server.Preview
+import Server.Secrecy
 
 /-!
 # One game, as a fold over its log
@@ -85,11 +86,42 @@ structure Game where
   opened : List (Nat × State spec.G) := []
   /-- How many events are in the log. -/
   events : Nat := 0
+  /-- In a game that hides something, the chronicle as each viewer may know it: the spectator's first,
+  then each seat's. Empty in a game that hides only the seed. -/
+  seen : Array (Array Line) := #[]
 
 instance : Inhabited Game := ⟨{ spec := default, room := default, serverSeed := 0 }⟩
 
 /-- The state of a started game. -/
 def Game.state (g : Game) : Option (State g.spec.G) := g.live.map (·.1)
+
+/-- What this game keeps from its players. -/
+def Game.secrecy (g : Game) : Secrecy := g.spec.secrecy
+
+/-- This game hides more than the seed. -/
+def Game.marked (g : Game) : Bool := g.spec.secrecy != {}
+
+/-- The game has ended. Then nothing is hidden. -/
+def Game.ended (g : Game) : Bool := g.state.any (·.phase == .ended)
+
+/-- **The state as this viewer may know it.** `none` is a spectator. Everything the server sends about a
+running game comes from this, and not from `Game.state`. -/
+def Game.seenBy (g : Game) (v : Option Nat) : Option (State g.spec.G) :=
+  g.state.map (observe g.spec.secrecy v)
+
+/-- Where a viewer's chronicle is in `Game.seen`. -/
+def viewerSlot : Option Nat → Nat
+  | none => 0
+  | some p => p + 1
+
+/-- The chronicle as this viewer may know it. After the end, everyone reads the whole of it. -/
+def Game.chronicleFor (g : Game) (v : Option Nat) : Array Line :=
+  if !g.marked || g.ended then g.chronicle else (g.seen[viewerSlot v]?).getD #[]
+
+/-- The parts of a game that this viewer may know: no live state, no saved states, and its own
+chronicle. The chronicle's sentences are built from this. -/
+def Game.publicFor (g : Game) (v : Option Nat) : Game :=
+  { g with live := none, opened := [], seen := #[], chronicle := g.chronicleFor v }
 
 /-- The names of this game's resources. -/
 def Game.resources (g : Game) : List Res := g.spec.G.resources.map (·.name)
@@ -431,7 +463,7 @@ def sentences (g : Game) (s s' : State G) (e : Event) : List (Option Nat × Stri
   let all := newEntries s s'
   let others := all.take (all.length - ((rollLaw.map (·.2.length)).getD 0))
   -- A counter is not money, so it gets no line of its own.
-  let isLaw (x : Entry) : Bool := x.reason == .lawEffect && !markRes G x.res
+  let isLaw (x : Entry) : Bool := x.reason == .lawEffect && !markRes G x.res && x.amount != 0
   -- A law's payments are one line that the screen tells, and the other money has a line each.
   let moneyLines := ((groupEntries (others.filter (·.reason != .lawEffect))).filter (!markRes G ·.res)).filterMap (entryLine g)
   let isVote := match e with | .vote .. => true | _ => false
@@ -463,7 +495,7 @@ def sentences (g : Game) (s s' : State G) (e : Event) : List (Option Nat × Stri
     (if isVote then "the moment it passed, " else if s'.rollsMade != s.rollsMade then "at the harvest, " else "") (others.drop atRoundEnd)
   let rollLawLine := match rollLaw with
     | some (r, part) =>
-      let told := part.filter (!markRes G ·.res)
+      let told := part.filter fun x => !markRes G x.res && x.amount != 0
       match rollLawSentence g (actingTitles s (rollPlan afterEnd r) told) r told with
       | some text => [((none : Option Nat), "money", text, true)]
       | none => []
@@ -480,6 +512,9 @@ def sentences (g : Game) (s s' : State G) (e : Event) : List (Option Nat × Stri
       match s'.currentSeat, s'.lastRoll with
       | some p, some r =>
         [(some p, "roll", s!"{g.nameOf p} rolled {r}.", false)]
+      | some p, none =>
+        -- Only a hidden roll leaves a roll with no number.
+        if g.spec.secrecy.hiddenRoll then [(some p, "roll", s!"{g.nameOf p} rolled, and only they saw it.", false)] else []
       | _, _ => []
     else []
   let roundLine :=
@@ -507,6 +542,22 @@ def sentences (g : Game) (s s' : State G) (e : Event) : List (Option Nat × Stri
     | none => []
   let (k, t, m) := actionText g s s' e
   [(actor, k, t, m)] ++ roundEndLaw ++ endedLines ++ roundLine ++ expired ++ rolled ++ shortLine ++ beforeRoll ++ otherLaw ++ rollLawLine ++ pieceLines ++ over
+
+/-- **The chronicle lines one step adds, as this viewer may know them.** They are built from the states
+and the event as `observe` gives them to this viewer, and from the public parts of the game. -/
+def linesFrom (pub : Game) (v : Option Nat) (s s' : State G) (e : Event) : List (Option Nat × String × String × Bool) :=
+  let sec := pub.spec.secrecy
+  let seen := observeEvent sec v e
+  let lines := sentences pub (observe sec v s) (observe sec v s') seen
+  match seen, lines with
+  | .move p (.declare r _), (actor, kind, _, major) :: rest =>
+    if sec.seesDeclared v p then lines
+    else (actor, kind, s!"{pub.nameOf p} declared a sealed number of {r}.", major) :: rest
+  | _, _ => lines
+
+/-- The same, from the whole game. It reads the game only through `Game.publicFor`. -/
+def stepLines (g : Game) (v : Option Nat) (s s' : State G) (e : Event) : List (Option Nat × String × String × Bool) :=
+  linesFrom (g.publicFor v) v s s' e
 
 /-- Laws that left the open list in this step, with how they ended. -/
 def closedLaws (g : Game) (s s' : State G) (e : Event) : List Decision :=
@@ -564,13 +615,16 @@ def start (g : Game) : Except String Game :=
   | .ok (room, _) =>
     if h : minSeats ≤ room.filled ∧ room.filled ≤ maxSeats ∧ g.nonces ≠ [] then
       let names := ", ".intercalate ((List.range room.filled).map g.nameOf)
+      let chronicle := (g.chronicle.push
+          { event := g.events, actor := none, text := s!"The game began with {names}.", kind := "turn", major := true })
       let founded := g.spec.G.foundingLaws.map fun L =>
         ({ event := g.events, actor := none, text := s!"In force from the founding: \"{L.title}\".", kind := "law", major := true } : Line)
+      let chronicle := chronicle ++ founded.toArray
       .ok { g with
         room := room
         live := some ⟨initialState g.spec.G room.filled g.serverSeed g.nonces, .start _ _ _ h.1 h.2.1 h.2.2⟩
-        chronicle := (g.chronicle.push
-          { event := g.events, actor := none, text := s!"The game began with {names}.", kind := "turn", major := true }) ++ founded.toArray }
+        chronicle := chronicle
+        seen := if g.marked then Array.replicate (room.filled + 1) chronicle else #[] }
     else
       .error s!"the game cannot start: it needs {minSeats} to {maxSeats} seats and at least one player's nonce"
 
@@ -593,14 +647,33 @@ def dealLimitProblems (d : Deal) : List String :=
     [s!"a deal can ask each signer for at most {maxGoodsPerSide} different resources"]
   else []
 
+/-! ## Hidden goods do not trade
+
+In a game that hides goods, no trade, offer or deal can carry them. This is a limit of the server, as the
+one above is. Without it, a trade would tell: the bank's stock of hidden goods is hidden, so whether the
+bank can sell one would give it away, and so would whether an offer of hidden goods can still be paid. The
+engine does not know this limit, and `apply` does not check it, so a saved log always replays. -/
+
+/-- The words for a trade that carries hidden goods. -/
+def hiddenTradeProblem : String :=
+  "hidden goods cannot be traded, offered or put in a deal"
+
+/-- This deal pays or holds a hidden resource. -/
+def dealCarries (sec : Secrecy) (d : Deal) : Bool :=
+  d.allPays.any (sec.hidden.contains ·.res) || d.deposits.any (sec.hidden.contains ·.2.1)
+
 /-- Why this new event from a player is over the limit, if it is. An event that cannot be read is not
 over it: `apply` gives the reason for that one. -/
 def overLimit (g : Game) (j : Json) : Option String :=
+  let hid (r : Res) : Bool := g.secrecy.hidden.contains r
   match eventOfJson g j with
+  | .ok (.move _ (.bankTrade a b)) => if hid a || hid b then some hiddenTradeProblem else none
   | .ok (.move _ (.offer _ give get)) =>
     let over (b : Bundle) : Bool := decide (maxGoodsPerSide < (b.map (·.1)).eraseDups.length)
-    if over give || over get then some offerLimitProblem else none
-  | .ok (.propose _ (.deal d)) => (dealLimitProblems d).head?
+    if (give ++ get).any (hid ·.1) then some hiddenTradeProblem
+    else if over give || over get then some offerLimitProblem else none
+  | .ok (.propose _ (.deal d)) =>
+    if dealCarries g.secrecy d then some hiddenTradeProblem else (dealLimitProblems d).head?
   | _ => none
 
 /-- Apply one log entry. A rejected entry leaves the game as it was. -/
@@ -629,14 +702,21 @@ def apply (g : Game) (j : Json) : Except String Game := do
     | .error err => throw err
     | .ok s' =>
       let lineRound := if s.phase == .setup then 0 else s.round
-      let lines := (sentences g s s' e).map fun (actor, kind, text, major) =>
-        { event := g.events, actor, text, kind, major, round := lineRound : Line }
+      let toLines (xs : List (Option Nat × String × String × Bool)) : Array Line :=
+        (xs.map fun (actor, kind, text, major) =>
+          { event := g.events, actor, text, kind, major, round := lineRound : Line }).toArray
+      let lines := toLines (sentences g s s' e)
+      -- Each viewer's chronicle grows by the lines it may know.
+      let seen := g.seen.mapIdx fun i past =>
+        let v := if i == 0 then none else some (i - 1)
+        past ++ toLines (stepLines g v s s' e)
       let opened := match e with
         | .propose .. => (s'.openProposals.getLast?.map (fun p => (p.id, s'))).toList ++ g.opened
         | _ => g.opened.filter fun x => (s'.openProposal? x.1).isSome
       pure (bump { g with
         live := some ⟨s', .next e live.2 h⟩
-        chronicle := g.chronicle ++ lines.toArray
+        chronicle := g.chronicle ++ lines
+        seen := seen
         decisions := g.decisions ++ (closedLaws g s s' e).toArray
         tabled := nextTabled g s s' e
         opened := opened })

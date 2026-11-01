@@ -3,6 +3,7 @@
 import Charter.Constitution.Promises
 import Charter.Games.Witnesses
 import Charter.Games.Island
+import Server.Secrecy
 
 -- From Charter/Constitution.lean
 
@@ -255,3 +256,25 @@ theorem a_finished_island_game_can_happen :
   sorry
 
 end Charter.Proofs
+
+-- From Server/SecrecyPromise.lean
+
+namespace CharterServer.Secrecy
+open Charter CharterServer
+
+theorem nobody_sees_what_is_hidden {G : GameDef} (sec : Secrecy) (viewer : Option Seat)
+    (s₁ s₂ : State G) (hRunning : s₁.phase ≠ .ended) :
+    observe sec viewer s₁ = observe sec viewer s₂ ↔ HiddenDifference sec viewer s₁ s₂ :=
+  sorry
+
+theorem the_end_reveals_everything {G : GameDef} (sec : Secrecy) (viewer : Option Seat)
+    (s : State G) (hEnded : s.phase = .ended) :
+    observe sec viewer s = s :=
+  sorry
+
+theorem unmarked_games_hide_only_the_seed {G : GameDef} (viewer : Option Seat) (s : State G)
+    (hRunning : s.phase ≠ .ended) :
+    observe {} viewer s = { s with seed := 0 } :=
+  sorry
+
+end CharterServer.Secrecy

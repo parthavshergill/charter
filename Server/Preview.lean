@@ -3,6 +3,7 @@ import Charter.Engine
 import Charter.Scene.OfState
 import Server.Text
 import Server.Rules
+import Server.Secrecy
 
 /-!
 # What a law would do at this table, right now
@@ -257,8 +258,37 @@ def lawPreview (s : State G) (id : Nat) (L : Law) (you : Option Nat) (names : Na
     , ("dice", toJson (!rolls.isEmpty))
     , ("nothing", toJson (sections.isEmpty && points.isEmpty && notes.isEmpty && ending.isNull)) ]
 
+/-! ## The preview a seat may see
+
+In a game that hides something, the preview is worked out from what `observe` gives the viewer, where
+every hidden number is 0. Its figures can then be wrong, if they depend on something hidden. So the
+figures are worked out a second time, with every hidden number set high. If the two differ, the screen
+shows no figures, and says why. This second try is a test, not a proof: figures that pass it can still
+depend on a hidden number in a way it does not reach. -/
+
+/-- The observed state with every number hidden from this viewer set high. -/
+def probe (sec : Secrecy) (v : Option Nat) (s : State G) : State G :=
+  { s with
+    books := fun a r => if sec.seesHolding v a r then s.books a r else 50
+    declared := fun p r => if sec.seesDeclared v p then s.declared p r else 7 }
+
+/-- A preview with its figures withheld. -/
+def withheld : Json :=
+  Json.mkObj
+    [ ("sections", Json.arr #[]), ("moreRolls", toJson 0), ("points", Json.arr #[]), ("ending", Json.null)
+    , ("notes", toJson ["What this law would do depends on things hidden from you, so there are no figures. Read its source."])
+    , ("dice", toJson false), ("nothing", toJson false), ("withheld", toJson true) ]
+
+/-- **The preview of a law, as this viewer may see it.** It reads the state only through `observe`. -/
+def seatPreview (sec : Secrecy) (s : State G) (id : Nat) (L : Law) (you : Option Nat) (names : Nat → String) : Json :=
+  let o := observe sec you s
+  let now := lawPreview o id L you names
+  if sec.hidden.isEmpty && !sec.sealedDeclarations then now
+  else if (lawPreview (probe sec you o) id L you names).compress == now.compress then now
+  else withheld
+
 /-- The preview for the person drafting a law. -/
-def draftPreview (s : State G) (id : Nat) (L : Law) (you : Nat) (names : Nat → String) : Json :=
-  lawPreview s id L (some you) names
+def draftPreview (sec : Secrecy) (s : State G) (id : Nat) (L : Law) (you : Nat) (names : Nat → String) : Json :=
+  seatPreview sec s id L (some you) names
 
 end CharterServer.Preview

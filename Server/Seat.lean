@@ -236,7 +236,7 @@ def proposalLine (sit : Situation) (book : Describe.Book) (p : OpenProposal) : S
   let votes := ", ".intercalate (p.votes.map fun v => s!"seat {v.1} {if v.2 then "yes" else "no"}")
   match p.body with
   | .law L =>
-    let preview := (Preview.lawPreview s p.id L (some sit.seat) g.nameOf).compress
+    let preview := (Preview.seatPreview g.secrecy s p.id L (some sit.seat) g.nameOf).compress
     s!"- Law proposal {p.id}, by seat {p.by_}, titled \"{L.title}\". {lawForSeat book L} Votes so far: {if votes.isEmpty then "none" else votes}. It has {yes} yes of the {need} it needs. What it would do at this table now: {preview}"
   | .deal d =>
     s!"- Deal proposal {p.id}, by seat {p.by_}: {Text.dealLine g.nameOf d} Signed so far: {p.signed}. Signers: {d.signers}."
@@ -351,7 +351,7 @@ def userMessage (sit : Situation) (book : Describe.Book) (talk : Array Talk.Line
   let g := sit.game
   let s := sit.state
   let who (seat : Nat) : String := s!"seat {seat} ({Clerk.oneLine (g.nameOf seat)})"
-  let events := ((g.chronicle.toList.drop mind.chronicleSeen).reverse.take 60).reverse.map fun l =>
+  let events := (((g.chronicleFor (some sit.seat)).toList.drop mind.chronicleSeen).reverse.take 60).reverse.map fun l =>
     Clerk.oneLine l.text
   let publicLines := ((talk.toList.filter (·.kind == "public")).reverse.take 40).reverse.map fun l =>
     Clerk.oneLine s!"{who l.by_}: {l.text}"
@@ -559,9 +559,9 @@ def runDraft (ctx : Ctx) (code : String) (seat : Nat) (words : String) : IO Unit
         | .ok (.law L) => Rules.printProposal (.law L)
         | .ok (.deal d) => Text.dealLine g.nameOf d
         | .error _ => text
-      let preview := match g.parse text, g.state with
+      let preview := match g.parse text, g.seenBy (some seat) with
         | .ok (.law L), some s =>
-          s!"\nWhat it would do at this table now: {(Preview.draftPreview s s.nextProposalId L seat g.nameOf).compress}"
+          s!"\nWhat it would do at this table now: {(Preview.draftPreview g.secrecy s s.nextProposalId L seat g.nameOf).compress}"
         | _, _ => ""
       let dtext := match diff with
         | some d => s!"\nThe clerk says this differs from what you asked: {d}"
@@ -622,7 +622,7 @@ def claudePlayer (ctx : Ctx) (code : String) (seat : Nat) : Player :=
           | .ok (r, acts) =>
             applyTalk ctx code sit r
             modifyMind ctx code seat fun m =>
-              { m with chronicleSeen := g.chronicle.size, results := [] }
+              { m with chronicleSeen := (g.chronicleFor (some seat)).size, results := [] }
             -- What comes after a draft is not carried out: the seat is asked again with the result.
             let before := acts.takeWhile fun | .draft _ => false | _ => true
             let words := acts.findSome? fun | .draft w => some w | _ => none
