@@ -46,7 +46,7 @@ The development philosophy is experimental too. Fork it, and remix it into the v
 
 The kicker, for those who care, is that the game is written in Lean. There are three reasons, of varying quality:
 
-1. **Lean suits small game engines written by AI.** You can prove theorems about the actual engine code, not a model of it. So you don't have to read what the AI wrote. You read the promises.
+1. **Lean suits small game engines written by AI.** You can prove theorems about the actual engine code, not a model of it.
 
 2. **It's what makes the core loop possible.** A law is data in a small rule language, and the engine runs it. The theorems cover every law that language can express, including ones nobody has thought of yet. So a player can invent a rule mid-game, the clerk can draft it, and the promises still hold with no new proof. The clerk can get your rule wrong, but it can't write a law that breaks the constitution. The language has no way to say one. A law can't even name a player.
 
