@@ -903,7 +903,18 @@ const sourceLines = text => laidOut(text).split("\n").map(line => {
   const indent = line.length - line.trimStart().length;
   return h("span", { class: "srcline", style: { paddingLeft: `${indent + 2}ch`, textIndent: "-2ch" } }, line.trimStart());
 });
-const sourceOf = text => h("div", { class: "source" }, h("div", { class: "byline" }, h("span", {}, "Rule source")), h("pre", { class: "sexp" }, sourceLines(text)));
+/** Sources a player has opened. The page redraws on each poll, so this keeps them open. */
+const openSources = new Set();
+/** The rule source, folded away while words above it say what the law does. With no words to read, it
+ *  stays open, because then it is all there is. */
+function sourceOf(text, description) {
+  const st = description?.status || "none";
+  if (st === "none" || st === "failed")
+    return h("div", { class: "source" }, h("div", { class: "byline" }, h("span", {}, "Rule source")), h("pre", { class: "sexp" }, sourceLines(text)));
+  return h("details", { class: "source formal", open: openSources.has(text),
+      ontoggle: e => { if (e.currentTarget.open) openSources.add(text); else openSources.delete(text); } },
+    h("summary", {}, "Rule source"), h("pre", { class: "sexp" }, sourceLines(text)));
+}
 
 /** The charter at a vote: the description, consequences and source the proposer saw, then the signatures. */
 function voteDoc(p) {
@@ -924,7 +935,7 @@ function voteDoc(p) {
     describedOf(p.description),
     consequences(p.preview),
     p.stale ? h("p", { class: "note-line" }, "Moves since it was proposed changed these figures.") : null,
-    sourceOf(p.text),
+    sourceOf(p.text, p.description),
     h("div", { class: "signatures" }, lines),
     h("div", { class: "tally" }, p.canPass ? (p.yesNeeded ? `${plural(p.yesNeeded, "more yes vote")} needed.` : "") : "It can no longer pass."),
     p.canVote ? h("div", { class: "votebar" },
@@ -964,7 +975,7 @@ function lawsDoc() {
     laws.map(l => h("div", { class: "lawrow" + (l.by == null ? " founding" : ""), "data-pick": l.pick },
       h("div", { class: "head" }, h("span", { class: "ttl" }, l.title), h("span", { class: "num" }, `Law ${l.id}`)),
       describedOf(l.description),
-      sourceOf(l.text),
+      sourceOf(l.text, l.description),
       l.by != null ? h("div", { class: "meta" }, `${nameOf(l.by)} proposed it in round ${l.round}. ${l.votes.filter(x => x.yes).length} yes, ${l.votes.filter(x => !x.yes).length} no.`) : h("div", { class: "meta" }, "In force from the founding. A majority can repeal it."))),
     deals.map(d => h("details", { class: "lawrow" },
       h("summary", {},
@@ -1170,7 +1181,7 @@ function momentDoc(m) {
   return h("div", { class: "momentdoc" },
     h("div", { class: "smallcaps" }, d.title),
     describedOf(d.description),
-    sourceOf(d.text),
+    sourceOf(d.text, d.description),
     h("div", { class: "signatures" }, lines),
     h("div", { class: "outcome " + (passed ? "passed" : "failed") + (landing && (m.sealed || !passed) ? " fresh" : "") }, passed ? (m.sealed ? `${d.decree ? "Done" : "Enacted"}, ${yes} to ${no}.${d.decree ? " It does not stay in force." : ""}` : `${yes} to ${no}.`) : "It did not take effect."),
     passed && m.sealed ? h("div", { class: "sealmark" + (landing ? " fresh" : "") }, waxSeal()) : null);
@@ -1643,7 +1654,7 @@ function renderDraft() {
     rv.kind === "deal" ? statementOf(rv.statement) : describedOf(rv.description, rv.difference ? h("span", { class: "notasked", title: "The clerk compared this rule with your words. This says nothing about the description." }, "Not exactly what you asked") : null),
     rv.difference ? h("p", { class: "diff" }, h("span", { class: "diffby" }, "The clerk, on your request: "), rv.difference) : null,
     consequences(rv.preview),
-    rv.kind === "deal" ? formalText(rv.text) : sourceOf(rv.text)));
+    rv.kind === "deal" ? formalText(rv.text) : sourceOf(rv.text, rv.description)));
   const bar = U.proposeBar;
   bar.hidden = !same;
   if (same) {
