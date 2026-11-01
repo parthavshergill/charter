@@ -14,7 +14,7 @@ The ten commandments and the six supporting promises mention 321 definitions in 
 
 | Text a reader must review | Size |
 |---|---|
-| The commandments | 253 lines in `Constitution.lean` |
+| The commandments | 251 lines in `Constitution.lean` |
 | The named parts | 607 lines in `Constitution/Promises.lean` |
 | The words | 2,062 lines, in 16 files by topic. `Fast.lean` holds faster code that is proved equal to the plain words, and a reader can skip all of it but `settle` |
 | SHA-256 | 111 lines |
@@ -135,7 +135,7 @@ Promise X is proved from the `Law` value onward. People and Claude seats read th
 
 ## How the proofs are checked
 
-`make audit` does three things, with no sandbox, so it runs on macOS:
+`make audit` builds the proofs and ends by checking the statement lock. Between those it does three things. It needs no sandbox, so it runs on macOS:
 
 1. It prints the axioms of each promise, and fails if any theorem in a `Charter` module or in `Server.RoundTrip` rests on an axiom other than `propext`, `Classical.choice` and `Quot.sound`. `sorry` would appear here as `sorryAx`.
 2. It runs `leanchecker` on the spec, the engine, the proofs, the constitution and the text of laws (`Server.SExp`, `Server.Rules`, `Server.Readable` and `Server.RoundTrip`), which replays them through the kernel.
