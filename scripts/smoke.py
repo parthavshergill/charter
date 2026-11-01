@@ -6,7 +6,7 @@ It starts its own server on a free port with a temporary data folder, and stops 
 It uses only moves the server lists as legal. It also restarts the server to check that the game
 replays from its log, and checks each scene stream when Node is available.
 """
-import hashlib, json, os, shutil, socket, sqlite3, subprocess, sys, tempfile, time, urllib.error, urllib.request
+import hashlib, json, os, re, shutil, socket, sqlite3, subprocess, sys, tempfile, time, urllib.error, urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BIN = os.path.join(ROOT, ".lake", "build", "bin", "charter-server")
@@ -309,12 +309,15 @@ def strike_pack(srv):
 
 
 def pirate_pack(srv):
-    """The Pirate Republic: its mesh files are served, and bots play it to the end. The Navy burns a wharf."""
+    """The Pirate Republic: its mesh files are served, and bots play it to the end. The Navy pardons a seat
+    that declared a pardon, and burns a wharf of a seat that did not fight."""
     d = next(x for x in srv.get("/api/defs") if x["id"] == "pirate-republic")
     check("hat" in d["look"]["icons"], "the hat has its own mark")
     code, v = bots_only(srv, 4, "pirate-republic", "wharf")
     check(v["round"] <= 10 and len(v["laws"]) >= 4, "the pack ends by round 10 with its laws in force")
-    check(any("lost a wharf" in (l if isinstance(l, str) else l.get("text", "")) for l in v["chronicle"]), "the Navy burns a wharf at the end of round 5")
+    lines = [l if isinstance(l, str) else l.get("text", "") for l in v["chronicle"]]
+    check(any("lost a wharf" in l or re.search(r"The treasury paid Bot [^.]*pardon", l) for l in lines),
+          "the Navy pardons a seat or burns a wharf at the end of round 5")
     SCENES.append((srv.raw(f"/api/games/{code}/scene"), [], ["Law 0"]))
 
 

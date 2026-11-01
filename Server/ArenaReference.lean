@@ -4,7 +4,8 @@ import Server.ArenaPlay
 # The bot as it was, for checking
 
 This is the policy without the shortcuts of `Server/BotCore.lean`: it asks
-`Engine.legalMoves` for every decision, at about 90 calls of `step` each. It does not play at real
+`Engine.legalMoves` for every decision, at about 90 calls of `step` each, and it tries declarations on
+every resource through `step`. It does not play at real
 tables. `charter-arena --check-reference` plays games and checks at every step that the fast policy chooses
 what this one chooses, including with laws and deals in force.
 -/
@@ -85,12 +86,31 @@ def setupMove (s : State G) (legal : List Move) : Move :=
     | some (m, _) => m
     | none => .endTurn
 
+/-- What a seat has after this round's end, if the round ended now: 100 for each point, and 1 for each good. -/
+def valueAtRoundEnd (s : State G) (p : Nat) : Int :=
+  let x := ({ s with turnIndex := s.turnOrder.length - 1 } : State G).afterRoundEnd
+  100 * (x.pointsOf p : Int) + (G.resources.foldl (fun n r => n + x.balance (.player p) r.name) 0 : Nat)
+
+/-- The declaration that most raises what the seat has after this round's end, if one does. It tries 0, 1
+and what the seat holds of every resource. `step` says whether it can declare. The state to predict from is
+the declaration alone, because `step` may also end the game for a seat that already has enough points. -/
+def declaration (s : State G) (p : Nat) : Option Move :=
+  let now := valueAtRoundEnd s p
+  let tries := G.resources.flatMap fun r =>
+    let held := s.balance (.player p) r.name
+    ([0, 1, held].eraseDups.filter (· != s.declared p r.name)).filterMap fun n =>
+      let m := Move.declare r.name n
+      match Engine.step G s (.move p m), Engine.moveBody s p m with
+      | .ok _, .ok s' => some (m, valueAtRoundEnd s' p)
+      | _, _ => none
+  ((bestBy (tries.filter (·.2 > now)) (·.2)).map (·.1))
+
 /-- The kind of placement a move makes under the rules in force. -/
 def placementOf (s : State G) : Move → Option Placement
   | .place k _ => (s.rules.piece? k).map (·.placement)
   | _ => none
 
-/-- The move on a bot's turn: upgrade, settle, law-made piece, road, trade, end. -/
+/-- The move on a bot's turn: upgrade, settle, law-made piece, road, trade, declare, end. -/
 def actionMove (s : State G) (p : Nat) (legal : List Move) : Move := Id.run do
   let places (test : Placement → Bool) : List Move :=
     legal.filter fun m => match placementOf s m with
@@ -117,6 +137,7 @@ def actionMove (s : State G) (p : Nat) (legal : List Move) : Move := Id.run do
   else
     if let some d := linkPiece G then
       if let some m := tradeToward s p d.name legal then return m
+  if let some m := declaration s p then return m
   return .endTurn
 
 /-- Yes if the law costs nothing at the next turn change, over every roll, and gives no other seat
@@ -179,7 +200,7 @@ def shown (es : List Event) : List String :=
   es.map fun e => ((eventJson? e).map (·.compress)).getD "other"
 
 /-- Laws to put in force during a check: higher and lower prices, a new bank rate, law-made pieces, laws
-that take resources on a build or a roll, and goods worth points. They name this game's own goods and pieces. -/
+that take resources on a build or a roll, goods worth points, and a law that pays for declaring. They name this game's own goods and pieces. -/
 def testLaws (G : GameDef) : List Law :=
   let goods := goodsOf G
   let r0 := goods.getD 0 ""
@@ -195,6 +216,11 @@ def testLaws (G : GameDef) : List Law :=
   , { title := "Granary"
       clauses := [.newPiece { name := "granary", cost := [(r0, 1)], points := 1
                               placement := .attach spot, yield := 1, limit := 2 }] }
+  , { title := "A good worth a point, and pay for declaring"
+      clauses :=
+        [ .setWorth r1 1
+        , .onRoundEnd [.forEach (.lt (.lit 0) (.declared .each (.lit r1)))
+            [.transfer .bank .each (.lit r2) (.min (.declared .each (.lit r1)) (.lit 1))]] ] }
   , { title := "Tower"
       clauses := [.newPiece { name := "tower", cost := [(r1, 1), (r2, 1)], points := 3
                               placement := .upgrade spot, yield := 1, limit := 2 }] }
@@ -203,8 +229,7 @@ def testLaws (G : GameDef) : List Law :=
   , { title := "A roll taxes"
       clauses := [.onRoll [.forEach .yes [.transfer .each .bank (.lit r0) (.lit 1)]]] }
   , { title := "Cheap upgrades", clauses := [.setCost up [(r2, 1)]] }
-  , { title := "Rate 0", clauses := [.setBankRate 0] }
-  , { title := "A good is worth points", clauses := [.setWorth r1 1, .setWorth r2 2] } ]
+  , { title := "Rate 0", clauses := [.setBankRate 0] } ]
 
 /-- A deal that forbids a seat to build on half the map, to put in force during a check. -/
 def testDeal (G : GameDef) (seat id round : Nat) : ActiveDeal :=
@@ -227,6 +252,7 @@ structure Seen where
   withVotes : Nat := 0
   places : Nat := 0
   trades : Nat := 0
+  declares : Nat := 0
   finished : Nat := 0
   deriving Inhabited
 
@@ -305,6 +331,7 @@ def checkGame (scenario : Scenario) (t : Table G) (seed : Nat) (seen : Seen) : E
       match e with
       | .move _ (.place ..) => seen := { seen with places := seen.places + 1 }
       | .move _ (.bankTrade ..) => seen := { seen with trades := seen.trades + 1 }
+      | .move _ (.declare ..) => seen := { seen with declares := seen.declares + 1 }
       | _ => pure ()
   return .ok seen
 

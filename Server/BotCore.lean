@@ -14,6 +14,7 @@ the bank to complete a build, and ends its turn. It votes yes on a law when the 
 resources on the next turn change and hands no other seat the win. It signs a deal that pays it at least
 what it pays, and it accepts an offer that gives it at least what it gives. A good that counts as points
 stays out of its bank trades and offers, and an offer that costs it points must pay for them in goods.
+Where a law reads declarations at a round's end, it declares a number when that pays.
 
 Every constant of the policy is a field of `Weights`, and `Weights.default` is the bot at real tables.
 -/
@@ -342,6 +343,69 @@ def setupPlaces (ctx : Ctx G) (s : State G) (p : Nat) : List Move :=
         ctx.board.spots.filterMap fun v =>
           if s.setupPlacementOk p e (.spot v) then some (.place k (.spot v)) else none
 
+/-! ## Declaring -/
+
+mutual
+  /-- The resources whose declared numbers this number reads. -/
+  def exprDeclared : Expr → List ResRef
+    | .declared _ r => [r]
+    | .add a b | .sub a b | .mul a b | .min a b | .max a b | .divBy a b => exprDeclared a ++ exprDeclared b
+    | .div a _ => exprDeclared a
+    | .totalOver c a | .mostOver c a | .leastOver c a => condDeclared c ++ exprDeclared a
+    | _ => []
+
+  /-- The resources whose declared numbers this test reads. -/
+  def condDeclared : Cond → List ResRef
+    | .lt a b | .le a b | .eq a b => exprDeclared a ++ exprDeclared b
+    | .and a b | .or a b => condDeclared a ++ condDeclared b
+    | .not c => condDeclared c
+    | _ => []
+end
+
+mutual
+  /-- The resources whose declared numbers this effect reads. -/
+  def effectDeclared : Effect → List ResRef
+    | .transfer _ _ _ amount => exprDeclared amount
+    | .movePiece .. => []
+    | .forEach c body | .when c body => condDeclared c ++ effectsDeclared body
+
+  /-- The resources whose declared numbers these effects read. -/
+  def effectsDeclared : List Effect → List ResRef
+    | [] => []
+    | e :: es => effectDeclared e ++ effectsDeclared es
+end
+
+/-- The resources whose declared numbers a law in force reads at a round's end, in the game's order. Most
+packs have none. -/
+def declaredAtRoundEnd (s : State G) : List Res :=
+  let refs := s.laws.flatMap fun x => x.2.clauses.flatMap fun
+    | .onRoundEnd body => effectsDeclared body
+    | _ => []
+  if refs.isEmpty then [] else
+  (G.resources.map (·.name)).filter fun r => refs.contains .harvested || refs.contains (.lit r)
+
+/-- What a seat has, for comparing declarations: `pointValue` for each point, and 1 for each good. -/
+def holdingValue (ctx : Ctx G) (s : State G) (p : Nat) : Int :=
+  ctx.weights.pointValue * (s.pointsOf p : Int) + ((G.resources.map fun r => bal s p r.name).sum : Int)
+
+/-- A declaration that raises what this seat will have after this round's end, if one does. It tries
+0, 1 and what it holds, for each resource that a law reads at a round's end. It predicts the round's end
+as if this were the round's last turn, with every other seat's declarations as they are now. -/
+def declareMove (ctx : Ctx G) (s : State G) (p : Nat) : Option Move :=
+  if ctx.weights.declareOn == 0 || !(s.phase == .actions && s.isTurnOf p) then none else
+  match declaredAtRoundEnd s with
+  | [] => none
+  | names =>
+    let last : State G := { s with turnIndex := s.turnOrder.length - 1 }
+    let valueAfter (x : State G) : Int := holdingValue ctx x.afterRoundEnd p
+    let now := valueAfter last
+    let tries := names.flatMap fun r =>
+      let cur := s.declared p r
+      ([0, 1, bal s p r].eraseDups.filter (· != cur)).map fun n =>
+        let x : State G := { last with declared := fun q y => if q == p && y == r then n else s.declared q y }
+        (Move.declare r n, valueAfter x)
+    bestOk (isLegal s p) (tries.filter fun x => decide (x.2 > now))
+
 /-! ## Choosing a move -/
 
 /-- A bank trade toward paying `cost`, if trades can cover all of it. `ok` says which moves can happen. The
@@ -424,7 +488,7 @@ def buildOrder (W : Weights) : List (Int × Nat) :=
   (kinds.toArray.qsort fun a b => a.1 > b.1 || (a.1 == b.1 && a.2 < b.2)).toList
 
 /-- The move on a bot's turn: builds in the order of the weights (upgrade, settle, law-made piece, road),
-then an offer if the weights allow one, then a bank trade, then end. -/
+then an offer if the weights allow one, then a bank trade, then a declaration, then end. -/
 def actionMove (ctx : Ctx G) (s : State G) (p : Nat) : Move := Id.run do
   let W := ctx.weights
   let spotOf (m : Move) : Int := match m with
@@ -470,6 +534,7 @@ def actionMove (ctx : Ctx G) (s : State G) (p : Nat) : Move := Id.run do
     else
       if let some d := linkPiece G then
         if let some m := trade d then return m
+  if let some m := declareMove ctx s p then return m
   return .endTurn
 
 /-- The move of this seat if it is its turn, whatever the phase. -/

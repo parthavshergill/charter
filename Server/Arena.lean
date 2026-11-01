@@ -207,7 +207,7 @@ def checkReference (games : Nat) : IO Bool := do
           IO.println s!"{spec.id} {label}: {why}"
           ok := false
           break
-      IO.println s!"{spec.id} {label}: {seen.states} states, {seen.finished} games finished, {seen.places} placements, {seen.trades} trades, with laws {seen.withLaws}, with deals {seen.withDeals}, with offers {seen.withOffers}, with votes {seen.withVotes}"
+      IO.println s!"{spec.id} {label}: {seen.states} states, {seen.finished} games finished, {seen.places} placements, {seen.trades} trades, {seen.declares} declarations, with laws {seen.withLaws}, with deals {seen.withDeals}, with offers {seen.withOffers}, with votes {seen.withVotes}"
   return ok
 
 /-- Every named weight, as JSON. -/
