@@ -97,25 +97,26 @@ All ten commandments rest on the same 134 definitions: the data types of a game,
 
 ## The text of a law
 
-Promise X is proved from the `Law` value onward. People and Claude seats read the text, so `Server/RoundTrip.lean` proves a step before that.
+Promise X is proved from the `Law` value onward. People and Claude seats write text, and `parseProposal` is the only step between the two. The parser is the definition of the language: a text means what the parser makes of it, and no other description exists to compare it with. So `Server/ParserFacts.lean` states only what reading the parser alone cannot confirm. Both statements are about `parseProposalSExp`, which reads a law or a deal from its S-expression.
 
-**What is now proved.** `Rules.parse_of_print`: turn a law or a deal into its S-expression, parse that, and you get back exactly the same value. It covers every clause, effect, number, test and deal term. Its one condition is `Readable.proposal`, in `Server/Readable.lean`, which follows the parser's grammar:
+**What is proved.**
 
-- Every named resource is in the game. A resource in a transfer or a number is also not called `res`, which means the resource the dice just paid.
-- A law has at least one clause, and a clause with effects has at least one.
-- An effect is a transfer or a piece move, an `if` around those, or a `for-each-player` around those or around such an `if`. An `if` or a `for-each-player` holds at least one effect.
-- A computed division does not divide by a plain number. `(/ a 2)` always reads as the fixed kind.
+- `Rules.nothing_gets_ignored`: if two S-expressions read as the same law or deal, they are the same S-expression. So the parser does not drop an argument, a clause or a title.
+- `Rules.only_real_resources`: every resource written in a law or a deal that the parser accepts is in the game's list. `resourcesNamed`, in `Server/ResourcesNamed.lean`, defines what "written" means. It leaves out the word `res`, which means whichever resource the dice just paid.
 
-**Who meets the condition.**
+**The first statement has no exceptions.** Two cases looked like exceptions, and neither is:
 
-- Every law and deal a seat proposes. The server gets proposals only from the parser, and `Rules.readable_of_parse` proves that whatever the parser returns meets it. `Rules.parse_of_print_of_parse` states this with no condition.
-- Every deal that `dealProblems` accepts: `Rules.parse_of_print_of_dealProblems`.
-- Not every law that `lawProblems` accepts. `lawProblems` allows deeper nesting, empty `if`s beside other effects, and made-up resources in a transfer or a `res-is`. Only a law written as a Lean value can reach these, which means a founding law.
-- Every founding law of every game. `lawProblems` does not make this true, so `ServerTests.lean` checks it, and fails if a founding law stops reading back.
+- A plain number below a division. `(/ a 2)` always reads as the fixed kind, `.div`, and the parser never returns `.divBy` with a plain number as its divisor. So only one S-expression gives each result.
+- A resource called `res`. The atom `res` always reads as the resource the dice just paid, even in a game with a resource of that name. So only one S-expression gives each result here too. No game has such a resource, and `ServerTests.lean` checks that.
 
-**What is only tested.** The characters. `SExp.render` and `SExp.read` have no theorem. A value can pass `Readable` and still fail in the text: a piece named `two words` or `12` does not survive printing. The parser cannot produce such a name, and no game has one. `Rules.survivesText` and `ServerTests.lean` test this layer.
+**What these statements do not cover.**
 
-**What a reader must review.** `Readable`, the parsers and printers in `Server/Rules.lean`, and the type `SExp` in `Server/SExp.lean`.
+- **The characters.** Text to tree, `SExp.read`, is only tested, in `ServerTests.lean`. Two different texts can give one tree: spacing, comments, and `07` beside `7` make no difference.
+- **The printer.** It only affects what the screen shows. `ServerTests.lean` tests that text prints back as it was written. The statements do not mention the printer. The proof uses it as a tool to rebuild an S-expression, so a printer change can break the build but cannot change what the statements mean.
+- **A law written as a Lean value.** Only a founding law can be one. `lawProblems` allows values the parser never returns: deeper nesting, an empty `if` beside other effects, and made-up resources in a transfer or a `res-is`. So `ServerTests.lean` checks that every founding law of every game reads back as itself, and fails if one stops.
+- **Whether a law can pass, or whether a piece or a seat is real.** The parser accepts any piece name and seat number. `lawProblems` and `dealProblems` decide what can pass.
+
+**What a reader must review.** The parsers in `Server/Rules.lean`, the type `SExp` in `Server/SExp.lean`, and `resourcesNamed` with its helpers, which `ServerTests.lean` also tests on a law that uses each place that can hold a resource. The proof in `Server/ParserProof.lean` is not part of this.
 
 ## What is tested but not proved
 
@@ -137,15 +138,15 @@ Promise X is proved from the `Law` value onward. People and Claude seats read th
 
 `make audit` does three things, with no sandbox, so it runs on macOS:
 
-1. It prints the axioms of each promise, and fails if any theorem in a `Charter` module or in `Server.RoundTrip` rests on an axiom other than `propext`, `Classical.choice` and `Quot.sound`. `sorry` would appear here as `sorryAx`.
-2. It runs `leanchecker` on the spec, the engine, the proofs, the constitution and the text of laws (`Server.SExp`, `Server.Rules`, `Server.Readable` and `Server.RoundTrip`), which replays them through the kernel.
-3. It scans `Charter` and those four `Server` files for banned constructs, such as `sorry`, `axiom`, `native_decide` and `unsafe`.
+1. It prints the axioms of each promise and of each statement about the parser, and fails if any theorem in a `Charter` module, `Server.ParserProof` or `Server.ParserFacts` rests on an axiom other than `propext`, `Classical.choice` and `Quot.sound`. `sorry` would appear here as `sorryAx`.
+2. It runs `leanchecker` on the spec, the engine, the proofs, the constitution and the text of laws (`Server.SExp`, `Server.Rules`, `Server.ResourcesNamed`, `Server.ParserProof` and `Server.ParserFacts`), which replays them through the kernel.
+3. It scans `Charter` and those five `Server` files for banned constructs, such as `sorry`, `axiom`, `native_decide` and `unsafe`.
 
 ### Comparator
 
 `bash scripts/comparator.sh` runs Lean's Comparator, `lake comparator`, inside its bubblewrap sandbox. Comparator needs Linux, so the script uses a Docker container. CI runs it on each pull request that can change a theorem. `make audit` does not run it, and neither replaces the other.
 
-Comparator accepted 22 theorems, which `comparator.json` lists: the ten commandments, the six supporting promises, and the six witnesses in `Charter/Proofs/Witness.lean` and `Charter/Proofs/IslandWitness.lean`. With `--paranoid`, the five other checkers that ship with Lean accepted them too. CI does not use `--paranoid`, so that was a run by hand, and a later change needs a new one.
+Comparator accepted 24 theorems, which `comparator.json` lists: the ten commandments, the six supporting promises, the six witnesses in `Charter/Proofs/Witness.lean` and `Charter/Proofs/IslandWitness.lean`, and the two statements in `Server/ParserFacts.lean`. With `--paranoid`, the five other checkers that ship with Lean accepted the first 22. CI does not use `--paranoid`, so that was a run by hand. It has not run on the two statements about the parser.
 
 For those theorems, Comparator checks three things:
 
@@ -155,5 +156,5 @@ For those theorems, Comparator checks three things:
 
 Two limits apply:
 
-- **The definitions are shared.** The challenge imports the same words, named parts and engine as the proofs. So a changed definition changes both sides, and Comparator shows no difference. A reader must still review the definitions. `scripts/statement_lock.sh` guards the words and named parts. It does not guard the engine, the Island, HexGrid or SHA-256.
-- **It judges only those 22 theorems.** `Constitution/Examples.lean`, `Charter/EngineTests.lean` and other theorems that those 22 do not use are outside it. `make audit` covers the theorems in `Charter` modules.
+- **The definitions are shared.** The challenge imports the same words, named parts, engine and parser as the proofs. So a changed definition changes both sides, and Comparator shows no difference. A reader must still review the definitions. `scripts/statement_lock.sh` guards the words and named parts. It does not guard the engine, the Island, HexGrid, SHA-256, the parser or `resourcesNamed`.
+- **It judges only those 24 theorems.** `Constitution/Examples.lean`, `Charter/EngineTests.lean` and other theorems that those 24 do not use are outside it. `make audit` covers the theorems in `Charter` modules, `Server.ParserProof` and `Server.ParserFacts`.
