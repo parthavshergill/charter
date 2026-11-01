@@ -306,11 +306,12 @@ def evaluate(subjects: list, out: str, games: int = 200, quick: bool = False, op
 
 
 @app.function(image=bc_image, cpu=8, memory=32768, timeout=3600, volumes={VOL: vol})
-def bc(out: str, games: int = 2000, args: str = ""):
-    """Imitation of `hand` (rl/imitation): collect `games` games in 8 processes, then clone into a flat policy."""
+def bc(out: str, games: int = 2000, args: str = "", data: str = ""):
+    """Imitation of `hand` (rl/imitation): collect `games` games in 8 processes (unless `data` names an existing
+    file), then clone into a flat policy."""
     vol.reload()
     os.makedirs(out, exist_ok=True)
-    data = f"{out}/hand.npz"
+    data = data or f"{out}/hand.npz"
     if not os.path.exists(data):
         per = games // 8
         code, text = sh(f"cd {SRC}/.. && for i in 0 1 2 3 4 5 6 7; do python3 rl/imitation/collect.py --games {per} "
@@ -421,7 +422,8 @@ def main(action: str = "test", run: str = "smoke", minutes: float = 10, max_doll
         print(r["report"])
     elif action == "bc":
         total = guard(max_dollars, None, 8, 32, 3600)
-        print(bc.with_options(timeout=total).remote(f"{VOL}/{run}", games, train_args))
+        print(bc.with_options(timeout=total).remote(f"{VOL}/{run}", games, train_args,
+                                                   f"{VOL}/{subjects}" if subjects else ""))
     elif action == "keep":
         print(keep.remote(subjects if subjects.startswith("/") else f"{VOL}/{subjects}", f"{VOL}/{NAME}/keep/{out}"))
     else:
