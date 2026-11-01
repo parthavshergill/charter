@@ -37,12 +37,12 @@ PUFFER = "/opt/pufferlib"
 REPO = "/repo"      # the Lean sources and the built library, baked into the image
 SRC = "/src/rl"     # the rest of rl/, added at start, so a Python change does not rebuild Lean
 VOL = "/vol"
-GPU = "T4"
+GPU = os.environ.get("CHARTER_RL_GPU", "T4")   # T4 by default; L4 or A10G when T4s are scarce
 CUDA = "12-9"
 CUDA_REPO = "https://developer.download.nvidia.com/compute/cuda/repos/debian12/x86_64"
 
 # Modal list prices, dollars per second. Kept high on purpose: they bound spend, they do not predict it.
-PRICE = {"T4": 0.000164, "cpu": 0.0000131, "gib": 0.00000222}
+PRICE = {"T4": 0.000164, "L4": 0.000222, "A10G": 0.000306, "cpu": 0.0000131, "gib": 0.00000222}
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
