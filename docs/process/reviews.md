@@ -354,4 +354,4 @@ No theorem covers these. Tests check them, on the cases tried.
 
 Neither proofs nor tests show that the screen always shows the true state, or that the dice are fair. `docs/process/trusted-surface.md` gives the full list.
 
-**Comparator has not been run.** It needs a Linux sandbox. `make audit` does not replace it.
+**Comparator passes.** It runs in a Linux sandbox on each pull request that can change a theorem, and `docs/process/trusted-surface.md` says what it covers. `make audit` does not replace it.

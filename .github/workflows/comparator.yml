@@ -1,0 +1,41 @@
+# Comparator on each pull request that can change a theorem's meaning. The job always starts, so that it can be
+# a required check, and it stops at once if nothing relevant changed. It has no secrets and a read-only token.
+# The challenge is generated from the same pull request, so a changed promise needs a person's review.
+name: Comparator
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: comparator-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  comparator:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+
+      # A pull request's checkout is a merge commit, so its first parent is the base.
+      - name: See whether this can change a theorem
+        id: changed
+        run: |
+          if git diff --name-only HEAD^1 HEAD | grep -E '^(Charter/|Charter\.lean$|Comparator/|comparator\.json$|packages/lean-hexgrid/|forks/|lean-toolchain$|lakefile\.toml$|lake-manifest\.json$|scripts/comparator|scripts/statement_lock|\.github/workflows/comparator\.yml$)'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Nothing here can change a theorem, so Comparator has nothing to do."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run Comparator
+        if: steps.changed.outputs.run == 'true'
+        env:
+          COMPARATOR_CPUSET: 0-3
+        run: bash scripts/comparator.sh

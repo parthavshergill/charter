@@ -11,8 +11,6 @@ Ten promises, called the commandments. They hold for every valid game and every 
 This is the file to read and argue with. Each promise is a theorem about `Engine.step`, the code that
 really runs. If a promise is not written here, it is not made.
 
-All ten are proved, and `make audit` checks them. Comparator has not been run.
-
 How to read them:
 
 * `Engine.step G s e = .ok s'` means: the engine accepts event `e` in state `s`, and the new state is

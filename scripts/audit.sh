@@ -1,7 +1,7 @@
 #!/bin/bash
 # The checks behind `make audit`. It needs no sandbox, so it runs on macOS.
 #
-# It does not run Comparator. Comparator needs a Linux sandbox and has not been run on this project.
+# It does not run Comparator, which needs a Linux sandbox. To run Comparator, use scripts/comparator.sh.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -35,4 +35,4 @@ echo "== Statement lock =="
 bash scripts/statement_lock.sh check
 
 echo
-echo "make audit passed. Comparator was not run."
+echo "make audit passed. This does not run Comparator. For that, use scripts/comparator.sh."
