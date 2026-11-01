@@ -1,5 +1,21 @@
 name = "charter"
 defaultTargets = ["Charter"]
 
+[[require]]
+name = "hexgrid"
+path = "packages/lean-hexgrid"
+
+[[require]]
+name = "lobby"
+path = "packages/lean-lobby"
+
+[[require]]
+name = "eventlog"
+path = "packages/lean-eventlog"
+
+[[require]]
+name = "GpuCmd"
+path = "packages/lean-gpu-cmd"
+
 [[lean_lib]]
 name = "Charter"

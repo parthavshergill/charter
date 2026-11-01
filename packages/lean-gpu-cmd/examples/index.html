@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>lean-gpu-cmd bar chart</title>
+<link rel="icon" href="data:,">
+<style>
+  html, body { margin: 0; height: 100%; background: #241a12; color: #f4e9d8;
+    font: 14px/1.4 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+  .panel { position: fixed; left: 16px; top: 16px; padding: 12px 14px; border-radius: 10px;
+    background: rgba(28, 19, 12, 0.72); backdrop-filter: blur(6px); max-width: 320px; }
+  h1 { font-size: 15px; margin: 0 0 6px; font-weight: 650; }
+  p { margin: 4px 0; color: #d9c7a7; }
+  button { margin-top: 8px; background: #e0a85a; color: #241a12; border: 0; border-radius: 6px;
+    padding: 6px 12px; font-weight: 650; cursor: pointer; }
+  #info { font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<canvas id="view"></canvas>
+<div class="panel">
+  <h1>Monthly rainfall (mm)</h1>
+  <p>Scene streams written by <code>lake exe bar-chart-demo</code>. Drag to orbit, right-drag to pan, wheel to zoom, double-click to reset.</p>
+  <p id="info">Hover or click a bar.</p>
+  <button id="toggle">Switch data set</button>
+</div>
+<script type="module">
+  import { GpuPlayer } from '../web/player.js';
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const cities = ['Lisbon', 'Dublin', 'Mumbai'];
+  const describe = (id) => `${cities[Math.floor(id / 100)]}, ${months[(id % 100) - 1]}`;
+  const player = new GpuPlayer(document.getElementById('view'));
+  const info = document.getElementById('info');
+  player.onHover = (id) => { if (id) info.textContent = `Hover: ${describe(id)}`; };
+  player.onPick = (id) => { info.textContent = `Picked: ${describe(id)} (pick id ${id})`; window.lastPick = id; };
+  const scene = new URLSearchParams(location.search).get('scene') === 'shapes' ? 'shapes' : 'barchart';
+  if (scene === 'shapes') {
+    document.querySelector('h1').textContent = 'All primitives (shapes demo)'; info.textContent = 'Hover or click a piece, tile or ghost spot.';
+    player.onHover = (id) => { if (id) info.textContent = `Hover: pick ${id}`; };
+    player.onPick = (id) => { info.textContent = `Picked: pick id ${id}`; window.lastPick = id; };
+  }
+  const streams = await Promise.all([`${scene}-a.gpc`, `${scene}-b.gpc`].map((f) => fetch(f).then((r) => r.arrayBuffer())));
+  let which = 0;
+  player.render(streams[which]);
+  document.getElementById('toggle').onclick = () => { which ^= 1; player.render(streams[which]); };
+  window.player = player;
+  window.streams = streams;
+</script>
+</body>
+</html>

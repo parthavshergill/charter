@@ -1,0 +1,22 @@
+name = "GpuCmd"
+version = "0.1.0"
+defaultTargets = ["GpuCmd", "Tests"]
+testDriver = "gpucmd_test"
+
+[[lean_lib]]
+name = "GpuCmd"
+
+[[lean_lib]]
+name = "Tests"
+
+[[lean_exe]]
+name = "gpucmd_test"
+root = "Tests.Main"
+
+[[lean_exe]]
+name = "bar-chart-demo"
+root = "examples.BarChart"
+
+[[lean_exe]]
+name = "shapes-demo"
+root = "examples.Shapes"

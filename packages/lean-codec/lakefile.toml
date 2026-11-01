@@ -1,0 +1,18 @@
+name = "codec"
+version = "0.1.0"
+defaultTargets = ["Codec", "Tests"]
+testDriver = "codec_tests"
+
+[[lean_lib]]
+name = "Codec"
+
+[[lean_lib]]
+name = "Tests"
+
+[[lean_exe]]
+name = "codec_tests"
+root = "Tests.Main"
+
+[[lean_exe]]
+name = "netmsg"
+root = "examples.NetMsg"

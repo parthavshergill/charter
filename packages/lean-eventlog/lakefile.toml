@@ -1,0 +1,27 @@
+name = "eventlog"
+version = "0.1.0"
+defaultTargets = ["EventLog", "EventLogTests", "eventlog_tests", "audit_log"]
+testDriver = "eventlog_tests"
+
+[[require]]
+name = "codec"
+path = "../lean-codec"
+
+[[require]]
+name = "leansqlite"
+path = "../../forks/leansqlite"
+
+[[lean_lib]]
+name = "EventLog"
+roots = ["EventLog", "EventLog.Audit"]
+
+[[lean_lib]]
+name = "EventLogTests"
+
+[[lean_exe]]
+name = "eventlog_tests"
+root = "EventLogTests.Main"
+
+[[lean_exe]]
+name = "audit_log"
+root = "examples.AuditLog"

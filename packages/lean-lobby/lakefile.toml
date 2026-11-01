@@ -1,0 +1,19 @@
+name = "lobby"
+version = "0.1.0"
+defaultTargets = ["Lobby", "LobbyTests", "lobby_tests", "chess_room"]
+testDriver = "lobby_tests"
+
+[[lean_lib]]
+name = "Lobby"
+roots = ["Lobby", "Lobby.Audit"]
+
+[[lean_lib]]
+name = "LobbyTests"
+
+[[lean_exe]]
+name = "lobby_tests"
+root = "LobbyTests.Main"
+
+[[lean_exe]]
+name = "chess_room"
+root = "examples.ChessRoom"

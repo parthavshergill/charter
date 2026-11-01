@@ -1,0 +1,21 @@
+name = "hexgrid"
+version = "0.1.0"
+defaultTargets = ["HexGrid", "HexGridTests", "HexGridAudit", "hexgrid-demo"]
+
+[[lean_lib]]
+name = "HexGrid"
+
+[[lean_lib]]
+name = "HexGridTests"
+srcDir = "Tests"
+roots = ["HexGridTests"]
+globs = ["HexGridTests.+"]
+
+[[lean_lib]]
+name = "HexGridAudit"
+roots = ["HexGrid.Audit"]
+
+[[lean_exe]]
+name = "hexgrid-demo"
+root = "MapDemo"
+srcDir = "examples"
