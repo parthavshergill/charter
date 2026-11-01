@@ -65,11 +65,12 @@ differ from the printed law. -/
 still reads. -/
 def startsLine (head : String) : Bool :=
   head.startsWith "on-" || head.startsWith "set-" ||
-  ["new-piece", "repeal", "for-each-player", "if", "transfer"].contains head
+  ["new-piece", "repeal", "now", "end-game", "for-each-player", "if", "transfer", "move-piece"].contains head
 
 /-- A form, with its parts relabelled for the model. -/
 def relabel : List SExp → List SExp
   | [.atom "transfer", f, t, r, n] => [.atom "transfer", .atom "from", f, .atom "to", t, r, n]
+  | [.atom "move-piece", f, t, k] => [.atom "move-piece", .atom "from", f, .atom "to", t, k]
   | .atom "if" :: rest => .atom "when" :: rest
   | xs => xs
 

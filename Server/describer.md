@@ -33,7 +33,7 @@ clause := (on-harvest effect...)     ; runs once for each harvest payment
 effect := (transfer from FROM to TO RESOURCE number)   ; FROM pays TO
         | (when test transfer...)              ; all of these, only if the test holds now
         | (for-each-player test effect...)     ; for every player who passes the test
-        | (move-piece FROM TO KIND)            ; FROM's newest KIND moves. To the bank, it is destroyed. To a player, it is seized. What sits on it goes with it. A player always keeps their last piece, and a player at their limit cannot receive one, so it is destroyed
+        | (move-piece from FROM to TO KIND)    ; FROM's newest KIND moves. To the bank, it is destroyed. To a player, it is seized. What sits on it goes with it, and roads stay. A player always keeps their last piece, and a piece a player at their limit would receive is destroyed
 PLACEMENT := link (on a side of a hex, as a road is) | spot (on a free corner, as a settlement is)
            | (upgrade KIND) (replaces your KIND) | (attach KIND) (goes on your KIND, which stays)
 (yield n)  ; collects n when a hex it touches pays. (limit n) ; each player can own at most n
@@ -42,7 +42,7 @@ Parties:
 - `treasury` and `bank` are the two shared accounts.
 - `actor` is the builder in `on-build`, the player paid in `on-harvest`, and the player whose turn the roll starts in `on-roll`. It does not change inside `for-each-player`.
 - `each` is one player inside `for-each-player`, and the tests and transfers inside it are checked for each player in turn. `each` includes the actor.
-- In `on-round-end` nobody is the actor. A number about `actor` there is 0, and a transfer with `actor` does not happen.
+- In `on-round-end` nobody is the actor. A number about `actor` there is 0, and a transfer with `actor` does not happen. In `now` nobody is the actor either, and a law cannot name `actor` there.
 
 Numbers:
 - `(holding P R)` is what P holds of R. `(points P)` is P's points. `(count P KIND)` is how many KIND P owns.
@@ -71,6 +71,12 @@ Payments:
 - No account goes below zero. If an account owes more of a resource than it holds, each of its payments of that resource shrinks in proportion and rounds down, and a payment can shrink to nothing. A player or account who is short pays less, and the player being paid gets less.
 - Most payments need no word about this limit. Add a few words in two cases only. When the treasury pays: "if the treasury has it". When a player or the bank pays more than 3, or a number that depends on what they hold: "or all they have". Never write "only if they have enough", because a short payer still pays what they have. A payment to the treasury never depends on what the treasury holds.
 - `not`, `and` and `or` have their usual meanings.
+
+Pieces:
+- `(move-piece from each to bank KIND)` means each player loses their newest KIND. Say "loses" or "is destroyed". `(move-piece from each to actor KIND)` means the actor takes it, and every other player loses it. Say "takes". Check `from` and `to` as you do for a payment.
+- Say "their newest" and not "a", because the player does not choose.
+- `now` happens once, at the moment the law passes. Say "Once" and "the moment this passes". A law with only `now` clauses does not stay in force, so end with: It does not stay in force. A law with other clauses too does stay, so do not write that.
+- `set-worth` counts only what is in a player's own hand. `end-game` ends the game at once, whatever else the law says. Do not name a winner.
 
 ## Examples
 <law>
@@ -169,6 +175,51 @@ Each round, each player pays the treasury a tax in wool: their wool times the tr
       (transfer from treasury to each grain (holding treasury grain)))))
 </law>
 Each round, the player who declared the most grain pays that much wool to the treasury and gets all the treasury's grain. Tied players each pay and share the grain.
+
+<law>
+(law ""
+  (set-worth ore 2))
+</law>
+Each ore in a player's own hand is now worth 2 points, and those points count toward winning.
+
+<law>
+(law ""
+  (on-round-end
+    (for-each-player (= (points each) (most-over true (points each)))
+      (move-piece from each to bank settlement))))
+</law>
+Each round, each player tied for the most points loses their newest settlement and what sits on it. A player always keeps their last piece.
+
+<law>
+(law ""
+  (on-roll
+    (for-each-player (and (= rolled 7) (< (points actor) (points each)))
+      (move-piece from each to actor city))))
+</law>
+On a roll of 7, the player whose turn it starts takes the newest city of each player with more points, with what sits on it. If they are at their limit, it is destroyed.
+
+<law>
+(law ""
+  (now
+    (for-each-player true
+      (transfer from bank to each grain 2))))
+</law>
+Once, the moment this passes, the bank pays each player 2 grain. It does not stay in force.
+
+<law>
+(law ""
+  (now
+    (for-each-player true
+      (transfer from treasury to each ore 1)))
+  (set-bank-rate 3))
+</law>
+Once, the moment this passes, the treasury pays each player 1 ore, if the treasury has it. The bank now trades 3 of one resource for 1 of another.
+
+<law>
+(law ""
+  (end-game))
+</law>
+The game ends the moment this passes, and the player with the most points wins.
 
 <law>
 (law ""
