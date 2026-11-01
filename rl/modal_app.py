@@ -129,6 +129,8 @@ def build_puffer(move_rows=False, out="puffer", patch=True, encoder="flat"):
           else f"cd {PUFFER} && git checkout -q -- src"))
     lib = f"{REPO}/rl/build"
     extra = f"-L{lib} -lcharter_rl -Xlinker=-rpath -Xlinker={lib}" + (" -DCHARTER_MOVE_ROWS" if move_rows else "")
+    if os.environ.get("CHARTER_STALE_WAIT") == "1":  # waiting players keep their last observation (charter.h)
+        extra += " -DCHARTER_STALE_WAIT"
     if encoder != "flat":
         e = encoder_dir(encoder)
         if os.path.isdir(f"{e}/patches"):
@@ -175,6 +177,7 @@ def train(run: str, train_args: str = "", seconds: int = 600, move_rows: bool = 
        "nvidia-smi --query-gpu=name,driver_version --format=csv,noheader")
     extra = json.loads(meta_extra) if meta_extra else {}  # rl/entity/puffer_build.sh reads these two
     os.environ["CHARTER_ENTITY_DIM"], os.environ["CHARTER_POINTER"] = str(extra.get("entity_dim", 32)), str(extra.get("pointer", 0))
+    os.environ["CHARTER_STALE_WAIT"] = str(extra.get("stale_wait", 0))
     code, text = build_puffer(move_rows, patch=patch, encoder=encoder)
     if code != 0:
         return {"build": code, "tail": text[-2000:]}
