@@ -114,6 +114,8 @@ def cluster (d : GameSpec) (u0 v0 : Float) : List Cmd :=
 /-- The whole sheet. -/
 def sheet (d : GameSpec) : List Cmd :=
   let t := d.layout.theme
+  -- A pack with many pieces has more rows of models, so this part starts below them.
+  let togetherAt := min 2.8 (11.0 + 0.6 - 1.75 * d.G.pieces.length.toFloat)
   [ .clear t.tableColor
   , .camera (vec3 11.2 11.0 11.2) (vec3 0 0.05 0) (F32.ofFloat (-sheetRadius))
   , .light (vec3 (-0.62) (-1) (-0.2)) (F32.ofFloat 1.2) ] ++
@@ -122,7 +124,7 @@ def sheet (d : GameSpec) : List Cmd :=
   [heading "models" (-9.5) 12.5] ++ models d (-9.5) 11 ++
   [heading "tile tops" 1.5 12.5] ++ tileRow d 1.5 10.5 ++
   [heading "monuments" 1.5 7.5] ++ monumentRow d 1.5 6 ++
-  [heading "together, at game size" (-9.5) 2.8] ++ cluster d (-5.5) (-3) ++
+  [heading "together, at game size" (-9.5) togetherAt] ++ cluster d (-5.5) (togetherAt - 5.8) ++
   [heading "the treasury, full and empty" 4 2.8] ++ ((t.treasury 18).map (fun p =>
     let (x, z) := world 4 1
     p.at x 0 z)) ++ ((t.treasury 0).map (fun p =>

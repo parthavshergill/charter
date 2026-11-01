@@ -4,6 +4,7 @@ import Charter.Games.NotCatan
 import Charter.Games.NotCatanWords
 import Charter.Games.SlimeParliamentWords
 import Charter.Games.AIBubbleWords
+import Charter.Games.StrikeTheEarthWords
 import Charter.Games.PirateRepublicWords
 import Charter.Scene.OfState
 import Charter.Scene.Belt
@@ -147,10 +148,25 @@ def pirateSpec : GameSpec :=
     foundingWords := Games.PirateRepublic.foundingWords
     guide := "You are a pirate of Nassau. Rum, powder and timber are goods, and each plunder is worth 1 point. From round 2 each seat starts each round with 1 ballot, and ballots can be traded. To stand for captain, declare a number of ballot on your turn. The seat that alone declared the most ballots it really holds at the round's end takes the hat, and a tie leaves the hat where it is. A ballot can be bought from another seat with an offer on your turn, so one bought ballot beats a lone declaration. The hat gets a copy of all plunder the dice pay anyone. Whoever holds the hat can declare rum, up to 3, and each other seat pays that much to the captain at the round's end. In round 5 declare pardon, or declare and hold 3 powder, or lose your newest wharf at the round's end. A fort is not a wharf." }
 
+def strikeSpec : GameSpec :=
+  { id := "strike-the-earth"
+    name := "Strike the Earth"
+    blurb := "Rival dwarf clans dig under one doomed mountain. Disaster pays in renown, and a majority can let the fort fall."
+    G := Games.StrikeTheEarth.game
+    valid := Games.StrikeTheEarth.game_valid
+    layout :=
+      { tiles := Games.StrikeTheEarth.tiles, spots := Games.StrikeTheEarth.spots, edges := Games.StrikeTheEarth.edges
+        links := Games.StrikeTheEarth.links, theme := Games.StrikeTheEarth.theme, word := "the mountain" }
+    minSeats := 2
+    maxSeats := 4
+    meshFolder := "packs/strike-the-earth/meshes"
+    foundingWords := Games.StrikeTheEarth.foundingWords
+    guide := "You lead a dwarf clan under a doomed mountain. Stone, ore, fungus and ember are the goods. In setup you place a hall and a tunnel for free, twice, so place both each time: ending a setup turn early gives up the rest, and a new hall must touch your own tunnel. A farm, gate, shaft or epitaph stands on a hall, and not on a workshop. Renown is the score: each is worth 1 point while you hold it, and most pieces are worth 0 points. So a hall or workshop that falls costs you no points, and a law may even pay you for it. An epitaph is the only piece with points. It costs 2 renown and 1 danger, and no hex pays danger, so you buy it from the bank. The bank also sells renown at its rate. Danger is the danger in the treasury. It is shared, it only rises unless a law lowers it, and the founding laws read it. A law cannot name who proposed it or who voted for it, but a law can pay whoever passes a test, so a reckless law can carry its own reward. Any seat can propose a law that ends the game: (law \"The fort falls\" (end-game)). If a majority passes it, the game ends at once and the most points wins." }
+
 instance : Inhabited GameSpec := ⟨islandSpec⟩
 
 /-- Every game this server can run. The first is the default. -/
-def gameSpecs : List GameSpec := [islandSpec, beltSpec, notCatanSpec, slimeSpec, bubbleSpec, pirateSpec]
+def gameSpecs : List GameSpec := [islandSpec, beltSpec, notCatanSpec, slimeSpec, bubbleSpec, strikeSpec, pirateSpec]
 
 /-- The game with this id. A log entry with no id is from before there was a choice: it is the Island. -/
 def specOf? (id : Option String) : Option GameSpec :=
