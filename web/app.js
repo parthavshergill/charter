@@ -1,6 +1,7 @@
 // The Charter client. It shows what the server sends and holds no game rules: every move it posts
 // comes from `view.legalMoves` or from text the engine then accepts or rejects, and every cost, reason
-// and rule statement is written by Lean. What is here is presentation: what to show, when, and where.
+// and deal statement is written by Lean. A law's description is Claude's or a pack's words, and the law's
+// source below it is what counts. What is here is presentation: what to show, when, and where.
 import { renderBoard2D } from "./board2d.js";
 import { resIcon, uiIcon, pieceIcon, shield, chargeOf, waxSeal } from "./icons.js";
 
@@ -332,7 +333,7 @@ function tipFor(id) {
   }
   if (id >= 9000) {
     const l = (v.laws || []).find(x => x.pick === id);
-    return l ? [h("h4", {}, `Law ${l.id}: ${l.title}`), h("div", { class: "english" }, l.english)] : null;
+    return l ? [h("h4", {}, `Law ${l.id}: ${l.title}`), l.description?.text ? h("div", { class: "english" }, l.description.text) : h("pre", { class: "sexp" }, sourceLines(l.text))] : null;
   }
   if (id >= 7000) {
     const t = v.board?.tiles?.[id - 7000];
@@ -421,7 +422,7 @@ function applyMode() {
 async function poll() {
   clearTimeout(G.polling);
   try {
-    const q = new URLSearchParams({ since: G.version });
+    const q = new URLSearchParams({ since: G.version, described: G.view?.described ?? 0 });
     const v = await api(`/api/games/${G.code}/view?${q}`);
     if (G.lost) { G.lost = false; caption(""); }
     if (v && v.talkCount != null && v.talkCount !== G.talkCount) fetchTalk();
@@ -433,7 +434,9 @@ async function poll() {
     if (v && !v.unchanged && v.code) {
       const prev = G.view;
       G.view = v; G.version = v.version;
-      afterView(prev, v);
+      // A description came in, and nothing else changed.
+      if (prev?.version === v.version) renderDock();
+      else afterView(prev, v);
       if (v.phase === "ended" && !G.token && !G.replay) { startReplay(false); return; }
     }
   } catch (e) { if (!G.lost) { G.lost = true; caption("Lost contact with the table. Trying again.", true); } }
@@ -725,11 +728,9 @@ function flashFocus() {
   G.dock.focus = null;
 }
 
-/** A rule's statement from Lean, a line for each thing it does. What a short payer owes is part of
- *  the rule, so it stays, but it is set smaller than the rule itself. */
+/** A deal's statement from Lean, a line for each thing it does. */
 function statementOf(text) {
-  return h("p", { class: "statement" }, text.split("\n").map(line =>
-    h("span", { class: line.startsWith("A payer who is short") ? "line small" : "line" }, line)));
+  return h("p", { class: "statement" }, text.split("\n").map(line => h("span", { class: "line" }, line)));
 }
 
 /** Consequences: who gains and who pays at this table. Empty cases are not shown. */
@@ -751,7 +752,43 @@ function consequences(pv) {
 }
 const formalText = text => h("details", { class: "formal" }, h("summary", {}, "Formal text"), h("pre", { class: "sexp" }, text));
 
-/** The charter at a vote: the statement and consequences the proposer saw, then the signatures. */
+/** A law's description, which is someone's words. The rule source below it is what counts. Space is
+ *  kept for it while it is written, so nothing on the sheet moves when it arrives. */
+function describedOf(d, badge = null) {
+  const st = d?.status || "none";
+  const line = st === "pack" ? `${d.pack}'s own words` : "Claude's description";
+  if (st === "none" || st === "failed") return h("div", { class: "described" + (st === "failed" ? " held" : "") }, badge ? h("div", { class: "byline" }, badge) : null,
+    h("p", { class: "nowords" }, "Claude has not described this law. The rule source below is what counts."));
+  return h("div", { class: "described held" }, h("div", { class: "byline" }, h("span", {}, line), badge),
+    st === "writing"
+      ? h("div", { class: "ghost", role: "status", "aria-label": "Claude is writing a description" }, h("i"), h("i"), h("i"))
+      : h("p", { class: "saying" }, d.text));
+}
+/** The rule source, as it prints, with line breaks added so that it can be read. */
+const SOURCE_LINES = new Set(["new-piece", "repeal", "for-each-player", "if", "transfer"]);
+function laidOut(text) {
+  let out = "", depth = 0, quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (quoted) { out += c; if (c === "\\") out += text[++i] ?? ""; else if (c === '"') quoted = false; continue; }
+    if (c === '"') quoted = true;
+    else if (c === "(") {
+      const head = /^[^\s()"]*/.exec(text.slice(i + 1))[0];
+      if (depth > 0 && (head.startsWith("on-") || head.startsWith("set-") || SOURCE_LINES.has(head))) out = out.trimEnd() + "\n" + "  ".repeat(depth);
+      depth++;
+    } else if (c === ")") depth--;
+    out += c;
+  }
+  return out;
+}
+/** The source on the screen. A long line wraps with an indent, so the shape of the law stays clear. */
+const sourceLines = text => laidOut(text).split("\n").map(line => {
+  const indent = line.length - line.trimStart().length;
+  return h("span", { class: "srcline", style: { paddingLeft: `${indent + 2}ch`, textIndent: "-2ch" } }, line.trimStart());
+});
+const sourceOf = text => h("div", { class: "source" }, h("div", { class: "byline" }, h("span", {}, "Rule source")), h("pre", { class: "sexp" }, sourceLines(text)));
+
+/** The charter at a vote: the description, consequences and source the proposer saw, then the signatures. */
 function voteDoc(p) {
   const v = G.view;
   const byYou = p.by === v.you;
@@ -767,10 +804,10 @@ function voteDoc(p) {
   });
   return h("div", {},
     h("div", { class: "smallcaps" }, `${byYou ? "Your rule" : `${seat(p.by)?.name}'s rule`} · ${p.title}`),
-    statementOf(p.english),
+    describedOf(p.description),
     consequences(p.preview),
     p.stale ? h("p", { class: "note-line" }, "Moves since it was proposed changed these figures.") : null,
-    formalText(p.text),
+    sourceOf(p.text),
     h("div", { class: "signatures" }, lines),
     h("div", { class: "tally" }, p.canPass ? (p.yesNeeded ? `${plural(p.yesNeeded, "more yes vote")} needed.` : "") : "It can no longer pass."),
     p.canVote ? h("div", { class: "votebar" },
@@ -806,12 +843,11 @@ function lawsDoc() {
     h("h2", {}, "In force"),
     v.game?.blurb && (v.laws || []).some(l => l.by == null) ? h("p", { class: "note-line" }, `${v.game.name}: ${v.game.blurb}`) : null,
     !laws.length && !deals.length ? h("p", { class: "empty" }, "Only the constitution.") : null,
-    laws.map(l => h("details", { class: "lawrow" + (l.by == null ? " founding" : ""), "data-pick": l.pick, open: G.openLaws?.has(l.id) ? true : null, ontoggle: e => { (G.openLaws ||= new Set())[e.currentTarget.open ? "add" : "delete"](l.id); } },
-      h("summary", {},
-        h("div", { class: "head" }, h("span", { class: "ttl" }, l.title), h("span", { class: "num" }, `Law ${l.id}`)),
-        h("p", { class: "english" }, l.english)),
-      l.by != null ? h("div", { class: "meta" }, `${nameOf(l.by)} proposed it in round ${l.round}. ${l.votes.filter(x => x.yes).length} yes, ${l.votes.filter(x => !x.yes).length} no.`) : h("div", { class: "meta" }, "In force from the founding. A majority can repeal it."),
-      h("pre", { class: "sexp" }, l.text))),
+    laws.map(l => h("div", { class: "lawrow" + (l.by == null ? " founding" : ""), "data-pick": l.pick },
+      h("div", { class: "head" }, h("span", { class: "ttl" }, l.title), h("span", { class: "num" }, `Law ${l.id}`)),
+      describedOf(l.description),
+      sourceOf(l.text),
+      l.by != null ? h("div", { class: "meta" }, `${nameOf(l.by)} proposed it in round ${l.round}. ${l.votes.filter(x => x.yes).length} yes, ${l.votes.filter(x => !x.yes).length} no.`) : h("div", { class: "meta" }, "In force from the founding. A majority can repeal it."))),
     deals.map(d => h("details", { class: "lawrow" },
       h("summary", {},
         h("div", { class: "head" }, h("span", { class: "ttl" }, `Deal until round ${d.lastRound}`)),
@@ -968,7 +1004,7 @@ function trackProposals(prev, v) {
     if (p.kind === "law") for (const x of p.votes) G.stampsSeen.add(`${p.id}:${x.seat}`);
     const busy = G.moment || (G.dock?.t === "draft" && (document.activeElement === G.ui.words || (G.draft && !G.draft.outcome)));
     if (!busy && (p.kind === "law" || p.canSign)) { G.dock = { t: "vote", id: p.id }; }
-    else caption(`${seat(p.by)?.name} proposed: ${p.english}`);
+    else caption(`${seat(p.by)?.name} proposed: ${p.kind === "deal" ? p.english : p.description?.text || `"${p.title}"`}`);
   }
   // Move on to the next open document when one closes.
   if (G.dock?.t === "vote" && !open.includes(G.dock.id) && !G.moment) {
@@ -1009,7 +1045,8 @@ function momentDoc(m) {
   const yes = d.votes.filter(x => x.yes).length, no = d.votes.length - yes;
   return h("div", { class: "momentdoc" },
     h("div", { class: "smallcaps" }, d.title),
-    statementOf(d.english),
+    describedOf(d.description),
+    sourceOf(d.text),
     h("div", { class: "signatures" }, lines),
     h("div", { class: "outcome " + (passed ? "passed" : "failed") }, passed ? (m.sealed ? `Enacted, ${yes} to ${no}.` : `${yes} to ${no}.`) : "It did not take effect."),
     passed && m.sealed ? h("div", { class: "sealmark" }, waxSeal()) : null);
@@ -1230,7 +1267,8 @@ async function pollDraft() {
   G.draft = d; G.draftBeat = beat;
   placeSuggestion(d);
   renderDraft(); renderRail();
-  const wait = d.outcome ? null : pollWait(220);
+  // A law's description fills in after the review is on screen.
+  const wait = !d.outcome || d.review?.description?.status === "writing" ? pollWait(220) : null;
   if (wait != null) G.draftPolling = setTimeout(pollDraft, wait);
 }
 async function checkDraft() {
@@ -1284,7 +1322,7 @@ function renderDraft() {
   U.draftBar.hidden = !running && d?.outcome === "ready" && same && !canSuggest;
   // Ready-made laws, one click away, while the desk is empty.
   U.samplesBox.hidden = !!d || !!typed;
-  if (!d && !typed) fill(U.samplesBox, (v?.samples || []).slice(0, 5).map(s => h("button", { class: "link", title: s.english, onclick: () => submitDraft(s.id) }, s.title)));
+  if (!d && !typed) fill(U.samplesBox, (v?.samples || []).slice(0, 5).map(s => h("button", { class: "link", title: s.text, onclick: () => submitDraft(s.id) }, s.title)));
   U.proposeBar.hidden = true;
   if (!d) { fill(U.draftBody); return; }
   if (running) { fill(U.draftBody, draftingView(d)); return; }
@@ -1307,10 +1345,10 @@ function renderDraft() {
   fill(U.draftBody, h("div", { class: same ? "" : "dim" },
     d.why ? h("div", { class: "advice" }, h("div", { class: "advicehead" }, d.whyStale ? "The clerk's advice, before the table last changed" : "The clerk's advice"), h("p", {}, d.why)) : null,
     h("div", { class: "titleline" }, rv.title),
-    statementOf(rv.statement),
-    rv.difference ? h("p", { class: "diff" }, rv.difference) : null,
+    rv.kind === "deal" ? statementOf(rv.statement) : describedOf(rv.description, rv.difference ? h("span", { class: "notasked", title: "The clerk compared this rule with your words. This says nothing about the description." }, "Not exactly what you asked") : null),
+    rv.difference ? h("p", { class: "diff" }, h("span", { class: "diffby" }, "The clerk, on your request: "), rv.difference) : null,
     consequences(rv.preview),
-    formalText(rv.text)));
+    rv.kind === "deal" ? formalText(rv.text) : sourceOf(rv.text)));
   const bar = U.proposeBar;
   bar.hidden = !same;
   if (same) {

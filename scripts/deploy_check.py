@@ -40,7 +40,11 @@ def wait_for(test, what, seconds=30):
 class Api(http.server.BaseHTTPRequestHandler):
     """A stand-in for the Anthropic API. It counts requests, and each reports the token use set here."""
     calls = []
+    # Calls that describe a law are counted apart, so that the budgets below see only the rest.
+    describes = []
     input_tokens = 10
+    describe_input = 1000
+    describe_output = 100
     lock = threading.Lock()
 
     def log_message(self, *a):
@@ -49,14 +53,18 @@ class Api(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers["content-length"])))
         is_seat = "format" in body.get("output_config", {})
+        describing = "You describe one law" in body["system"][0]["text"]
         with Api.lock:
-            Api.calls.append("seat" if is_seat else "clerk")
-        text = END if is_seat else BANK
+            if describing:
+                Api.describes.append(body)
+            else:
+                Api.calls.append("seat" if is_seat else "clerk")
+        text = "A description." if describing else END if is_seat else BANK
         events = [
-            {"type": "message_start", "message": {"usage": {"input_tokens": Api.input_tokens, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}}},
+            {"type": "message_start", "message": {"usage": {"input_tokens": Api.describe_input if describing else Api.input_tokens, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}}},
             {"type": "content_block_start", "content_block": {"type": "text"}},
             {"type": "content_block_delta", "delta": {"type": "text_delta", "text": text}},
-            {"type": "message_delta", "delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": 3}},
+            {"type": "message_delta", "delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": Api.describe_output if describing else 3}},
             {"type": "message_stop"},
         ]
         self.send_response(200)
@@ -333,6 +341,45 @@ def budgets(api, root):
         srv.stop()
 
 
+def ledger_rows(path):
+    """The budget log, as its rows."""
+    db = sqlite3.connect(path)
+    try:
+        bodies = [bytes(b).decode() if not isinstance(b, str) else b for (b,) in db.execute("SELECT body FROM events ORDER BY seq")]
+        return [json.loads(b[b.index("{"):]) for b in bodies]
+    finally:
+        db.close()
+
+
+def description_prices(api, root):
+    """A description call is charged at the prices of its own model, and those prices can be set."""
+    def description_cost(**env):
+        data = tempfile.mkdtemp(dir=root)
+        srv = Server(data, api, **env)
+        code, tokens = table(srv)
+        through_setup(srv, code, tokens)
+        count = len(Api.describes)
+        srv.req(f"/api/games/{code}/draft", {"token": tokens[0], "words": "Make the bank fairer"})
+        wait_for(lambda: srv.req(f"/api/games/{code}/draft?token={tokens[0]}").get("review", {}).get("description", {}).get("status") == "ready", "a description")
+        check(len(Api.describes) == count + 1, "one description call")
+        model = Api.describes[-1]["model"]
+        srv.stop()
+        rows = [r["usd"] for r in ledger_rows(os.path.join(data, "_spend.ledger")) if "usd" in r]
+        check(len(rows) == 2, "the budget log has one row for the draft and one for the description")
+        return model, rows[-1], rows[0]
+
+    model, cost, clerk = description_cost()
+    check(model == "claude-haiku-5-5", "the default description model is Haiku")
+    check(cost == 150, f"1000 input and 100 output tokens cost $0.000150 at Haiku's prices ({cost} millionths)")
+    check(clerk == 100, f"the clerk's call is still at Opus prices: 10 input and 3 output tokens are $0.000100 ({clerk} millionths)")
+    _, cost, _ = description_cost(CHARTER_PRICE_HAIKU_INPUT_USD="1", CHARTER_PRICE_HAIKU_OUTPUT_USD="5")
+    check(cost == 1500, f"CHARTER_PRICE_HAIKU_* change those prices ({cost} millionths)")
+    model, cost, _ = description_cost(CHARTER_DESCRIBE_MODEL="claude-sonnet-5-5")
+    check(model == "claude-sonnet-5-5" and cost == 3000, f"another description model is priced as that model ({cost} millionths)")
+    model, cost, _ = description_cost(CHARTER_DESCRIBE_MODEL="a-model-with-no-prices")
+    check(cost == 6000, f"a model with no prices of its own is charged at the highest ({cost} millionths)")
+
+
 def advancing(srv, code, seconds):
     n = len(events(srv, code))
     time.sleep(seconds)
@@ -510,6 +557,10 @@ def mirrored(api, store, root):
         srv2.req(f"/api/games/{people}/draft", {"token": tokens[0], "words": "Make the bank fairer"})
         wait_for(lambda: srv2.req(f"/api/games/{people}/draft?token={tokens[0]}").get("outcome"), "a new draft")
         check(rows_on_disk(os.path.join(fresh, f"{people}.clerk")) == on_disk[f"{people}.clerk"] + 1, "the clerk's memory is back, and grows")
+        describes_before = len(Api.describes)
+        d = srv2.req(f"/api/games/{people}/draft?token={tokens[0]}")
+        check(d["review"]["description"] == {"status": "ready", "text": "A description."} and len(Api.describes) == describes_before,
+              "a law's description is back from storage, and it needs no new call")
         place = [m for m in v["legalMoves"] if m["move"]["t"] == "place"]
         if place:
             r = srv2.req(f"/api/games/{people}/move", {"token": tokens[v['turn']], "move": place[0]["move"]})
@@ -590,6 +641,7 @@ def main():
     try:
         public_surface(api, root)
         budgets(api, root)
+        description_prices(api, root)
         pausing(api, root)
         mirrored(api, store, root)
         sleep_and_wake(api, store, root)

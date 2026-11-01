@@ -4,12 +4,13 @@ import Server.Rules
 import Server.Text
 import Server.Seat
 import Server.Suggest
+import Server.Describe
 
 /-!
-# Tests of the clerk's sentences and memory
+# Tests of the deal sentences, the clerk's memory and the descriptions
 
-These run when the module builds, so `lake build` fails if a sentence changes. The sentences are the
-only description of a rule most players read, so each is written out in full here.
+These run when the module builds, so `lake build` fails if a sentence changes. A deal's sentences are
+what a player reads about it, so each is written out in full here.
 -/
 
 namespace ServerTests
@@ -21,378 +22,12 @@ def names : Nat → String
   | 2 => "Grace"
   | n => s!"Seat {n}"
 
-/-- The sentence for a formal text, with its lines joined by " / " so a test can show them. -/
+/-- The sentence for a deal, with its lines joined by " / " so a test can show them. -/
 def say (text : String) : String :=
   match Rules.parseProposal text with
-  | .ok (.law L) => " / ".intercalate (Text.lawLines L)
   | .ok (.deal d) => " / ".intercalate (Text.dealLines names d)
+  | .ok (.law _) => "a law has no sentence"
   | .error e => s!"does not parse: {e}"
-
-/-- The sentence for the body of a law. -/
-def law (clauses : String) : String := say s!"(law \"Any title\" {clauses})"
-
-def sample (id : String) : String :=
-  match Rules.sampleLaws.find? (·.1 == id) with
-  | some (_, text) => say text
-  | none => s!"no sample {id}"
-
-def short : String := "A payer who is short pays in proportion, rounded down."
-
-/-! ## The example the wording aims for -/
-
-#guard law "(on-round-end (for-each-player (<= 3 (points each)) (transfer bank each wool 1)))" ==
-  "Each round, players with 3 or more points get 1 wool from the bank."
-
-/-! ## Every sample law -/
-
-#guard sample "cheap-cities" == "A city costs 2 grain and 2 ore."
-#guard sample "cheap-roads" == "A road costs 1 brick."
-#guard sample "bank-rate" == "The bank trades 3 of a resource for 1 of another."
-#guard sample "harvest-tithe" ==
-  "Each time a player is paid at harvest, they pay half of it, rounded down, to the treasury."
-#guard sample "poor-relief" ==
-  s!"Each round, players with at most 2 points get 1 grain and 1 wool from the treasury. / {short}"
-#guard sample "build-gift" == s!"Anyone who builds a city gets 1 grain from every other player. / {short}"
-#guard sample "road-toll" == s!"Anyone who builds a road pays 1 timber to the treasury. / {short}"
-#guard sample "settlement-worth" == "A settlement is worth 2 points."
-#guard sample "lighthouse" ==
-  "New piece: the lighthouse. It costs 2 ore and 2 brick and is worth 2 points. " ++
-  "Build it on one of your settlements, which stays. Only one can go on each. " ++
-  "When a hex it touches is rolled, it collects 1. Each player can own 2."
-
-/-! ## Comparisons, on both sides, with every kind of thing a player has -/
-
-def perRound (cond : String) : String :=
-  law s!"(on-round-end (for-each-player {cond} (transfer bank each wool 1)))"
-
-def got (who : String) : String := s!"Each round, players with {who} get 1 wool from the bank."
-
-#guard perRound "(< (points each) 3)" == got "fewer than 3 points"
-#guard perRound "(< 3 (points each))" == got "more than 3 points"
-#guard perRound "(<= (points each) 3)" == got "at most 3 points"
-#guard perRound "(<= 3 (points each))" == got "3 or more points"
-#guard perRound "(= (points each) 3)" == got "exactly 3 points"
-#guard perRound "(= 3 (points each))" == got "exactly 3 points"
-#guard perRound "(< 7 (holding each grain))" == got "more than 7 grain"
-#guard perRound "(< (holding each grain) 1)" == got "no grain"
-#guard perRound "(<= (holding each grain) 0)" == got "no grain"
-#guard perRound "(= (holding each grain) 0)" == got "no grain"
-#guard perRound "(< 1 (points each))" == got "more than 1 point"
-#guard perRound "(<= (points each) 1)" == got "at most 1 point"
-#guard perRound "(<= 1 (count each city))" == got "at least 1 city"
-#guard perRound "(< 0 (count each lighthouse))" == got "at least 1 lighthouse"
-#guard perRound "(<= 2 (count each city))" == got "2 or more cities"
-#guard perRound "(= (count each city) 1)" == got "exactly 1 city"
-#guard perRound "(< (count each road) 2)" == got "fewer than 2 roads"
-
-/-! ## `not`, `and`, `or`, and nesting -/
-
-#guard perRound "(not (< (points each) 3))" == got "3 or more points"
-#guard perRound "(not (<= (points each) 3))" == got "more than 3 points"
-#guard perRound "(not (= (points each) 3))" == got "anything but 3 points"
-#guard perRound "(not (= (points each) 0))" == got "at least 1 point"
-#guard perRound "(not (not (< (points each) 3)))" == got "fewer than 3 points"
-#guard perRound "(and (< 7 (holding each grain)) (< (points each) 3))" ==
-  got "more than 7 grain and fewer than 3 points"
-#guard perRound "(or (< 7 (holding each grain)) (< (points each) 3))" ==
-  got "more than 7 grain or fewer than 3 points"
-#guard perRound "(or (and (< 7 (holding each grain)) (< 1 (points each))) (= (count each road) 0))" ==
-  got "(more than 7 grain and more than 1 point) or no roads"
-#guard perRound "(and (or (< 7 (holding each grain)) (< 1 (points each))) (= (count each road) 0))" ==
-  got "(more than 7 grain or more than 1 point) and no roads"
-#guard perRound "(not (and (< 7 (holding each grain)) (< 1 (points each))))" ==
-  got "at most 7 grain or at most 1 point"
-#guard perRound "(not (or (< 7 (holding each grain)) (< 1 (points each))))" ==
-  got "at most 7 grain and at most 1 point"
-
-/-! ## Who pays whom -/
-
--- `true` in a `for-each-player` reads as "every".
-#guard law "(on-round-end (for-each-player true (transfer each treasury grain 1)))" ==
-  s!"Each round, every player pays 1 grain to the treasury. / {short}"
-#guard law "(on-round-end (for-each-player true (transfer treasury each grain 1)))" ==
-  s!"Each round, every player gets 1 grain from the treasury. / {short}"
-#guard law "(on-round-end (transfer bank treasury grain 1))" ==
-  "Each round, the bank pays 1 grain to the treasury."
-#guard law "(on-round-end (transfer treasury bank grain (holding treasury grain)))" ==
-  "Each round, the treasury pays all its grain to the bank."
-#guard law "(on-round-end (for-each-player (< 7 (holding each grain)) (transfer each treasury grain 1)))" ==
-  "Each round, players with more than 7 grain pay 1 grain to the treasury."
-
-/-! A guard that is too small to cover the payment keeps the shortfall line. -/
-#guard law "(on-round-end (for-each-player (< 7 (holding each grain)) (transfer each treasury grain 9)))" ==
-  s!"Each round, players with more than 7 grain pay 9 grain to the treasury. / {short}"
-/-! A guard on another resource does not cover the payment either. -/
-#guard law "(on-round-end (for-each-player (< 7 (holding each ore)) (transfer each treasury grain 1)))" ==
-  s!"Each round, players with more than 7 ore pay 1 grain to the treasury. / {short}"
-/-! Two payments from one purse can overdraw it, whatever each one's guard says. -/
-#guard law "(on-round-end (for-each-player (< 7 (holding each grain)) (transfer each treasury grain 1) (transfer each bank grain 1)))" ==
-  s!"Each round, players with more than 7 grain pay 1 grain to the treasury and pay 1 grain to the bank. / {short}"
-
-/-! ## A condition that is not about the player moves to the front -/
-
-#guard law "(on-round-end (for-each-player (and (< (points each) 3) (< 5 (holding treasury grain))) (transfer treasury each grain 1)))" ==
-  s!"Each round, if the treasury holds more than 5 grain, players with fewer than 3 points get 1 grain from the treasury. / {short}"
-#guard law "(on-round-end (if (< 5 (holding treasury grain)) (transfer treasury bank grain 1)))" ==
-  "Each round, if the treasury holds more than 5 grain, the treasury pays 1 grain to the bank."
-#guard law "(on-round-end (for-each-player (< 5 (holding treasury grain)) (transfer bank each grain 1)))" ==
-  "Each round, if the treasury holds more than 5 grain, every player gets 1 grain from the bank."
-
-/-! Payments that share a payer and a payee read as one list. -/
-#guard law "(on-round-end (for-each-player true (transfer bank each grain 1) (transfer bank each ore 1) (transfer bank each wool 1)))" ==
-  "Each round, every player gets 1 grain, 1 ore and 1 wool from the bank."
-
-/-! ## Conditions a short phrase cannot say -/
-
-#guard law "(on-round-end (for-each-player (= (holding each grain) (holding each ore)) (transfer bank each grain 1) (transfer bank each ore 1)))" ==
-  "Each round, for each player, if their grain is equal to their ore, they get 1 grain and 1 ore from the bank."
-#guard law "(on-round-end (for-each-player (<= (holding each grain) (+ (points each) 1)) (transfer bank each grain 1) (transfer each treasury ore 1)))" ==
-  s!"Each round, for each player, if their grain is at most their points plus 1, they get 1 grain from the bank and pay 1 ore to the treasury. / {short}"
-#guard law "(on-round-end (for-each-player (not (= (points each) (count each road))) (transfer bank each grain 1)))" ==
-  "Each round, for each player, if their points are not equal to their roads, they get 1 grain from the bank."
-
-/-! ## Effects with different conditions become separate lines -/
-
-#guard law "(on-round-end (for-each-player (< 0 (count each lighthouse)) (if (< 2 (holding each ore)) (transfer each bank ore 3)) (transfer bank each wool 1)))" ==
-  "Each round, players with at least 1 lighthouse and more than 2 ore pay 3 ore to the bank. / " ++
-  "Each round, players with at least 1 lighthouse get 1 wool from the bank."
-/-! The same player conditions, different kinds of subject. -/
-#guard law "(on-round-end (for-each-player (< (points each) 3) (transfer bank each wool 1) (transfer bank treasury grain 1)))" ==
-  "Each round, players with fewer than 3 points get 1 wool from the bank. / " ++
-  "Each round, for each player with fewer than 3 points, the bank pays 1 grain to the treasury."
-
-/-! ## A body that runs once per player, but does not pay the player -/
-
-#guard law "(on-build road (for-each-player true (transfer bank treasury grain 1)))" ==
-  "Each time a road is built, for each player, the bank pays 1 grain to the treasury."
-#guard law "(on-build road (for-each-player (< (points each) 3) (transfer actor treasury grain 1)))" ==
-  s!"Each time a road is built, for each player with fewer than 3 points, the builder pays 1 grain to the treasury. / {short}"
-#guard law "(on-round-end (for-each-player true (transfer bank treasury grain (count each road))))" ==
-  "Each round, for each player, the bank pays 1 grain per road that player owns to the treasury."
-
-/-! ## Building -/
-
-#guard law "(on-build road (transfer bank treasury grain 1))" ==
-  "Each time a road is built, the bank pays 1 grain to the treasury."
-#guard law "(on-build road (transfer bank actor grain 1))" ==
-  "Anyone who builds a road gets 1 grain from the bank."
-#guard law "(on-build city (for-each-player true (transfer bank each grain 1)))" ==
-  "Each time a city is built, every player gets 1 grain from the bank."
-#guard law "(on-build road (if (< 3 (points actor)) (transfer actor treasury brick 1) (transfer bank actor grain 1)))" ==
-  s!"Anyone with more than 3 points who builds a road pays 1 brick to the treasury and gets 1 grain from the bank. / {short}"
-#guard law "(on-build road (if (< 3 (holding treasury grain)) (transfer treasury actor grain 1)))" ==
-  "If the treasury holds more than 3 grain, anyone who builds a road gets 1 grain from the treasury."
-#guard law "(on-build road (if (< (points actor) (holding actor ore)) (transfer actor treasury brick 1)))" ==
-  s!"If the builder's points are less than the builder's ore, anyone who builds a road pays 1 brick to the treasury. / {short}"
-#guard law "(on-build road (for-each-player (< (points each) 3) (transfer each actor grain 1)))" ==
-  s!"Anyone who builds a road gets 1 grain from every other player with fewer than 3 points. / {short}"
-#guard law "(on-build road (for-each-player (< (points each) (points actor)) (transfer each actor grain 1)))" ==
-  s!"Anyone who builds a road gets 1 grain from every other player with fewer points than the builder. / {short}"
-#guard law "(on-build road (for-each-player (< (points actor) (points each)) (transfer actor each grain 1)))" ==
-  s!"Anyone who builds a road pays 1 grain to every other player with more points than the builder. / {short}"
-#guard law "(on-build road (for-each-player (< (points each) (holding each ore)) (transfer each actor grain 1)))" ==
-  s!"Each time a road is built, for each other player, if their points are less than their ore, they pay 1 grain to the builder. / {short}"
-#guard law "(on-build road (for-each-player true (transfer each actor grain (holding each grain))))" ==
-  "Each time a road is built, every other player pays all their grain to the builder."
-#guard law "(on-build city (for-each-player (= (holding each ore) (holding actor ore)) (transfer bank each ore 1)))" ==
-  "Each time a city is built, players with exactly as much ore as the builder get 1 ore from the bank."
-
-/-! ## Harvests. A law runs once for each payment, not once for each roll. -/
-
-#guard law "(on-harvest (if (res-is ore) (transfer bank actor ore 1)))" ==
-  "Each time a player is paid ore at harvest, they get 1 ore from the bank."
-#guard law "(on-harvest (if (res-is ore) (transfer bank actor res amount)))" ==
-  "Each time a player is paid ore at harvest, they get as much ore again from the bank."
-#guard law "(on-harvest (transfer bank actor wool amount))" ==
-  "Each time a player is paid at harvest, they get wool equal to what they were paid from the bank."
-#guard law "(on-harvest (if (or (res-is ore) (res-is wool)) (transfer actor treasury res 1)))" ==
-  "Each time a player is paid ore or wool at harvest, they pay 1 of it to the treasury."
-#guard law "(on-harvest (if (not (res-is ore)) (transfer actor bank res (- amount 1))))" ==
-  "Each time a player is paid anything but ore at harvest, they pay all but 1 of it to the bank."
-#guard law "(on-harvest (transfer actor treasury res amount))" ==
-  "Each time a player is paid at harvest, they pay all of it to the treasury."
-#guard law "(on-harvest (transfer actor treasury res 2))" ==
-  s!"Each time a player is paid at harvest, they pay 2 of it to the treasury. / {short}"
-#guard law "(on-harvest (if (< 3 (points actor)) (transfer actor treasury grain 1)))" ==
-  s!"Each time a player with more than 3 points is paid at harvest, they pay 1 grain to the treasury. / {short}"
-#guard law "(on-harvest (for-each-player true (transfer each actor res 1)))" ==
-  s!"Each time a player is paid at harvest, they get 1 of it from every other player. / {short}"
-#guard law "(on-harvest (for-each-player (< (points each) (points actor)) (transfer treasury each res 1)))" ==
-  s!"Each time a player is paid at harvest, players with fewer points than the player paid get 1 of it from the treasury. / {short}"
-#guard law "(on-harvest (if (and (res-is ore) (< 3 (holding actor res))) (transfer actor treasury res 1)))" ==
-  "Each time a player with more than 3 ore is paid ore at harvest, they pay 1 ore to the treasury."
-#guard law "(on-harvest (if (< 3 (holding actor res)) (transfer bank actor res 1)))" ==
-  "Each time a player is paid at harvest, if 3 is less than their holding of that resource, they get 1 of it from the bank."
-
-/-! ## Amounts -/
-
-def payGrain (amount : String) : String :=
-  law s!"(on-round-end (for-each-player true (transfer each treasury grain {amount})))"
-def getGrain (amount : String) : String :=
-  law s!"(on-round-end (for-each-player true (transfer bank each grain {amount})))"
-
-#guard payGrain "(holding each grain)" == "Each round, every player pays all their grain to the treasury."
-#guard payGrain "(/ (holding each grain) 2)" ==
-  "Each round, every player pays half of their grain, rounded down, to the treasury."
-#guard payGrain "(/ (holding each grain) 3)" ==
-  "Each round, every player pays a third of their grain, rounded down, to the treasury."
-#guard payGrain "(- (holding each grain) 7)" ==
-  "Each round, every player pays their grain above 7 to the treasury."
-#guard payGrain "(min 3 (holding each grain))" ==
-  "Each round, every player pays up to 3 grain to the treasury."
-#guard getGrain "(* 2 (count each settlement))" ==
-  "Each round, every player gets 2 grain per settlement they own from the bank."
-#guard getGrain "(count each city)" == "Each round, every player gets 1 grain per city they own from the bank."
-#guard getGrain "(points each)" == "Each round, every player gets 1 grain per point they have from the bank."
-#guard getGrain "(holding each ore)" == "Each round, every player gets 1 grain per ore they hold from the bank."
-#guard getGrain "(holding each grain)" == "Each round, every player gets as much grain as they hold from the bank."
-#guard getGrain "(+ (points each) 1)" == "Each round, every player gets grain equal to their points plus 1 from the bank."
-#guard getGrain "(- 5 (points each))" ==
-  "Each round, every player gets grain equal to 5 minus their points, stopping at 0 from the bank."
-#guard getGrain "(- (holding each ore) (holding each grain))" ==
-  "Each round, every player gets grain equal to their ore above their grain from the bank."
-#guard getGrain "(/ (count each road) 2)" ==
-  "Each round, every player gets grain equal to half of their roads, rounded down, from the bank."
-#guard getGrain "(/ (count each road) 5)" ==
-  "Each round, every player gets grain equal to their roads divided by 5, rounded down, from the bank."
-#guard getGrain "(min (points each) 3)" ==
-  "Each round, every player gets grain equal to the smaller of their points and 3 from the bank."
-#guard getGrain "(max 1 (min (points each) 3))" ==
-  "Each round, every player gets grain equal to the larger of 1 and (the smaller of their points and 3) from the bank."
-#guard getGrain "(+ (+ 1 (points each)) (* 2 (* 3 (count each road))))" ==
-  "Each round, every player gets grain equal to 1 plus their points plus (twice (3 times their roads)) from the bank."
-#guard getGrain "(* (+ (points each) 1) (count each road))" ==
-  "Each round, every player gets grain equal to (their points plus 1) times their roads from the bank."
-
-/-! ## Rules that do nothing. The constitution can refuse these, and the sentence still says so. -/
-
-#guard law "(on-round-end (transfer actor treasury grain 1))" ==
-  "Each round, nothing moves: a round's end has no acting player."
-#guard law "(on-round-end (transfer bank each grain 1))" ==
-  "Each round, nothing moves: no player is picked here."
-#guard law "(on-round-end (transfer treasury treasury grain 1))" ==
-  "Each round, nothing moves: the treasury would pay itself."
-#guard law "(on-round-end (for-each-player true (transfer each each grain 1)))" ==
-  "Each round, nothing moves: a player would pay themselves."
-#guard law "(on-round-end (transfer bank treasury res 1))" ==
-  "Each round, nothing moves: nothing was harvested here."
-#guard law "(on-round-end (if (not true) (transfer bank treasury grain 1)))" ==
-  "Each round, nothing moves: its condition is never true."
-#guard law "(on-round-end (transfer bank treasury grain (/ (holding bank grain) 0)))" ==
-  "Each round, the bank pays grain equal to 0 (dividing by 0 gives 0) to the treasury."
-#guard law "(on-round-end (if (< (points treasury) 1) (transfer bank treasury grain 1)))" ==
-  "Each round, if 0 (the treasury has no points) is less than 1, the bank pays 1 grain to the treasury."
-#guard law "(on-build road (if (< 1 (points each)) (transfer actor treasury grain 1)))" ==
-  s!"If 1 is less than 0 (no player is picked here), anyone who builds a road pays 1 grain to the treasury. / {short}"
-
-/-! ## Laws that react to the roll -/
-
--- The three sentences a player should be able to say, read back from the rule.
-#guard law "(on-roll (for-each-player (= rolled 2) (transfer each treasury grain 1)))" ==
-  s!"When a 2 is rolled, every player pays 1 grain to the treasury. / {short}"
-#guard law "(on-roll (for-each-player (= rolled 12) (transfer bank each wool 1)))" ==
-  "When a 12 is rolled, every player gets 1 wool from the bank."
-#guard sample "seven-penalty" ==
-  "When a 7 is rolled, for each player, if their grain, timber, ore, wool and brick together is more " ++
-  "than 7, they pay half of their grain, timber, ore, wool and brick, each rounded down, to the bank."
--- The same rule written another way reads the same.
-#guard law "(on-roll (if (= 7 rolled) (transfer bank treasury grain 1)))" ==
-  "When a 7 is rolled, the bank pays 1 grain to the treasury."
-#guard law "(on-roll (for-each-player (and (< 3 (holding each grain)) (= rolled 7)) (transfer each treasury grain 1)))" ==
-  "When a 7 is rolled, players with more than 3 grain pay 1 grain to the treasury."
--- More than one number, and every number but one.
-#guard law "(on-roll (if (or (= rolled 2) (= rolled 12)) (transfer bank treasury grain 1)))" ==
-  "When a 2 or a 12 is rolled, the bank pays 1 grain to the treasury."
-#guard law "(on-roll (if (= rolled 8) (transfer bank treasury grain 1)))" ==
-  "When an 8 is rolled, the bank pays 1 grain to the treasury."
-#guard law "(on-roll (if (not (= rolled 7)) (transfer bank treasury grain 1)))" ==
-  "When anything but a 7 is rolled, the bank pays 1 grain to the treasury."
--- A test of the number that is not one number stays in the words.
-#guard law "(on-roll (if (<= 10 rolled) (transfer bank treasury grain 1)))" ==
-  "Each time the dice roll, if the total rolled is at least 10, the bank pays 1 grain to the treasury."
-#guard law "(on-roll (if (< 10 rolled) (transfer bank treasury grain 1)))" ==
-  "Each time the dice roll, if the total rolled is more than 10, the bank pays 1 grain to the treasury."
-#guard law "(on-roll (if (<= rolled 3) (transfer bank treasury grain 1)))" ==
-  "Each time the dice roll, if the total rolled is at most 3, the bank pays 1 grain to the treasury."
--- Two numbers cannot both be rolled, and the sentence does not hide it.
-#guard law "(on-roll (if (and (= rolled 2) (= rolled 7)) (transfer bank treasury grain 1)))" ==
-  "Each time the dice roll, if the total rolled is equal to 2 and the total rolled is equal to 7, " ++
-  "the bank pays 1 grain to the treasury."
--- The actor is the player whose turn the roll starts.
-#guard law "(on-roll (transfer bank actor grain 1))" ==
-  "Each time the dice roll, the player whose turn starts gets 1 grain from the bank."
-#guard law "(on-roll (if (= rolled 7) (transfer actor treasury ore 2)))" ==
-  s!"When a 7 is rolled, the player whose turn starts pays 2 ore to the treasury. / {short}"
-#guard law "(on-roll (for-each-player (= rolled 7) (transfer each actor grain 1)))" ==
-  s!"When a 7 is rolled, the player whose turn starts gets 1 grain from every other player. / {short}"
--- The total can be an amount.
-#guard law "(on-roll (transfer bank actor grain rolled))" ==
-  "Each time the dice roll, the player whose turn starts gets grain equal to the total rolled from the bank."
-#guard law "(on-roll (transfer bank actor grain (/ rolled 2)))" ==
-  "Each time the dice roll, the player whose turn starts gets grain equal to half of the total rolled, rounded down, from the bank."
--- Outside a roll, `rolled` is 0, and the sentence says so as it does for `amount`.
-#guard law "(on-round-end (for-each-player true (transfer each treasury grain rolled)))" ==
-  s!"Each round, every player pays grain equal to 0 (no dice are rolled here) to the treasury. / {short}"
-#guard law "(on-round-end (if (= rolled 7) (transfer bank treasury grain 1)))" ==
-  "Each round, if 0 (no dice are rolled here) is equal to 7, the bank pays 1 grain to the treasury."
-#guard law "(on-build road (transfer actor treasury grain rolled))" ==
-  s!"Anyone who builds a road pays grain equal to 0 (no dice are rolled here) to the treasury. / {short}"
--- Inside a roll, what only a harvest has is missing, and the sentence says that too.
-#guard law "(on-roll (transfer bank treasury res 1))" ==
-  "Each time the dice roll, nothing moves: nothing was harvested here."
-#guard law "(on-roll (transfer bank each grain 1))" ==
-  "Each time the dice roll, nothing moves: no player is picked here."
-#guard law "(on-roll (if (not true) (transfer bank treasury grain 1)))" ==
-  "Each time the dice roll, nothing moves: its condition is never true."
-#guard law "(on-roll (transfer bank treasury grain amount))" ==
-  "Each time the dice roll, the bank pays grain equal to 0 (nothing was harvested here) to the treasury."
--- A clause with no effects does not parse, as for the other triggers.
-#guard (Rules.parseProposal "(law \"x\" (on-roll))").toOption.isNone
-
--- The text goes through the parser and back unchanged, so the event log keeps its meaning.
-def rollTexts : List String :=
-  [ "(law \"x\" (on-roll (transfer bank actor grain rolled)))"
-  , "(law \"x\" (on-roll (for-each-player (= rolled 7) (transfer each treasury grain 1))))"
-  , "(law \"x\" (on-roll (if (<= 10 rolled) (transfer bank actor grain 1) (transfer bank treasury ore 1))))" ]
-
-#guard rollTexts.all fun t =>
-  match Rules.parseProposal t with
-  | .ok p => Rules.printProposal p == t
-  | .error _ => false
-
--- Three or more goods of one player read as one list. Two read as a sum, and so does a repeated good
--- with another party's.
-#guard law "(on-round-end (for-each-player (< 7 (+ (holding each grain) (+ (holding each wool) (holding each ore)))) (transfer each treasury grain 1)))" ==
-  s!"Each round, for each player, if their grain, wool and ore together is more than 7, they pay 1 grain to the treasury. / {short}"
-#guard law "(on-round-end (for-each-player (< 7 (+ (holding each grain) (holding each wool))) (transfer each treasury grain 1)))" ==
-  s!"Each round, for each player, if 7 is less than their grain plus their wool, they pay 1 grain to the treasury. / {short}"
--- Amounts that all round down share the words, and halves share more of them.
-#guard law "(on-round-end (for-each-player true (transfer each treasury grain (/ (holding each grain) 2)) (transfer each treasury ore (/ (holding each ore) 2))))" ==
-  "Each round, every player pays half of their grain and ore, each rounded down, to the treasury."
-#guard law "(on-round-end (for-each-player true (transfer each treasury grain (/ (holding each grain) 3)) (transfer each treasury ore (/ (holding each ore) 3)) (transfer each treasury wool (/ (holding each wool) 3))))" ==
-  "Each round, every player pays a third of their grain, a third of their ore and a third of their wool, each rounded down, to the treasury."
-
-/-! ## Prices, points, the bank, repeal, new pieces, and many clauses -/
-
-#guard law "(set-cost road (bundle))" == "A road is free."
-#guard law "(set-points city 0)" == "A city is worth no points."
-#guard law "(set-points city 1)" == "A city is worth 1 point."
-#guard law "(repeal 3)" == "Law 3 is repealed, and the rules it changed go back."
-#guard law "(set-points city 0) (set-cost road (bundle (brick 1))) (repeal 3) (set-bank-rate 2)" ==
-  "A city is worth no points. / A road costs 1 brick. / " ++
-  "Law 3 is repealed, and the rules it changed go back. / The bank trades 2 of a resource for 1 of another."
-#guard law "(new-piece ferry (bundle) (points 0) link (yield 3) (limit 0))" ==
-  "New piece: the ferry. It is free and is worth no points. " ++
-  "Build it on a free side of a hex, next to your own pieces. It collects nothing at harvest. No player can own one."
-#guard law "(new-piece tower (bundle (ore 1)) (points 1) spot (yield 0) (limit 1)) (set-cost tower (bundle (ore 2)))" ==
-  "New piece: the tower. It costs 1 ore and is worth 1 point. " ++
-  "Build it on a free corner your own pieces reach, with no piece on a corner next to it. " ++
-  "It collects nothing at harvest. Each player can own 1. / A tower costs 2 ore."
-#guard law "(new-piece keep (bundle (ore 1)) (points 3) (upgrade city) (yield 3) (limit 1))" ==
-  "New piece: the keep. It costs 1 ore and is worth 3 points. It replaces one of your cities. " ++
-  "When a hex it touches is rolled, it collects 3. Each player can own 1."
-#guard law "(on-round-end (for-each-player true (transfer each treasury grain 1))) (on-build road (transfer bank actor ore 1))" ==
-  s!"Each round, every player pays 1 grain to the treasury. / Anyone who builds a road gets 1 ore from the bank. / {short}"
 
 /-! ## Deals -/
 
@@ -420,18 +55,6 @@ it need two terms. -/
   "Between Mara and Ada, for 3 rounds. / Mara will not trade with Grace, in either direction. / " ++
   "Ada will not trade with Grace, in either direction. / Any signer can end it with 1 round's notice."
 
-/-! ## Screen and chronicle forms -/
-
-def twoLines : Law :=
-  { title := "T", clauses := [.setBankRate 3, .setPoints "city" 3] }
-
-#guard Text.lawText twoLines == "The bank trades 3 of a resource for 1 of another.\nA city is worth 3 points."
-#guard Text.lawLine twoLines == "The bank trades 3 of a resource for 1 of another. A city is worth 3 points."
-
-/-! ## The sentence comes from the clauses, never from the title -/
-
-#guard say "(law \"Everyone gets free cities\" (set-bank-rate 3))" == "The bank trades 3 of a resource for 1 of another."
-
 /-! ## Words -/
 
 #guard Text.pluralWord "city" == "cities"
@@ -441,57 +64,6 @@ def twoLines : Law :=
 #guard Text.pluralWord "bus" == "buses"
 #guard Text.pluralWord "church" == "churches"
 #guard Text.bundleText [("grain", 2), ("ore", 1), ("wool", 3)] == "2 grain, 1 ore and 3 wool"
-
-/-! ## A condition keeps its meaning when `not` moves inward -/
-
-theorem mkAnd_eval {G : GameDef} (s : State G) (env : LawEnv) (a b : Cond) :
-    (Text.mkAnd a b).eval s env = (a.eval s env && b.eval s env) := by
-  unfold Text.mkAnd
-  split <;> simp_all [Cond.eval]
-
-theorem mkOr_eval {G : GameDef} (s : State G) (env : LawEnv) (a b : Cond) :
-    (Text.mkOr a b).eval s env = (a.eval s env || b.eval s env) := by
-  unfold Text.mkOr
-  split <;> simp_all [Cond.eval]
-
-mutual
-  /-- The sentence's form of a condition means the same as the law's, in every state. -/
-  theorem plainCond_eval {G : GameDef} (s : State G) (env : LawEnv) (c : Cond) :
-      (Text.plainCond c).eval s env = c.eval s env := by
-    cases c with
-    | and a b => simp [Text.plainCond, mkAnd_eval, Cond.eval, plainCond_eval s env a, plainCond_eval s env b]
-    | or a b => simp [Text.plainCond, mkOr_eval, Cond.eval, plainCond_eval s env a, plainCond_eval s env b]
-    | «not» c => simp [Text.plainCond, Cond.eval, flipCond_eval s env c]
-    | yes => simp [Text.plainCond]
-    | lt a b => simp [Text.plainCond]
-    | le a b => simp [Text.plainCond]
-    | eq a b => simp [Text.plainCond]
-    | harvestedIs r => simp [Text.plainCond]
-
-  theorem flipCond_eval {G : GameDef} (s : State G) (env : LawEnv) (c : Cond) :
-      (Text.flipCond c).eval s env = !c.eval s env := by
-    cases c with
-    | yes => simp [Text.flipCond, Cond.eval]
-    | lt a b =>
-      simp only [Text.flipCond, Cond.eval]
-      by_cases h : a.eval s env < b.eval s env
-      · have h' : ¬ b.eval s env ≤ a.eval s env := by omega
-        simp [h, h']
-      · have h' : b.eval s env ≤ a.eval s env := by omega
-        simp [h, h']
-    | le a b =>
-      simp only [Text.flipCond, Cond.eval]
-      by_cases h : a.eval s env ≤ b.eval s env
-      · have h' : ¬ b.eval s env < a.eval s env := by omega
-        simp [h, h']
-      · have h' : b.eval s env < a.eval s env := by omega
-        simp [h, h']
-    | eq a b => simp [Text.flipCond, Cond.eval]
-    | and a b => simp [Text.flipCond, mkOr_eval, Cond.eval, flipCond_eval s env a, flipCond_eval s env b]
-    | or a b => simp [Text.flipCond, mkAnd_eval, Cond.eval, flipCond_eval s env a, flipCond_eval s env b]
-    | «not» c => simp [Text.flipCond, Cond.eval, plainCond_eval s env c]
-    | harvestedIs r => simp [Text.flipCond, Cond.eval]
-end
 
 /-! ## The clerk's memory -/
 
@@ -823,15 +395,9 @@ def withCounter : GameDef :=
   match Rules.parseProposal (Rules.printProposal (.law L)) (notCatanSpec.G.resources.map (·.name)) with
   | .ok (.law L') => Rules.printProposal (.law L') == Rules.printProposal (.law L)
   | _ => false
-#guard notCatanSpec.G.foundingLaws.all fun L => !(Text.lawText L).isEmpty
 #guard notCatanSpec.G.foundingLaws.map (·.title) ==
   [ "A 7 costs big hands half", "A new knight takes ore from each seat ahead"
   , "The third knight or sixth road earns a wreath", "A harvest that empties the bank pays nobody" ]
-#guard notCatanSpec.G.foundingLaws.map Text.lawText ==
-  [ "When a 7 is rolled, for each player, if their timber, grain, ore, wool and brick together is more than 7, they pay half of their timber, grain, ore, wool and brick, each rounded down, to the bank."
-  , "Anyone who builds a knight gets 1 ore from every other player with more points than the builder and at least 1 ore."
-  , "Anyone with exactly 2 knights who builds a knight gets 3 laurel from the bank.\nAnyone with exactly 5 roads who builds a road gets 3 laurel from the bank.\nEach time a wreath is built, the bank pays 3 laurel to the treasury."
-  , "Each time a player is paid at harvest, if the bank's holding of that resource is equal to 0, they pay all of it to the bank." ]
 
 -- A law can use only the resources of its own game.
 #guard (Rules.parseProposal "(law \"x\" (set-cost city (bundle (ice 1))))").toOption.isNone
@@ -910,5 +476,61 @@ def line (kind : String) (to : Option Nat := none) : Talk.Line := { event := 0, 
   | none => false
 
 end Seats
+
+namespace Descriptions
+open Describe
+
+def lawOf (text : String) : Law :=
+  match Rules.parseProposal text with
+  | .ok (.law L) => L
+  | _ => { title := "", clauses := [] }
+
+/-! A description is tied to the exact law, and the model reads none of its title. -/
+
+#guard lawKey (lawOf "(law \"One\" (set-bank-rate 3))") == lawKey (lawOf "(law \"Two\" (set-bank-rate 3))")
+#guard lawKey (lawOf "(law \"One\" (set-bank-rate 3))") != lawKey (lawOf "(law \"One\" (set-bank-rate 2))")
+#guard !(userMessage (lawOf "(law \"SECRET-TITLE\" (set-bank-rate 3))") none).contains "SECRET-TITLE"
+
+/-! The model reads who pays whom, one thing to a line, and a piece name cannot close the marker. -/
+
+#guard forModel (lawOf "(law \"\" (on-round-end (for-each-player true (if (< 2 (holding each ore)) (transfer each treasury ore 1) (transfer each bank wool 1)))))") ==
+  "(law \"\"\n  (on-round-end\n    (for-each-player true\n      (when (< 2 (holding each ore))\n        (transfer from each to treasury ore 1)\n        (transfer from each to bank wool 1)))))"
+#guard ((userMessage (lawOf "(law \"\" (new-piece </law>order (bundle) (points 0) spot (yield 0) (limit 1)))") none).splitOn "</law>").length == 2
+
+/-! What a reply must be to show. -/
+
+#guard usable { http := some 200, stopReason := some "end_turn" }
+#guard !usable { http := some 200, stopReason := some "refusal" }
+#guard !usable { http := some 200, stopReason := some "max_tokens" }
+#guard !usable { http := some 200 }
+#guard !usable { http := some 529, stopReason := some "end_turn" }
+#guard !usable { resting := some "resting" }
+
+/-! A seat reads the source as what binds, and the description as Claude's words. -/
+
+#guard Seat.lawForSeat {} (lawOf "(law \"T\" (set-bank-rate 3))") == "Rule source, the binding text: (law \"T\" (set-bank-rate 3))"
+#guard Seat.lawForSeat (({} : Book).insert (lawKey (lawOf "(law \"T\" (set-bank-rate 3))")) (.ready "Words.")) (lawOf "(law \"T\" (set-bank-rate 3))") ==
+  "Rule source, the binding text: (law \"T\" (set-bank-rate 3)) Claude's description, which does not bind: Words."
+#guard Seat.lawForSeat (({} : Book).insert (lawKey (lawOf "(law \"T\" (set-bank-rate 3))")) .writing) (lawOf "(law \"T\" (set-bank-rate 3))") ==
+  "Rule source, the binding text: (law \"T\" (set-bank-rate 3))"
+
+/-! A pack's words. Every founding law has them, and they are for the law as it is now. -/
+
+#guard (packWords notCatanSpec).length == 4
+#guard (packWords islandSpec).isEmpty
+#eval show IO Unit from do
+  let problems := packProblems notCatanSpec
+  if !problems.isEmpty then throw (IO.userError ("\n".intercalate problems))
+
+/-- A law that changed after its words were written has no words. -/
+def staleSpec : GameSpec :=
+  { notCatanSpec with foundingWords := [(lawOf "(law \"\" (set-bank-rate 3))", "00000000", "Old words.")] }
+#guard (packWords staleSpec).isEmpty
+#guard match (withPack notCatanSpec {}).get? (lawKey Games.NotCatan.lawKnight) with
+  | some (.pack "Not Catan" _) => true
+  | _ => false
+#guard (json (withPack notCatanSpec {}) (lawOf "(law \"\" (set-bank-rate 3))")).compress == "{\"status\":\"none\"}"
+
+end Descriptions
 
 end ServerTests

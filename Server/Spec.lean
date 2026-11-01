@@ -1,6 +1,7 @@
 import Charter.Games.Island
 import Charter.Games.Belt
 import Charter.Games.NotCatan
+import Charter.Games.NotCatanWords
 import Charter.Scene.OfState
 import Charter.Scene.Belt
 
@@ -25,6 +26,8 @@ A pack is one new file and one entry here, and nothing else changes:
 2. Import it here, write a `GameSpec` below, and add that to `gameSpecs`. The lobby, the seats, the log,
    replay and the scene all read from that list. Import the file in `Charter.lean` too, so that
    `make audit` builds it.
+3. If the pack has founding laws, write what they do in plain words, as in
+   `Charter/Games/NotCatanWords.lean`, and put them in `foundingWords`.
 
 A pack's name and sentence are what a player reads when choosing it, so keep the sentence short and
 plain. `Server/PreviewCheck.lean` plays every pack with bots, and `ServerTests.lean` checks its layout.
@@ -52,6 +55,9 @@ structure GameSpec where
   samples : Bool := false
   /-- What a Claude seat or the clerk needs to know about this game and the screen does not say. -/
   guide : String := ""
+  /-- What the pack says its founding laws do: the law, the start of its fingerprint, and the words. See
+  `Describe.packWords`. Laws of a pack with none of these show their source with a short note. -/
+  foundingWords : List (Law × String × String) := []
 
 def islandSpec : GameSpec :=
   { id := "island"
@@ -86,7 +92,8 @@ def notCatanSpec : GameSpec :=
     minSeats := 3
     maxSeats := 4
     samples := true
-    guide := "Laurel is not harvested. It pays for a wreath, and there are laurels for only two wreaths in the game." }
+    guide := "Laurel is not harvested. It pays for a wreath, and there are laurels for only two wreaths in the game."
+    foundingWords := Games.NotCatan.foundingWords }
 
 instance : Inhabited GameSpec := ⟨islandSpec⟩
 

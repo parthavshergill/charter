@@ -124,6 +124,32 @@ The first run in a browser found three weak points, and they are fixed.
 | The read-back wrote a double comma for three amounts that round down | Amounts that all round down share the words "each rounded down", and halves read as "half of their grain and ore" |
 | A sum of holdings read as "7 is less than their grain plus their timber plus their ore" | With three or more goods, it reads as "their grain, timber and ore together is more than 7", which the packs needed too |
 
+## How accurate the law descriptions are
+
+A law's description is Claude's words, and no proof stands behind it. So this was measured once, on real calls. The script is not kept in this repository, so it cannot be run again from here.
+
+The test had 91 different laws: 16 that real games proposed or drafted, 9 sample laws, and 66 written to be awkward: nested `for-each-player` and `if`, shrinking payments, subtraction that stops at zero, `repeal`, `new-piece`, `on-roll`, and piece names that try to give instructions. A separate `claude-opus-5-5` call read each law and its description and flagged errors. I then read the flags, and sorted them into false statements and weak ones. A weak one leaves out something a player might want, such as "or all they have".
+
+| Model and effort | Flagged by Opus | False statements | Weak | No description | Latency in seconds: median, 90th percentile, longest | Mean cost |
+|---|---|---|---|---|---|---|
+| `claude-haiku-5-5`, `low` | 11 | 5 | 6 | 0 | 1.4, 1.8, 6.0 | $0.00042 |
+| `claude-haiku-5-5`, `medium` (the default) | 4 | 2 | 2 | 0 | 1.6, 4.4, 8.8 | $0.00052 |
+| `claude-haiku-5-5`, `high` | 3 | 0 | 2 | 1 | 4.0, 7.0, 17.5 | $0.00082 |
+| `claude-sonnet-5-5`, `low` | 0 | 0 | 0 | 0 | 1.7, 2.1, 4.6 | $0.00794 |
+
+What these numbers mean, and what they do not:
+
+- `low` was too weak: 5 false statements in 91. An earlier run at `low` also wrote its own corrections into its reply, as in "Wait, that sentence is wrong". So the default is `medium`.
+- `medium`'s two false statements were on odd laws: one reads `actor` at a round's end, and one tests `rolled` outside a roll. It made none on the 25 real and sample laws. Its weak flags were a large payment with no "or all they have", and "if they have them" on a real law, which can read as all or nothing.
+- `high` used up the 4,000 token limit on one law, and it is slower.
+- `claude-sonnet-5-5` at `low` did best, at about 15 times the cost. Setting `CHARTER_DESCRIBE_MODEL` and `CHARTER_DESCRIBE_EFFORT` switches to it.
+- Every piece name that tried to give instructions was treated as a name on this run, at every setting. On an earlier version of the prompt, `low` turned a payment around in the way a name asked.
+- This is one sample. The prompt was tuned on most of these laws. The 11 `on-roll` laws and 16 others were written after most of the tuning, and they did about as well. The checker is also a model, and in earlier runs I found false statements that it had missed.
+
+Three changes to what the model reads did the most. Each payment says `from` and `to`, because the model often turned a payment around when it read the bare form. `if` reads `when`, because the model read a second transfer as an "else". And each thing is on its own line.
+
+The price and the time are for the call alone, with its one retry if the reply is too long. Eight real descriptions through the running server came 1.0 seconds after the draft at the median, and 1.8 seconds at the longest.
+
 ## How the checks work
 
 - **Axiom audit:** `make audit` fails if any theorem in a `Charter` module rests on an axiom other than `propext`, `Classical.choice` and `Quot.sound`. So a `sorry` fails it. It also replays the proofs through `leanchecker`, and scans for banned constructs.
@@ -140,7 +166,7 @@ No theorem covers these. Tests check them, on the cases tried.
 - `legalMoves`, which the screen uses.
 - That every seat can place its setup pieces. On the Island, a road can be blocked at 4 seats, and the game goes on without it.
 - That the screen shows the preview's result, and the preview's build cases.
-- The clerk's sentences, and the clerk's and the Claude seats' handling of replies.
+- A deal's sentences, and the clerk's, the description call's and the Claude seats' handling of replies.
 - The whole server, including the turn timer and replaying a game from its log.
 
 Neither proofs nor tests show that the screen always shows the true state, or that the dice are fair. `docs/process/trusted-surface.md` gives the full list.

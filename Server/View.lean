@@ -1,5 +1,6 @@
 import Server.Game
 import Server.Formalize
+import Server.Describe
 
 /-!
 # What a seat sees, as JSON
@@ -142,10 +143,10 @@ def previewFor (g : Game) (s : State g.spec.G) (you : Option Nat) (id : Nat) (L 
     | none => false
   (now, stale)
 
-def proposalJson (g : Game) (s : State g.spec.G) (you : Option Nat) (p : OpenProposal) : Json :=
-  let (kind, title, text, english, signers) := match p.body with
-    | .law L => ("law", L.title, Rules.printProposal (.law L), Text.lawText L, ([] : List Nat))
-    | .deal d => ("deal", d.title, Rules.printProposal (.deal d), Text.dealText g.nameOf d, d.signers)
+def proposalJson (g : Game) (s : State g.spec.G) (book : Describe.Book) (you : Option Nat) (p : OpenProposal) : Json :=
+  let (kind, title, text, words, signers) := match p.body with
+    | .law L => ("law", L.title, Rules.printProposal (.law L), ("description", Describe.json book L), ([] : List Nat))
+    | .deal d => ("deal", d.title, Rules.printProposal (.deal d), ("english", Json.str (Text.dealText g.nameOf d)), d.signers)
   let can (e : Nat → Event) : Bool := match you with
     | some y => accepted s (e y)
     | none => false
@@ -159,7 +160,7 @@ def proposalJson (g : Game) (s : State g.spec.G) (you : Option Nat) (p : OpenPro
     | .deal _ => (Json.null, false)
   Json.mkObj
     [ ("id", toJson p.id), ("by", toJson p.by_), ("kind", kind), ("title", title), ("text", text)
-    , ("english", english)
+    , words
     , ("votes", Json.arr (p.votes.map fun v => Json.mkObj [("seat", toJson v.1), ("yes", toJson v.2)]).toArray)
     , ("signed", toJson p.signed), ("signers", toJson signers)
     , ("yesNeeded", toJson more), ("canPass", toJson (decide (more ≤ left)))
@@ -197,25 +198,25 @@ def samplesJson (g : Game) : Json :=
     match g.parse text with
     | .ok (.law L) =>
       if hasRollRule && rollRule L then none
-      else some (Json.mkObj [("id", id), ("title", L.title), ("english", Text.lawText L), ("text", text)])
+      else some (Json.mkObj [("id", id), ("title", L.title), ("text", text)])
     | _ => none).toArray
 
 def lineJson (l : Line) : Json :=
   Json.mkObj [("event", toJson l.event), ("actor", toJson l.actor), ("text", l.text),
     ("round", toJson l.round), ("kind", l.kind), ("major", toJson l.major)]
 
-def decisionJson (d : Decision) : Json :=
+def decisionJson (book : Describe.Book) (d : Decision) : Json :=
   Json.mkObj
-    [ ("id", toJson d.id), ("by", toJson d.by_), ("title", d.law.title), ("english", Text.lawText d.law)
+    [ ("id", toJson d.id), ("by", toJson d.by_), ("title", d.law.title), ("description", Describe.json book d.law)
     , ("text", Rules.printProposal (.law d.law))
     , ("votes", Json.arr (d.votes.map fun v => Json.mkObj [("seat", toJson v.1), ("yes", toJson v.2)]).toArray)
     , ("outcome", d.outcome), ("round", toJson d.round), ("event", toJson d.event)
     , ("pick", toJson (Scene.lawPick d.id).toNat) ]
 
-def lawJson (g : Game) (x : Nat × Law) : Json :=
+def lawJson (g : Game) (book : Describe.Book) (x : Nat × Law) : Json :=
   let d := g.decisions.toList.find? (·.id == x.1)
   Json.mkObj
-    [ ("id", toJson x.1), ("title", x.2.title), ("english", Text.lawText x.2)
+    [ ("id", toJson x.1), ("title", x.2.title), ("description", Describe.json book x.2)
     , ("text", Rules.printProposal (.law x.2))
     , ("by", toJson (d.map (·.by_))), ("round", toJson (d.map (·.round)))
     , ("votes", match d with
@@ -229,7 +230,7 @@ def colorHex (c : UInt32) : String :=
   String.ofList ('#' :: ((List.range 6).reverse.map fun i => digit ((n >>> (4 * i)) % 16)))
 
 /-- Everything one seat sees. A game's own seed stays hidden until the game ends. -/
-def view (g : Game) (code : String) (you : Option Nat) (drafting : List Nat := []) : Json :=
+def view (g : Game) (code : String) (you : Option Nat) (drafting : List Nat) (book : Describe.Book) : Json :=
   let G := g.spec.G
   let showPersona := you.isNone && g.openToSpectators
   let common : List (String × Json) :=
@@ -241,6 +242,7 @@ def view (g : Game) (code : String) (you : Option Nat) (drafting : List Nat := [
     , ("resources", toJson (goodsOf G))
     , ("seatColors", toJson (Scene.seatColors.map colorHex))
     , ("drafting", toJson drafting)
+    , ("described", toJson (Describe.finished book))
     , ("fingerprint", commitmentOf g.serverSeed)
     , ("chronicle", Json.arr (g.chronicle.map lineJson)) ]
   match g.state with
@@ -266,9 +268,9 @@ def view (g : Game) (code : String) (you : Option Nat) (drafting : List Nat := [
       , ("pieceDefs", Json.arr (s.rules.pieces.map (pieceDefJson s you legal)).toArray)
       , ("treasury", handJson s .treasury), ("bank", handJson s .bank)
       , ("legalMoves", Json.arr (legal.map (moveEntry g.spec.layout s)).toArray)
-      , ("proposals", Json.arr (s.openProposals.map (proposalJson g s you)).toArray)
-      , ("laws", Json.arr (s.laws.map (lawJson g)).toArray)
-      , ("decisions", Json.arr (g.decisions.toList.map decisionJson).toArray)
+      , ("proposals", Json.arr (s.openProposals.map (proposalJson g s book you)).toArray)
+      , ("laws", Json.arr (s.laws.map (lawJson g book)).toArray)
+      , ("decisions", Json.arr (g.decisions.toList.map (decisionJson book)).toArray)
       , ("deals", Json.arr (s.deals.map (dealJson g s you)).toArray)
       , ("offers", Json.arr (s.offers.map (offerJson s you)).toArray)
       , ("samples", samplesJson g)
@@ -292,23 +294,25 @@ def withTalkCount (j : Json) (n : Nat) : Json := withField j "talkCount" (toJson
 def withReplay (j : Json) (at_ total : Nat) : Json :=
   withField j "replay" (Json.mkObj [("at", toJson at_), ("total", toJson total)])
 
-/-- What the proposer judges: the statement from Lean, any stated difference, and the consequences
-at this table. The same statement and consequences go to the table when the rule is proposed. -/
-def reviewJson (g : Game) (you : Nat) (formal : String) (difference : Option String) : Json :=
+/-- What the proposer judges: Claude's description, any stated difference, the consequences at this
+table, and the rule source. The same description, consequences and source go to the table when the rule
+is proposed. The difference is the clerk's note on how the rule differs from the player's request. It
+says nothing about the description. A deal has a statement from Lean in place of a description. -/
+def reviewJson (g : Game) (book : Describe.Book) (you : Nat) (formal : String) (difference : Option String) : Json :=
   match g.parse formal, g.state with
   | .ok p, some s =>
-    let (kind, title, english, preview) := match p with
-      | .law L => ("law", L.title, Text.lawText L, Preview.draftPreview s s.nextProposalId L you g.nameOf)
-      | .deal d => ("deal", d.title, Text.dealText g.nameOf d, Json.null)
+    let (kind, title, words, preview) := match p with
+      | .law L => ("law", L.title, ("description", Describe.json book L), Preview.draftPreview s s.nextProposalId L you g.nameOf)
+      | .deal d => ("deal", d.title, ("statement", Json.str (Text.dealText g.nameOf d)), Json.null)
     Json.mkObj
-      [ ("kind", kind), ("title", title), ("statement", english), ("difference", toJson difference)
+      [ ("kind", kind), ("title", title), words, ("difference", toJson difference)
       , ("preview", preview), ("text", Rules.printProposal p)
       , ("fee", if kind == "law" then feeJson s (some you) else Json.null)
       , ("canPropose", toJson (s.phase == .actions)) ]
   | _, _ => Json.null
 
 /-- A draft as the screen reads it. It says only what has really happened. -/
-def draftJson (g : Game) (you : Nat) (job : Formalize.Job) (st : Formalize.JobState) (now : Nat) : Json :=
+def draftJson (g : Game) (book : Describe.Book) (you : Nat) (job : Formalize.Job) (st : Formalize.JobState) (now : Nat) : Json :=
   let base : List (String × Json) :=
     [ ("id", toJson job.id), ("words", st.suggestedWords.getD job.words)
     , ("mode", if job.suggest then "suggest" else "draft"), ("why", toJson st.why)
@@ -324,7 +328,7 @@ def draftJson (g : Game) (you : Nat) (job : Formalize.Job) (st : Formalize.JobSt
   let final : List (String × Json) := match st.final with
     | none => [("outcome", Json.null)]
     | some (.ready formal diff viaClaude) =>
-      [("outcome", "ready"), ("viaClaude", toJson viaClaude), ("review", reviewJson g you formal diff)]
+      [("outcome", "ready"), ("viaClaude", toJson viaClaude), ("review", reviewJson g book you formal diff)]
     | some (.refused why) => [("outcome", "refused"), ("reason", why)]
     | some (.failed msg) => [("outcome", "failed"), ("reason", msg)]
     | some .cancelled => [("outcome", "cancelled")]
@@ -387,14 +391,14 @@ def checkText (g : Game) (text : String) : Json :=
   match g.parse text with
   | .error e => Json.mkObj [("ok", toJson false), ("error", e)]
   | .ok p =>
-    let english := match p with
-      | .law L => Text.lawText L
-      | .deal d => Text.dealText g.nameOf d
+    let english : List (String × Json) := match p with
+      | .law _ => []
+      | .deal d => [("english", Json.str (Text.dealText g.nameOf d))]
     let problems := match g.state, p with
       | some s, .law L => lawProblems g.spec.G s L
       | some s, .deal d => dealProblems s d
       | none, _ => ["the game has not started"]
-    Json.mkObj [("ok", toJson true), ("english", english), ("problems", toJson problems),
-      ("text", Rules.printProposal p)]
+    Json.mkObj ([("ok", toJson true), ("problems", toJson problems),
+      ("text", Rules.printProposal p)] ++ english)
 
 end CharterServer.View

@@ -131,7 +131,7 @@ def draftView (ctx : Ctx) (e : Entry) (seat : Nat) : IO Json := do
   let some job := (← ctx.drafts.get).get? (e.code, seat)
     | return Json.mkObj [("id", Json.null)]
   let st ← job.state.get
-  return View.draftJson e.game seat job st (← IO.monoMsNow)
+  return View.draftJson e.game (← bookOf ctx e.code) seat job st (← IO.monoMsNow)
 
 /-- The formal text of a proposal: typed, a sample, or the simple deal form. -/
 def proposalText (body : Json) (seat : Nat) : Except String String := do
@@ -182,7 +182,7 @@ def route (ctx : Ctx) (req : Req) : ContextAsync Resp := do
         match gameAt e at_ with
         | .error err => respondErr err
         | .ok g =>
-          respondJson (View.withReplay (View.view g code none []) at_ e.events.size)
+          respondJson (View.withReplay (View.view g code none [] (← bookOf ctx code)) at_ e.events.size)
       | none =>
         -- This is how the server knows who is here. A table with no people, held since a restart,
         -- waits only for someone to watch it.
@@ -194,12 +194,17 @@ def route (ctx : Ctx) (req : Req) : ContextAsync Resp := do
         let left ← turnLeftMs ctx e.game code
         let resting := (← Spend.resting? code).map (Json.str ·) |>.getD Json.null
         let paused := toJson (← isPaused ctx code e.game)
-        if since == some e.game.events then
+        let book ← bookOf ctx code
+        -- A description that has just finished changes the view with no new game event.
+        let seenDescriptions := match (q.get "described").bind String.toNat? with
+          | some n => n == Describe.finished book
+          | none => true
+        if since == some e.game.events && seenDescriptions then
           respondJson (Json.mkObj [("unchanged", toJson true), ("version", toJson e.game.events),
             ("talkCount", toJson e.talk.size), ("turnLeftMs", toJson left), ("drafting", toJson (← draftingSeats ctx code)),
             ("resting", resting), ("paused", paused)])
         else
-          let v := View.withTalkCount (View.view e.game code (seatOf e token) (← draftingSeats ctx code)) e.talk.size
+          let v := View.withTalkCount (View.view e.game code (seatOf e token) (← draftingSeats ctx code) book) e.talk.size
           respondJson (View.withField (View.withField (View.withField v "turnLeftMs" (toJson left)) "resting" resting) "paused" paused)
     | "talk", false =>
       let some e ← findEntry ctx code | respondErr s!"no game {code}" .notFound
@@ -347,7 +352,7 @@ def handler (ctx : Ctx) (req : Req) : ContextAsync Resp := do
 /-- Files the server reads while it runs, under its root. Some are read only when a Claude seat or the
 clerk first needs them, and a missing one would then look like an empty prompt. So check them at start. -/
 def requiredFiles : List String :=
-  ["Server/formalizer.md", "Server/player_rules.md", "web/index.html", "web/app.js", "web/app.css",
+  ["Server/formalizer.md", "Server/describer.md", "Server/player_rules.md", "web/index.html", "web/app.js", "web/app.css",
    "web/board2d.js", "web/icons.js", "web/vendor/player.js"]
 
 /-- Stop now, and say why. -/
@@ -439,6 +444,7 @@ def main (_args : List String) : IO Unit := do
   IO.println s!"charter-server: {tbl.size} games loaded; http://{bind}:{port}/"
   (← IO.getStdout).flush
   for (code, _) in tbl.toList do
+    restoreDescriptions ctx code
     if !showOnly then
       Seat.restoreMinds ctx code
   if !showOnly then holdClaudeTables ctx

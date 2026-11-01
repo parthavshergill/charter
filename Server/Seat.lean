@@ -215,8 +215,15 @@ def requestBody (st : SeatSettings) (model : String) (rules persona user : Strin
     , ("system", Json.arr #[cached rules, cached persona])
     , ("messages", Json.arr #[Json.mkObj [("role", "user"), ("content", user)]]) ]
 
+/-- A law for the prompt: its source, which is what binds, and then its description, if it has one. -/
+def lawForSeat (book : Describe.Book) (L : Law) : String :=
+  let source := s!"Rule source, the binding text: {Rules.printProposal (.law L)}"
+  match Describe.textOf book L with
+  | some (who, text) => s!"{source} {who}, which does not bind: {text}"
+  | none => source
+
 /-- A proposal, for the prompt. -/
-def proposalLine (sit : Situation) (p : OpenProposal) : String :=
+def proposalLine (sit : Situation) (book : Describe.Book) (p : OpenProposal) : String :=
   let g := sit.game
   let s := sit.state
   let yes := p.yesCount
@@ -226,7 +233,7 @@ def proposalLine (sit : Situation) (p : OpenProposal) : String :=
   match p.body with
   | .law L =>
     let preview := (Preview.lawPreview s p.id L (some sit.seat) g.nameOf).compress
-    s!"- Law proposal {p.id}, by seat {p.by_}, titled \"{L.title}\": {Text.lawLine L} Votes so far: {if votes.isEmpty then "none" else votes}. It has {yes} yes of the {need} it needs. What it would do at this table now: {preview}"
+    s!"- Law proposal {p.id}, by seat {p.by_}, titled \"{L.title}\". {lawForSeat book L} Votes so far: {if votes.isEmpty then "none" else votes}. It has {yes} yes of the {need} it needs. What it would do at this table now: {preview}"
   | .deal d =>
     s!"- Deal proposal {p.id}, by seat {p.by_}: {Text.dealLine g.nameOf d} Signed so far: {p.signed}. Signers: {d.signers}."
 
@@ -258,7 +265,7 @@ def legalBlock (sit : Situation) : String :=
   if lines.isEmpty then "nothing on the board" else "\n".intercalate lines
 
 /-- The game as it is now. All of it is public. -/
-def gameBlock (sit : Situation) : String :=
+def gameBlock (sit : Situation) (book : Describe.Book) : String :=
   let g := sit.game
   let G := g.spec.G
   let s := sit.state
@@ -283,11 +290,11 @@ def gameBlock (sit : Situation) : String :=
       | .link l => s!"{x.kind} on {l.1}-{l.2}"
     s!"- seat {p}: {if mine.isEmpty then "nothing" else ", ".intercalate (mine.map at_)}")
   let laws := if s.laws.isEmpty then "none" else "\n".intercalate (s.laws.map fun x =>
-    s!"- Law {x.1}, titled \"{x.2.title}\": {Text.lawLine x.2}")
+    s!"- Law {x.1}, titled \"{x.2.title}\". {lawForSeat book x.2}")
   let deals := if s.deals.isEmpty then "none" else "\n".intercalate (s.deals.map fun d =>
     s!"- Deal {d.id}, until round {d.lastRound}: {Text.dealLine g.nameOf d.deal}")
   let open_ := if s.openProposals.isEmpty then "none" else
-    "\n".intercalate (s.openProposals.map (proposalLine sit))
+    "\n".intercalate (s.openProposals.map (proposalLine sit book))
   let offers := if s.offers.isEmpty then "none" else "\n".intercalate (s.offers.map fun o =>
     let to := match o.to with
       | some q => s!"to seat {q}"
@@ -320,7 +327,7 @@ Open offers:
 {offers}"
 
 /-- Everything the seat reads, in one message. Player words are between markers and cannot close them. -/
-def userMessage (sit : Situation) (talk : Array Talk.Line) (mind : Mind) (callsLeft : Nat)
+def userMessage (sit : Situation) (book : Describe.Book) (talk : Array Talk.Line) (mind : Mind) (callsLeft : Nat)
     (retry : Option (String × String)) : String :=
   let g := sit.game
   let s := sit.state
@@ -357,7 +364,7 @@ def userMessage (sit : Situation) (talk : Array Talk.Line) (mind : Mind) (callsL
       s!"\n\n<rejected_answer>\n{Clerk.neutralize (Clerk.cut 1500 prior)}\n</rejected_answer>\nThe program could not read that answer. It said: {Clerk.neutralize err} Answer again in the required form."
     | none => ""
   s!"<game>
-{Clerk.neutralize (gameBlock sit)}
+{Clerk.neutralize (gameBlock sit book)}
 </game>
 
 {block "recent_events" events}{block "table_talk" publicLines}{block "private_messages" privateLines}{block "your_memory" notes}{block "what_happened_to_your_last_actions" (mind.results.map Clerk.oneLine)}{draft}<what_you_can_do_on_the_board>
@@ -433,7 +440,7 @@ def request (ctx : Ctx) (code : String) (seat : Nat) (what : String) (body : Jso
     let sentAt ← IO.monoMsNow
     let outcome ← withSlot ctx do
       ctx.running.modify (·.insert (code, seat) job)
-      try Formalize.runRequest job (Formalize.curlConfig cfg key body ctx.seat.timeoutS)
+      try Formalize.runRequest job (Formalize.curlConfig cfg key body ctx.seat.timeoutS) ((jStr body "model").getD "")
       finally ctx.running.modify (·.erase (code, seat))
     let st ← job.state.get
     let ms := (← IO.monoMsNow) - sentAt
@@ -541,7 +548,7 @@ def runDraft (ctx : Ctx) (code : String) (seat : Nat) (words : String) : IO Unit
   let (result, formal, outcome) : String × Option String × String := match st.final with
     | some (.ready text diff _) =>
       let review := match g.parse text with
-        | .ok (.law L) => Text.lawLine L
+        | .ok (.law L) => Rules.printProposal (.law L)
         | .ok (.deal d) => Text.dealLine g.nameOf d
         | .error _ => text
       let preview := match g.parse text, g.state with
@@ -551,7 +558,7 @@ def runDraft (ctx : Ctx) (code : String) (seat : Nat) (words : String) : IO Unit
       let dtext := match diff with
         | some d => s!"\nThe clerk says this differs from what you asked: {d}"
         | none => ""
-      (s!"The clerk wrote this rule. As the game reads it: {review}{dtext}{preview}\nTo put it before the table, use propose_draft.", some text, "ready")
+      (s!"The clerk wrote this rule. What binds is the rule itself: {review}{dtext}{preview}\nTo put it before the table, use propose_draft.", some text, "ready")
     | some (.refused why) => (s!"The clerk could not write this as a rule. It said: {why}", none, "refused")
     | some (.failed why) => (s!"The clerk could not be reached: {why}", none, "failed")
     | some .cancelled => ("The draft was cancelled.", none, "cancelled")
@@ -592,9 +599,10 @@ def claudePlayer (ctx : Ctx) (code : String) (seat : Nat) : Player :=
       let rules := rulesFor rulesFile persona.styleOf.onScreenOnly ++ "\n\n" ++ gameFacts g.spec
       let talk := ((← findEntry ctx code).map (·.talk)).getD #[]
       let callsLeft := ctx.seat.callsPerTurn - mind0.callsThisTurn
+      let book ← bookOf ctx code
       let mut retry : Option (String × String) := none
       for _ in [0:3] do
-        let user := userMessage sit talk mind0 callsLeft retry
+        let user := userMessage sit book talk mind0 callsLeft retry
         let body := requestBody ctx.seat ctx.seat.model rules (personaText persona seat) user replySchema
         match ← request ctx code seat "decide" body with
         | .error why => return ← fall why
