@@ -263,6 +263,20 @@ def play_games(subject: str, out: str, n: int = 2, opponents: str = "hand,random
     return {"exit": code, "md": open(f"{out}/games.md").read() if os.path.exists(f"{out}/games.md") else text[-4000:]}
 
 
+@app.function(cpu=1, memory=1024, timeout=600, volumes={VOL: vol})
+def keep(ckpt: str, dest: str):
+    """Copy a checkpoint, its meta, and its run's args and logs to `dest`, never overwriting what is there."""
+    vol.reload()
+    if os.path.exists(dest):
+        return f"refused: {dest} exists"
+    os.makedirs(dest)
+    run_dir = ckpt.split("/ckpt/")[0]
+    sh(f"cp {ckpt} {ckpt}.json {dest}/ && cp {run_dir}/args.txt {dest}/ 2>/dev/null; "
+       f"cp {run_dir}/train*.log {dest}/ 2>/dev/null; echo {ckpt} > {dest}/source.txt; ls -la {dest}")
+    vol.commit()
+    return f"kept {ckpt} in {dest}"
+
+
 # ---- Money -------------------------------------------------------------------------------------------------
 
 def spent_today():
@@ -319,9 +333,11 @@ def main(action: str = "test", run: str = "smoke", minutes: float = 10, max_doll
         fn = train.with_options(timeout=total)
         targs = (run, train_args, seconds, move_rows, not no_patch, encoder, meta_extra, resume)
         if spawn:
-            # With `modal run --detach`, the job keeps going after this client exits.
+            # Run as `nohup modal run --detach ... &`: the client waits here, and if it is killed or disconnects,
+            # detached mode keeps this last triggered call running.
             call = fn.spawn(*targs)
-            print(f"[spawned] {run}: call {call.object_id}, at most {total} s")
+            print(f"[spawned] {run}: call {call.object_id}, at most {total} s", flush=True)
+            print(json.dumps(call.get(), indent=1))
             return
         r = fn.remote(*targs)
         print(json.dumps(r, indent=1))
@@ -332,6 +348,8 @@ def main(action: str = "test", run: str = "smoke", minutes: float = 10, max_doll
         r = evaluate_.remote([s if s in ("random", "hand") or s.startswith("/") else f"{VOL}/{s}" for s in subs],
                             f"{VOL}/{run}/{out or 'eval'}", games, quick)
         print(r["report"])
+    elif action == "keep":
+        print(keep.remote(subjects if subjects.startswith("/") else f"{VOL}/{subjects}", f"{VOL}/{NAME}/keep/{out}"))
     elif action == "games":
         total = guard(max_dollars, None, 2, 4, 3600)
         s = subjects
