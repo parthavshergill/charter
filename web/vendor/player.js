@@ -75,6 +75,34 @@ const squash = (t) => (t > 0.55 && t < 0.85 ? Math.sin(Math.PI * (t - 0.55) / 0.
 const MOVE_MS = 350, APPEAR_MS = 420, VANISH_MS = 200;
 const reduceMotion = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+// ---------------------------------------------------------------- quality
+
+// How much the player spends on looks. A lower tier never leaves anything out of the game: pieces, numbers
+// and owner colors are the same on all of them. It draws fewer pixels and simpler shadows.
+// dpr: the most pixels per CSS pixel. shadow: the shadow map's side, 0 for no shadows. softShadow: blur them.
+// wood: the table texture's side. liveShadow: shadows follow things as they move. dropIn: the board's
+// scenery falls into place on the first frame. motionMs and pulseMs: the time between frames of things that
+// move by themselves and of glowing places. 0 for motionMs means they stand still.
+export const TIERS = [
+  { dpr: 1, shadow: 0, softShadow: false, wood: 256, anisotropy: 2, liveShadow: false, dropIn: false, motionMs: 0, pulseMs: 66 },
+  { dpr: 1.25, shadow: 1024, softShadow: false, wood: 512, anisotropy: 4, liveShadow: false, dropIn: false, motionMs: 0, pulseMs: 50 },
+  { dpr: 1.75, shadow: 2048, softShadow: false, wood: 512, anisotropy: 8, liveShadow: false, dropIn: false, motionMs: 50, pulseMs: 33 },
+  { dpr: 2, shadow: 4096, softShadow: true, wood: 1024, anisotropy: 16, liveShadow: true, dropIn: true, motionMs: 32, pulseMs: 0 },
+];
+const TIER_KEY = 'charter.tier';
+const PACE_FRAMES = 40;     // how many frames one judgement of the pace takes
+const PACE_SLOW_MS = 38;    // slower than about 26 frames a second, step down a tier
+const PACE_HOPELESS_MS = 90; // this slow on the lowest tier, say so: the page can use the 2D board
+const isTouchDevice = () => typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+function storedTier() { try { const n = parseInt(localStorage.getItem(TIER_KEY)); return n >= 0 && n < TIERS.length ? n : null; } catch { return null; } }
+function storeTier(n) { try { localStorage.setItem(TIER_KEY, String(n)); } catch {} }
+/** A touch screen starts one tier down. A tier this device has already fallen to stays fallen. */
+function startingTier(asked) {
+  if (asked != null) return Math.max(0, Math.min(TIERS.length - 1, asked));
+  const top = isTouchDevice() ? TIERS.length - 2 : TIERS.length - 1, seen = storedTier();
+  return seen == null ? top : Math.min(top, seen);
+}
+
 // ---------------------------------------------------------------- geometry
 
 // Low-poly on purpose: few sides and flat shading, so every shape shows its facets.
@@ -163,33 +191,34 @@ function meshFileGeometry(m) {
 
 function rng(seed) { let s = seed >>> 0; return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296); }
 
-function woodTexture(renderer) {
-  const N = 1024, c = document.createElement('canvas');
+function woodTexture(N, anisotropy) {
+  const c = document.createElement('canvas');
   c.width = c.height = N;
   const g = c.getContext('2d'), rnd = rng(7), planks = 6, ph = N / planks;
+  g.scale(N / 1024, N / 1024);
   for (let p = 0; p < planks; p++) {
-    const y0 = p * ph, l = 13 + rnd() * 4;
+    const y0 = p * 1024 / planks, l = 13 + rnd() * 4;
     g.fillStyle = `hsl(${22 + rnd() * 6}, 38%, ${l}%)`;
-    g.fillRect(0, y0, N, ph);
+    g.fillRect(0, y0, 1024, 1024 / planks);
     for (let i = 0; i < 70; i++) {
-      const yy = y0 + rnd() * ph, ph1 = rnd() * 6, amp = 1 + rnd() * 4;
+      const yy = y0 + rnd() * 1024 / planks, ph1 = rnd() * 6, amp = 1 + rnd() * 4;
       g.strokeStyle = rnd() < 0.5 ? `rgba(20,10,4,${0.08 + rnd() * 0.18})` : `rgba(255,214,160,${0.015 + rnd() * 0.035})`;
       g.lineWidth = 0.6 + rnd() * 2.2;
       g.beginPath();
-      for (let x = 0; x <= N; x += 16) {
+      for (let x = 0; x <= 1024; x += 16) {
         const y = yy + Math.sin(x * 0.006 + ph1) * amp + Math.sin(x * 0.021 + i) * 0.8;
         x ? g.lineTo(x, y) : g.moveTo(x, y);
       }
       g.stroke();
     }
     g.fillStyle = 'rgba(8,4,2,0.7)';
-    g.fillRect(0, y0, N, 3);
+    g.fillRect(0, y0, 1024, 3);
   }
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.repeat.set(26, 26);
-  t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  t.anisotropy = anisotropy;
   return t;
 }
 
@@ -231,12 +260,21 @@ export class GpuPlayer {
     this.canvas = canvas;
     this.onPick = null;   // (pickId) => void
     this.onHover = null;  // (pickId | 0, clientX, clientY) => void
+    this.onTier = null;   // (tier) => void, after the quality has changed
+    this.onTooSlow = null; // () => void, once, if even the lowest tier cannot keep up
+    this._raf = null;
+    this._nf = false;
+    this.paused = false;
+    this._tick = this._tick.bind(this);
+    this.tier = startingTier(opts.tier);
+    this.q = TIERS[this.tier];
+    this.reduced = reduceMotion();
     this.hoverFx = opts.hoverFx || (() => true);
     this.clickable = opts.clickable || (() => true);
-    const r = (this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: !!opts.preserveDrawingBuffer }));
-    r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    r.shadowMap.enabled = true;
-    r.shadowMap.type = THREE.PCFSoftShadowMap;
+    const r = (this.renderer = new THREE.WebGLRenderer({ canvas, antialias: this.tier >= 2, preserveDrawingBuffer: !!opts.preserveDrawingBuffer }));
+    r.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.q.dpr));
+    r.shadowMap.enabled = this.q.shadow > 0;
+    r.shadowMap.type = this.q.softShadow ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
     r.shadowMap.autoUpdate = false;
     r.outputColorSpace = THREE.SRGBColorSpace;
     r.toneMapping = THREE.NoToneMapping;
@@ -250,9 +288,9 @@ export class GpuPlayer {
     this.hemi = new THREE.HemisphereLight(0xfff3df, 0x6a5a55, 1.5);
     scene.add(this.hemi);
     const sun = (this.sun = new THREE.DirectionalLight(0xffe0b0, 2.2));
-    sun.castShadow = true;
-    const maxTex = r.capabilities.maxTextureSize || 2048;
-    sun.shadow.mapSize.set(Math.min(4096, maxTex), Math.min(4096, maxTex));
+    sun.castShadow = this.q.shadow > 0;
+    this.maxTex = r.capabilities.maxTextureSize || 2048;
+    sun.shadow.mapSize.setScalar(Math.min(this.q.shadow || 1024, this.maxTex));
     sun.shadow.bias = -0.0003;
     sun.shadow.normalBias = 0.006;
     scene.add(sun, sun.target);
@@ -264,7 +302,7 @@ export class GpuPlayer {
 
     this.table = new THREE.Mesh(
       new THREE.PlaneGeometry(400, 400),
-      new THREE.MeshStandardMaterial({ map: woodTexture(r), roughness: 0.82, metalness: 0.0 }),
+      new THREE.MeshStandardMaterial({ map: woodTexture(this.q.wood, Math.min(this.q.anisotropy, r.capabilities.getMaxAnisotropy())), roughness: 0.82, metalness: 0.0 }),
     );
     this.table.rotation.x = -Math.PI / 2;
     this.table.position.y = -0.003;
@@ -280,6 +318,14 @@ export class GpuPlayer {
     this.motionAt = 0; this.motionSlow = 0;
     this.items = [];            // live objects
     this.dying = [];            // objects fading out
+    this.batches = [];          // scenery that holds still, drawn in one call per shape
+    this._batchDirty = false;
+    this._batchMats = new Map();
+    this._pace = { sum: 0, n: 0 };
+    this._drewLast = false;
+    this.pulseAt = 0;
+    this.maxZoom = isTouchDevice() ? 4 : 3;
+    this.gesture = false;       // a finger or the mouse holds the board, so the camera follows at once
     this.highlights = new Map();
     this.hoverId = 0;
     this._hlColor = new THREE.Color();
@@ -296,12 +342,62 @@ export class GpuPlayer {
     this.pointer = new THREE.Vector2(-2, -2);
     this.pointerInside = false;
     this.pointerPx = { x: 0, y: 0 };
-    this.needsFrame = true;
     this._bindInput();
+    if (typeof ResizeObserver === 'function') new ResizeObserver(() => { this.needsFrame = true; }).observe(canvas);
+    // A phone can take the GPU away while the page is in the background. three.js rebuilds what it holds.
+    canvas.addEventListener('webglcontextrestored', () => { r.shadowMap.needsUpdate = true; this.needsFrame = true; });
 
     this._clock = performance.now();
-    this._tick = this._tick.bind(this);
-    this._raf = requestAnimationFrame(this._tick);
+    this.needsFrame = true;
+  }
+
+  // Nothing runs while nothing moves: asking for a frame is what starts the loop, and the loop stops itself.
+  get needsFrame() { return this._nf; }
+  set needsFrame(v) { this._nf = v; if (v) this._wake(); }
+  _wake() { if (this._raf == null && !this.paused) this._raf = requestAnimationFrame(this._tick); }
+
+  /** Stop all work while the page shows the 2D board. */
+  setPaused(paused) { this.paused = paused; if (paused) { if (this._raf != null) cancelAnimationFrame(this._raf); this._raf = null; } else this.needsFrame = true; }
+
+  /** Change the quality. Everything on the board stays. */
+  setTier(n) {
+    n = Math.max(0, Math.min(TIERS.length - 1, n));
+    if (n === this.tier) return;
+    const q = (this.q = TIERS[n]), r = this.renderer, sun = this.sun;
+    this.tier = n;
+    r.setPixelRatio(Math.min(window.devicePixelRatio || 1, q.dpr));
+    const soft = q.softShadow ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
+    r.shadowMap.enabled = q.shadow > 0;
+    sun.castShadow = q.shadow > 0;
+    if (r.shadowMap.type !== soft) { r.shadowMap.type = soft; this.scene.traverse((o) => { if (o.material) o.material.needsUpdate = true; }); }
+    const side = Math.min(q.shadow || 1024, this.maxTex);
+    if (sun.shadow.mapSize.x !== side) {
+      sun.shadow.mapSize.setScalar(side);
+      sun.shadow.map?.dispose();
+      sun.shadow.map = null;
+    }
+    r.shadowMap.needsUpdate = true;
+    this.needsFrame = true;
+    if (this.onTier) this.onTier(n);
+  }
+
+  // Judge the pace from real frame times, only while frames are being drawn. A long gap is not slowness:
+  // the page was hidden or had nothing to draw. Scenery falling into place at the start is not judged.
+  _watchPace(rawMs, landing) {
+    const p = this._pace;
+    if (!this._drewLast || rawMs > 400 || landing > 60 || document.hidden) { p.sum = 0; p.n = 0; return; }
+    p.sum += rawMs; p.n++;
+    if (p.n < PACE_FRAMES) return;
+    const mean = p.sum / p.n;
+    p.sum = 0; p.n = 0;
+    if (mean > PACE_SLOW_MS && this.tier > 0) {
+      this.setTier(this.tier - 1);
+      storeTier(this.tier);
+    } else if (mean > PACE_HOPELESS_MS && this.tier === 0 && this.onTooSlow) {
+      const say = this.onTooSlow;
+      this.onTooSlow = null;
+      say();
+    }
   }
 
   /** Keep the board inside the part of the canvas the interface does not cover. */
@@ -344,6 +440,7 @@ export class GpuPlayer {
     }
     this._reconcile(draws, labels, now, first);
     this._fitShadow();
+    this._wake();
     this.renderer.shadowMap.needsUpdate = true;
     this.needsFrame = true;
     this.frames++;
@@ -354,6 +451,7 @@ export class GpuPlayer {
     if (it.outline) it.outline.geometry = geo;
     const g = this.geoms.get(it.mesh), m = it.obj.material;
     it.motion = g?.motion ?? null;
+    this._batchDirty = true;
     if (g && m.vertexColors !== !!g.colored) { m.vertexColors = !!g.colored; m.needsUpdate = true; }
   }
 
@@ -413,12 +511,18 @@ export class GpuPlayer {
     for (const l of labels) place(l, true);
     // appear animations, staggered (radially on the first frame)
     const c0 = this._centerOf(draws);
+    this.reduced = reduceMotion();
     fresh.forEach((it, k) => {
       const delay = first ? Math.min(600, it.to.pos.distanceTo(c0) * 60) : Math.min(k * 9, 260);
-      if (!reduceMotion()) it.anim = { kind: 'appear', t0: now + delay, dur: APPEAR_MS };
+      // On a lower tier the scenery of a new board is simply there. Only what can be acted on drops in.
+      const still = this._holdsStill(it);
+      const drops = !this.reduced && (!first || this.q.dropIn || !still);
+      if (drops) it.anim = { kind: 'appear', t0: now + delay, dur: APPEAR_MS };
       this._apply(it, now);
+      if (still) this._batchDirty = true;
     });
     for (const rest of pool.values()) for (const it of rest) {
+      this._unbatch(it);
       it.anim = { kind: 'vanish', t0: now, dur: VANISH_MS, from: this._snapshot(it) };
       this.dying.push(it);
     }
@@ -491,7 +595,59 @@ export class GpuPlayer {
     if (isLabel) it.text = c.text;
     if (isLabel) this._labelTex(it, this.highlights.get(it.pick) ?? null);
     else it.obj.castShadow = to.opacity > 0.6;
-    if (moved) it.anim = { kind: 'move', t0: now, dur: MOVE_MS, from };
+    if (moved) { this._unbatch(it); it.anim = { kind: 'move', t0: now, dur: MOVE_MS, from }; }
+  }
+
+  // ------------------------------------------------------------ scenery in batches
+
+  // A late board has more than a thousand things on it, nearly all of them scenery that never moves. Each
+  // of those is one draw call if it is drawn alone. Once it holds still it joins a batch of its shape, and
+  // draws in one call with the others of that shape. It looks exactly the same, and it cannot be picked
+  // anyway. It leaves the batch the moment it has to move.
+  _unbatch(it) {
+    if (!it.batched) return;
+    it.batched = false;
+    this.root.add(it.obj);
+    this._batchDirty = true;
+  }
+
+  // Things that react to a pointer, or glow, need a material of their own. A piece or a tile can be pointed
+  // at for its details, and picking does not need it to be drawn alone.
+  _holdsStill(it) { return !it.label && (!it.pick || (!this.hoverFx(it.pick) && !this.highlights.has(it.pick))); }
+
+  _batchMaterial(colored) {
+    let m = this._batchMats.get(colored);
+    if (!m) { m = new THREE.MeshStandardMaterial({ roughness: 0.86, metalness: 0, flatShading: true, vertexColors: colored }); this._batchMats.set(colored, m); }
+    return m;
+  }
+
+  _rebatch() {
+    this._batchDirty = false;
+    const groups = new Map();
+    for (const it of this.items) {
+      const fits = this._holdsStill(it) && !it.motion && !it.anim && it.to.opacity >= 0.999;
+      if (!fits) { this._unbatch(it); this._batchDirty = false; continue; }
+      // Picking still uses its own place, so that place must be up to date when it leaves the scene.
+      if (!it.batched) { it.batched = true; this.root.remove(it.obj); it.obj.updateMatrixWorld(true); }
+      const geo = it.obj.geometry;
+      if (!groups.has(geo)) groups.set(geo, []);
+      groups.get(geo).push(it);
+    }
+    for (const b of this.batches) { this.root.remove(b); b.dispose(); }
+    this.batches = [];
+    const d = this._dummy || (this._dummy = new THREE.Object3D());
+    for (const [geo, list] of groups) {
+      const b = new THREE.InstancedMesh(geo, this._batchMaterial(!!this.geoms.get(list[0].mesh)?.colored), list.length);
+      b.castShadow = true; b.receiveShadow = true; b.frustumCulled = false;
+      list.forEach((it, i) => {
+        d.position.copy(it.to.pos); d.rotation.set(0, it.to.rotY, 0); d.scale.copy(it.to.scale); d.updateMatrix();
+        b.setMatrixAt(i, d.matrix);
+        b.setColorAt(i, it.to.color);
+      });
+      this.root.add(b);
+      this.batches.push(b);
+    }
+    this.renderer.shadowMap.needsUpdate = true;
   }
 
   // current displayed state (mid-animation values included)
@@ -505,6 +661,7 @@ export class GpuPlayer {
     const to = it.to, a = it.anim;
     let pos = to.pos.clone(), rotY = to.rotY, scale = to.scale.clone(), color = to.color.clone(), opacity = to.opacity;
     if (a) {
+      if (this._holdsStill(it) && (now - a.t0) >= a.dur) this._batchDirty = true;
       const t = clamp01((now - a.t0) / a.dur);
       if (a.kind === 'move') {
         const e = ease.outCubic(t);
@@ -554,7 +711,7 @@ export class GpuPlayer {
       m.opacity = opacity;
       const translucent = opacity < 0.999;
       if (m.transparent !== translucent) { m.transparent = translucent; m.depthWrite = !translucent || opacity > 0.9; m.needsUpdate = true; }
-      const pulse = hl != null ? 0.5 + 0.5 * Math.sin(now * 0.006) : 0;
+      const pulse = hl != null ? (this.reduced ? 0.6 : 0.5 + 0.5 * Math.sin(now * 0.006)) : 0;
       if (hl != null) m.emissive.copy(color).lerp(this._hlColor.setHex(hl & 0xffffff), 0.3).multiplyScalar(0.1 + 0.3 * pulse + 0.2 * it.hover);
       else m.emissive.copy(color).multiplyScalar(0.28 * it.hover);
       if (it.motion && !this.still) {
@@ -579,6 +736,8 @@ export class GpuPlayer {
     for (const it of this.items) {
       const hl = this.highlights.get(it.pick);
       if (it.label) { this._labelTex(it, hl ?? null); continue; }
+      if (hl != null) this._unbatch(it);
+      if ((hl != null) !== !!it.lit) { it.lit = hl != null; it.dirty = true; this._batchDirty = true; }
       if (hl != null && it.pick) {
         if (!it.outline) {
           it.outline = new THREE.Mesh(it.obj.geometry, new THREE.MeshBasicMaterial({ side: THREE.BackSide, transparent: true, depthWrite: false, toneMapped: false }));
@@ -613,58 +772,81 @@ export class GpuPlayer {
 
   _bindInput() {
     const el = this.canvas, ptrs = new Map();
-    let drag = null;
+    let tap = null, pinch = null;
     el.style.touchAction = 'none';
+    el.style.webkitTouchCallout = 'none';
+    el.style.webkitUserSelect = 'none';
+    el.style.userSelect = 'none';
+    // Safari's own pinch would zoom the whole page.
+    el.addEventListener('gesturestart', (e) => e.preventDefault());
     const rect = () => el.getBoundingClientRect();
     const setPointer = (e) => {
       const r = rect();
       this.pointer.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
       this.pointerPx = { x: e.clientX, y: e.clientY };
     };
+    const pinchOf = () => {
+      const [a, b] = [...ptrs.values()];
+      return { d: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)), x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    };
     el.addEventListener('contextmenu', (e) => e.preventDefault());
     el.addEventListener('pointerdown', (e) => {
       el.setPointerCapture(e.pointerId);
       ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      drag = { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, t0: performance.now(), pinch: ptrs.size === 2 ? this._pinchDist(ptrs) : 0 };
+      this.gesture = true;
+      if (ptrs.size === 1) tap = { x0: e.clientX, y0: e.clientY, t0: performance.now(), moved: false, touch: e.pointerType !== 'mouse' };
+      else { if (tap) tap.moved = true; pinch = ptrs.size === 2 ? pinchOf() : null; }
     });
     el.addEventListener('pointermove', (e) => {
-      setPointer(e);
-      this.pointerInside = true;
-      this.needsFrame = true;
-      if (!drag || !ptrs.has(e.pointerId)) return;
-      ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      if (ptrs.size === 2) {
-        const d = this._pinchDist(ptrs);
-        if (drag.pinch) this._zoomBy(d / drag.pinch);
-        drag.pinch = d;
-        drag.moved = true;
+      // A finger only hovers while it is down, so only a mouse shows what is under the pointer.
+      if (e.pointerType === 'mouse') { setPointer(e); this.pointerInside = true; this.needsFrame = true; }
+      const last = ptrs.get(e.pointerId);
+      if (!last) return;
+      const dx = e.clientX - last.x, dy = e.clientY - last.y;
+      last.x = e.clientX; last.y = e.clientY;
+      if (ptrs.size === 2 && pinch) {
+        const now = pinchOf(), r = rect();
+        this._zoomBy(now.d / pinch.d, now.x - r.left, now.y - r.top);
+        this._panBy(now.x - pinch.x, now.y - pinch.y);
+        pinch = now;
         return;
       }
-      const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
-      drag.x = e.clientX; drag.y = e.clientY;
-      if (Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) > 5) drag.moved = true;
-      if (drag.moved) this._panBy(dx, dy);
+      if (ptrs.size !== 1 || !tap) return;
+      if (!tap.moved && Math.hypot(e.clientX - tap.x0, e.clientY - tap.y0) > (tap.touch ? 8 : 5)) tap.moved = true;
+      if (tap.moved) this._panBy(dx, dy);
     });
     const end = (e) => {
       ptrs.delete(e.pointerId);
-      if (!drag) return;
-      if (!drag.moved && performance.now() - drag.t0 < 700 && e.type === 'pointerup' && e.button === 0) {
+      pinch = null;
+      if (ptrs.size === 0) { this.gesture = false; this.needsFrame = true; }
+      if (!tap) return;
+      if (!tap.moved && ptrs.size === 0 && performance.now() - tap.t0 < 700 && e.type === 'pointerup' && e.button === 0) {
         setPointer(e);
-        const id = this.pickAt(this.pointer.x, this.pointer.y);
+        const r = rect();
+        const id = tap.touch ? this.pickNear(e.clientX - r.left, e.clientY - r.top) : this.pickAt(this.pointer.x, this.pointer.y);
         if (id && this.onPick) this.onPick(id, e.clientX, e.clientY);
       }
-      if (ptrs.size === 0) drag = null;
+      if (ptrs.size === 0) tap = null;
     };
     el.addEventListener('pointerup', end);
     el.addEventListener('pointercancel', end);
     el.addEventListener('pointerleave', () => { this.pointerInside = false; this.needsFrame = true; });
-    el.addEventListener('wheel', (e) => { e.preventDefault(); this._zoomBy(Math.exp(-e.deltaY * 0.0012)); }, { passive: false });
+    el.addEventListener('wheel', (e) => { e.preventDefault(); const r = rect(); this._zoomBy(Math.exp(-e.deltaY * 0.0012), e.clientX - r.left, e.clientY - r.top); }, { passive: false });
     el.addEventListener('dblclick', () => this.resetView());
   }
 
-  _pinchDist(ptrs) { const [a, b] = [...ptrs.values()]; return Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)); }
-
-  _zoomBy(f) { this.zoomGoal = THREE.MathUtils.clamp(this.zoomGoal * f, 1, 3); this.needsFrame = true; this._clampPan(); }
+  /** Change the zoom. The point of the board under (px, py) in the canvas stays under it. */
+  _zoomBy(f, px, py) {
+    const before = this.zoomGoal, c = this.canvas, I = this.insets;
+    this.zoomGoal = THREE.MathUtils.clamp(this.zoomGoal * f, 1, this.maxZoom);
+    if (px != null && this._k && this.zoomGoal !== before) {
+      const base = this._k / this.zoom, change = 1 / (base * before) - 1 / (base * this.zoomGoal);
+      this.panGoal.x += (px - (c.clientWidth || 1) / 2 - (I.l - I.r) / 2) * change;
+      this.panGoal.y += ((c.clientHeight || 1) / 2 - py + (I.t - I.b) / 2) * change;
+    }
+    this.needsFrame = true;
+    this._clampPan();
+  }
 
   _panBy(dx, dy) {
     const k = this._k || 40;
@@ -684,12 +866,15 @@ export class GpuPlayer {
 
   _updateCamera(dt) {
     const c = this.canvas, W = c.clientWidth || 1, H = c.clientHeight || 1;
+    // While it is held, the board stays under the finger. Otherwise it eases into place.
     const K = 1 - Math.exp(-dt * 12);
     let moving = false;
     const step = (cur, goal, eps) => { if (Math.abs(goal - cur) < eps) return goal; moving = true; return cur + (goal - cur) * K; };
-    this.zoom = step(this.zoom, this.zoomGoal, 1e-3);
-    this.pan.x = step(this.pan.x, this.panGoal.x, 1e-3);
-    this.pan.y = step(this.pan.y, this.panGoal.y, 1e-3);
+    const hold = (cur, goal) => { if (cur !== goal) moving = true; return goal; };
+    const follow = this.gesture ? hold : step;
+    this.zoom = follow(this.zoom, this.zoomGoal, 1e-3);
+    this.pan.x = follow(this.pan.x, this.panGoal.x, 1e-3);
+    this.pan.y = follow(this.pan.y, this.panGoal.y, 1e-3);
     for (const s of ['l', 'r', 't', 'b']) this.insets[s] = step(this.insets[s], this.insetsGoal[s], 0.3);
     const I = this.insets, R = this.view.radius, Rx = R, Ry = R * Math.sin(this.view.elev) + 0.45;
     const k = Math.min(Math.max(W - I.l - I.r, 80) / (2 * Rx), Math.max(H - I.t - I.b, 80) / (2 * Ry)) * this.zoom;
@@ -726,6 +911,25 @@ export class GpuPlayer {
     return 0;
   }
 
+  /** What a finger meant at (px, py) in the canvas. A finger is wider than a small target, so if what is
+   *  exactly under it cannot be acted on, look nearby, closest first, for what can. If nothing can, it is
+   *  what pickAt reports there. */
+  pickNear(px, py) {
+    const c = this.canvas, W = c.clientWidth || 1, H = c.clientHeight || 1;
+    const at = (x, y) => this.pickAt((x / W) * 2 - 1, -(y / H) * 2 + 1);
+    const exact = at(px, py);
+    if (exact && this.clickable(exact)) return exact;
+    for (const r of [7, 14, 22]) {
+      const seen = new Map();
+      for (let k = 0; k < 12; k++) {
+        const id = at(px + r * Math.cos(k * Math.PI / 6), py + r * Math.sin(k * Math.PI / 6));
+        if (id && this.clickable(id)) seen.set(id, (seen.get(id) || 0) + 1);
+      }
+      if (seen.size) return [...seen.entries()].sort((a, b) => b[1] - a[1])[0][0];
+    }
+    return exact;
+  }
+
   /** Screen position (CSS px, relative to canvas) of the first object with this pick id. */
   screenOf(pickId) {
     const it = this.items.find((i) => i.pick === pickId);
@@ -748,7 +952,7 @@ export class GpuPlayer {
     return { meshes: this.items.filter((i) => !i.label).length, labels: this.items.filter((i) => i.label).length,
       pickables: new Set(this.items.filter((i) => i.pick).map((i) => i.pick)).size, highlights: this.highlights.size,
       animating: this.items.filter((i) => i.anim).length + this.dying.length, hover: this.hoverId,
-      moving: this.items.filter((i) => i.motion).length, triangles: this.items.reduce((n, i) => { const g = i.obj.geometry; return i.label ? n : n + (g.index ? g.index.count : g.attributes.position.count) / 3; }, 0),
+      moving: this.items.filter((i) => i.motion).length, batched: this.items.filter((i) => i.batched).length, batches: this.batches.length, tier: this.tier, triangles: this.items.reduce((n, i) => { const g = i.obj.geometry; return i.label ? n : n + (g.index ? g.index.count : g.attributes.position.count) / 3; }, 0),
       meshFiles: [...this.meshFiles.values()].filter(Boolean).length, standIns: [...this.meshFiles.values()].filter((g) => !g).length };
   }
 
@@ -765,42 +969,56 @@ export class GpuPlayer {
   }
 
   _tick(now) {
-    this._raf = requestAnimationFrame(this._tick);
-    const dt = Math.min(0.1, (now - this._clock) / 1000);
+    this._raf = null;
+    if (this.paused) return;
+    const raw = now - this._clock;
+    const dt = Math.min(0.1, raw / 1000);
     this._clock = now;
-    let frame = this.needsFrame;
-    this.needsFrame = false;
+    let frame = this._nf;
+    this._nf = false;
     if (this._resize()) frame = true;
-    if (this._updateCamera(dt)) frame = true;
+    const moving = this._updateCamera(dt);
+    if (moving) frame = true;
     this.camera.updateMatrixWorld();
     // hover
     const id = this.pointerInside ? this.pickAt(this.pointer.x, this.pointer.y) : 0;
-    if (id !== this.hoverId) {
+    const changed = id !== this.hoverId;
+    if (changed) {
       this.hoverId = id;
       this.canvas.style.cursor = id && this.clickable(id) ? 'pointer' : '';
       frame = true;
     }
-    if (this.onHover) this.onHover(id, this.pointerPx.x, this.pointerPx.y);
+    if (this.onHover && (this.pointerInside || changed)) this.onHover(id, this.pointerPx.x, this.pointerPx.y);
     const kh = 1 - Math.exp(-dt * 14);
     const t = performance.now();
     const fx = id && this.hoverFx(id) ? id : 0;
-    let animating = false;
-    // Things that move by themselves are drawn at 30 frames a second, and their shadows stay put. A
-    // machine that cannot keep up at 10 frames a second gets a still board instead of a slow one.
-    this.still = reduceMotion() || this.motionSlow >= 20;
-    const moveNow = !this.still && t - this.motionAt >= 32;
+    let animating = false, landing = 0, anyMotion = false;
+    // Things that move by themselves are drawn at the tier's own rate, and their shadows stay put. A machine
+    // that cannot keep up at 10 frames a second gets a still board instead of a slow one.
+    this.reduced = reduceMotion();
+    this.still = this.reduced || !this.q.motionMs || this.motionSlow >= 20;
+    const moveNow = !this.still && t - this.motionAt >= this.q.motionMs;
     if (moveNow) {
       this.motionSlow = t - this.motionAt > 100 && this.motionAt ? this.motionSlow + 1 : 0;
       this.motionAt = t;
     }
+    // A glowing place keeps the loop running, at the tier's own rate.
+    const glowing = this.highlights.size > 0 && !this.reduced;
+    const pulseNow = glowing && t - this.pulseAt >= this.q.pulseMs;
+    if (pulseNow) this.pulseAt = t;
     for (const it of this.items) {
+      if (it.batched) continue;
       const h = it.pick && it.pick === fx ? 1 : 0;
-      it.hover = Math.abs(h - it.hover) < 1e-3 ? h : it.hover + (h - it.hover) * kh;
-      const pulsing = this.highlights.has(it.pick);
-      const busy = it.anim || it.hover || it.dirty || pulsing || (it.motion && moveNow);
+      const hover = Math.abs(h - it.hover) < 1e-3 ? h : it.hover + (h - it.hover) * kh;
+      const easing = hover !== it.hover;
+      it.hover = hover;
+      if (it.motion && !this.still) anyMotion = true;
+      const pulsing = pulseNow && this.highlights.has(it.pick);
+      const busy = it.anim || easing || it.dirty || pulsing || (it.motion && moveNow);
       if (busy || it.wasBusy) { this._apply(it, t); frame = true; }
-      if (it.anim) animating = true;
-      it.wasBusy = !!busy;
+      if (it.anim) { animating = true; landing++; }
+      // One more frame after a motion ends, to draw where it stopped. A pulse needs none: the next one is coming.
+      it.wasBusy = !!(it.anim || easing || it.dirty);
       it.dirty = false;
     }
     this.dying = this.dying.filter((it) => {
@@ -812,12 +1030,22 @@ export class GpuPlayer {
       it.obj.material.dispose();
       return false;
     });
-    if (animating) this.renderer.shadowMap.needsUpdate = true;
+    // Scenery joins its batches once it has all landed, so the batches are built once.
+    if (this._batchDirty && !this.items.some((it) => it.anim && this._holdsStill(it))) { this._rebatch(); frame = true; }
+    // A lower tier moves shadows only when the motion ends.
+    if (animating ? this.q.liveShadow : this._wasAnimating) this.renderer.shadowMap.needsUpdate = true;
+    this._wasAnimating = animating;
+    this._watchPace(raw, landing);
+    this._drewLast = frame;
     if (frame) this.renderer.render(this.scene, this.camera);
+    if (frame || moving || animating || glowing || anyMotion || this._nf) this._wake();
   }
 
   dispose() {
-    cancelAnimationFrame(this._raf);
+    if (this._raf != null) cancelAnimationFrame(this._raf);
+    this._raf = null;
+    this.paused = true;
+    for (const b of this.batches) b.dispose();
     for (const g of this.geoms.values()) g.geo.dispose();
     this.renderer.dispose();
   }
