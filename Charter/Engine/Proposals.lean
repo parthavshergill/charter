@@ -20,13 +20,10 @@ def addProposal (s : State G) (seat : Seat) (body : Proposal) : State G :=
         [{ id := s.nextProposalId, by_ := seat, body := body, votes := [], signed := [] }]
     nextProposalId := s.nextProposalId + 1 }
 
-/-- Propose a law: it must be valid now, and the proposer pays the fee to the bank. -/
+/-- Propose a law: it must be valid now. Proposing costs nothing. -/
 def proposeLaw (s : State G) (seat : Seat) (L : Law) : Except String (State G) :=
   if !(lawProblems G s L).isEmpty then .error "this law cannot pass"
-  else
-    match record s (lawFeeEntries G seat) with
-    | .ok s1 => .ok (addProposal s1 seat (.law L))
-    | .error m => .error m
+  else .ok (addProposal s seat (.law L))
 
 /-- Propose a deal: it must be able to run, and the proposer must be a signer. -/
 def proposeDeal (s : State G) (seat : Seat) (d : Deal) : Except String (State G) :=

@@ -120,7 +120,7 @@ theorem IV_promises_are_paid_up_front (G : GameDef) (hG : G.Valid) (s : State G)
 * A deal payment comes only from a deposit, on the step that ends a round.
 * A refund goes only from a deposit to its owner, when the deal closes.
 * Money leaves a seat's own account only for that seat's build, that seat's trade at the exact price
-  or agreed amounts, the fee for that seat's law, its deposit, or what a law in force says.
+  or agreed amounts, its deposit, or what a law in force says.
 * Money leaves the bank or treasury only when the dice pay out, for a bank trade at its exact price,
   or under a law in force. -/
 theorem V_your_money_is_yours (G : GameDef) (hG : G.Valid) (s s' : State G) (e : Event)

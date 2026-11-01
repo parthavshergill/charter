@@ -180,7 +180,7 @@ def gameFacts (spec : GameSpec) : String :=
     s!"{v}: {spotPays G v}; next to {", ".intercalate (near.map toString)}")
   let guide := if spec.guide.isEmpty then "" else s!"\n\n{spec.guide}"
   s!"## This game: {spec.name}
-The first seat to {G.targetPoints} points wins, within {G.rounds} rounds. Dice: {G.diceCount} dice with {G.diceSides} sides. The resources are {res}. The bank trades {G.bankRate} of a resource for 1 of another. A law costs {Text.bundleText G.lawFee} to propose. In setup each seat places, free: {", ".intercalate G.setupPieces}.{guide}
+The first seat to {G.targetPoints} points wins, within {G.rounds} rounds. Dice: {G.diceCount} dice with {G.diceSides} sides. The resources are {res}. The bank trades {G.bankRate} of a resource for 1 of another. Proposing a law costs nothing. In setup each seat places, free: {", ".intercalate G.setupPieces}.{guide}
 
 Pieces:
 {pieces}
@@ -315,7 +315,7 @@ def gameBlock (sit : Situation) (book : Describe.Book) : String :=
   let roll := match s.lastRoll with
     | some r => s!" The last roll was {r}."
     | none => ""
-  s!"{phase} {turn}{roll} You are seat {sit.seat}, and you have exactly {s.pointsOf sit.seat} points. Trust this number and not your notes. First to {G.targetPoints} points wins. The bank trades {s.rules.bankRate} for 1. The treasury holds {held .treasury}. The fee for a law: {Text.bundleText G.lawFee}.
+  s!"{phase} {turn}{roll} You are seat {sit.seat}, and you have exactly {s.pointsOf sit.seat} points. Trust this number and not your notes. First to {G.targetPoints} points wins. The bank trades {s.rules.bankRate} for 1. The treasury holds {held .treasury}.
 
 Seats:
 {seats}

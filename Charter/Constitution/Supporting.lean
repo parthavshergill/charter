@@ -43,8 +43,7 @@ theorem limits_hold (G : GameDef) (hG : G.Valid) (s : State G) (hs : Reachable G
 cover every event except a bank trade and a setup placement. Commandment V limits what those take from
 a seat. Only the tests check their entries in full.
 
-An exit, an offer, a cancelled offer and a proposed deal make no entries. A proposed law makes exactly
-its fee. A signature makes no entries, unless it is the last, which makes exactly the deal's deposits.
+An exit, an offer, a cancelled offer and a proposal make no entries. A signature makes no entries, unless it is the last, which makes exactly the deal's deposits.
 A vote makes no entries, unless it ends the game, which makes only refunds. Accepting needs an offer
 that exists. A seat can end a turn only when it is the current seat. Only placing a piece changes the
 pieces. Only ending a turn moves the turn or the dice.
@@ -59,7 +58,7 @@ theorem every_other_event_is_exact (G : GameDef) (hG : G.Valid) (s s' : State G)
     (∀ p to give get, e = .move p (.offer to give get) → newEntries s s' = []) ∧
     (∀ p id, e = .move p (.cancel id) → newEntries s s' = []) ∧
     (∀ seat d, e = .propose seat (.deal d) → newEntries s s' = []) ∧
-    (∀ seat L, e = .propose seat (.law L) → newEntries s s' = lawFeeEntries G seat) ∧
+    (∀ seat L, e = .propose seat (.law L) → newEntries s s' = []) ∧
     (∀ seat id, e = .sign seat id → ∃ p d,
       s.openProposal? id = some p ∧ p.body = .deal d ∧
       ((∀ j ∈ d.signers, j ∈ p.signed ∨ j = seat) →
@@ -82,11 +81,12 @@ theorem every_other_event_is_exact (G : GameDef) (hG : G.Valid) (s s' : State G)
     DeclarationsKept s s' e :=
   Proofs.every_other_event_is_exact G hG s s' e (hs.inv hG) h
 
--- This proof does not need `hs`. The statement keeps it, so it matches the others.
+-- This proof needs neither `hG` nor `hs`. The statement keeps them, so it matches the others.
 set_option linter.unusedVariables false in
 /-- **Proposals cannot be switched off.** In the actions phase, a seat in the game that is under its
 action limit and its limit of open proposals can propose a law exactly when the law passes
-`lawProblems` and it can pay the fee. It can propose a deal exactly when the deal passes
+`lawProblems`. Proposing costs nothing, so no seat can be too poor to ask for a repeal. It can propose a
+deal exactly when the deal passes
 `dealProblems` and the seat is one of its signers. An accepted proposal goes on the end of the open
 list.
 
@@ -96,13 +96,13 @@ theorem proposals_are_accepted (G : GameDef) (hG : G.Valid) (s : State G) (hs : 
     (hActs : s.actionsThisTurn seat < maxActionsPerTurn)
     (hOpen : (s.openProposals.filter (·.by_ == seat)).length < maxOpenPerSeat) :
     (∀ L, (∃ s', Engine.step G s (.propose seat (.law L)) = .ok s') ↔
-      lawProblems G s L = [] ∧ s.affords seat G.lawFee = true) ∧
+      lawProblems G s L = []) ∧
     (∀ d, (∃ s', Engine.step G s (.propose seat (.deal d)) = .ok s') ↔
       dealProblems s d = [] ∧ seat ∈ d.signers) ∧
     (∀ body s', Engine.step G s (.propose seat body) = .ok s' →
       s'.openProposals = s.openProposals ++
         [{ id := s.nextProposalId, by_ := seat, body := body, votes := [], signed := [] }]) :=
-  Proofs.proposals_are_accepted hG s seat hPhase hSeat hActs hOpen
+  Proofs.proposals_are_accepted s seat hPhase hSeat hActs hOpen
 
 -- This proof needs neither `hG` nor `hs`. The statement keeps them, so it matches the others.
 set_option linter.unusedVariables false in

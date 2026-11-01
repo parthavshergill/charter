@@ -72,7 +72,7 @@ theorem bodyOf_frame {s s1 : State G} {e : Event} (h : bodyOf s e = .ok s1) : Bo
       obtain ⟨_, _, rfl⟩ := declareBody_ok h
       body_frame
   | propose seat b =>
-    obtain ⟨_, _, ⟨_, _, _, _, _, rfl⟩ | ⟨_, _, _, _, rfl⟩⟩ := proposeBody_ok h <;> body_frame
+    obtain ⟨_, _, ⟨_, _, _, rfl⟩ | ⟨_, _, _, _, rfl⟩⟩ := proposeBody_ok h <;> body_frame
   | vote seat i y =>
     obtain ⟨_, _, _, _, _, _, ⟨_, rfl⟩ | ⟨_, rfl⟩⟩ := voteBody_ok h
     · exact decideLaw_frame _ _ _
@@ -114,7 +114,7 @@ theorem bodyOf_declared {s s1 : State G} {e : Event} (h : bodyOf s e = .ok s1)
       rfl
     | declare r n => exact absurd rfl (hne p r n)
   | propose seat b =>
-    obtain ⟨_, _, ⟨_, _, _, _, _, rfl⟩ | ⟨_, _, _, _, rfl⟩⟩ := proposeBody_ok h <;> rfl
+    obtain ⟨_, _, ⟨_, _, _, rfl⟩ | ⟨_, _, _, _, rfl⟩⟩ := proposeBody_ok h <;> rfl
   | vote seat i y =>
     obtain ⟨_, _, _, _, _, _, ⟨_, rfl⟩ | ⟨_, rfl⟩⟩ := voteBody_ok h
     · unfold decideLaw

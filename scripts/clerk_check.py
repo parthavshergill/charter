@@ -136,7 +136,7 @@ class Table:
         seat = v["turn"]
         vs = self.view(seat)
         place = [m for m in vs["legalMoves"] if m["move"]["t"] == "place"]
-        # Settle where the dice pay the law fee, so that a seat soon has it.
+        # Settle where the dice pay grain and wool, so that a seat soon holds both.
         best = max(place, key=lambda m: sum(y["pips"] for y in m.get("yields", []) if y["res"] in ("grain", "wool")), default=None)
         move = best["move"] if vs["phase"] == "setup" and best else {"t": "endTurn"}
         r = self.srv.req(f"/api/games/{self.code}/move", {"token": self.tokens[seat], "move": move})
@@ -181,7 +181,7 @@ class Table:
                 if s["hand"]["grain"] >= 1 and s["hand"]["wool"] >= 1:
                     return s["seat"]
             self.turn()
-        raise SystemExit("no seat could pay the fee")
+        raise SystemExit("no seat came to hold grain and wool")
 
 
 def last_message():
@@ -227,12 +227,12 @@ def check_suggestions(srv, api_port):
     # It is read-only, and it comes back as an ordinary draft.
     after = t.view()
     check(after["version"] == before["version"] and len(srv.get(f"/api/games/{code}/events")) == events_before, "a suggestion adds no event to the game")
-    check(after["seats"][0]["hand"] == before["seats"][0]["hand"], "a suggestion charges no fee")
+    check(after["seats"][0]["hand"] == before["seats"][0]["hand"], "a suggestion moves nothing")
     check(d["mode"] == "suggest" and d["outcome"] == "ready", "a suggestion comes back ready")
     check(d["words"] == "Each round, anyone with 2 or more points gets 1 grain from the bank.", "the clerk's words are in the draft, for the input box")
     check(d["why"] == "Ada holds all the ore, so this could help you. Grace might vote yes.", "the why comes back")
     check(d["why"] not in json.dumps(d["review"]) and "statement" not in d["review"], "the review holds none of the clerk's advice")
-    check(d["review"]["text"] == BANK and d["review"]["preview"] is not None and d["review"]["fee"] is not None, "the review has the same preview and fee as any draft")
+    check(d["review"]["text"] == BANK and d["review"]["preview"] is not None, "the review has the same preview as any draft")
     check({json.dumps(r["body"]["system"], sort_keys=True) for r in StandIn.requests} == systems_before, "a suggestion uses the same cached system block")
     check(json.dumps(StandIn.requests[-1]["body"]["system"]) and StandIn.requests[-1]["body"]["system"][0].get("cache_control") == {"type": "ephemeral"}, "that block is still marked for caching")
 

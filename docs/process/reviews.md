@@ -214,6 +214,20 @@ An auction or an election needs a seat to say a number that a law can read. The 
 
 `an_auction_settles` plays the worked auction, with a declared bid, the most, and a test that a bid can be paid. `an_auction_tie_is_shared` shows the tie: both seats pay, and each gets half. A bid above what a seat holds does not count in that law. A law need not say this. Without such a test, a seat that bids more than it holds pays what it has and still gets the goods, because a payment shrinks in proportion. The clerk's auction example has no such test, because the request does not ask for one.
 
+## No fee to propose
+
+A law used to cost its proposer a fee. So a law that drained everyone could never be repealed: nobody could pay to propose the repeal. The fee is gone. Any seat can always propose, subject only to the limits on open proposals and actions. Each seat can still have only 2 proposals open.
+
+This is a strengthening of V, because one reason money could leave a seat went away. Statements changed:
+
+| Statement | Before | After |
+|---|---|---|
+| `MoneyLeavesSeatOnlyFor` | build, trade, law fee, deposit, or a law in force | build, trade, deposit, or a law in force |
+| `every_other_event_is_exact` | proposing a law makes exactly `lawFeeEntries G seat` | proposing a law makes `[]` |
+| `proposals_are_accepted` | accepted exactly when `lawProblems G s L = [] ∧ s.affords seat G.lawFee = true` | accepted exactly when `lawProblems G s L = []` |
+
+`a_ruined_seat_can_ask_for_a_repeal` plays this, and `charging_to_propose_is_rejected` rejects a charge. A saved game where a law was proposed no longer replays the same way, and only test tables exist. On start, the server leaves out such a log and says which one, as `docs/deploy.md` describes.
+
 ## How the checks work
 
 - **Axiom audit:** `make audit` fails if any theorem in a `Charter` module rests on an axiom other than `propext`, `Classical.choice` and `Quot.sound`. So a `sorry` fails it. It also replays the proofs through `leanchecker`, and scans for banned constructs.

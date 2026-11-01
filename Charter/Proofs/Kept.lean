@@ -290,7 +290,7 @@ theorem body_kept {s s1 : State G} {e : Event} (hi : IdInv s) (hb : bodyOf s e =
     have hb' : proposeBody s seat b = .ok s1 := hb
     have hopen : s1.openProposals = s.openProposals ++
         [{ id := s.nextProposalId, by_ := seat, body := b, votes := [], signed := [] }] := by
-      obtain ⟨_, _, ⟨_, rfl, _, _, _, rfl⟩ | ⟨_, rfl, _, _, rfl⟩⟩ := proposeBody_ok hb' <;> rfl
+      obtain ⟨_, _, ⟨_, rfl, _, rfl⟩ | ⟨_, rfl, _, _, rfl⟩⟩ := proposeBody_ok hb' <;> rfl
     have hcl := nocl (by simp) (by simp)
     refine ⟨?_, fun p _ h => absurd h (hcl p), ?_⟩
     · intro q hq
@@ -684,7 +684,7 @@ theorem offers_kept {s s' : State G} {e : Event} (h : Engine.step G s e = .ok s'
         obtain ⟨_, _, rfl⟩ := declareBody_ok hb
         exact Or.inl ho1
     | propose seat b =>
-      obtain ⟨_, _, ⟨_, _, _, _, _, rfl⟩ | ⟨_, _, _, _, rfl⟩⟩ := proposeBody_ok hb <;> exact Or.inl ho1
+      obtain ⟨_, _, ⟨_, _, _, rfl⟩ | ⟨_, _, _, _, rfl⟩⟩ := proposeBody_ok hb <;> exact Or.inl ho1
     | vote seat i y =>
       obtain ⟨_, _, _, _, _, _, ⟨_, rfl⟩ | ⟨_, rfl⟩⟩ := voteBody_ok hb
       · have hx : (decideLaw s i ‹_›).offers = s.offers := by
@@ -736,7 +736,7 @@ theorem body_built {s s1 : State G} {e : Event} (hb : bodyOf s e = .ok s1)
       obtain ⟨_, _, rfl⟩ := declareBody_ok hb
       rfl
   | propose seat b =>
-    obtain ⟨_, _, ⟨_, _, _, _, _, rfl⟩ | ⟨_, _, _, _, rfl⟩⟩ := proposeBody_ok hb <;> rfl
+    obtain ⟨_, _, ⟨_, _, _, rfl⟩ | ⟨_, _, _, _, rfl⟩⟩ := proposeBody_ok hb <;> rfl
   | vote seat i y =>
     obtain ⟨_, _, L, _, _, _, ⟨_, rfl⟩ | ⟨_, rfl⟩⟩ := voteBody_ok hb
     · unfold decideLaw

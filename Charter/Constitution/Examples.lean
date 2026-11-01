@@ -477,8 +477,7 @@ theorem forged_seven_payment_is_rejected :
       rollEntries (sevenGame.afterPosting sevenGame.entriesBeforeRoll) sevenRoll := by decide +kernel
   have hRound : ⟨.player 0, .player 1, "grain", 1, .lawEffect⟩ ∉
       sevenGame.roundEndLawEntries := by decide +kernel
-  rcases h 0 rfl with ⟨hr, _⟩ | ⟨hr, _⟩ | ⟨hr, _⟩ | ⟨_, _, hf, _⟩ | ⟨_, h1⟩
-  · cases hr
+  rcases h 0 rfl with ⟨hr, _⟩ | ⟨hr, _⟩ | ⟨_, _, hf, _⟩ | ⟨_, h1⟩
   · cases hr
   · cases hr
   · cases hf
@@ -882,6 +881,36 @@ theorem a_number_that_stays_is_rejected :
   intro h
   have h9 : (9 : Nat) = 0 := h.2.1 trivial (by decide +kernel) 0 "grain"
   exact absurd h9 (by decide)
+
+/-! ## Proposing costs nothing -/
+
+/-- A law that takes everything every seat has been paid, each round. -/
+def drainLaw : Law :=
+  { title := "Drain"
+    clauses := [.onRoundEnd [.forEach .yes
+      [.transfer .each .bank (.lit "grain") (.holding .each (.lit "grain"))]]] }
+
+/-- A founding law drains everyone, and nobody holds anything. The law that repeals it is still accepted,
+and it writes no entry. A fee would have made this law impossible to repeal. -/
+theorem a_ruined_seat_can_ask_for_a_repeal :
+    ∃ s s', Reachable ({ giftGame drainLaw with foundingLaws := [drainLaw] } : GameDef) s ∧
+      Engine.step ({ giftGame drainLaw with foundingLaws := [drainLaw] } : GameDef) s
+        (.propose 0 (.law { title := "Repeal", clauses := [.repeal 0] })) = .ok s' ∧
+      newEntries s s' = [] :=
+  real_step (seats := 2) (serverSeed := 42) (nonces := [2]) (events := List.replicate 4 .forceEndTurn)
+    (by decide +kernel) (by decide) (by decide) (by decide +kernel)
+
+/-- A step that charges a seat for proposing a law is rejected. V lists every way money can leave a seat,
+and a proposal is not on it. -/
+theorem charging_to_propose_is_rejected :
+    ¬ MoneyLeavesSeatOnlyFor sevenGame sevenGame (.propose 0 (.law luckySeven))
+      ⟨.player 0, .bank, "grain", 1, .cost⟩ := by
+  intro h
+  rcases h 0 rfl with ⟨_, _, _, he, _⟩ | ⟨hr, _⟩ | ⟨_, _, hf, _⟩ | ⟨hr, _⟩
+  · cases he
+  · cases hr
+  · cases hf
+  · cases hr
 
 /-- The conditions the theorems assume can be met: this new game is reachable. -/
 example : Reachable tinySettlers (initialState tinySettlers 2 42 [25283273]) :=

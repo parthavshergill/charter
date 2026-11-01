@@ -21,8 +21,6 @@ structure GameDef where
   rounds : Nat
   /-- How many of one resource the bank takes for one of another. -/
   bankRate : Nat
-  /-- What it costs to propose a law. -/
-  lawFee : Bundle
   /-- What each seat places, free, in each setup turn. -/
   setupPieces : List PieceKind
   /-- The laws in force when a game starts, in the order they apply. -/

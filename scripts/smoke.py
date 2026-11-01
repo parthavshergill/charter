@@ -85,7 +85,7 @@ def buy_from_a_bot(srv, code, post, v, you, need):
 
 
 def settle_value(m):
-    """How much a corner pays, with most weight on what the law fee costs."""
+    """How much a corner pays, with most weight on grain and wool."""
     return sum(y["pips"] * (3 if y["res"] in ("grain", "wool") else 1) for y in m.get("yields", []))
 
 
@@ -443,7 +443,6 @@ def a_roll_law_fires(srv):
     the seat whose turn that roll starts. The chronicle says so."""
     code = srv.post("/api/games", {"seats": 2})["code"]
     tokens = [srv.post(f"/api/games/{code}/join", {"name": n, "nonce": 7})["token"] for n in ("Mara", "Ada")]
-    # The Island's law fee is 1 grain and 1 wool.
     v = end_turn_until(srv, code, tokens, lambda v: v["phase"] == "actions" and all(v["seats"][v["turn"]]["hand"][k] >= 1 for k in ("grain", "wool")))
     a = v["turn"]
     b = 1 - a

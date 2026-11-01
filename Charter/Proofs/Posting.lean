@@ -353,7 +353,7 @@ theorem nodup_of_eraseDups {α : Type} [BEq α] [LawfulBEq α] (L : List α)
 theorem valid_names (hG : G.Valid) : (G.resources.map (·.name)).Nodup := by
   have hG := valid_shape hG
   simp only [GameDef.shapeChecks, Bool.and_eq_true, beq_iff_eq] at hG
-  exact nodup_of_eraseDups _ (by simpa using hG.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.2)
+  exact nodup_of_eraseDups _ (by simpa using hG.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.2)
 
 theorem filterMap_eq_flatMap {α β : Type} (L : List α) (g : α → Option β) :
     L.filterMap g = L.flatMap fun a => (g a).toList := by

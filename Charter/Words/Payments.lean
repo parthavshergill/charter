@@ -76,10 +76,6 @@ end State
 def bundleEntries (src dst : Account) (b : Bundle) (reason : Reason) : List Entry :=
   b.map fun x => { src := src, dst := dst, res := x.1, amount := x.2, reason := reason }
 
-/-- What a law's proposer pays. -/
-def lawFeeEntries (G : GameDef) (p : Seat) : List Entry :=
-  bundleEntries (.player p) .bank G.lawFee .lawFee
-
 /-- Seat `p` accepts offer `o`: the offer's maker pays `give`, and then `p` pays `get`. -/
 def offerEntries (o : Offer) (p : Seat) : List Entry :=
   bundleEntries (.player o.src) (.player p) o.give .trade ++

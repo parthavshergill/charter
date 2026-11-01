@@ -90,7 +90,7 @@ theorem body_pieces {s s1 : State G} {e : Event} (hne : ∀ p k loc, e ≠ .move
       obtain ⟨_, _, rfl⟩ := declareBody_ok h
       rfl
   | propose seat b =>
-    obtain ⟨_, _, ⟨_, _, _, _, _, rfl⟩ | ⟨_, _, _, _, rfl⟩⟩ := proposeBody_ok h <;> rfl
+    obtain ⟨_, _, ⟨_, _, _, rfl⟩ | ⟨_, _, _, _, rfl⟩⟩ := proposeBody_ok h <;> rfl
   | vote seat i y =>
     obtain ⟨_, _, _, _, _, _, ⟨_, rfl⟩ | ⟨_, rfl⟩⟩ := voteBody_ok h
     · exact (decideLaw_fields _ _ _).1
@@ -136,7 +136,7 @@ theorem body_laws {s s1 : State G} {e : Event} (hne : ∀ a b c, e ≠ .vote a b
       obtain ⟨_, _, rfl⟩ := declareBody_ok h
       rfl
   | propose seat b =>
-    obtain ⟨_, _, ⟨_, _, _, _, _, rfl⟩ | ⟨_, _, _, _, rfl⟩⟩ := proposeBody_ok h <;> rfl
+    obtain ⟨_, _, ⟨_, _, _, rfl⟩ | ⟨_, _, _, _, rfl⟩⟩ := proposeBody_ok h <;> rfl
   | sign seat i =>
     obtain ⟨_, _, _, _, _, _, _, ⟨_, h⟩ | ⟨_, rfl⟩⟩ := signBody_ok h
     · obtain ⟨_, _, _, _, rfl⟩ := startDeal_ok h
@@ -316,7 +316,7 @@ theorem step_is_exact {s s' : State G} {e : Event} (hn : NoPending s)
     (∀ p to give get, e = .move p (.offer to give get) → newEntries s s' = []) ∧
     (∀ p id, e = .move p (.cancel id) → newEntries s s' = []) ∧
     (∀ seat d, e = .propose seat (.deal d) → newEntries s s' = []) ∧
-    (∀ seat L, e = .propose seat (.law L) → newEntries s s' = lawFeeEntries G seat) ∧
+    (∀ seat L, e = .propose seat (.law L) → newEntries s s' = []) ∧
     (∀ seat id, e = .sign seat id → ∃ p d,
       s.openProposal? id = some p ∧ p.body = .deal d ∧
       ((∀ j ∈ d.signers, j ∈ p.signed ∨ j = seat) →
@@ -370,8 +370,8 @@ theorem step_is_exact {s s' : State G} {e : Event} (hn : NoPending s)
     obtain ⟨_, s1, hb, hf⟩ := step_act h (by simp [EndsTurn])
     obtain rfl : s' = countAction s1 seat := (Except.ok.inj hf).symm
     have hb' : proposeBody s seat (.law L) = .ok s1 := hb
-    obtain ⟨_, _, ⟨_, _, _, _, _, rfl⟩ | ⟨_, hc, _⟩⟩ := proposeBody_ok hb'
-    · exact newEntries_of rfl
+    obtain ⟨_, _, ⟨_, _, _, rfl⟩ | ⟨_, hc, _⟩⟩ := proposeBody_ok hb'
+    · exact newEntries_nil rfl
     · cases hc
   · -- a signature
     rintro seat id rfl

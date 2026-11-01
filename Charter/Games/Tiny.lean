@@ -32,7 +32,6 @@ def tinySettlers : GameDef where
   targetPoints := 4
   rounds := 10
   bankRate := 4
-  lawFee := [("grain", 1)]
   setupPieces := ["settlement", "road"]
 
 /-- The same engine with a different structure: two resources, a new upgrade path, and two
@@ -60,7 +59,6 @@ def tinySpace : GameDef where
   targetPoints := 5
   rounds := 12
   bankRate := 3
-  lawFee := [("alloy", 1)]
   setupPieces := ["outpost", "lane"]
 
 theorem tinySettlers_valid : tinySettlers.Valid := by decide

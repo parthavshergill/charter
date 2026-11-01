@@ -75,16 +75,11 @@ def bundleWords (b : Bundle) : String :=
   if b.isEmpty then "nothing" else Text.bundleText b
 
 /-- The public facts the table section does not hold. -/
-def publicFacts (g : Game) (s : State g.spec.G) (seat : Nat) : String :=
+def publicFacts (g : Game) (s : State g.spec.G) : String :=
   let G := g.spec.G
   let bank := (G.resources.map (·.name)).map fun r => s!"{s.balance .bank r} {r}"
   let collects := s.turnOrder.map fun p => s!"- seat {p}: {collectsOf s p}"
   let standing := s.turnOrder.map fun p => s!"- seat {p}: {piecesOf s p}"
-  let short := G.lawFee.filterMap fun x =>
-    let have_ := s.balance (.player seat) x.1
-    if have_ < x.2 then some (x.1, x.2 - have_) else none
-  let fee := if short.isEmpty then "This seat can pay it now."
-    else s!"This seat cannot pay it now: it needs {bundleWords short} more."
   let deals := if s.deals.isEmpty then "none" else
     "\n".intercalate (s.deals.map fun d => s!"- until round {d.lastRound}: {Text.dealLine g.nameOf d.deal}")
   let unpaid := (Scene.rollsOf G).filter fun r => !G.map.regions.any (·.number == r)
@@ -96,7 +91,7 @@ def publicFacts (g : Game) (s : State g.spec.G) (seat : Nat) : String :=
         | none => "anyone"
       s!"- {g.nameOf o.src} offers {bundleWords o.give} to {to}, for {bundleWords o.get}")
   Clerk.neutralize s!"The bank holds: {", ".intercalate bank}.
-A law costs its proposer {bundleWords G.lawFee}. A deal costs nothing to propose. {fee}
+Proposing a law or a deal costs nothing.
 {unpaidWords}Each turn starts with a roll, and `on-roll` laws run on every one.
 
 What each seat harvests today:
@@ -142,7 +137,7 @@ def build (g : Game) (s : State g.spec.G) (seat : Nat) (talk : List Talk.Line) (
   let mem := Clerk.memoryBlock g seat notes
   let mem := if mem.isEmpty then "" else s!"\n\n{mem}"
   let base := "\n\n".intercalate
-    [ s!"<table>\n{tableContext g s seat}\n\n{publicFacts g s seat}\n</table>{mem}"
+    [ s!"<table>\n{tableContext g s seat}\n\n{publicFacts g s}\n</table>{mem}"
     , block "chronicle" (chronicleLines g)
     , block "table_talk" (publicLines g talk)
     , block "your_private_messages" (privateLines g seat talk)

@@ -87,7 +87,6 @@ theorem V_your_money_is_yours (G : GameDef) (_hG : G.Valid) (s s' : State G) (e 
         ((∃ give get, e = .move i (.bankTrade give get) ∧ x ∈ s.bankTradeEntries i give get) ∨
          (∃ p id o, e = .move p (.accept id) ∧ s.offers.find? (·.id == id) = some o ∧
            (i = o.src ∨ i = p) ∧ x ∈ offerEntries o p))) ∨
-      (x.reason = .lawFee ∧ ∃ L, e = .propose i (.law L) ∧ x ∈ lawFeeEntries G i) ∨
       (∃ k, FundsDeal s s' e x k i) ∨
       (x.reason = .lawEffect ∧
         ((∃ b k loc, e = .move b (.place k loc) ∧
@@ -192,7 +191,7 @@ theorem every_other_event_is_exact (G : GameDef) (_hG : G.Valid) (s s' : State G
     (∀ p to give get, e = .move p (.offer to give get) → newEntries s s' = []) ∧
     (∀ p id, e = .move p (.cancel id) → newEntries s s' = []) ∧
     (∀ seat d, e = .propose seat (.deal d) → newEntries s s' = []) ∧
-    (∀ seat L, e = .propose seat (.law L) → newEntries s s' = lawFeeEntries G seat) ∧
+    (∀ seat L, e = .propose seat (.law L) → newEntries s s' = []) ∧
     (∀ seat id, e = .sign seat id → ∃ p d,
       s.openProposal? id = some p ∧ p.body = .deal d ∧
       ((∀ j ∈ d.signers, j ∈ p.signed ∨ j = seat) →

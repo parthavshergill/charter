@@ -1396,12 +1396,7 @@ function renderDraft() {
   const bar = U.proposeBar;
   bar.hidden = !same;
   if (same) {
-    const fee = rv.fee;
-    const can = rv.canPropose && (!fee || fee.canPay);
-    fill(bar,
-      h("button", { class: "act gold", disabled: !can, onclick: () => proposeDraft(rv.text) },
-        "Propose", fee ? [" · ", costOf(fee.cost)] : null),
-      fee && !fee.canPay ? h("span", { class: "needline" }, `Need ${costText(fee.short)}`) : null);
+    fill(bar, h("button", { class: "act gold", disabled: !rv.canPropose, onclick: () => proposeDraft(rv.text) }, "Propose"));
   }
 }
 function draftingView(d) {

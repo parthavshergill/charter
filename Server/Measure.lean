@@ -59,8 +59,7 @@ def benchGame (o : Options) : GameDef :=
       regions := island.map.regions.map fun x =>
         { x with res := resName (x.number % o.resources) } }
     targetPoints := 1000000
-    rounds := o.rounds
-    lawFee := [] }
+    rounds := o.rounds }
 
 /-- A number that reads holdings and has this size. -/
 def bigAmount (size : Nat) (r : Res) : Expr :=

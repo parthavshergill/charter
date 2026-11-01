@@ -135,12 +135,10 @@ theorem addProposal_rename (s : State G) (seat : Seat) (body : Proposal) :
 theorem proposeLaw_rename (s : State G) (seat : Seat) (L : Law) :
     proposeLaw (σ.state s) (σ.to seat) L = (proposeLaw s seat L).map σ.state := by
   unfold proposeLaw
-  simp only [lawProblems_rename, lawFeeEntries_rename, record_rename]
+  simp only [lawProblems_rename]
   split
   · rfl
-  · cases record s (lawFeeEntries G seat) with
-    | error m => rfl
-    | ok s1 => exact congrArg Except.ok (σ.addProposal_rename s1 seat (.law L))
+  · exact congrArg Except.ok (σ.addProposal_rename s seat (.law L))
 
 theorem proposeDeal_rename (s : State G) (seat : Seat) (d : Deal) :
     proposeDeal (σ.state s) (σ.to seat) (σ.deal d) = (proposeDeal s seat d).map σ.state := by

@@ -72,7 +72,7 @@ theorem rules_price {laws : List (Nat × Law)} (hG : G.Valid)
     have hG := valid_shape hG
     simp only [GameDef.shapeChecks, Bool.and_eq_true] at hG
     intro d hd
-    exact List.all_eq_true.mp hG.1.1.1.1.1.1.1.1.1.1.1.2 d hd
+    exact List.all_eq_true.mp hG.1.1.1.1.1.1.1.1.1.1.2 d hd
   unfold rulesFrom
   generalize ({ pieces := G.pieces, bankRate := G.bankRate } : Rules) = R at h0
   induction laws generalizing R with

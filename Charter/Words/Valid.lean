@@ -24,7 +24,7 @@ def GameDef.shapeChecks (G : GameDef) : Bool :=
   G.map.regions.all (fun x => G.isRes x.res && x.spots.all (fun v => decide (v < G.map.spotCount))) &&
   decide (1 ≤ G.diceCount ∧ 2 ≤ G.diceSides ∧ G.diceCount ≤ 4 ∧ G.diceSides ≤ 20) &&
   decide (1 ≤ G.targetPoints) && decide (1 ≤ G.rounds ∧ G.rounds ≤ maxRoundsAllowed) &&
-  decide (2 ≤ G.bankRate) && G.bundleOk G.lawFee &&
+  decide (2 ≤ G.bankRate) &&
   G.setupPieces.all (fun k => G.pieces.any (·.name == k))
 
 /-- Each founding law passes `lawProblems`, in order, in a new game with this many seats and with the

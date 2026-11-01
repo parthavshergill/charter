@@ -54,7 +54,7 @@ The game starts with setup: each seat places its free setup pieces, once in turn
 You win the moment you reach the target points. If nobody does by the last round, the most points wins. Points come only from the pieces you own.
 
 ### Laws
-Any seat can propose a law. It costs the fee, and the fee is paid at once, whatever happens to the law. A law takes effect the moment more than half of all seats vote yes. It lapses if it has not passed when its proposer's next turn starts. A vote is final, and each seat can have two proposals open at once. At most 16 laws can be in force.
+Any seat can propose a law, and it costs nothing. A law takes effect the moment more than half of all seats vote yes. It lapses if it has not passed when its proposer's next turn starts. A vote is final, and each seat can have two proposals open at once. At most 48 laws can be in force.
 
 A law can change prices and points, change the bank's rate, add a new kind of piece, charge or pay resources when something happens (a harvest, a build, the end of a round, or a roll of the dice, including a 7), and repeal another law. A law binds everyone alike. It cannot name a seat, but it can describe a situation, such as "anyone with 6 or more points". A law can read the total rolled, and it runs on every roll after the bank has paid. It cannot change a roll. It cannot see a single die, turn order or who did what. No account goes below zero: a payer who is short pays less.
 
@@ -67,4 +67,4 @@ A deal binds only those who sign it. It can have payments each round, payments w
 An offer is a trade of any resources between two seats. It happens the moment someone accepts it, and only if both sides can pay.
 
 ### Strategy notes
-Laws are the point of this game. The base game is ordinary, and the rules can change. Try things. Think about who a law really helps, and count the votes before you pay the fee. Talk to people first: a law nobody expected rarely passes. Use `draft` to find out what the rule language can say, and read the clerk's result closely: the clerk says what it changed from what you asked.
+Laws are the point of this game. The base game is ordinary, and the rules can change. Try things. Think about who a law really helps, and count the votes before you propose it. Talk to people first: a law nobody expected rarely passes. Use `draft` to find out what the rule language can say, and read the clerk's result closely: the clerk says what it changed from what you asked.

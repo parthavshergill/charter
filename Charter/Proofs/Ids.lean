@@ -62,7 +62,7 @@ theorem body_deals_cases {s s1 : State G} {e : Event} (h : bodyOf s e = .ok s1) 
       exact ⟨rfl, rfl⟩
   | propose seat b =>
     left
-    obtain ⟨_, _, ⟨_, _, _, _, _, rfl⟩ | ⟨_, _, _, _, rfl⟩⟩ := proposeBody_ok h <;> exact ⟨rfl, rfl⟩
+    obtain ⟨_, _, ⟨_, _, _, rfl⟩ | ⟨_, _, _, _, rfl⟩⟩ := proposeBody_ok h <;> exact ⟨rfl, rfl⟩
   | vote seat i y =>
     left
     obtain ⟨_, _, _, _, _, _, ⟨_, rfl⟩ | ⟨_, rfl⟩⟩ := voteBody_ok h
@@ -121,7 +121,7 @@ theorem body_open_cases {s s1 : State G} {e : Event} (h : bodyOf s e = .ok s1) :
       exact ⟨rfl, rfl⟩
   | propose seat b =>
     right; left
-    obtain ⟨_, _, ⟨_, _, _, _, _, rfl⟩ | ⟨_, _, _, _, rfl⟩⟩ := proposeBody_ok h
+    obtain ⟨_, _, ⟨_, _, _, rfl⟩ | ⟨_, _, _, _, rfl⟩⟩ := proposeBody_ok h
     · exact ⟨_, rfl, rfl, rfl, rfl, rfl⟩
     · exact ⟨_, rfl, rfl, rfl, rfl, rfl⟩
   | vote seat i y =>

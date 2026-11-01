@@ -146,14 +146,6 @@ def promptOf (g : Game) (s : State G) (you : Option Nat) (legal : List Move) : J
     let _ := g
     Json.null
 
-def feeJson {G : GameDef} (s : State G) (you : Option Nat) : Json :=
-  let short := match you with
-    | some y => shortOf s y G.lawFee
-    | none => []
-  Json.mkObj
-    [ ("cost", bundleJson G.lawFee), ("short", bundleJson short)
-    , ("canPay", toJson short.isEmpty) ]
-
 /-- A law's preview for this viewer, and whether it has moved on since the law was proposed. -/
 def previewFor (g : Game) (s : State g.spec.G) (you : Option Nat) (id : Nat) (L : Law) : Json × Bool :=
   let now := Preview.lawPreview s id L you g.nameOf
@@ -280,7 +272,6 @@ def view (g : Game) (code : String) (you : Option Nat) (drafting : List Nat) (bo
       , ("turn", toJson s.currentSeat), ("lastRoll", toJson s.lastRoll)
       , ("rollsMade", toJson s.rollsMade)
       , ("target", toJson G.targetPoints), ("bankRate", toJson s.rules.bankRate)
-      , ("fee", feeJson s you)
       , ("prompt", promptOf g s you legal)
       , ("seats", Json.arr (s.turnOrder.map (seatJson g (some s) showPersona)).toArray)
       , ("pieces", Json.arr (s.pieces.map pieceJson).toArray)
@@ -327,7 +318,6 @@ def reviewJson (g : Game) (book : Describe.Book) (you : Nat) (formal : String) (
     Json.mkObj
       [ ("kind", kind), ("title", title), words, ("difference", toJson difference)
       , ("preview", preview), ("text", Rules.printProposal p)
-      , ("fee", if kind == "law" then feeJson s (some you) else Json.null)
       , ("canPropose", toJson (s.phase == .actions)) ]
   | _, _ => Json.null
 
@@ -366,9 +356,7 @@ def explain (g : Game) (ev : Json) (raw : String) : String :=
   match g.state, seat with
   | some s, some y =>
     if raw == "an entry cannot be posted in full" then
-      if t == "propose" then
-        s!"You cannot pay the fee of {shortText g.spec.G.lawFee}. You need {shortText (shortOf s y g.spec.G.lawFee)} more."
-      else if moveT == some "place" then
+      if moveT == some "place" then
         let k := ((jField ev "move").bind (jStr · "kind")).getD "piece"
         s!"You cannot pay for {Text.article k}. You need {shortText (shortOf s y (s.costOf k))} more."
       else if moveT == some "bankTrade" then

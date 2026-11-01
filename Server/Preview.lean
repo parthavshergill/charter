@@ -183,8 +183,8 @@ def lawPreview (s : State G) (id : Nat) (L : Law) (you : Option Nat) (names : Na
     , ("dice", toJson (!rolls.isEmpty))
     , ("nothing", toJson (sections.isEmpty && points.isEmpty && notes.isEmpty)) ]
 
-/-- The preview for the person drafting a law: the table as it will be once they have paid the fee. -/
+/-- The preview for the person drafting a law. -/
 def draftPreview (s : State G) (id : Nat) (L : Law) (you : Nat) (names : Nat → String) : Json :=
-  lawPreview (s.afterPosting (lawFeeEntries G you)) id L (some you) names
+  lawPreview s id L (some you) names
 
 end CharterServer.Preview

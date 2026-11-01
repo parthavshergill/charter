@@ -71,7 +71,7 @@ All ten commandments rest on the same 121 definitions: the data types of a game,
 | X | 166 | 45 | `Engine.replay`, `Engine.predictNextTurn`, `lawEntries`, `harvestEntries`, `rollEntries`, `roundEndEntries` |
 | `the_winner_earned_it` | 123 | 2 | `pointsOf`, `maxTurns` |
 | `limits_hold` | 123 | 2 | `maxActiveDeals`, `maxOpenPerSeat` |
-| `every_other_event_is_exact` | 130 | 9 | `depositEntries`, `lawFeeEntries`, `refundEntries` |
+| `every_other_event_is_exact` | 130 | 9 | `depositEntries`, `refundEntries` |
 | `proposals_are_accepted` | 133 | 12 | `dealProblems` and its checks |
 | `deals_can_start` | 137 | 16 | `dealProblems`, `canStartDeal`, `depositEntries` |
 

@@ -79,10 +79,8 @@ theorem body_bank {s s1 : State G} {e : Event} (hb : bodyOf s e = .ok s1) :
       obtain ⟨_, _, rfl⟩ := declareBody_ok hb
       exact ⟨[], by simp, by simp⟩
   | propose seat b =>
-    obtain ⟨_, _, ⟨_, _, _, _, _, rfl⟩ | ⟨_, _, _, _, rfl⟩⟩ := proposeBody_ok hb
-    · refine ⟨_, rfl, ?_⟩
-      intro x hx
-      exact bank_of_player (mem_bundleEntries hx).1
+    obtain ⟨_, _, ⟨_, _, _, rfl⟩ | ⟨_, _, _, _, rfl⟩⟩ := proposeBody_ok hb
+    · exact ⟨[], by simp [addProposal], by simp⟩
     · exact ⟨[], by simp [addProposal], by simp⟩
   | vote seat i y =>
     obtain ⟨_, _, _, _, _, _, ⟨_, rfl⟩ | ⟨_, rfl⟩⟩ := voteBody_ok hb

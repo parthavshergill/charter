@@ -253,7 +253,6 @@ def SeatOut (s s' : State G) (e : Event) (x : Entry) (i : Seat) : Prop :=
     ((∃ give get, e = .move i (.bankTrade give get) ∧ x ∈ s.bankTradeEntries i give get) ∨
      (∃ p id o, e = .move p (.accept id) ∧ s.offers.find? (·.id == id) = some o ∧
        (i = o.src ∨ i = p) ∧ x ∈ offerEntries o p))) ∨
-  (x.reason = .lawFee ∧ ∃ L, e = .propose i (.law L) ∧ x ∈ lawFeeEntries G i) ∨
   (∃ k, FundsDeal s s' e x k i) ∨
   (x.reason = .lawEffect ∧
     ((∃ b k loc, e = .move b (.place k loc) ∧
@@ -327,7 +326,7 @@ theorem vconj_turnLaw {s s' : State G} {e : Event} {x : Entry} (hf : LawForm x) 
       x ∈ rollEntries (s.afterPosting s.entriesBeforeRoll) (rollAt G s.seed s.rollsMade)) :
     VConj s s' e x :=
   vconj_plain hf.2.1 hf.2.2 (by rw [hf.1]; simp) (by rw [hf.1]; simp)
-    (fun _ _ => Or.inr (Or.inr (Or.inr (Or.inr ⟨hf.1, Or.inr ⟨hend, hx⟩⟩))))
+    (fun _ _ => Or.inr (Or.inr (Or.inr ⟨hf.1, Or.inr ⟨hend, hx⟩⟩)))
 
 /-- Every entry of a turn change is allowed. -/
 theorem vconj_turn {s : State G} {e : Event} (hend : EndsTurn s e)
@@ -352,7 +351,7 @@ theorem vconj_turn {s : State G} {e : Event} (hend : EndsTurn s e)
           cases this
         · exact hb
       · exact hb
-    exact Or.inr (Or.inr (Or.inr (Or.inr ⟨hlaw.1, Or.inr ⟨hend, Or.inr hx⟩⟩)))
+    exact Or.inr (Or.inr (Or.inr ⟨hlaw.1, Or.inr ⟨hend, Or.inr hx⟩⟩))
 
 /-- The entries of a bundle go between the two accounts given. -/
 theorem mem_bundleEntries {a b : Account} {bd : Bundle} {r : Reason} {x : Entry}
@@ -393,7 +392,7 @@ theorem body_vconj {s s1 s' : State G} {e : Event} (hb : bodyOf s e = .ok s1)
         | inr hl =>
           have hf := lawEntries_form _ _ x hl
           exact vconj_plain hf.2.1 hf.2.2 (by rw [hf.1]; simp) (by rw [hf.1]; simp)
-            (fun _ _ => Or.inr (Or.inr (Or.inr (Or.inr ⟨hf.1, Or.inl ⟨p, k, loc, rfl, hl⟩⟩))))
+            (fun _ _ => Or.inr (Or.inr (Or.inr ⟨hf.1, Or.inl ⟨p, k, loc, rfl, hl⟩⟩)))
     | bankTrade a c =>
       obtain ⟨_, _, _, _, _, hr⟩ := bankTradeBody_ok hb
       obtain ⟨_, _, rfl⟩ := record_ok hr
@@ -439,16 +438,8 @@ theorem body_vconj {s s1 s' : State G} {e : Event} (hb : bodyOf s e = .ok s1)
       obtain ⟨_, _, rfl⟩ := declareBody_ok hb
       exact ⟨[], by simp, by simp⟩
   | propose seat b =>
-    obtain ⟨_, _, ⟨L, rfl, _, _, _, rfl⟩ | ⟨_, _, _, _, rfl⟩⟩ := proposeBody_ok hb
-    · refine ⟨_, rfl, ?_⟩
-      intro x hx
-      obtain ⟨h1, h2, h3⟩ := mem_bundleEntries hx
-      refine vconj_plain (h1 ▸ notDepPlayer _) (h2 ▸ notDepBank) (by rw [h3]; simp) (by rw [h3]; simp) ?_
-      intro i hi
-      rw [h1] at hi
-      injection hi with hi
-      subst hi
-      exact Or.inr (Or.inr (Or.inl ⟨h3, L, rfl, hx⟩))
+    obtain ⟨_, _, ⟨L, rfl, _, rfl⟩ | ⟨_, _, _, _, rfl⟩⟩ := proposeBody_ok hb
+    · exact ⟨[], by simp [addProposal], by simp⟩
     · exact ⟨[], by simp [addProposal], by simp⟩
   | vote seat i y =>
     obtain ⟨_, _, _, _, _, _, ⟨_, rfl⟩ | ⟨_, rfl⟩⟩ := voteBody_ok hb
@@ -487,7 +478,7 @@ theorem body_vconj {s s1 s' : State G} {e : Event} (hb : bodyOf s e = .ok s1)
       · intro j h
         injection h with hj
         subst hj
-        exact Or.inr (Or.inr (Or.inr (Or.inl ⟨_, hfund⟩)))
+        exact Or.inr (Or.inr (Or.inl ⟨_, hfund⟩))
     · exact ⟨[], by simp, by simp⟩
   | exit seat i =>
     obtain ⟨_, _, rfl⟩ := exitBody_ok hb

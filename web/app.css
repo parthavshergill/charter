@@ -264,7 +264,6 @@ details.formal summary:hover { color: var(--ink); }
 .proposebar { position: sticky; bottom: calc(-1 * var(--s4)); margin: var(--s3) calc(-1 * var(--s4)) calc(-1 * var(--s4)); padding: var(--s3) var(--s4); background: var(--paper), var(--vellum-2); display: flex; align-items: center; gap: var(--s3); box-shadow: 0 -1px 0 var(--vellum-3); }
 .proposebar .act { flex: 1; }
 .proposebar svg.res { width: 20px; height: 20px; }
-.proposebar .needline { font-size: 14px; color: var(--wax); }
 .dim { opacity: .45; }
 
 /* the vote */

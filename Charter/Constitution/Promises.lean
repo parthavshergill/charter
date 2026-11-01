@@ -231,10 +231,6 @@ abbrev PaysInOwnTrade (s : State G) (e : Event) (x : Entry) (i : Seat) : Prop :=
      (∃ p id o, e = .move p (.accept id) ∧ s.offers.find? (·.id == id) = some o ∧
        (i = o.src ∨ i = p) ∧ x ∈ offerEntries o p))
 
-/-- This entry is seat `i` paying the fee for the law it proposes. -/
-abbrev PaysOwnLawFee (G : GameDef) (e : Event) (x : Entry) (i : Seat) : Prop :=
-  x.reason = .lawFee ∧ ∃ L, e = .propose i (.law L) ∧ x ∈ lawFeeEntries G i
-
 /-- A law in force asks for this entry: as a reaction to a build, at a round's end, as a reaction to
 the dice payout, or as a reaction to the roll itself. -/
 abbrev AskedForByLaw (s : State G) (e : Event) (x : Entry) : Prop :=
@@ -245,13 +241,12 @@ abbrev AskedForByLaw (s : State G) (e : Event) (x : Entry) : Prop :=
        (x ∈ s.roundEndLawEntries ∨
         x ∈ rollEntries (s.afterPosting s.entriesBeforeRoll) (rollAt G s.seed s.rollsMade))))
 
-/-- Money leaves a seat's own account only for that seat's build, trade, law fee or deposit, or for
-what a law in force says. -/
+/-- Money leaves a seat's own account only for that seat's build, trade or deposit, or for what a law in
+force says. -/
 def MoneyLeavesSeatOnlyFor (s s' : State G) (e : Event) (x : Entry) : Prop :=
   ∀ i, x.src = .player i →
     PaysForOwnBuild s e x i ∨
     PaysInOwnTrade s e x i ∨
-    PaysOwnLawFee G e x i ∨
     (∃ k, FundsDeal s s' e x k i) ∨
     AskedForByLaw s e x
 

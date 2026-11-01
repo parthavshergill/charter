@@ -75,11 +75,6 @@ theorem affords_iff (s : State G) (p : Seat) (bd : Bundle) :
   simp only [State.affords, State.balance, List.all_eq_true]
   exact ⟨fun h x hx => of_decide_eq_true (h x hx), fun h x hx => decide_eq_true (h x hx)⟩
 
-theorem valid_lawFee (hG : G.Valid) : G.bundleOk G.lawFee = true := by
-  have hG := valid_shape hG
-  simp only [GameDef.shapeChecks, Bool.and_eq_true] at hG
-  exact hG.1.2
-
 theorem canAct_of {s : State G} {seat : Seat} (h1 : seat ∈ s.turnOrder)
     (h2 : s.actionsThisTurn seat < maxActionsPerTurn) : canAct s seat = true := by
   simp [canAct, h1, h2]
@@ -100,17 +95,15 @@ theorem step_propose_body {s s' : State G} {seat : Seat} {body : Proposal}
   obtain ⟨_, s1, hb, hf⟩ := step_act h (by simp [EndsTurn])
   exact ⟨s1, hb, (Except.ok.inj hf).symm⟩
 
-theorem proposeBody_law {s : State G} {seat : Seat} {L : Law} {b : Books}
+theorem proposeBody_law {s : State G} {seat : Seat} {L : Law}
     (hPhase : s.phase = .actions)
     (hOpen : (s.openProposals.filter (·.by_ == seat)).length < maxOpenPerSeat)
-    (hp : lawProblems G s L = []) (hb : s.books.postAll (lawFeeEntries G seat) = some b) :
-    proposeBody s seat (.law L) = .ok (addProposal
-      { s with books := b, journal := s.journal ++ lawFeeEntries G seat } seat (.law L)) := by
+    (hp : lawProblems G s L = []) :
+    proposeBody s seat (.law L) = .ok (addProposal s seat (.law L)) := by
   have hn : ¬ maxOpenPerSeat ≤ (s.openProposals.filter (·.by_ == seat)).length := by omega
   have h1 : (s.phase != .actions) = false := by simp [hPhase]
   unfold proposeBody proposeLaw
   simp only [h1, hp, hn, List.isEmpty_nil, ↓reduceIte, Bool.not_true, Bool.false_eq_true]
-  rw [record_some hb]
 
 theorem proposeBody_deal {s : State G} {seat : Seat} {d : Deal} (hPhase : s.phase = .actions)
     (hOpen : (s.openProposals.filter (·.by_ == seat)).length < maxOpenPerSeat)
@@ -122,34 +115,31 @@ theorem proposeBody_deal {s : State G} {seat : Seat} {d : Deal} (hPhase : s.phas
   unfold proposeBody proposeDeal
   simp only [h1, hp, hn, hc, List.isEmpty_nil, ↓reduceIte, Bool.not_true, Bool.false_eq_true]
 
-theorem proposals_are_accepted (hG : G.Valid) (s : State G) (seat : Seat)
+theorem proposals_are_accepted (s : State G) (seat : Seat)
     (hPhase : s.phase = .actions) (hSeat : seat ∈ s.turnOrder)
     (hActs : s.actionsThisTurn seat < maxActionsPerTurn)
     (hOpen : (s.openProposals.filter (·.by_ == seat)).length < maxOpenPerSeat) :
     (∀ L, (∃ s', Engine.step G s (.propose seat (.law L)) = .ok s') ↔
-      lawProblems G s L = [] ∧ s.affords seat G.lawFee = true) ∧
+      lawProblems G s L = []) ∧
     (∀ d, (∃ s', Engine.step G s (.propose seat (.deal d)) = .ok s') ↔
       dealProblems s d = [] ∧ seat ∈ d.signers) ∧
     (∀ body s', Engine.step G s (.propose seat body) = .ok s' →
       s'.openProposals = s.openProposals ++
         [{ id := s.nextProposalId, by_ := seat, body := body, votes := [], signed := [] }]) := by
   have hc := canAct_of hSeat hActs
-  have hne : (Account.player seat) ≠ .bank := by simp
   refine ⟨?_, ?_, ?_⟩
   · intro L
     constructor
     · rintro ⟨s', h⟩
       obtain ⟨s1, hb, _⟩ := step_propose_body h
       obtain ⟨_, _, hcase⟩ := proposeBody_ok hb
-      rcases hcase with ⟨L', hL, hp, b, hbk, _⟩ | ⟨_, hd, _⟩
+      rcases hcase with ⟨L', hL, hp, _⟩ | ⟨_, hd, _⟩
       · injection hL with hL
         subst hL
-        exact ⟨hp, (affords_iff s seat _).mpr (bundle_affords hbk hne)⟩
+        exact hp
       · cases hd
-    · rintro ⟨hp, haff⟩
-      obtain ⟨b, hb⟩ := bundle_posts (rs := .lawFee) (dst := .bank)
-        (bundleOk_nodup (valid_lawFee hG)) ((affords_iff s seat _).mp haff) hne
-      exact ⟨_, step_propose hPhase hc (proposeBody_law hPhase hOpen hp hb)⟩
+    · intro hp
+      exact ⟨_, step_propose hPhase hc (proposeBody_law hPhase hOpen hp)⟩
   · intro d
     constructor
     · rintro ⟨s', h⟩

@@ -353,10 +353,7 @@ theorem cancelBody_ok {s s1 : State G} {p : Seat} {id : Nat} (h : cancelBody s p
 theorem proposeBody_ok {s s1 : State G} {seat : Seat} {body : Proposal}
     (h : proposeBody s seat body = .ok s1) :
     s.phase = .actions ∧ (s.openProposals.filter (·.by_ == seat)).length < maxOpenPerSeat ∧
-    ((∃ L, body = .law L ∧ lawProblems G s L = [] ∧ ∃ b,
-        s.books.postAll (lawFeeEntries G seat) = some b ∧
-        s1 = addProposal { s with books := b, journal := s.journal ++ lawFeeEntries G seat }
-          seat (.law L)) ∨
+    ((∃ L, body = .law L ∧ lawProblems G s L = [] ∧ s1 = addProposal s seat (.law L)) ∨
      (∃ d, body = .deal d ∧ d.signers.contains seat = true ∧ dealProblems s d = [] ∧
         s1 = addProposal s seat (.deal d))) := by
   unfold proposeBody at h
@@ -373,11 +370,7 @@ theorem proposeBody_ok {s s1 : State G} {seat : Seat} {body : Proposal}
     split at h
     · cases h
     rename_i hl
-    split at h
-    · rename_i s2 hr
-      obtain ⟨b, hb, rfl⟩ := record_ok hr
-      exact Or.inl ⟨L, rfl, by simpa using hl, b, hb, by simpa using h.symm⟩
-    · cases h
+    exact Or.inl ⟨L, rfl, by simpa using hl, by simpa using h.symm⟩
   · rename_i d
     unfold proposeDeal at h
     split at h

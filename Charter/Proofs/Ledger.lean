@@ -148,8 +148,8 @@ theorem body_ok {s s1 : State G} {e : Event} (hP : PiecesOk s) (hO : OffersOk s)
       exact ⟨Posted.refl rfl rfl, hP, hO, hD⟩
   | propose seat b =>
     simp only [seatOf] at hs
-    obtain ⟨_, _, ⟨_, _, _, b, hb, rfl⟩ | ⟨_, _, _, _, rfl⟩⟩ := proposeBody_ok h
-    · exact ⟨⟨_, rfl, hb, bundleEntries_ok (a := .player seat) (b := .bank) hs trivial _ _⟩, hP, hO, hD⟩
+    obtain ⟨_, _, ⟨_, _, _, rfl⟩ | ⟨_, _, _, _, rfl⟩⟩ := proposeBody_ok h
+    · exact ⟨Posted.refl rfl rfl, hP, hO, hD⟩
     · exact ⟨Posted.refl rfl rfl, hP, hO, hD⟩
   | vote seat i y =>
     obtain ⟨_, _, _, _, _, _, ⟨_, rfl⟩ | ⟨_, rfl⟩⟩ := voteBody_ok h
