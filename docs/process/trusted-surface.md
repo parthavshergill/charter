@@ -6,7 +6,7 @@ To print the list for yourself:
 
     lake env lean --run scripts/spec_surface.lean --list
 
-The script stops at `Charter.Engine`. The engine is the code the theorems are about, so a reader does not need to trust its body. It also leaves out what Lean generates, such as structure fields and match helpers. For a pair of functions defined together, such as `Effect.plan` and `Effect.planAll`, it lists only the second, because Lean compiles the first into it.
+The script stops at `Charter.Engine`. The engine is the code the theorems are about, so the script does not list its body. It also leaves out what Lean generates, such as structure fields and match helpers. For a pair of functions defined together, such as `Effect.plan` and `Effect.planAll`, it lists only the second, because Lean compiles the first into it.
 
 ## Size
 
@@ -121,9 +121,9 @@ All ten commandments rest on the same 134 definitions: the data types of a game,
 
 ### Comparator
 
-`bash scripts/comparator.sh` runs Lean's Comparator, `lake comparator`, inside its bubblewrap sandbox. Comparator needs Linux, so the script uses a Docker container. `make audit` and CI do not run it. It and `make audit` do not replace each other.
+`bash scripts/comparator.sh` runs Lean's Comparator, `lake comparator`, inside its bubblewrap sandbox. Comparator needs Linux, so the script uses a Docker container. CI runs it on each pull request that can change a theorem. `make audit` does not run it, and neither replaces the other.
 
-Comparator accepted 22 theorems, which `comparator.json` lists: the ten commandments, the six supporting promises, and the six witnesses in `Charter/Proofs/Witness.lean` and `Charter/Proofs/IslandWitness.lean`. With `--paranoid`, the five other checkers that ship with Lean accepted them too. A later change needs a new run.
+Comparator accepted 22 theorems, which `comparator.json` lists: the ten commandments, the six supporting promises, and the six witnesses in `Charter/Proofs/Witness.lean` and `Charter/Proofs/IslandWitness.lean`. With `--paranoid`, the five other checkers that ship with Lean accepted them too. CI does not use `--paranoid`, so that was a run by hand, and a later change needs a new one.
 
 For those theorems, Comparator checks three things:
 

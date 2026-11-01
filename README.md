@@ -57,7 +57,7 @@ The kicker, for those who care, is that the game is written in Lean. There are t
 - **The constitution.** Read the [theorems](Charter/Constitution.lean) and the definitions they use. That's about 2,900 lines, and they are the part that matters.
 - **Lean itself.** It checks the proofs.
 
-You don't have to trust the engine, because the theorems are about its code. Nothing proves the server, the screen or the clerk's drafting. CI checks the proofs on every pull request, and the main theorems pass Comparator, including its `--paranoid` kernels.
+Nothing proves the server, the screen or the clerk's drafting. CI checks the proofs on every pull request, and it runs Comparator on the main theorems when a change can affect them. A run by hand with Comparator's `--paranoid` kernels passed too.
 
 [The full list](docs/process/trusted-surface.md) has the fine print.
 
