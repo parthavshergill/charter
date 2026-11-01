@@ -252,12 +252,20 @@ def _train(run, train_args="", seconds=600, move_rows=False, patch=True, encoder
     stop = threading.Event()
 
     def write_metas():
+        # Also commit the volume every 5 minutes, so the log and checkpoints survive if the job dies.
+        n = 0
         while not stop.wait(60):
             for dp, _, fs in os.walk(ckpt_dir):
                 for f in fs:
                     c = os.path.join(dp, f)
                     if f.endswith(".bin") and not os.path.exists(c + ".json"):
                         json.dump(meta_for(c), open(c + ".json", "w"))
+            n += 1
+            if n % 5 == 0:
+                try:
+                    vol.commit()
+                except Exception as e:  # noqa: BLE001
+                    print(f"[commit] {e}", flush=True)
     threading.Thread(target=write_metas, daemon=True).start()
     if not built:
         sh("ln -sf /usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1 /usr/lib/x86_64-linux-gnu/libnvidia-ml.so; "
