@@ -359,6 +359,7 @@ def draftJson (g : Game) (book : Describe.Book) (you : Nat) (job : Formalize.Job
       [("outcome", "ready"), ("viaClaude", toJson viaClaude), ("review", reviewJson g book you formal diff)]
     | some (.refused why) => [("outcome", "refused"), ("reason", why)]
     | some (.failed msg) => [("outcome", "failed"), ("reason", msg)]
+    | some (.strike msg) => [("outcome", "failed"), ("reason", msg), ("strike", toJson true)]
     | some .cancelled => [("outcome", "cancelled")]
   Json.mkObj (base ++ final)
 

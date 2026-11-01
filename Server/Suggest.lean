@@ -227,11 +227,10 @@ def run (job : Job) (cfg : Settings) (current : IO (Option Game)) (talk : List T
     (notes : List Clerk.Note) : IO Unit := do
   let finish (f : Final) : IO Unit :=
     touch job fun st => { st with stage := "done", final := some f }
-  let some key := cfg.key
-    | finish (.failed "This server has no API key, so the clerk cannot suggest a rule. Set ANTHROPIC_API_KEY in .env, or write your own rule.")
+  let some key := cfg.key | strike job "this server has no API key"
   let system ← try IO.FS.readFile cfg.promptPath catch _ => pure ""
   if system.isEmpty then
-    finish (.failed "The clerk's instructions are missing from this server.")
+    strike job s!"the instructions are missing: {cfg.promptPath}"
     return
   let some g ← current | finish (.failed "The game is gone.")
   let some s := g.state | finish (.failed "The game has not started.")
@@ -248,13 +247,13 @@ def run (job : Job) (cfg : Settings) (current : IO (Option Game)) (talk : List T
     touch job fun st => { st with stage := "sent", attempt := n, text := "", thinking := "",
                                   retryReason := retry.map (·.2) }
     let body := requestBody cfg system (message g s job.seat talk notes retry)
-    let outcome ← runRequest job (curlConfig cfg key body) cfg.model
+    let outcome ← requestRetrying job (curlConfig cfg key body) cfg.model
     addSpent job
     if ← job.cancelled.get then
       finish .cancelled
       return
-    if let some msg := failureOf outcome true then
-      finish (.failed msg)
+    if let some f := finalOf outcome true then
+      finish f
       return
     let text := (← job.state.get).text
     let reply := parseReply text

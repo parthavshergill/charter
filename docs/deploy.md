@@ -66,7 +66,9 @@ Each request is priced by the model it went to. The first four prices are the li
 
 **The budgets are estimates.** The server multiplies the tokens the API reports by these prices, so a real bill can differ. A request already running can pass a budget by a little. A day is a UTC day. The server's total survives a restart. The per-address figures do not, so a restart resets them.
 
-When a budget is reached the game keeps playing. The clerk says it is resting, Claude seats pass their turns, and people can still write formal text themselves. No description call is made, so a new law shows its rule source with a short note.
+When a budget is reached the game keeps playing. The clerk says it is on strike until tomorrow, Claude seats pass their turns, and people can still write formal text themselves. No description call is made, so a new law shows its rule source with a short note.
+
+Any other problem on our side reads the same way to players: a bad or missing key, a billing problem, a rate limit or an overload that outlasts three tries, a lost connection, missing instructions, or an error nobody expected. They see that the clerk is on strike, and no key, status code or file name. The server's log has the reason.
 
 There are no accounts, so an IP address stands for a person, and friends sharing a connection share a budget. The server keeps only a salted hash of each address, in memory, and never logs it. A table's Claude spending counts against the last address to ask for Claude at that table.
 

@@ -394,17 +394,6 @@ def userMessage (sit : Situation) (book : Describe.Book) (talk : Array Talk.Line
 
 /-! ## Calling the API -/
 
-/-- Can asking again help? -/
-def retryable (o : Formalize.Outcome) : Bool :=
-  o.resting.isNone && (
-  [28, 6, 7, 35, 52, 55, 56].contains o.exitCode.toNat ||
-  (match o.http with
-   | some c => c == 408 || c == 409 || c == 429 || c ≥ 500
-   | none => o.exitCode == 0) ||
-  (match o.apiErrorType with
-   | some t => t == "rate_limit_error" || t == "overloaded_error" || t == "api_error"
-   | none => false))
-
 /-- The API refused the key, the model or the request. Asking again cannot help. -/
 def hopeless (o : Formalize.Outcome) : Bool :=
   o.http == some 401 || o.http == some 403 || o.http == some 404 ||
@@ -485,7 +474,7 @@ def request (ctx : Ctx) (code : String) (seat : Nat) (what : String) (body : Jso
         return .error msg
       -- If the timer stopped this request, the seat's turn is over. Asking again cannot help it.
       if ← job.cancelled.get then return .error "the timer ended this turn"
-      if !retryable outcome then return .error msg
+      if !Formalize.retryable outcome then return .error msg
       addUsage ctx code fun u => { u with retries := u.retries + 1 }
       let backoff := min 60000 (1000 * 2 ^ tries)
       let wait := match outcome.retryAfter.bind String.toNat? with
@@ -579,7 +568,7 @@ def runDraft (ctx : Ctx) (code : String) (seat : Nat) (words : String) : IO Unit
         | none => ""
       (s!"The clerk wrote this rule. What binds is the rule itself: {review}{dtext}{preview}\nTo put it before the table, use propose_draft.", some text, "ready")
     | some (.refused why) => (s!"The clerk could not write this as a rule. It said: {why}", none, "refused")
-    | some (.failed why) => (s!"The clerk could not be reached: {why}", none, "failed")
+    | some (.failed why) | some (.strike why) => (why, none, "failed")
     | some .cancelled => ("The draft was cancelled.", none, "cancelled")
     | none => ("The clerk took too long.", none, "failed")
   modifyMind ctx code seat fun m =>
@@ -591,7 +580,7 @@ def runDraft (ctx : Ctx) (code : String) (seat : Nat) (words : String) : IO Unit
     | some (.ready _ d _) => toJson d
     | _ => Json.null
   let why := match st.final with
-    | some (.refused w) | some (.failed w) => toJson w
+    | some (.refused w) | some (.failed w) | some (.strike w) => toJson w
     | _ => Json.null
   seatNote ctx code <| Json.mkObj
     [ ("k", "draft"), ("seat", toJson seat), ("event", toJson g.events), ("words", words), ("outcome", outcome)

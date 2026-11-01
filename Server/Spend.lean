@@ -18,8 +18,8 @@ the API any other way.
 The cost of a request is an estimate: the tokens the API reports, times the prices of the model it went
 to. The check runs
 before a request and the charge comes after it, so requests already running can pass a budget by a
-little. When a budget is reached the game goes on, Claude seats pass their turns, and the clerk says
-that it is resting.
+little. When a budget is reached the game goes on, Claude seats pass their turns, and the clerk goes on
+strike until the next day.
 
 The server total and the count of new tables are written to a small log in the data folder, so the
 mirror keeps them through a sleep. The per-IP figures are in memory, and a restart loses them.
@@ -169,19 +169,25 @@ def keyOf (ipHeader : Option String) : IO UInt64 := do
 def setPayer (table : String) (ip : UInt64) : IO Unit :=
   countersRef.modify fun c => { c with payer := c.payer.insert table ip }
 
-/-- Why Claude must not be called for this table now, in words for the table. `none` means go ahead. -/
-def resting? (table : String) : IO (Option String) := do
+/-- What a player reads while a budget is used up. -/
+def restingWords : String :=
+  "The clerk is on strike until tomorrow! Sorry, that's on us. Claude seats will pass, but the rest of the game still works, and you can write a rule in formal text."
+
+/-- Which budget stops Claude being called for this table now, for the server's log. `none` means go
+ahead. The address is not named. -/
+def whyResting (table : String) : IO (Option String) := do
   let s ← settingsRef.get
   if !s.enabled then return none
   fresh
   let c ← countersRef.get
-  let rest := "The game goes on. Claude seats pass their turns, and you can still write the formal text yourself."
-  if c.total ≥ s.daily then
-    return some s!"The clerk is resting until tomorrow. This server has used its Claude budget for today. {rest}"
+  if c.total ≥ s.daily then return some "the server's budget for today is used up"
   if let some ip := c.payer.get? table then
-    if c.byIp.getD ip 0 ≥ s.perIp then
-      return some s!"The clerk is resting until tomorrow. This connection has used its Claude budget for today. {rest}"
+    if c.byIp.getD ip 0 ≥ s.perIp then return some "one address's budget for today is used up"
   return none
+
+/-- What the table reads if Claude must not be called for it now. `none` means go ahead. -/
+def resting? (table : String) : IO (Option String) := do
+  return (← whyResting table).map fun _ => restingWords
 
 /-- Count what a finished request cost, at the prices of the model it went to. -/
 def charge (table model : String) (input cacheRead cacheWrite output : Nat) : IO Unit := do
