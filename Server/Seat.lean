@@ -215,11 +215,11 @@ def requestBody (st : SeatSettings) (model : String) (rules persona user : Strin
     , ("system", Json.arr #[cached rules, cached persona])
     , ("messages", Json.arr #[Json.mkObj [("role", "user"), ("content", user)]]) ]
 
-/-- A law for the prompt: its source, which is what binds, and then Claude's description, if it has one. -/
+/-- A law for the prompt: its source, which is what binds, and then its description, if it has one. -/
 def lawForSeat (book : Describe.Book) (L : Law) : String :=
   let source := s!"Rule source, the binding text: {Rules.printProposal (.law L)}"
   match Describe.textOf book L with
-  | some text => s!"{source} Claude's description, which does not bind: {text}"
+  | some (who, text) => s!"{source} {who}, which does not bind: {text}"
   | none => source
 
 /-- A proposal, for the prompt. -/
@@ -558,7 +558,7 @@ def runDraft (ctx : Ctx) (code : String) (seat : Nat) (words : String) : IO Unit
       let dtext := match diff with
         | some d => s!"\nThe clerk says this differs from what you asked: {d}"
         | none => ""
-      (s!"The clerk wrote this rule. As the game reads it: {review}{dtext}{preview}\nTo put it before the table, use propose_draft.", some text, "ready")
+      (s!"The clerk wrote this rule. What binds is the rule itself: {review}{dtext}{preview}\nTo put it before the table, use propose_draft.", some text, "ready")
     | some (.refused why) => (s!"The clerk could not write this as a rule. It said: {why}", none, "refused")
     | some (.failed why) => (s!"The clerk could not be reached: {why}", none, "failed")
     | some .cancelled => ("The draft was cancelled.", none, "cancelled")

@@ -364,9 +364,12 @@ def remember (ctx : Ctx) (code : String) (job : Formalize.Job) : IO Unit := do
 
 /-! ## Descriptions of laws -/
 
-/-- What is known about the descriptions of this table's laws. -/
+/-- What is known about the descriptions of this table's laws, with its pack's own words. -/
 def bookOf (ctx : Ctx) (code : String) : IO Describe.Book := do
-  return (← ctx.descriptions.get).getD code {}
+  let book := (← ctx.descriptions.get).getD code {}
+  match ← findEntry ctx code with
+  | some e => return Describe.withPack e.game.spec book
+  | none => return book
 
 private def setDescription (ctx : Ctx) (code key : String) (st : Describe.Status) : IO Unit :=
   ctx.descriptions.modify fun all => all.insert code ((all.getD code {}).insert key st)
@@ -386,6 +389,7 @@ def startDescription (ctx : Ctx) (code formal : String) : IO Unit := do
   let some e ← findEntry ctx code | return
   let .ok (.law L) := e.game.parse formal | return
   let key := Describe.lawKey L
+  if (Describe.packWords e.game.spec).any (·.1 == key) then return
   let isNew ← ctx.descriptions.modifyGet fun all =>
     let book := all.getD code {}
     match book.get? key with

@@ -1,6 +1,7 @@
 import Charter.Games.Island
 import Charter.Games.Belt
 import Charter.Games.NotCatan
+import Charter.Games.NotCatanWords
 import Charter.Scene.OfState
 import Charter.Scene.Belt
 
@@ -25,6 +26,8 @@ A pack is one new file and one entry here, and nothing else changes:
 2. Import it here, write a `GameSpec` below, and add that to `gameSpecs`. The lobby, the seats, the log,
    replay and the scene all read from that list. Import the file in `Charter.lean` too, so that
    `make audit` builds it.
+3. If the pack has founding laws, write what they do in plain words, as in
+   `Charter/Games/NotCatanWords.lean`, and put them in `foundingWords`.
 
 A pack's name and sentence are what a player reads when choosing it, so keep the sentence short and
 plain. `Server/PreviewCheck.lean` plays every pack with bots, and `ServerTests.lean` checks its layout.
@@ -52,6 +55,9 @@ structure GameSpec where
   samples : Bool := false
   /-- What a Claude seat or the clerk needs to know about this game and the screen does not say. -/
   guide : String := ""
+  /-- What the pack says its founding laws do: the law, the start of its fingerprint, and the words. See
+  `Describe.packWords`. Laws of a pack with none of these show their source with a short note. -/
+  foundingWords : List (Law × String × String) := []
   /-- A line for the chronicle when the dice show this number. -/
   rollNotes : List (Nat × String) := []
   /-- What it means while the treasury holds a counter, for the mark by the dice. -/
@@ -94,6 +100,7 @@ def notCatanSpec : GameSpec :=
     maxSeats := 4
     samples := true
     guide := "Two of this game's resources are not goods. Alarm is a counter: a roll of 7 pays it to every settlement and city, and the first founding law moves it straight to the treasury. So a treasury holding alarm means a 7 came up this round. It empties at the round's end. A roll of 7 pays no goods. Laurel pays for a wreath: there are laurels for only two wreaths in the game. Laws can read alarm in the treasury, and a harvest of alarm, so a law can react to a 7 this way."
+    foundingWords := Games.NotCatan.foundingWords
     rollNotes := [(7, alarmNote)]
     upNote := alarmNote }
 

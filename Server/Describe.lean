@@ -100,6 +100,8 @@ inductive Status where
   /-- The call is running. -/
   | writing
   | ready (text : String)
+  /-- A pack's own words about one of its founding laws, and the pack's name. -/
+  | pack (name text : String)
   /-- The call was refused, failed or came back with nothing to show. -/
   | failed
   deriving BEq
@@ -112,18 +114,41 @@ def json (book : Book) (L : Law) : Json :=
   match book.get? (lawKey L) with
   | some .writing => Json.mkObj [("status", "writing")]
   | some (.ready text) => Json.mkObj [("status", "ready"), ("text", text)]
+  | some (.pack name text) => Json.mkObj [("status", "pack"), ("text", text), ("pack", name)]
   | some .failed => Json.mkObj [("status", "failed")]
   | none => Json.mkObj [("status", "none")]
 
-/-- The words of a description, if the law has one. -/
-def textOf (book : Book) (L : Law) : Option String :=
+/-- Who wrote the description of a law and what it says, if the law has one. -/
+def textOf (book : Book) (L : Law) : Option (String × String) :=
   match book.get? (lawKey L) with
-  | some (.ready text) => some text
+  | some (.ready text) => some ("Claude's description", text)
+  | some (.pack name text) => some (s!"The description from the pack {name}", text)
   | _ => none
 
 /-- How many descriptions have finished, whichever way, so that a page knows when to ask again. -/
 def finished (book : Book) : Nat :=
   book.fold (fun n _ st => if st == .writing then n else n + 1) 0
+
+/-! ## A pack's own words -/
+
+/-- A pack's words, by the key of the law they belong to. An entry counts only if its fingerprint is the
+start of its law's key, so words written for an older version of a law never show. -/
+def packWords (spec : GameSpec) : List (String × String) :=
+  spec.foundingWords.filterMap fun (L, fingerprint, text) =>
+    let key := lawKey L
+    if !fingerprint.isEmpty && key.startsWith fingerprint then some (key, text) else none
+
+/-- The book of a table, with its pack's words on top. -/
+def withPack (spec : GameSpec) (book : Book) : Book :=
+  (packWords spec).foldl (fun b (key, text) => b.insert key (.pack spec.name text)) book
+
+/-- What is wrong with a pack's words: a founding law with none, or words for an older law. Each line
+says what to put in the entry. -/
+def packProblems (spec : GameSpec) : List String :=
+  let fresh := packWords spec
+  (spec.G.foundingLaws.filterMap fun L =>
+    if fresh.any (·.1 == lawKey L) then none
+    else some s!"Read the words for \"{L.title}\" again. Its fingerprint is {(lawKey L).take 8}.")
 
 /-! ## The clerk log -/
 

@@ -359,7 +359,7 @@ def start (g : Game) : Except String Game :=
     if h : minSeats ≤ room.filled ∧ room.filled ≤ maxSeats ∧ g.nonces ≠ [] then
       let names := ", ".intercalate ((List.range room.filled).map g.nameOf)
       let founded := g.spec.G.foundingLaws.map fun L =>
-        ({ event := g.events, actor := none, text := s!"In force from the founding: {Text.lawLine L}", kind := "law", major := true } : Line)
+        ({ event := g.events, actor := none, text := s!"In force from the founding: \"{L.title}\".", kind := "law", major := true } : Line)
       .ok { g with
         room := room
         live := some ⟨initialState g.spec.G room.filled g.serverSeed g.nonces, .start _ _ _ h.1 h.2.1 h.2.2⟩
