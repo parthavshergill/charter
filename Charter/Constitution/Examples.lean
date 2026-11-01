@@ -1,4 +1,5 @@
 import Charter.Constitution
+import Charter.Constitution.Supporting
 import Charter.Games.Tiny
 import Charter.Proofs.Witness
 import Charter.Proofs.Replay
@@ -22,6 +23,8 @@ These show that the promises are not empty:
   move or vote.
 * A law can take a seat's newest piece, at a round's end or on a roll, and never its last.
 * A decree fires once, the moment its law passes, and it names no actor.
+* A bank trade and a setup placement run on real games, with every hypothesis of
+  `bank_trades_and_setup_are_exact` met. A bank trade or a setup placement can end the game.
 * The promises reject bad steps. Each `..._is_rejected` theorem shows a named part of a commandment
   saying no to a forged step. Next to most is an `example` of the honest step, which it allows.
 
@@ -1221,6 +1224,357 @@ theorem an_unearned_end_is_rejected :
 /-- A founding law cannot end the game. -/
 theorem a_founding_end_is_invalid : ¬ ({ tinySettlers with foundingLaws := [callIt] } : GameDef).Valid := by
   decide +kernel
+
+/-! ## Bank trades and setup placements
+
+`bank_trades_and_setup_are_exact` runs on real games with every hypothesis met, and its named parts say
+no to bad steps. The rejected states are built by hand, like those above. -/
+
+/-- A step after these events from a new game is accepted, and this holds of it. -/
+def stepPasses {G : GameDef} (seats : Nat) (serverSeed : UInt64) (nonces : List UInt64)
+    (events : List Event) (e : Event) (P : State G → State G → Prop)
+    [∀ s s', Decidable (P s s')] : Bool :=
+  match Engine.replay G seats serverSeed nonces events with
+  | .error _ => false
+  | .ok s =>
+    match Engine.step G s e with
+    | .error _ => false
+    | .ok s' => decide (P s s')
+
+/-- If `stepPasses` says so, a reachable state really takes that step. -/
+theorem real_tested_step {G : GameDef} (hG : G.Valid) {seats : Nat} {serverSeed : UInt64}
+    {nonces : List UInt64} {events : List Event} {e : Event} {P : State G → State G → Prop}
+    [∀ s s', Decidable (P s s')] (h1 : minSeats ≤ seats) (h2 : seats ≤ maxSeats)
+    (hc : stepPasses seats serverSeed nonces events e P = true) :
+    ∃ s s', Reachable G s ∧ Engine.step G s e = .ok s' ∧ P s s' := by
+  unfold stepPasses at hc
+  split at hc
+  · cases hc
+  · rename_i s hr
+    split at hc
+    · cases hc
+    · rename_i s' hs
+      exact ⟨s, s', ((X_what_you_vote_on_is_what_runs G hG).1 s).mpr
+        ⟨seats, serverSeed, nonces, events, h1, h2, hr⟩, hs, of_decide_eq_true hc⟩
+
+/-- Tiny Settlers with `rollerGift`, so the seats hold grain early. -/
+def tradeGame : GameDef :=
+  { tinySettlers with
+    name := "Trade"
+    diceCount := 2
+    diceSides := 6
+    foundingLaws := [rollerGift] }
+
+theorem tradeGame_valid : tradeGame.Valid := by decide +kernel
+
+/-- A real bank trade, with every hypothesis met. It is seat 1's turn and it holds 5 grain. It pays the rate
+of 4 grain and gets 1 timber. -/
+theorem a_bank_trade_is_exact :
+    ∃ s s', Reachable tradeGame s ∧
+      Engine.step tradeGame s (.move 1 (.bankTrade "grain" "timber")) = .ok s' ∧
+      BankTradeIsAllowed s 1 "grain" "timber" ∧
+      BankTradeIsExact s s' 1 "grain" "timber" ∧
+      s'.phase = .actions ∧
+      newEntries s s' = [⟨.player 1, .bank, "grain", 4, .trade⟩, ⟨.bank, .player 1, "timber", 1, .trade⟩] ∧
+      s.balance (.player 1) "grain" = 5 ∧ s'.balance (.player 1) "grain" = 1 ∧
+      s.balance (.player 1) "timber" = 0 ∧ s'.balance (.player 1) "timber" = 1 := by
+  obtain ⟨s, s', hr, hstep, hP⟩ := real_tested_step
+    (G := tradeGame) (P := fun s s' => s'.phase = .actions ∧
+      newEntries s s' = [⟨.player 1, .bank, "grain", 4, .trade⟩, ⟨.bank, .player 1, "timber", 1, .trade⟩] ∧
+      s.balance (.player 1) "grain" = 5 ∧ s'.balance (.player 1) "grain" = 1 ∧
+      s.balance (.player 1) "timber" = 0 ∧ s'.balance (.player 1) "timber" = 1)
+    (seats := 2) (serverSeed := 42) (nonces := [2]) (events := List.replicate 5 .forceEndTurn)
+    (e := .move 1 (.bankTrade "grain" "timber"))
+    tradeGame_valid (by decide) (by decide) (by decide +kernel)
+  obtain ⟨_, htrade, _⟩ := bank_trades_and_setup_are_exact tradeGame tradeGame_valid s hr 1
+  exact ⟨s, s', hr, hstep, (htrade _ _).1.mp ⟨s', hstep⟩, (htrade _ _).2 s' hstep, hP⟩
+
+/-- Timber is worth a point. -/
+def timberCounts : Law := { title := "Timber counts", clauses := [.setWorth "timber" 1] }
+
+/-- `tradeGame`, where 1 timber reaches the target. -/
+def timberRace : GameDef :=
+  { tradeGame with
+    name := "Timber race"
+    targetPoints := 1
+    foundingLaws := [rollerGift, timberCounts] }
+
+theorem timberRace_valid : timberRace.Valid := by decide +kernel
+
+/-- Seats 0 and 1 sign a deal, and seat 1 puts down 1 grain. -/
+def smallDeal : Deal :=
+  { title := "Pact", signers := [0, 1], rounds := 1, exitNotice := 0
+    deposits := [(1, "grain", 1)], terms := [] }
+
+/-- A real bank trade that ends the game, with a deal running. The timber puts seat 1 at the target. So the
+deal refunds its 1 grain after the trade, and that grain is seat 1's. Seat 1 had 4 grain, paid 4 and got 1 back. -/
+theorem a_bank_trade_can_end_the_game :
+    ∃ s s', Reachable timberRace s ∧
+      Engine.step timberRace s (.move 1 (.bankTrade "grain" "timber")) = .ok s' ∧
+      BankTradeIsExact s s' 1 "grain" "timber" ∧
+      s'.phase = .ended ∧ s'.winner = some 1 ∧
+      newEntries s s' =
+        [⟨.player 1, .bank, "grain", 4, .trade⟩, ⟨.bank, .player 1, "timber", 1, .trade⟩,
+         ⟨.deposit 0 1, .player 1, "grain", 1, .refund⟩] ∧
+      refundsTo s 1 "grain" = 1 ∧
+      s.balance (.player 1) "grain" = 4 ∧ s'.balance (.player 1) "grain" = 1 := by
+  obtain ⟨s, s', hr, hstep, hP⟩ := real_tested_step
+    (G := timberRace) (P := fun s s' => s'.phase = .ended ∧ s'.winner = some 1 ∧
+      newEntries s s' =
+        [⟨.player 1, .bank, "grain", 4, .trade⟩, ⟨.bank, .player 1, "timber", 1, .trade⟩,
+         ⟨.deposit 0 1, .player 1, "grain", 1, .refund⟩] ∧
+      refundsTo s 1 "grain" = 1 ∧
+      s.balance (.player 1) "grain" = 4 ∧ s'.balance (.player 1) "grain" = 1)
+    (seats := 2) (serverSeed := 42) (nonces := [2])
+    (events := List.replicate 5 .forceEndTurn ++ [.propose 1 (.deal smallDeal), .sign 0 2, .sign 1 2])
+    (e := .move 1 (.bankTrade "grain" "timber"))
+    timberRace_valid (by decide) (by decide) (by decide +kernel)
+  obtain ⟨_, htrade, _⟩ := bank_trades_and_setup_are_exact timberRace timberRace_valid s hr 1
+  exact ⟨s, s', hr, hstep, (htrade _ _).2 s' hstep, hP⟩
+
+/-- A real setup placement, with every hypothesis met. Seat 0 places its first settlement. The piece is on
+the board, no entry is written, and the turn stays with seat 0, which has now used 1 action. -/
+theorem a_setup_placement_is_exact :
+    ∃ s s', Reachable tinySettlers s ∧ s.phase = .setup ∧
+      Engine.step tinySettlers s (.move 0 (.place "settlement" (.spot 0))) = .ok s' ∧
+      SetupPlacementIsAllowed s 0 "settlement" (.spot 0) ∧
+      SetupPlacementIsExact s s' 0 "settlement" (.spot 0) ∧
+      s'.phase = .setup ∧ s'.pieces = [⟨0, "settlement", .spot 0⟩] ∧ newEntries s s' = [] ∧
+      s'.actionsThisTurn 0 = 1 ∧ s'.turnIndex = 0 := by
+  obtain ⟨s, s', hr, hstep, hP⟩ := real_tested_step
+    (G := tinySettlers) (P := fun s s' => s.phase = .setup ∧ s'.phase = .setup ∧
+      s'.pieces = [⟨0, "settlement", .spot 0⟩] ∧ newEntries s s' = [] ∧
+      s'.actionsThisTurn 0 = 1 ∧ s'.turnIndex = 0)
+    (seats := 2) (serverSeed := 42) (nonces := [25283273]) (events := [])
+    (e := .move 0 (.place "settlement" (.spot 0)))
+    tinySettlers_valid (by decide) (by decide) (by decide +kernel)
+  obtain ⟨_, _, hsetup⟩ := bank_trades_and_setup_are_exact tinySettlers tinySettlers_valid s hr 0
+  have hph := hP.1
+  exact ⟨s, s', hr, hph, hstep, (hsetup _ _ hph).1.mp ⟨s', hstep⟩, (hsetup _ _ hph).2 s' hstep, hP.2⟩
+
+/-- Tiny Settlers with a target of 1 point. -/
+def quickGame : GameDef := { tinySettlers with name := "Quick", targetPoints := 1 }
+
+theorem quickGame_valid : quickGame.Valid := by decide +kernel
+
+/-- A setup placement can end the game: the first settlement reaches this game's target. It still writes no
+entries. -/
+theorem a_setup_placement_can_end_the_game :
+    ∃ s s', Reachable quickGame s ∧ s.phase = .setup ∧
+      Engine.step quickGame s (.move 0 (.place "settlement" (.spot 0))) = .ok s' ∧
+      SetupPlacementIsExact s s' 0 "settlement" (.spot 0) ∧
+      s'.phase = .ended ∧ s'.winner = some 0 ∧ newEntries s s' = [] := by
+  obtain ⟨s, s', hr, hstep, hP⟩ := real_tested_step
+    (G := quickGame) (P := fun s s' => s.phase = .setup ∧ s'.phase = .ended ∧ s'.winner = some 0 ∧
+      newEntries s s' = [])
+    (seats := 2) (serverSeed := 42) (nonces := [25283273]) (events := [])
+    (e := .move 0 (.place "settlement" (.spot 0)))
+    quickGame_valid (by decide) (by decide) (by decide +kernel)
+  obtain ⟨_, _, hsetup⟩ := bank_trades_and_setup_are_exact quickGame quickGame_valid s hr 0
+  exact ⟨s, s', hr, hP.1, hstep, (hsetup _ _ hP.1).2 s' hstep, hP.2⟩
+
+/-- Tiny Settlers whose setup list has a settlement and then a city. -/
+def upgradeSetup : GameDef :=
+  { tinySettlers with name := "Upgrade setup", setupPieces := ["settlement", "city"] }
+
+theorem upgradeSetup_valid : upgradeSetup.Valid := by decide +kernel
+
+/-- The one exception to "the old pieces plus the new one". A game can list an upgrade in setup, and the
+upgrade replaces the piece under it. -/
+theorem a_setup_upgrade_replaces_its_piece :
+    ∃ s s', Reachable upgradeSetup s ∧ s.phase = .setup ∧
+      Engine.step upgradeSetup s (.move 0 (.place "city" (.spot 0))) = .ok s' ∧
+      SetupPlacementIsExact s s' 0 "city" (.spot 0) ∧
+      s.pieces = [⟨0, "settlement", .spot 0⟩] ∧ s'.pieces = [⟨0, "city", .spot 0⟩] := by
+  obtain ⟨s, s', hr, hstep, hP⟩ := real_tested_step
+    (G := upgradeSetup) (P := fun s s' => s.phase = .setup ∧
+      s.pieces = [⟨0, "settlement", .spot 0⟩] ∧ s'.pieces = [⟨0, "city", .spot 0⟩])
+    (seats := 2) (serverSeed := 42) (nonces := [25283273])
+    (events := [.move 0 (.place "settlement" (.spot 0))])
+    (e := .move 0 (.place "city" (.spot 0)))
+    upgradeSetup_valid (by decide) (by decide) (by decide +kernel)
+  obtain ⟨_, _, hsetup⟩ := bank_trades_and_setup_are_exact upgradeSetup upgradeSetup_valid s hr 0
+  exact ⟨s, s', hr, hP.1, hstep, (hsetup _ _ hP.1).2 s' hstep, hP.2⟩
+
+/-- A game in the actions phase. It is seat 0's turn, seat 0 holds 5 grain, and the bank holds the rest. -/
+def bankGame : State tinySettlers :=
+  { sampleGame with
+    books := fun a r => match a, r with
+      | .player 0, "grain" => 5
+      | .bank, _ => 24
+      | _, _ => 0 }
+
+/-- `bankGame` after a step that writes these entries, posts them and counts the action. -/
+def afterTrade (es : List Entry) : State tinySettlers :=
+  { bankGame with
+    books := (bankGame.books.postAll es).getD bankGame.books
+    journal := es
+    actionsThisTurn := countsAfter bankGame 0
+    eventsApplied := 1 }
+
+/-- Seat 0's trade of grain for brick, at this rate, for this much brick. -/
+def tradeAt (rate paid : Nat) : List Entry :=
+  [⟨.player 0, .bank, "grain", rate, .trade⟩, ⟨.bank, .player 0, "brick", paid, .trade⟩]
+
+theorem afterTrade_goes_on (es : List Entry) : (afterTrade es).phase ≠ .ended := by
+  simp [afterTrade, bankGame, sampleGame, initialState]
+
+example : bankGame.bankTradeEntries 0 "grain" "brick" = tradeAt 4 1 := by decide +kernel
+
+/-- The honest step is allowed: seat 0 pays 4 grain and gets 1 brick. -/
+example : BankTradeIsExact bankGame (afterTrade (tradeAt 4 1)) 0 "grain" "brick" := by
+  refine ⟨rfl, fun _ => ⟨?_, ?_, ?_, rfl⟩, fun h => absurd h (afterTrade_goes_on _)⟩ <;> decide +kernel
+
+/-- A bank trade takes the seat's goods and gives nothing back. This is the bug the promise is for. -/
+theorem a_trade_that_pays_nothing_back_is_rejected :
+    ¬ BankTradeIsExact bankGame (afterTrade [⟨.player 0, .bank, "grain", 4, .trade⟩]) 0 "grain" "brick" :=
+  fun h => absurd (h.2.1 (afterTrade_goes_on _)).1 (by decide +kernel)
+
+/-- The entries are right, but the seat's balance does not gain the brick. -/
+theorem a_trade_that_only_writes_it_down_is_rejected :
+    ¬ BankTradeIsExact bankGame { afterTrade (tradeAt 4 1) with books := bankGame.books } 0 "grain" "brick" :=
+  fun h => absurd (h.2.1 (by simp [afterTrade, bankGame, sampleGame, initialState])).2.2.1 (by decide +kernel)
+
+/-- A trade at a better rate than the rules say. -/
+theorem a_trade_at_the_wrong_rate_is_rejected :
+    ¬ BankTradeIsExact bankGame (afterTrade (tradeAt 3 1)) 0 "grain" "brick" :=
+  fun h => absurd (h.2.1 (afterTrade_goes_on _)).1 (by decide +kernel)
+
+/-- The bank pays out 2 for the price of 1. -/
+theorem a_trade_that_pays_too_much_is_rejected :
+    ¬ BankTradeIsExact bankGame (afterTrade (tradeAt 4 2)) 0 "grain" "brick" :=
+  fun h => absurd (h.2.1 (afterTrade_goes_on _)).1 (by decide +kernel)
+
+/-- A trade that also gives the seat a piece. -/
+theorem a_trade_that_adds_a_piece_is_rejected :
+    ¬ BankTradeIsExact bankGame
+      { afterTrade (tradeAt 4 1) with pieces := [⟨0, "settlement", .spot 0⟩] } 0 "grain" "brick" :=
+  fun h => absurd h.1 (by decide +kernel)
+
+/-- A trade that also ends the turn. -/
+theorem a_trade_that_moves_the_turn_is_rejected :
+    ¬ BankTradeIsExact bankGame { afterTrade (tradeAt 4 1) with turnIndex := 1 } 0 "grain" "brick" :=
+  fun h => by
+    have := congrArg State.turnIndex (h.2.1 (by simp [afterTrade, bankGame, sampleGame, initialState])).2.2.2
+    exact absurd this (by decide +kernel)
+
+/-- Seat 0 can make that trade. -/
+example : BankTradeIsAllowed bankGame 0 "grain" "brick" := by
+  unfold BankTradeIsAllowed
+  decide +kernel
+
+/-- It is not seat 1's turn. -/
+example : ¬ BankTradeIsAllowed bankGame 1 "grain" "brick" := by
+  unfold BankTradeIsAllowed
+  decide +kernel
+
+/-- A seat cannot trade a resource for itself. -/
+example : ¬ BankTradeIsAllowed bankGame 0 "grain" "grain" := by
+  unfold BankTradeIsAllowed
+  decide +kernel
+
+/-- There is no such resource as gold. -/
+example : ¬ BankTradeIsAllowed bankGame 0 "grain" "gold" := by
+  unfold BankTradeIsAllowed
+  decide +kernel
+
+/-- Seat 0 holds no brick, so it cannot pay the rate in brick. -/
+example : ¬ BankTradeIsAllowed bankGame 0 "brick" "grain" := by
+  unfold BankTradeIsAllowed
+  decide +kernel
+
+/-- The bank has no brick left to pay. -/
+example : ¬ BankTradeIsAllowed
+    ({ bankGame with books := fun a r => match a, r with
+        | .player 0, "grain" => 5
+        | _, _ => 0 } : State tinySettlers) 0 "grain" "brick" := by
+  unfold BankTradeIsAllowed
+  decide +kernel
+
+/-- A new game, in setup. -/
+def setupGame : State tinySettlers := initialState tinySettlers 2 42 [25283273]
+
+/-- `setupGame` after seat 0 places its first settlement at spot 0. -/
+def afterSetup : State tinySettlers :=
+  { setupGame with
+    pieces := setupGame.placedPieces 0 "settlement" (.spot 0)
+    actionsThisTurn := countsAfter setupGame 0
+    eventsApplied := 1 }
+
+theorem afterSetup_goes_on : afterSetup.phase ≠ .ended := by
+  simp [afterSetup, setupGame, initialState]
+
+/-- The honest step is allowed. -/
+example : SetupPlacementIsExact setupGame afterSetup 0 "settlement" (.spot 0) :=
+  ⟨rfl, fun _ => rfl, by decide +kernel, rfl, fun _ => rfl, fun h => absurd h afterSetup_goes_on⟩
+
+/-- A setup placement that charges for the piece. -/
+theorem a_charged_setup_piece_is_rejected :
+    ¬ SetupPlacementIsExact setupGame
+      { afterSetup with journal := [⟨.player 0, .bank, "grain", 1, .cost⟩] } 0 "settlement" (.spot 0) :=
+  fun h => absurd h.2.2.1 (by decide +kernel)
+
+/-- A setup placement that moves resources without writing them down. -/
+theorem a_silent_setup_payment_is_rejected :
+    ¬ SetupPlacementIsExact setupGame
+      { afterSetup with books := fun _ _ => 0 } 0 "settlement" (.spot 0) :=
+  fun h => absurd (congrFun (congrFun h.2.2.2.1 .bank) "grain") (by decide +kernel)
+
+/-- A setup placement that adds a second piece as well. -/
+theorem an_extra_setup_piece_is_rejected :
+    ¬ SetupPlacementIsExact setupGame
+      { afterSetup with pieces := [⟨0, "settlement", .spot 0⟩, ⟨0, "road", .link (0, 1)⟩] }
+      0 "settlement" (.spot 0) :=
+  fun h => absurd h.1 (by decide +kernel)
+
+/-- A setup placement that does not count the action, so the seat could place the same piece again. -/
+theorem an_uncounted_setup_piece_is_rejected :
+    ¬ SetupPlacementIsExact setupGame
+      { afterSetup with actionsThisTurn := fun _ => 0 } 0 "settlement" (.spot 0) :=
+  fun h => by
+    have := congrArg State.actionsThisTurn (h.2.2.2.2.1 (by simp [afterSetup, setupGame, initialState]))
+    exact absurd (congrFun this 0) (by decide +kernel)
+
+/-- A setup placement that also ends the turn. -/
+theorem a_setup_piece_that_moves_the_turn_is_rejected :
+    ¬ SetupPlacementIsExact setupGame { afterSetup with turnIndex := 1 } 0 "settlement" (.spot 0) :=
+  fun h => by
+    have := congrArg State.turnIndex (h.2.2.2.2.1 (by simp [afterSetup, setupGame, initialState]))
+    exact absurd this (by decide +kernel)
+
+/-- On a state in setup, `SetupPlacementIsAllowed` says yes where the engine's own check does. So the examples
+below can compute their answers. -/
+theorem setupAllowed_iff (s : State tinySettlers) (hPhase : s.phase = .setup) (p : Seat) (k : PieceKind)
+    (loc : Loc) : SetupPlacementIsAllowed s p k loc ↔ s.canSetupPlace p k loc = true :=
+  (Proofs.canSetupPlace_iff s hPhase p k loc).symm
+
+/-- Seat 0 can place its first settlement anywhere empty. -/
+example : SetupPlacementIsAllowed setupGame 0 "settlement" (.spot 0) :=
+  (setupAllowed_iff _ rfl _ _ _).mpr (by decide +kernel)
+
+/-- It is not seat 1's turn. -/
+example : ¬ SetupPlacementIsAllowed setupGame 1 "settlement" (.spot 0) :=
+  fun h => absurd ((setupAllowed_iff _ rfl _ _ _).mp h) (by decide +kernel)
+
+/-- The next piece on the setup list is a settlement, not a road. -/
+example : ¬ SetupPlacementIsAllowed setupGame 0 "road" (.link (0, 1)) :=
+  fun h => absurd ((setupAllowed_iff _ rfl _ _ _).mp h) (by decide +kernel)
+
+/-- There is no spot 99. -/
+example : ¬ SetupPlacementIsAllowed setupGame 0 "settlement" (.spot 99) :=
+  fun h => absurd ((setupAllowed_iff _ rfl _ _ _).mp h) (by decide +kernel)
+
+/-- Spot 1 is one link from a piece at spot 0. -/
+example : ¬ SetupPlacementIsAllowed
+    ({ setupGame with pieces := [⟨1, "settlement", .spot 0⟩] } : State tinySettlers)
+    0 "settlement" (.spot 1) :=
+  fun h => absurd ((setupAllowed_iff _ rfl _ _ _).mp h) (by decide +kernel)
+
+/-- A road needs a link that reaches one of the seat's own pieces, even in setup. -/
+example : ¬ SetupPlacementIsAllowed
+    ({ setupGame with actionsThisTurn := fun _ => 1 } : State tinySettlers)
+    0 "road" (.link (0, 1)) :=
+  fun h => absurd ((setupAllowed_iff _ rfl _ _ _).mp h) (by decide +kernel)
 
 /-- The conditions the theorems assume can be met: this new game is reachable. -/
 example : Reachable tinySettlers (initialState tinySettlers 2 42 [25283273]) :=
