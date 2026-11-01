@@ -78,7 +78,11 @@ for part in ["Charter.lean", "lakefile.toml", "lake-manifest.json", "lean-toolch
 image = image.run_commands(
     f"cd {REPO} && lake build CharterRL.Capi charter-rl-check charter-rl-logs 2>&1 | tail -3",
     f"cd {REPO} && rl/env/build.sh 2>&1 | tail -2",
-).add_local_dir(HERE, SRC, ignore=IGNORE + ["lean/**"])
+)
+# The torch CPU wheel, only for behaviour cloning (rl/imitation), so the training image stays as it was.
+bc_image = image.pip_install("torch==2.5.1", index_url="https://download.pytorch.org/whl/cpu").add_local_dir(
+    HERE, SRC, ignore=IGNORE + ["lean/**"])
+image = image.add_local_dir(HERE, SRC, ignore=IGNORE + ["lean/**"])
 
 app = modal.App(APP, image=image)
 vol = modal.Volume.from_name("charter-rl", create_if_missing=True)
@@ -301,6 +305,27 @@ def evaluate(subjects: list, out: str, games: int = 200, quick: bool = False, op
     return {"exit": code, "report": open(f"{out}/report.md").read() if os.path.exists(f"{out}/report.md") else text[-4000:]}
 
 
+@app.function(image=bc_image, cpu=8, memory=32768, timeout=3600, volumes={VOL: vol})
+def bc(out: str, games: int = 2000, args: str = ""):
+    """Imitation of `hand` (rl/imitation): collect `games` games in 8 processes, then clone into a flat policy."""
+    vol.reload()
+    os.makedirs(out, exist_ok=True)
+    data = f"{out}/hand.npz"
+    if not os.path.exists(data):
+        per = games // 8
+        code, text = sh(f"cd {SRC}/.. && for i in 0 1 2 3 4 5 6 7; do python3 rl/imitation/collect.py --games {per} "
+                        f"--seed $((i + 11)) --out /tmp/part$i.npz & done; wait; ls -la /tmp/part*.npz")
+        import numpy as np
+        parts = [np.load(f"/tmp/part{i}.npz") for i in range(8)]
+        z = {k: np.concatenate([p[k] for p in parts]) for k in parts[0].files}
+        z["game"] = np.concatenate([p["game"] + i * per for i, p in enumerate(parts)])
+        np.savez(data, **z)
+        print(f"{len(z['action'])} decisions", flush=True)
+    code, text = sh(f"cd {SRC}/.. && python3 rl/imitation/bc.py {data} --out {out}/bc.bin {args}")
+    vol.commit()
+    return text[-3000:]
+
+
 @app.function(cpu=1, memory=1024, timeout=600, volumes={VOL: vol})
 def keep(ckpt: str, dest: str):
     """Copy a checkpoint, its meta, and its run's args and logs to `dest`, never overwriting what is there."""
@@ -394,6 +419,9 @@ def main(action: str = "test", run: str = "smoke", minutes: float = 10, max_doll
         r = evaluate_.remote([s if s in bots or s.startswith("/") else f"{VOL}/{s}" for s in subs],
                             f"{VOL}/{run}/{eval_name}", games, quick, opponents, logs)
         print(r["report"])
+    elif action == "bc":
+        total = guard(max_dollars, None, 8, 32, 3600)
+        print(bc.with_options(timeout=total).remote(f"{VOL}/{run}", games, train_args))
     elif action == "keep":
         print(keep.remote(subjects if subjects.startswith("/") else f"{VOL}/{subjects}", f"{VOL}/{NAME}/keep/{out}"))
     else:
