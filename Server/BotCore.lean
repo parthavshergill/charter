@@ -257,6 +257,19 @@ def setupPlaces (ctx : Ctx G) (s : State G) (p : Nat) : List Move :=
 
 /-! ## Choosing a move -/
 
+/-- The pieces that this seat's kept points can pay for: attached pieces it can still add, whose cost
+includes goods worth points, and that are worth more points than those goods. -/
+def pointBuys (s : State G) (p : Nat) : List PieceDef :=
+  let R := s.rules
+  R.pieces.filter fun d =>
+    match d.placement with
+    | .attach k =>
+      let spent := bundleWorth R d.cost
+      decide (0 < spent) && decide (spent < d.points) && decide (s.countOf p d.name < d.limit) &&
+        let done_ := spotsOfKind s p d.name
+        (spotsOfKind s p k).any fun v => !done_.contains v
+    | _ => false
+
 /-- A bank trade toward paying `cost`, if trades can cover all of it. `ok` says which moves can happen. The
 seat gives none of a good that `keep` picks. -/
 def tradeToward (s : State G) (p : Nat) (cost : Bundle) (ok : Move → Bool)
@@ -292,7 +305,8 @@ def setupFrom (ctx : Ctx G) (s : State G) (moves : List Move) (ok : Move → Boo
     | none => .endTurn
 
 /-- The move on a bot's turn: an upgrade, a new piece on a spot, a law-made piece, a road if it reaches no
-free site, then a bank trade toward its next build, then end. -/
+free site, then a bank trade (first toward a piece that its kept points pay for, then toward its next
+build), then end. -/
 def actionMove (ctx : Ctx G) (s : State G) (p : Nat) : Move := Id.run do
   let spotOf (m : Move) : Int := match m with
     | .place _ (.spot v) => spotValue ctx v
@@ -317,6 +331,8 @@ def actionMove (ctx : Ctx G) (s : State G) (p : Nat) : Move := Id.run do
   let trade (d : PieceDef) :=
     let cost := s.costOf d.name
     tradeToward s p cost (isLegal s p) (keeps R cost (piecePoints s d.name) R.bankRate)
+  for d in pointBuys s p do
+    if let some m := trade d then return m
   if let some (d, old) := upgradePiece G then
     if s.countOf p old > 0 && (s.rules.piece? d.name).isSome then
       if let some m := trade d then return m
