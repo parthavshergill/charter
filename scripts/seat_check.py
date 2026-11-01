@@ -227,7 +227,7 @@ def main():
         check("tool_choice" not in first and "temperature" not in first, "a seat's request sends no forced tool choice and no sampling settings")
         check(first["output_config"]["format"]["type"] == "json_schema", "a seat answers in a fixed form")
         names = [x.get("properties", {}).get("action", {}).get("const") for x in first["output_config"]["format"]["schema"]["properties"]["actions"]["items"]["anyOf"]]
-        check(len(names) == 12 and "end_turn" in names and "draft" in names, "the form lists every action")
+        check(len(names) == 13 and "end_turn" in names and "draft" in names and "declare" in names, "the form lists every action")
         first_keys = lambda x: sorted(x["properties"])[0]
         check(all(first_keys(x) == "action" for x in first["output_config"]["format"]["schema"]["properties"]["actions"]["items"]["anyOf"]),
               "the field that names an action comes first in every action")

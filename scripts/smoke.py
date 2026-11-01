@@ -435,12 +435,12 @@ REFUSED_LAWS = [
     ('(law "x" (on-round-end (for-each-player true (transfer each each grain 1))))', "moves nothing"),
     ('(law "x" (on-round-end (transfer bank treasury grain (/ 4 0))))', "divide by zero"),
     ('(law "x" (set-bank-rate 3) (set-bank-rate 5))', "same rule twice"),
-    ('(law "x" (on-round-end (for-each-player true ' + "(transfer bank each grain 1) " * 22 + ')))', "too many payments"),
+    ('(law "x" (on-round-end (for-each-player true ' + "(transfer bank each grain 1) " * 45 + ')))', "too many payments"),
     ('(law "x" (on-roll (transfer each treasury grain 1)))', "does not exist where this rule runs"),
     ('(law "x" (on-roll (transfer actor treasury res 1)))', "does not exist where this rule runs"),
     ('(law "x" (on-roll (transfer bank bank grain 1)))', "moves nothing"),
     ('(law "x" (on-roll (transfer bank treasury grain (/ rolled 0))))', "divide by zero"),
-    ('(law "x" (on-roll (for-each-player true ' + "(transfer bank each grain 1) " * 22 + ')))', "too many payments"),
+    ('(law "x" (on-roll (for-each-player true ' + "(transfer bank each grain 1) " * 45 + ')))', "too many payments"),
 ]
 
 
