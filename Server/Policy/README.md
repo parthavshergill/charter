@@ -60,5 +60,7 @@ when the server starts.
   resets and turn starts, under the file's state rule), plays every world in the Library to its end at 2, 4 and 6
   seats (where the world allows) with the policy in every seat, and plays a table of policy bots on every world
   through the real server over HTTP (`scripts/policy_server_check.py`).
-- `.lake/build/bin/charter-policy-check WEIGHTS N --vs-hand`: one policy seat against current bots, N games per
-  world. Prints win rate, target wins against round-limit wins, and points.
+- `.lake/build/bin/charter-policy-check WEIGHTS N --vs-hand [--logs DIR]`: one policy seat against current bots, N
+  games per world, the policy's seat moving round the table. Prints win rate, target wins against round-limit wins,
+  and points. `--logs` writes a summary of the first 4 games of each world to read: what each seat built, points by
+  round, and the policy's builds and bank trades in order. Games are fixed by their seed, so they can be replayed.

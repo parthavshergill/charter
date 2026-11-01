@@ -35,11 +35,15 @@ structure Result where
   decisionNs : Nat
   /-- Turn decisions where a zero recurrent state would have chosen another move than the carried one. -/
   stateDiffers : Nat := 0
+  /-- Every committed event as (round, its JSON), when kept. -/
+  log : Array (Nat × Json) := #[]
+  /-- Each seat's points at the end of each round, when kept. -/
+  roundPoints : Array (Nat × List Nat) := #[]
   error : Option String
 
 /-- Play one game. `policySeats` play by `net`; the others by the current bot. -/
 def playOne (net : Net) (spec : GameSpec) (seats seed : Nat) (policySeats : List Nat)
-    (record : Option IO.FS.Handle := none) : IO Result := do
+    (record : Option IO.FS.Handle := none) (keepLog : Bool := false) : IO Result := do
   let base : Result := { game := spec.id, seats, policySeats, ended := false, winner := none, byTarget := false
                          points := [], rounds := 0, decisions := 0, decisionNs := 0, error := none }
   let .ok g0 := PreviewCheck.newTable spec seats seed | return { base with error := some "the table did not start" }
@@ -48,6 +52,9 @@ def playOne (net : Net) (spec : GameSpec) (seats seed : Nat) (policySeats : List
   let mut ns := 0
   let mut err : Option String := none
   let mut mem : Memory := {}
+  let mut log : Array (Nat × Json) := #[]
+  let mut roundPoints : Array (Nat × List Nat) := #[]
+  let mut lastRound := 0
   let mut lastTurn : Option Nat := none
   if let some h := record then h.putStrLn "reset"
   let mut differs := 0
@@ -83,6 +90,11 @@ def playOne (net : Net) (spec : GameSpec) (seats seed : Nat) (policySeats : List
     if err.isSome then break
     match (merged lists).find? fun ev => (apply g ev).toOption.isSome with
     | some ev =>
+      if keepLog then
+        if s.round != lastRound then
+          roundPoints := roundPoints.push (lastRound, (List.range seats).map s.pointsOf)
+          lastRound := s.round
+        log := log.push (s.round, ev)
       if policySeats.any (s.currentSeat == some ·) then mem := mem.after net g ev
       match apply g ev with
       | .ok g' => g := g'
@@ -98,7 +110,8 @@ def playOne (net : Net) (spec : GameSpec) (seats seed : Nat) (policySeats : List
     | none => false
   let err2 := if err.isNone && !ended then some "the game did not end within the step cap" else err
   return { base with ended, winner := s.winner, byTarget, points, rounds := s.round, decisions, decisionNs := ns
-                     stateDiffers := differs
+                     stateDiffers := differs, log
+                     roundPoints := if keepLog then roundPoints.push (s.round, points) else roundPoints
                      error := err2 }
 
 /-- One line about a game. -/
@@ -110,9 +123,36 @@ def Result.line (r : Result) : String :=
   s!"{r.game}, {r.seats} seats, policy {r.policySeats}: {if r.ended then "ended" else "NOT ENDED"} in round {r.rounds}; {who}; points {r.points}; {r.decisions} policy turn decisions, {ms} ms each; zero state would differ on {r.stateDiffers}" ++
     (match r.error with | some e => s!"; ERROR: {e}" | none => "")
 
+/-- A short account of one game, to read: what each seat did, points by round, and the policy's builds and bank
+trades in order. -/
+def Result.summary (r : Result) : String := Id.run do
+  let me := r.policySeats.headD 0
+  let who (p : Nat) := if r.policySeats.contains p then s!"seat {p} (policy)" else s!"seat {p} (current bot)"
+  let mut out := s!"# {r.game}, {r.seats} seats, policy in seat {me}\n\n{r.line}\n\n## Moves by seat\n\n"
+  for p in List.range r.seats do
+    let mine := r.log.filter fun (_, ev) => jNat ev "seat" == some p && jStr ev "t" == some "move"
+    let kinds := mine.filterMap fun (_, ev) => (jField ev "move").bind fun m =>
+      if jStr m "t" == some "place" then jStr m "kind" else none
+    let count (t : String) := (mine.filter fun (_, ev) => ((jField ev "move").bind (jStr · "t")) == some t).size
+    let byKind := (kinds.toList.eraseDups.map fun k => s!"{(kinds.filter (· == k)).size} {k}")
+    out := out ++ s!"- {who p}: built {", ".intercalate byKind}; {count "bankTrade"} bank trades, {count "declare"} declarations, {count "endTurn"} end turns, {count "accept"} accepted offers\n"
+  out := out ++ "\n## Points at the end of each round\n\n"
+  for (rd, pts) in r.roundPoints do
+    out := out ++ s!"- round {rd}: {pts}\n"
+  out := out ++ s!"\n## Seat {me}'s builds and bank trades, in order\n\n"
+  for (rd, ev) in r.log do
+    if jNat ev "seat" == some me then
+      if let some m := jField ev "move" then
+        match jStr m "t" with
+        | some "place" => out := out ++ s!"- round {rd}: built {(jStr m "kind").getD "?"}\n"
+        | some "bankTrade" => out := out ++ s!"- round {rd}: bank trade {(jStr m "give").getD "?"} for {(jStr m "get").getD "?"}\n"
+        | some "declare" => out := out ++ s!"- round {rd}: declared {(jStr m "res").getD "?"} {(jNat m "n").getD 0}\n"
+        | _ => pure ()
+  return out
+
 def main (args : List String) : IO UInt32 := do
   let some path := args.head? | do
-    IO.eprintln "usage: charter-policy-check WEIGHTS [GAMES] [--vs-hand] [--record OBS.txt]"
+    IO.eprintln "usage: charter-policy-check WEIGHTS [GAMES] [--vs-hand] [--record OBS.txt] [--logs DIR]"
     return 2
   let net ← match ← loadNet path with
     | .ok n => pure n
@@ -125,6 +165,9 @@ def main (args : List String) : IO UInt32 := do
     | _ :: p :: _ => some p
     | _ => none
   let record ← recordPath.mapM fun p => IO.FS.Handle.mk p .write
+  let logDir := match args.dropWhile (· != "--logs") with
+    | _ :: p :: _ => some p
+    | _ => none
   if !vsHand then
     for spec in gameSpecs do
       for seats in [2, 4, 6].filter fun n => spec.minSeats ≤ n && n ≤ spec.maxSeats do
@@ -141,7 +184,12 @@ def main (args : List String) : IO UInt32 := do
       let seats := min 4 spec.maxSeats
       let mut rs : List Result := []
       for i in [0:games] do
-        let r ← playOne net spec seats (5000 + i) [i % seats]
+        let keep := logDir.isSome && i < 4
+        let r ← playOne net spec seats (5000 + i) [i % seats] none keep
+        if keep then
+          if let some d := logDir then
+            IO.FS.createDirAll d
+            IO.FS.writeFile (System.FilePath.mk d / s!"{spec.id}-{i}.md") r.summary
         IO.println r.line
         (← IO.getStdout).flush
         rs := rs ++ [r]
