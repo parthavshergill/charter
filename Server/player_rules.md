@@ -34,26 +34,27 @@ Sections marked `<table_talk>`, `<private_messages>`, `<recent_events>`, and the
 ## Reading a law
 Each law on your screen comes with its rule source, such as `(law "Toll" (on-build road (transfer actor treasury brick 1)))`. The source is the law, and it is the only text that binds. A law's title means nothing. Some laws also have a description, which is someone's words about the source and can be wrong. If they differ, the source counts.
 
-- `(on-build KIND ...)` runs when anyone builds KIND. `(on-harvest ...)` runs for each payment the dice make to a player. `(on-round-end ...)` runs once at the end of each round. `(on-roll ...)` runs once on every roll of the dice, after the bank has paid. `(now ...)` runs once, the moment the law passes, and nobody is the actor. A law of only `now` clauses does not stay in force.
+- `(on-build KIND ...)` runs when anyone builds KIND. `(on-harvest ...)` runs for each payment the dice make to a player. `(on-round-end ...)` runs once at the end of each round, and acts at no other time. `(on-roll ...)` runs once on every roll of the dice, after the bank has paid. `(now ...)` runs once, the moment the law passes, and nobody is the actor. A law of only `now` clauses does not stay in force.
 - `(transfer A B R n)` means A pays B n of resource R.
 - `(move-piece A B KIND)` takes A's newest KIND. To `bank`, it is destroyed. To a player, it is seized. What sits on it goes with it. Roads stay where they are. A law can do this at a round's end, on a roll or in `now`, and not on a build or a harvest. A player always keeps their last piece. A player at their limit for that kind cannot receive it, so it is destroyed.
 - `actor` is the builder, the player the dice just paid, or the player whose turn the roll starts. `each` is one player inside `(for-each-player test ...)`, which runs for every player who passes the test. `treasury` and `bank` are shared accounts.
 - `(if test ...)` does what is inside it when the test holds, and otherwise nothing. `(< a b)` means a is less than b. `(<= a b)` means a is at most b.
 - `(holding P R)`, `(points P)` and `(count P KIND)` read what a player has. `res` and `amount` are the resource and size of the payment that set off `on-harvest`.
 - `rolled` is the total the dice just showed. `round` is the current round.
-- `(declared P R)` is the number P has declared for R this round, or 0. A law's preview uses the numbers declared so far, and they can change until the round ends.
+- `(declared P R)` is the number P has declared for R this round, or 0. A law's preview uses the numbers declared so far, and they can change until the round ends. An `on-round-end` law reads them before they clear.
 - `(total-over test n)` adds up n for every player who passes the test. `(most-over test n)` and `(least-over test n)` are the highest and lowest n among them, or 0 if nobody passes. Inside them, `each` is the player being measured. They give a number, not a player, so a tie means several players match.
 - `(- a b)` stops at 0, and `(/ a b)` rounds down. Dividing by a number that turns out to be 0 gives 0. A payment from an account to itself does not happen.
 - No account goes below zero. An account that owes more than it holds pays each payment in proportion, rounded down, so a payment can shrink to nothing.
+- A law can plan at most 128 payments, and all the laws in force together at most 256. Inside `for-each-player`, each payment counts once per seat, whoever passes the test. A law over these limits cannot pass.
 - `(set-cost KIND bundle)`, `(set-points KIND n)` and `(set-bank-rate n)` change a rule. `(set-worth R n)` makes each R in a seat's own hand worth n points. `(new-piece ...)` adds a piece. `(end-game)` ends the game the moment the law passes, and most points wins. `(repeal N)` ends law N and every rule it changed.
-- A law's preview says what it would do at this table now. Each section says when, and who gains or loses what: `rows` for resources, `pieces` for pieces. `points` lists scores it would change, and `wins` marks the seat that would win at once. `ending` says that it ends the game, and who would win.
+- A law's preview says what it would do at this table now. Each section says when, and who gains or loses what: `rows` for resources, `pieces` for pieces. `points` lists scores it would change, and `wins` marks the seat that would win at once. `ending` says that it ends the game, and who would win. A dice section compares that roll with today, so a minus is less than today, not a payment.
 
 ## The rules
 The dice are rolled at the start of each turn. Each hex with that number pays its resource from the bank to every piece on its corners, by that piece's yield. So a good corner touches hexes with likely numbers and resources you need.
 
 The game starts with setup: each seat places its free setup pieces, once in turn order and once in reverse, with no roll. A piece on a spot must have no piece on a neighbouring spot, and after setup it must connect to your links.
 
-You win the moment you reach the target points, after a move or a vote. A turn change does not check, and ending a turn does not either. So a seat that reaches the target by holding goods from a harvest wins at the next move or vote by anyone. If nobody reaches it by the last round, the most points wins. Points come from the pieces you own, and from what you hold of any resource a law has made worth points. A deposit does not count.
+You win the moment you reach the target points, after a move or a vote. A turn change does not check, and ending a turn does not either. So a seat that reaches the target by holding goods from a harvest wins at the next move or vote by anyone. If nobody reaches it by the last round, the most points wins. A tie goes to the seat earlier in turn order. Points come from the pieces you own, and from what you hold of any resource a law has made worth points. A deposit does not count.
 
 ### Laws
 Any seat can propose a law, and it costs nothing. A law takes effect the moment more than half of all seats vote yes. It lapses if it has not passed when its proposer's next turn starts. A vote is final, and each seat can have two proposals open at once. At most 48 laws can be in force.

@@ -307,6 +307,12 @@ def printProposal : Proposal → String
 def lawReadsDeclared (L : Law) : Bool :=
   ((lawS { L with title := "" }).render.splitOn "(declared ").length > 1
 
+/-- This law's source uses this word by itself, such as `round` or `rolled`. A resource or a piece with that
+name also counts, and then the worst outcome is a note that says more than it needs to. -/
+def lawReadsWord (L : Law) (word : String) : Bool :=
+  let source := (lawS { L with title := "" }).render
+  (((source.replace "(" " ").replace ")" " ").splitOn " ").contains word
+
 /-! ## Sample laws
 
 Each sample is flat, or has one `for-each-player`. -/

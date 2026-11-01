@@ -225,7 +225,7 @@ def extension_pack(srv):
         check(end["target"] == 10 and end["bankRate"] == 4, "the pack keeps its target and bank rate")
         check(end["bank"].get("timber", 0) + sum(s["hand"]["timber"] for s in end["seats"]) + end["treasury"].get("timber", 0) == 19, "19 timber are in the game, wherever they are")
         sevens = [l["text"] for l in end["chronicle"] if l["text"].endswith("rolled 7.")]
-        paid = [l["text"] for l in end["chronicle"] if l["text"].startswith("By law, on a 7,")]
+        paid = [l["text"] for l in end["chronicle"] if l["text"].startswith("By law") and ", on a 7," in l["text"]]
         check(len(sevens) > 0, f"bots saw {len(sevens)} sevens, and {len(paid)} of them cost a big hand")
     return code
 
@@ -499,6 +499,61 @@ def held(v, seat):
 
 
 @on_fresh_tables
+def griefer_findings_stay_fixed(srv):
+    """What a griefer table found hard to read: a law that waits, dice rows, a tie, a deal's end, an empty bank."""
+    code = srv.post("/api/games", {"seats": 3})["code"]
+    tokens = [srv.post(f"/api/games/{code}/join", {"name": n, "nonce": 7})["token"] for n in ("Mara", "Ada", "Grace")]
+    view = lambda i=0: srv.get(f"/api/games/{code}/view?token={tokens[i]}")
+    propose = lambda i, text: check(srv.post(f"/api/games/{code}/propose", {"token": tokens[i], "text": text})["ok"], f"seat {i} proposes {text[:32]}")
+    def preview(words):
+        return next(p["preview"] for p in view()["proposals"] if words in p["text"])
+    def pass_last():
+        pid = view()["proposals"][-1]["id"]
+        for i in range(2):
+            check(srv.post(f"/api/games/{code}/vote", {"token": tokens[i], "id": pid, "yes": True})["ok"], "a yes vote counts")
+    end_turn_until(srv, code, tokens, lambda v: v["phase"] == "actions")
+
+    propose(0, '(law "Late tax" (on-round-end (for-each-player (<= 50 round) (transfer each treasury grain 1))))')
+    sleeper = preview("Late tax")
+    check(not sleeper["nothing"] and any("may act later" in n for n in sleeper["notes"]), "a law that reads the round says it may act later")
+    propose(1, '(law "Stop now" (end-game))')
+    v = view()
+    points = [s["points"] for s in v["seats"]]
+    if points.count(max(points)) > 1:
+        check("earlier in turn order" in preview("Stop now")["ending"], "an ending decided by a tie says how")
+    propose(2, '(law "Roller gift" (on-roll (transfer bank actor grain 1)))')
+    check(all(s["when"].endswith(", compared with today") for s in preview("Roller gift")["sections"] if s["dice"]), "a dice section is worded as a comparison")
+    pid = next(p["id"] for p in view()["proposals"] if "Stop now" in p["text"])
+    check(srv.post(f"/api/games/{code}/vote", {"token": tokens[0], "id": pid, "yes": False})["ok"], "the end of the game is voted down")
+    check(srv.post(f"/api/games/{code}/vote", {"token": tokens[1], "id": pid, "yes": False})["ok"], "by a majority")
+
+    # The figures note comes only when a law's figures depend on declarations.
+    propose(1, '(law "Grain auction" (on-round-end (for-each-player (< 0 (declared each grain)) (transfer each treasury grain 1))))')
+    pass_last()
+    end_turn_until(srv, code, tokens, lambda v: any(1 <= s["hand"]["grain"] <= 3 for s in v["seats"]) and not v["proposals"])
+    propose(2, '(law "Bank rate" (set-bank-rate 3))')
+    check(not any("declarations" in n for n in preview("Bank rate")["notes"]), "a law with nothing to do with declarations has no such note")
+    propose(1, '(law "Grain levy" (on-round-end (for-each-player true (transfer each treasury grain 5))))')
+    check(any("declarations" in n for n in preview("Grain levy")["notes"]), "a law whose figures depend on declarations says so")
+    pass_last()
+
+    # A deal's end, and a roll the bank cannot pay.
+    propose(0, '(deal "Short" (signers 0 1) (rounds 1) (exit-notice 0) (deposits) (no-trade 0 1))')
+    pid = view()["proposals"][-1]["id"]
+    for i in (0, 1):
+        check(srv.post(f"/api/games/{code}/sign", {"token": tokens[i], "id": pid})["ok"], "a signer signs")
+    goods = " ".join(f"(transfer bank treasury {r} 1000)" for r in view()["resources"])
+    propose(2, f'(law "Empty bank" (now {goods}))')
+    pid = view()["proposals"][-1]["id"]
+    for i in range(2):
+        check(srv.post(f"/api/games/{code}/vote", {"token": tokens[i], "id": pid, "yes": True})["ok"], "a yes vote counts")
+    text = lambda v: [l["text"] for l in v["chronicle"]]
+    check(any(t.startswith('By law "Empty bank", the moment it passed,') for t in text(view())), "a decree's line names the law")
+    end_turn_until(srv, code, tokens, lambda v: any("the bank had no" in t for t in text(v)) and any(t == "The deal between Mara and Ada ended." for t in text(v)))
+    print("ok: the chronicle tells of a deal's end and of a roll the bank could not pay")
+
+
+@on_fresh_tables
 def a_roll_law_fires(srv):
     """Two people pass a law that pays the bank's grain on every roll, and it pays on the next one, to
     the seat whose turn that roll starts. The chronicle says so."""
@@ -526,8 +581,8 @@ def a_roll_law_fires(srv):
     roll = after["lastRoll"]
     name = ["Mara", "Ada"][b]
     article = "an" if roll in (8, 11) else "a"
-    check(f"By law, on {article} {roll}, the bank paid {name} 1 grain." in text, "the chronicle shows the law's payment, as one line")
-    check(any(l["major"] and l["text"].startswith("By law, on") for l in after["chronicle"][lines:]), "that line is one the screen tells")
+    check(f", on {article} {roll}, the bank paid {name} 1 grain." in text and "By law \"" in text, "the chronicle shows the law's payment, as one line, and names the law")
+    check(any(l["major"] and l["text"].startswith("By law \"") for l in after["chronicle"][lines:]), "that line is one the screen tells")
 
 
 @on_fresh_tables
@@ -718,6 +773,7 @@ def main():
         claude_table = claude_with_no_key(srv)
         talk_and_replay(srv, code, token, v)
         a_roll_law_fires(srv)
+        griefer_findings_stay_fixed(srv)
         table3 = refusals_and_embargo(srv)
         check(v["serverSeed"] is not None, "the seed is revealed at the end")
         check(srv.post(f"/api/games/{code}/move", {"token": token, "move": {"t": "endTurn"}})["ok"] is False, "nothing happens after the end")
