@@ -15,11 +15,15 @@
     "Charter.the_winner_earned_it",
     "Charter.limits_hold",
     "Charter.every_other_event_is_exact",
+    "Charter.bank_trades_and_setup_are_exact",
     "Charter.proposals_are_accepted",
     "Charter.deals_can_start",
     "Charter.Proofs.a_full_game_exists",
     "Charter.Proofs.a_full_space_game_exists",
-    "Charter.Proofs.a_founded_game_exists"
+    "Charter.Proofs.a_founded_game_exists",
+    "Charter.Proofs.a_full_island_game_exists",
+    "Charter.Proofs.island_starts_with_no_laws",
+    "Charter.Proofs.a_finished_island_game_can_happen"
   ],
   "permitted_axioms": [
     "propext",

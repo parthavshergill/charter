@@ -2,6 +2,7 @@
 -- The statements are copied from the source files. The proofs are left out on purpose.
 import Charter.Constitution.Promises
 import Charter.Games.Witnesses
+import Charter.Games.Island
 
 -- From Charter/Constitution.lean
 
@@ -160,6 +161,21 @@ theorem every_other_event_is_exact (G : GameDef) (hG : G.Valid) (s s' : State G)
     DeclarationsKept s s' e :=
   sorry
 
+theorem bank_trades_and_setup_are_exact (G : GameDef) (hG : G.Valid) (s : State G) (hs : Reachable G s)
+    (p : Seat) :
+    2 ≤ s.rules.bankRate ∧
+    (∀ give get,
+      ((∃ s', Engine.step G s (.move p (.bankTrade give get)) = .ok s') ↔
+        BankTradeIsAllowed s p give get) ∧
+      ∀ s', Engine.step G s (.move p (.bankTrade give get)) = .ok s' →
+        BankTradeIsExact s s' p give get) ∧
+    (∀ k loc, s.phase = .setup →
+      ((∃ s', Engine.step G s (.move p (.place k loc)) = .ok s') ↔
+        SetupPlacementIsAllowed s p k loc) ∧
+      ∀ s', Engine.step G s (.move p (.place k loc)) = .ok s' →
+        SetupPlacementIsExact s s' p k loc) :=
+  sorry
+
 theorem proposals_are_accepted (G : GameDef) (hG : G.Valid) (s : State G) (hs : Reachable G s)
     (seat : Seat) (hPhase : s.phase = .actions) (hSeat : seat ∈ s.turnOrder)
     (hActs : s.actionsThisTurn seat < maxActionsPerTurn)
@@ -215,6 +231,27 @@ theorem a_full_space_game_exists :
 theorem a_founded_game_exists :
     ∃ events s, Engine.replay tinyFounded 2 42 [25283273] events = .ok s ∧
       s.phase = .ended ∧ s.winner.isSome = true ∧ s.laws.map (·.1) = [0] :=
+  sorry
+
+end Charter.Proofs
+
+-- From Charter/Proofs/IslandWitness.lean
+
+namespace Charter.Proofs
+open Charter Charter.Engine Charter.Games.Island
+
+theorem a_full_island_game_exists :
+    ∃ events s, Engine.replay island 4 1 [1, 2, 3, 4] events = .ok s ∧
+      s.phase = .ended ∧ s.winner = some 2 ∧ s.turnOrder.map s.pointsOf = [9, 6, 10, 6] ∧
+      island.targetPoints ≤ s.pointsOf 2 ∧ s.round < island.rounds ∧ s.lawEnds = false ∧
+      s.laws.map (·.1) = [1] ∧ 1 ≤ s.dealsStarted :=
+  sorry
+
+theorem island_starts_with_no_laws : island.startingLaws = [] :=
+  sorry
+
+theorem a_finished_island_game_can_happen :
+    ∃ s, Reachable island s ∧ s.phase = .ended ∧ s.winner = some 2 ∧ s.laws ≠ [] :=
   sorry
 
 end Charter.Proofs
