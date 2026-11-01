@@ -237,7 +237,7 @@ This is a strengthening of V, because one reason money could leave a seat went a
 | `every_other_event_is_exact` | proposing a law makes exactly `lawFeeEntries G seat` | proposing a law makes `[]` |
 | `proposals_are_accepted` | accepted exactly when `lawProblems G s L = [] ∧ s.affords seat G.lawFee = true` | accepted exactly when `lawProblems G s L = []` |
 
-`a_ruined_seat_can_ask_for_a_repeal` plays this, and `charging_to_propose_is_rejected` rejects a charge. A saved game where a law was proposed no longer replays the same way, and only test tables exist. On start, the server leaves out such a log and says which one, as `docs/deploy.md` describes.
+`a_ruined_seat_can_ask_for_a_repeal` plays this, and `charging_to_propose_is_rejected` rejects a charge. A saved game where a law was proposed no longer replays the same way, and only test tables exist. On start, the server still loads such a log, and the proposer simply keeps what the fee took. If a later event in the log is now refused, the server leaves that one game out and says which, as `docs/deploy.md` describes, and other tables are not affected. A saved game with no law proposal replays exactly as before.
 
 ## What a resource is worth
 
@@ -274,7 +274,7 @@ V now says that what you own leaves you only for a stated reason. `PieceLeavesOn
 
 One statement gave way. `the_winner_earned_it` said that built points alone at the target end the game at once. A seat can now gain a piece at a turn change, which does not look for a winner. So that clause is gone, and the clause that holds is the one from the worth section: after a move or a vote, a seat at the target has ended the game. `every_other_event_is_exact` said that only placing a piece changes the pieces. It now says that about events that do not end the turn, and `PiecesKept` covers the rest.
 
-The preview and the chronicle say what a seat would lose or lost. The 3D board draws each piece from its owner, so a seized piece changes colour where it stands.
+The preview and the chronicle say what a seat would lose or lost. The 3D board draws each piece from its owner, so a seized piece should change colour where it stands. This was read from the code and not looked at in a browser.
 
 ## Decrees
 
