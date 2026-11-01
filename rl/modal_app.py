@@ -129,6 +129,8 @@ def build_puffer(move_rows=False, out="puffer", patch=True, encoder="flat"):
           else f"cd {PUFFER} && git checkout -q -- src"))
     lib = f"{REPO}/rl/build"
     extra = f"-L{lib} -lcharter_rl -Xlinker=-rpath -Xlinker={lib}" + (" -DCHARTER_MOVE_ROWS" if move_rows else "")
+    if os.environ.get("CHARTER_STALE_WAIT") == "1":  # waiting players keep their last observation (charter.h)
+        extra += " -DCHARTER_STALE_WAIT"
     if encoder != "flat":
         e = encoder_dir(encoder)
         if os.path.isdir(f"{e}/patches"):
@@ -173,6 +175,9 @@ def train(run: str, train_args: str = "", seconds: int = 600, move_rows: bool = 
     t0 = time.time()
     sh("ln -sf /usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1 /usr/lib/x86_64-linux-gnu/libnvidia-ml.so; "
        "nvidia-smi --query-gpu=name,driver_version --format=csv,noheader")
+    extra = json.loads(meta_extra) if meta_extra else {}  # rl/entity/puffer_build.sh reads these two
+    os.environ["CHARTER_ENTITY_DIM"], os.environ["CHARTER_POINTER"] = str(extra.get("entity_dim", 32)), str(extra.get("pointer", 0))
+    os.environ["CHARTER_STALE_WAIT"] = str(extra.get("stale_wait", 0))
     code, text = build_puffer(move_rows, patch=patch, encoder=encoder)
     if code != 0:
         return {"build": code, "tail": text[-2000:]}
@@ -210,6 +215,8 @@ def evaluate(subjects: list, out: str, games: int = 200, quick: bool = False, op
     """Run rl/eval on these subjects (`random`, `hand`, `champion`, or policy paths on the volume) and save the report,
     with `logs` saved games per table in `out/games/`."""
     vol.reload()
+    if "turnreset" in out:  # rl/reference/policy.py: reset the GRU state to its waiting fixed point after end turn
+        os.environ["CHARTER_TURN_RESET"] = "1"
     opp = f"--opponents {shlex.quote(opponents)}" if opponents else ""
     code, text = sh(f"cd {SRC}/.. && python3 rl/eval/eval.py {' '.join(map(shlex.quote, subjects))} --games {games} "
                     f"--jobs 8 --out {out} {'--quick' if quick else ''} {opp} --logs {logs}")
