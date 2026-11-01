@@ -10,11 +10,16 @@ open Std Async Std.Http Lean
 abbrev Req := Std.Http.Request Std.Http.Body.Stream
 abbrev Resp := Std.Http.Response Std.Http.Body.Any
 
+/-- A request header's value. -/
+def headerOf (req : Req) (name : String) : Option String := do
+  let n ← Header.Name.ofString? name
+  let v ← req.line.headers.get? n
+  return v.value
+
 def respond (status : Status) (ctype : String) (body : ByteArray)
     (headers : List (String × String) := []) : Async Resp := do
   let mut b := Response.new |>.status status |>.header! "Content-Type" ctype
     |>.header! "Cache-Control" "no-store"
-    |>.header! "Access-Control-Allow-Origin" "*"
   for (k, v) in headers do
     b := b.header! k v
   let r ← b.fromBytes body

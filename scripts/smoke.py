@@ -21,7 +21,7 @@ def free_port():
 
 class Server:
     def __init__(self, port, data, stderr=None, hold=0, turn_ms=None):
-        env = dict(os.environ, PORT=str(port), CHARTER_ROOT=ROOT, CHARTER_DATA=data, CHARTER_BOT_DELAY_MS="0", CHARTER_VOTE_HOLD_MS=str(hold),
+        env = dict(os.environ, PORT=str(port), CHARTER_ROOT=ROOT, CHARTER_LIST_GAMES="1", CHARTER_DATA=data, CHARTER_BOT_DELAY_MS="0", CHARTER_VOTE_HOLD_MS=str(hold),
                    ANTHROPIC_API_KEY="", CHARTER_ENV_FILE=os.path.join(data, "no-such-file"))
         if turn_ms is not None:
             env["CHARTER_TURN_MS"] = str(turn_ms)

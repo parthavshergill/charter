@@ -1,0 +1,19 @@
+# Secrets and local data must never reach an image.
+.env
+.env.*
+*.env
+data
+results
+.git
+.claude
+.venv
+**/.lake
+**/node_modules
+**/.wrangler
+cloudflare
+docs
+scripts
+ServerTests.lean
+ServerTests
+Dockerfile
+.dockerignore

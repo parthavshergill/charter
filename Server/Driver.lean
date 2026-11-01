@@ -16,6 +16,10 @@ and the time limit has not passed, no other seat acts at all. So a law cannot pa
 has voted, and it cannot lapse while they read it. This changes when events are sent, and it changes
 no rule. A table with no people, or a limit of 0, does not wait.
 
+**Pausing.** A table whose people have all gone away waits for them: see `isPaused`. No seat acts and
+no clock runs, and the turn in progress gets a whole new deadline when someone returns. If even one
+person is there the table is not paused, and the timer ends the turn of a seat that is idle.
+
 **The turn timer.** Each turn has a deadline, kept by the server, and only `timerLoop` sends
 `forceEndTurn`. No client can send it. So "the timer ended the turn" in the chronicle is true, and a
 rival cannot end your turn. Commandment IX says the timer can always end a turn, and
@@ -93,7 +97,7 @@ def toInterview (ctx : Ctx) (code : String) (g : Game) : IO (List Nat) := do
 
 /-- Is there anything for the driver to do at this table? -/
 def hasWork (ctx : Ctx) (code : String) (g : Game) : IO Bool := do
-  if (← ctx.stopped.get).contains code then return false
+  if ← isPaused ctx code g then return false
   let some s := g.state | return false
   if s.phase == .ended then return !(← toInterview ctx code g).isEmpty
   if !(← heldLaws ctx code g).isEmpty then return true
@@ -169,50 +173,51 @@ def askTurnSeat (ctx : Ctx) (code : String) (seat : Nat) : IO Unit := do
 partial def driverLoop (ctx : Ctx) (code : String) : IO Unit := do
   let some e ← findEntry ctx code | return
   let g := e.game
-  if (← ctx.stopped.get).contains code then
-    ctx.table.atomically do ctx.botRunning.modify (·.erase code)
-    return
   let again : IO Unit := driverLoop ctx code
-  match g.state with
-  | none => pure ()
-  | some s =>
-    if s.phase == .ended then
-      let seats ← toInterview ctx code g
-      if !seats.isEmpty then
-        let tasks ← seats.mapM fun seat => IO.asTask (prio := .dedicated) (Seat.interview ctx code seat)
-        for t in tasks do discard <| IO.wait t
+  -- A paused table falls through to the check at the end. That check takes the lock, as `kickBots`
+  -- does, so a person who returns just as this thread stops still gets a driver.
+  if !(← isPaused ctx code g) then
+    match g.state with
+    | none => pure ()
+    | some s =>
+      if s.phase == .ended then
+        let seats ← toInterview ctx code g
+        if !seats.isEmpty then
+          let tasks ← seats.mapM fun seat => IO.asTask (prio := .dedicated) (Seat.interview ctx code seat)
+          for t in tasks do discard <| IO.wait t
+          return ← again
+      else if !(← heldLaws ctx code g).isEmpty then
+        IO.sleep 100
         return ← again
-    else if !(← heldLaws ctx code g).isEmpty then
-      IO.sleep 100
-      return ← again
-    else
-      let rule := nextRuleEvent g
-      let commitRule : IO Bool := do
-        if ctx.botDelayMs > 0 then
-          IO.sleep (ctx.botDelayMs * pauseSteps rule).toUInt32
-        let r ← commitRaw ctx code fun e => match nextRuleEvent e.game with
-          | some ev => .ok ev
-          | none => .error "no bot move"
-        return r.isOk
-      match rule with
-      | some ev =>
-        if isReaction ev then
-          if ← commitRule then return ← again
-      | none => pure ()
-      let seats ← reactors ctx code g
-      if !seats.isEmpty then
-        askTogether ctx code seats
-        return ← again
-      match rule with
-      | some _ =>
-        if ← commitRule then return ← again
-      | none =>
-        match s.currentSeat with
-        | some p =>
-          if g.isClaude p then
-            askTurnSeat ctx code p
-            return ← again
+      else
+        let rule := nextRuleEvent g
+        let commitRule : IO Bool := do
+          if ctx.botDelayMs > 0 then
+            IO.sleep (ctx.botDelayMs * pauseSteps rule).toUInt32
+          if ← isPaused ctx code g then return false
+          let r ← commitRaw ctx code fun e => match nextRuleEvent e.game with
+            | some ev => .ok ev
+            | none => .error "no bot move"
+          return r.isOk
+        match rule with
+        | some ev =>
+          if isReaction ev then
+            if ← commitRule then return ← again
         | none => pure ()
+        let seats ← reactors ctx code g
+        if !seats.isEmpty then
+          askTogether ctx code seats
+          return ← again
+        match rule with
+        | some _ =>
+          if ← commitRule then return ← again
+        | none =>
+          match s.currentSeat with
+          | some p =>
+            if g.isClaude p then
+              askTurnSeat ctx code p
+              return ← again
+          | none => pure ()
   let stop ← ctx.table.atomically do
     let more ← match (← get).get? code with
       | some e => hasWork ctx code e.game
@@ -236,6 +241,33 @@ def kickBots (ctx : Ctx) (code : String) : IO Unit := do
       catch err =>
         IO.eprintln s!"[{code}] driver: {err}"
         ctx.table.atomically do ctx.botRunning.modify (·.erase code)
+
+/-! ## People coming and going -/
+
+/-- One of this table's people has a page open. If they were away, the table plays again, and its
+spending counts against them. -/
+def markPresent (ctx : Ctx) (code : String) (g : Game) (ip : IO UInt64) : IO Unit := do
+  let paused ← isPaused ctx code g
+  ctx.lastHuman.modify (·.insert code (← IO.monoMsNow))
+  if paused then
+    Spend.setPayer code (← ip)
+    ctx.stopped.modify (·.erase code)
+    kickBots ctx code
+
+/-- Waking up must not start spending, so a table with Claude seats waits to be visited. A table with
+people waits for one of them, and a table with none waits for anyone watching: see the `view` route.
+Other tables with people wait too, because nobody has been at them since this server started, and
+`isPaused` says so. A game that is over gets no interview: that belongs to the session it ended in, and
+nobody may be there to read it. -/
+def holdClaudeTables (ctx : Ctx) : IO Unit := do
+  let tables ← ctx.table.atomically do return (← get).toList
+  for (code, e) in tables do
+    if e.game.claudeSeats.isEmpty then continue
+    if e.game.state.any (·.phase == .ended) then
+      for seat in e.game.claudeSeats do
+        Seat.modifyMind ctx code seat fun m => { m with interviewed := true }
+    else
+      ctx.stopped.modify (·.insert code)
 
 /-! ## The turn timer -/
 
@@ -262,7 +294,12 @@ def timerTick (ctx : Ctx) : IO Unit := do
   let tables ← ctx.table.atomically do return (← get).toList.map fun (c, e) => (c, e.game)
   let now ← IO.monoMsNow
   for (code, g) in tables do
-    if (← ctx.stopped.get).contains code then continue
+    if ← isPaused ctx code g then
+      -- No clock runs while a table waits. A turn or a vote gets its whole time when someone returns.
+      if (← ctx.turnClock.get).contains code then
+        ctx.turnClock.modify (·.erase code)
+        ctx.holdSince.modify (·.filter fun k _ => k.1 != code)
+      continue
     let some s := g.state | continue
     if s.phase == .ended then
       ctx.turnClock.modify (·.erase code)

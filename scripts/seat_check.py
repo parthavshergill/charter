@@ -91,7 +91,7 @@ def reset(default=END):
 
 class Server:
     def __init__(self, port, data, api_port, **extra):
-        env = dict(os.environ, PORT=str(port), CHARTER_ROOT=ROOT, CHARTER_DATA=data, CHARTER_BOT_DELAY_MS="0", CHARTER_VOTE_HOLD_MS="0",
+        env = dict(os.environ, PORT=str(port), CHARTER_ROOT=ROOT, CHARTER_LIST_GAMES="1", CHARTER_DATA=data, CHARTER_BOT_DELAY_MS="0", CHARTER_VOTE_HOLD_MS="0",
                    ANTHROPIC_API_KEY=FAKE_KEY, ANTHROPIC_BASE_URL=f"http://127.0.0.1:{api_port}",
                    CHARTER_SEAT_CALLS_PER_TURN="4", CHARTER_SEAT_TIMEOUT_S="2", CHARTER_SEAT_BUDGET_S="4", **extra)
         self.port = port

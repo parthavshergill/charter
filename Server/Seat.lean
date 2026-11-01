@@ -367,13 +367,14 @@ def userMessage (sit : Situation) (talk : Array Talk.Line) (mind : Mind) (callsL
 
 /-- Can asking again help? -/
 def retryable (o : Formalize.Outcome) : Bool :=
+  o.resting.isNone && (
   [28, 6, 7, 35, 52, 55, 56].contains o.exitCode.toNat ||
   (match o.http with
    | some c => c == 408 || c == 409 || c == 429 || c ≥ 500
    | none => o.exitCode == 0) ||
   (match o.apiErrorType with
    | some t => t == "rate_limit_error" || t == "overloaded_error" || t == "api_error"
-   | none => false)
+   | none => false))
 
 /-- The API refused the key, the model or the request. Asking again cannot help. -/
 def hopeless (o : Formalize.Outcome) : Bool :=
@@ -404,9 +405,9 @@ structure Answer where
   cacheWrite : Nat := 0
   output : Nat := 0
 
-private def freshJob (seat : Nat) : IO Formalize.Job := do
+private def freshJob (code : String) (seat : Nat) : IO Formalize.Job := do
   let now ← IO.monoMsNow
-  return { id := 0, seat, words := "", startedMs := now
+  return { id := 0, seat, words := "", startedMs := now, table := code
            state := ← IO.mkRef { lastEventMs := now }
            stop := ← IO.mkRef (pure ())
            cancelled := ← IO.mkRef false }
@@ -425,7 +426,7 @@ def request (ctx : Ctx) (code : String) (seat : Nat) (what : String) (body : Jso
   let event := ((← findEntry ctx code).map (·.game.events)).getD 0
   repeat
     tries := tries + 1
-    let job ← freshJob seat
+    let job ← freshJob code seat
     let sentAt ← IO.monoMsNow
     let outcome ← withSlot ctx do
       ctx.running.modify (·.insert (code, seat) job)

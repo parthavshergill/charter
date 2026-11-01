@@ -18,6 +18,8 @@ Next to each game's log are three others, none of which reaches `Engine.step`:
 * `<code>.talk`: table talk (`Server/Talk.lean`).
 * `<code>.clerk`: the clerk's memory (`Server/Clerk.lean`).
 * `<code>.seats`: what the Claude seats noted and spent (`Server/Seat.lean`). No route serves it.
+
+A container's disk does not last, so `Server/Mirror.lean` copies all of these to object storage.
 -/
 
 namespace CharterServer
@@ -110,7 +112,8 @@ structure Ctx where
   inFlight : IO.Ref Nat
   /-- No new request before this time: a rate limit was hit. -/
   coolUntil : IO.Ref Nat
-  /-- Tables to stop driving, such as one that ran out of time. -/
+  /-- Tables to stop driving, such as one that ran out of time, or one with Claude seats that has just
+  come back from a restart and has nobody at it yet. -/
   stopped : IO.Ref (Std.HashSet String)
   /-- The API refused the key or the model, so asking again cannot help. The message says why. -/
   fatal : IO.Ref (Option String)
@@ -124,6 +127,10 @@ structure Ctx where
   turnClock : IO.Ref (Std.HashMap String (Nat × Nat))
   /-- The request each Claude seat has running, so the timer can stop a stalled one. -/
   running : IO.Ref (Std.HashMap (String × Nat) Formalize.Job)
+  /-- When a person last had a page open at each table. -/
+  lastHuman : IO.Ref (Std.HashMap String Nat)
+  /-- A table with people pauses after this long with none of them there. 0 turns this off. -/
+  awayMs : Nat := 180000
 
 /-- A new context. -/
 def Ctx.new (tbl : Std.HashMap String Entry) (root dataDir : System.FilePath) (botDelayMs voteHoldMs : Nat)
@@ -151,7 +158,9 @@ def Ctx.new (tbl : Std.HashMap String Entry) (root dataDir : System.FilePath) (b
     humanTurnMs := ((← IO.getEnv "CHARTER_TURN_MS").bind String.toNat?).getD 300000
     claudeTurnMs := ((← IO.getEnv "CHARTER_CLAUDE_TURN_MS").bind String.toNat?).getD 600000
     turnClock := ← IO.mkRef {}
-    running := ← IO.mkRef {} }
+    running := ← IO.mkRef {}
+    lastHuman := ← IO.mkRef {}
+    awayMs := ((← IO.getEnv "CHARTER_TABLE_AWAY_MS").bind String.toNat?).getD 180000 }
 
 /-- Seat settings from the environment. -/
 def seatSettingsFromEnv : IO SeatSettings := do
@@ -182,6 +191,17 @@ def commitRaw (ctx : Ctx) (code : String) (mk : Entry → Except String Json) : 
 
 def findEntry (ctx : Ctx) (code : String) : IO (Option Entry) :=
   ctx.table.atomically do return (← get).get? code
+
+/-- Is this table waiting for someone? A table pauses when it has people and none of them has been here
+for a while, or has never been here since the server started. While it waits, no seat acts and no clock
+runs. Friends can stop for an evening and come back. This changes when events are sent, and it changes
+no rule, and pausing goes in no log. A table with no people does not pause this way. -/
+def isPaused (ctx : Ctx) (code : String) (g : Game.Game) : IO Bool := do
+  if (← ctx.stopped.get).contains code then return true
+  if ctx.awayMs == 0 || g.humanSeats.isEmpty then return false
+  match (← ctx.lastHuman.get).get? code with
+  | some t => return (← IO.monoMsNow) - t ≥ ctx.awayMs
+  | none => return true
 
 def seatOf (e : Entry) (token? : Option String) : Option Nat :=
   token?.bind fun t => (e.game.room.seatOf? t).map (·.1)
@@ -339,7 +359,7 @@ def startDraft (ctx : Ctx) (code : String) (seat : Nat) (words : String) : IO Fo
   let id ← ctx.nextDraft.modifyGet fun n => (n, n + 1)
   let now ← IO.monoMsNow
   let job : Formalize.Job :=
-    { id, seat, words, startedMs := now
+    { id, seat, words, startedMs := now, table := code
       state := ← IO.mkRef { lastEventMs := now }
       stop := ← IO.mkRef (pure ())
       cancelled := ← IO.mkRef false }

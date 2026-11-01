@@ -27,8 +27,11 @@ function h(tag, attrs = {}, ...kids) {
   return n;
 }
 const fill = (n, ...kids) => n.replaceChildren(...kids.flat(9).filter(k => k != null && k !== false));
+// The seat token goes in a header, not the address, so it stays out of anything that logs addresses.
+let seatToken = null;
 async function api(path, body) {
-  const opt = body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
+  const headers = seatToken ? { "X-Charter-Token": seatToken } : {};
+  const opt = body === undefined ? { headers } : { method: "POST", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify(body) };
   const r = await fetch(path, opt);
   const ct = r.headers.get("content-type") || "";
   return ct.includes("json") ? r.json() : r.arrayBuffer();
@@ -110,15 +113,14 @@ async function lobby() {
     const buf = await api("/api/island");
     if (buf.byteLength > 4) p.render(buf);
   });
-  const list = await api("/api/games");
-  // Only tables you can do something at: yours, or ones with a free seat.
-  const mine = list.filter(g => store.get(tokenKey(g.code)) || (!g.started && g.filled < g.seats));
-  fill(tables, mine.slice(0, 6).map(g => {
-    const yours = store.get(tokenKey(g.code));
-    return h("div", { class: "t" }, h("span", { class: "code" }, g.code),
-      h("span", { class: "state" }, g.started ? (g.phase === "ended" ? "Finished" : "In play") : `${g.filled} of ${g.seats} seated`),
-      yours ? h("a", { class: "link", href: `/?game=${g.code}` }, "Return") : h("button", { class: "link", onclick: () => nameOk() && join(g.code) }, "Take a seat"));
-  }));
+  // Only the tables this browser holds a seat at. No route lists every table, because a code is what
+  // lets a person reach one. Any table lost from the server is left out.
+  let codes = [];
+  try { codes = Object.keys(localStorage).filter(k => k.startsWith("charter.token.")).map(k => k.slice("charter.token.".length)); } catch {}
+  const mine = (await Promise.all(codes.slice(-6).reverse().map(c => api(`/api/games/${c}`).catch(() => null)))).filter(g => g?.code);
+  fill(tables, mine.map(g => h("div", { class: "t" }, h("span", { class: "code" }, g.code),
+    h("span", { class: "state" }, g.started ? (g.phase === "ended" ? "Finished" : "In play") : `${g.filled} of ${g.seats} seated`),
+    h("a", { class: "link", href: `/?game=${g.code}` }, "Return"))));
 }
 
 // ---------------------------------------------------------------- game state
@@ -160,7 +162,6 @@ function say(msg) {
 function sceneQuery() {
   const v = G.view, q = new URLSearchParams();
   if (G.replay) { q.set("at", G.replay.at); q.set("markers", "none"); return q; }
-  if (G.token) q.set("token", G.token);
   if (v?.phase === "setup") q.set("markers", "all");
   else q.set("markers", G.selected ? G.selected : "none");
   return q;
@@ -266,6 +267,7 @@ function onHover(id, x, y) {
 async function gameScreen(code) {
   G.code = code;
   G.token = params.has("replay") ? null : store.get(tokenKey(code));
+  seatToken = G.token;
   const canvas = h("canvas"), svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("class", "board2d");
   const U = G.ui = {
@@ -316,11 +318,13 @@ async function poll() {
   clearTimeout(G.polling);
   try {
     const q = new URLSearchParams({ since: G.version });
-    if (G.token) q.set("token", G.token);
     const v = await api(`/api/games/${G.code}/view?${q}`);
     if (G.lost) { G.lost = false; caption(""); }
     if (v && v.talkCount != null && v.talkCount !== G.talkCount) fetchTalk();
     if (v && "turnLeftMs" in v) { G.turnEnd = v.turnLeftMs == null ? null : performance.now() + v.turnLeftMs; renderClock(); }
+    if (v && "resting" in v && v.resting !== G.resting) { G.resting = v.resting; if (v.resting) caption(v.resting); }
+    // Only someone watching can see a paused table. A player who comes back has already ended the pause.
+    if (v && "paused" in v && !G.token && !!v.paused !== !!G.paused) { G.paused = v.paused; caption(v.paused ? "This table is paused until one of its players comes back." : "", v.paused); }
     if (v && v.drafting && G.view && JSON.stringify(v.drafting) !== JSON.stringify(G.view.drafting)) { G.view.drafting = v.drafting; renderHouses(); }
     if (v && !v.unchanged && v.code) {
       const prev = G.view;
@@ -329,8 +333,25 @@ async function poll() {
       if (v.phase === "ended" && !G.token && !G.replay) { startReplay(false); return; }
     }
   } catch (e) { if (!G.lost) { G.lost = true; caption("Lost contact with the table. Trying again.", true); } }
-  G.polling = setTimeout(poll, 700);
+  const wait = pollWait(700);
+  if (wait != null) G.polling = setTimeout(poll, wait);
 }
+// A hidden tab is someone who may come straight back, so it polls slowly and still counts as a person at
+// the table (the server's limit is CHARTER_TABLE_AWAY_MS, 3 minutes). After 10 minutes hidden it stops, so
+// a forgotten tab lets the table pause and the server sleep. Showing the tab again gets the whole view.
+const HIDDEN_POLL_MS = 30000, HIDDEN_STOP_MS = 600000;
+let hiddenSince = document.hidden ? performance.now() : null;
+function pollWait(visibleMs) {
+  if (hiddenSince == null) return visibleMs;
+  return performance.now() - hiddenSince > HIDDEN_STOP_MS ? null : Math.max(visibleMs, HIDDEN_POLL_MS);
+}
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) { hiddenSince ??= performance.now(); return; }
+  hiddenSince = null;
+  if (!G.code || G.replay) return;
+  poke();
+  if (G.draft && !G.draft.outcome && !G.draft.optimistic) pollDraft();
+});
 
 /** Everything that follows a new view. */
 function afterView(prev, v) {
@@ -700,7 +721,7 @@ function renderChronicle() {
 // What the server sends is what this viewer may read: the filter is on the server.
 async function fetchTalk() {
   const q = new URLSearchParams();
-  if (G.replay) q.set("at", G.replay.at); else if (G.token) q.set("token", G.token);
+  if (G.replay) q.set("at", G.replay.at);
   let r;
   try { r = await api(`/api/games/${G.code}/talk?${q}`); } catch { return; }
   if (!r?.ok) return;
@@ -759,6 +780,7 @@ async function startReplay(fromStart) {
   const total = last.replay.total;
   G.replay = { at: total, total, playing: false, marks, timer: null };
   G.token = null;
+  seatToken = null;
   G.talk = []; G.talkCount = -1;
   gotoEvent(fromStart ? (marks[0] || 1) : total, false);
 }
@@ -784,7 +806,7 @@ function replayTick() {
   const r = G.replay; if (!r?.playing) return;
   if (r.at >= r.total) { r.playing = false; renderReplay(); return; }
   // A law's moment takes the screen for a while. Wait for it.
-  if (!G.moment) gotoEvent(r.at + 1, true);
+  if (!G.moment && !document.hidden) gotoEvent(r.at + 1, true);
   r.timer = setTimeout(replayTick, 650);
 }
 function renderReplay() {
@@ -1049,18 +1071,19 @@ async function pollDraft() {
   clearTimeout(G.draftPolling);
   const gen = G.draftGen;
   let d;
-  try { d = await api(`/api/games/${G.code}/draft?token=${G.token}`); }
+  try { d = await api(`/api/games/${G.code}/draft`); }
   catch { if (gen === G.draftGen) G.draftPolling = setTimeout(pollDraft, 1000); return; }
   if (gen !== G.draftGen) return;
   if (d?.id == null) { if (G.draft && !G.draft.outcome && !G.draft.optimistic) { G.draft = { outcome: "failed", reason: "The server lost this draft. Try again.", words: G.ui.words.value }; renderDraft(); } return; }
   const beat = G.draft && (d.text !== G.draft.text || d.thinking !== G.draft.thinking || d.stage !== G.draft.stage);
   G.draft = d; G.draftBeat = beat;
   renderDraft(); renderRail();
-  if (!d.outcome) G.draftPolling = setTimeout(pollDraft, 220);
+  const wait = d.outcome ? null : pollWait(220);
+  if (wait != null) G.draftPolling = setTimeout(pollDraft, wait);
 }
 async function checkDraft() {
   try {
-    const d = await api(`/api/games/${G.code}/draft?token=${G.token}`);
+    const d = await api(`/api/games/${G.code}/draft`);
     if (d?.id != null && d.outcome !== "cancelled") {
       G.draft = d;
       if (!G.ui.words.value && d.words) G.ui.words.value = d.words;
@@ -1071,7 +1094,7 @@ async function checkDraft() {
 async function refreshDraftReview() {
   // Keep the consequences true to the table as it moves on.
   try {
-    const d = await api(`/api/games/${G.code}/draft?token=${G.token}`);
+    const d = await api(`/api/games/${G.code}/draft`);
     if (d?.id != null && d.outcome === "ready" && G.draft?.outcome === "ready") { G.draft = d; renderDraft(); }
   } catch {}
 }

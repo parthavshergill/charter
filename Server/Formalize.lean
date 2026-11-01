@@ -2,6 +2,7 @@ import Lean.Data.Json
 import Server.Game
 import Server.Rules
 import Server.Clerk
+import Server.Spend
 
 /-!
 # The clerk: English to formal text
@@ -61,6 +62,8 @@ structure Job where
   state : IO.Ref JobState
   stop : IO.Ref (IO Unit)
   cancelled : IO.Ref Bool
+  /-- The table this work is for, which decides whose budget pays for it. -/
+  table : String := ""
 
 /-- The model and limits. Effort and output are bounded, because this runs on a player's click. -/
 structure Settings where
@@ -244,14 +247,28 @@ structure Outcome where
   apiErrorMessage : Option String := none
   stopReason : Option String := none
   exitCode : UInt32 := 0
+  /-- No request was made, because a budget is used up. This says so, in words for the table. -/
+  resting : Option String := none
 
 def apiError (j : Json) : Option (String × String) :=
   match jField j "error" with
   | some e => some ((jStr e "type").getD "error", (jStr e "message").getD "")
   | none => none
 
-/-- Run one request and read it to the end. Blocks this thread only. -/
+/-- Count what the request that just ended cost. A request stopped part way has no final output count,
+so that part is estimated from what arrived, at about four characters a token. -/
+private def chargeJob (job : Job) : IO Unit := do
+  let st ← job.state.get
+  let output := if st.outputTokens != 0 then st.outputTokens else (st.text.length + st.thinking.length) / 4
+  Spend.charge job.table st.inputTokens st.cacheReadTokens st.cacheWriteTokens output
+
+/-- Run one request and read it to the end. Blocks this thread only. Every call to the API comes through
+here, so this is where the budgets are checked and charged. -/
 def runRequest (job : Job) (config : String) : IO Outcome := do
+  if let some why ← Spend.resting? job.table then return { resting := some why }
+  -- These fields describe one request, so a request that gets no reply must not repeat the last one's.
+  job.state.modify fun st =>
+    { st with inputTokens := 0, cacheReadTokens := 0, cacheWriteTokens := 0, outputTokens := 0 }
   let child ← IO.Process.spawn
     { cmd := "curl", args := #["--config", "-"], stdin := .piped, stdout := .piped, stderr := .piped }
   -- curl reads its configuration until end of file, so nothing may keep this handle open: take it
@@ -285,6 +302,7 @@ def runRequest (job : Job) (config : String) : IO Outcome := do
       raw := raw ++ l
   let code ← child.wait
   out := { out with exitCode := code }
+  chargeJob job
   if out.apiErrorType.isNone then
     if let .ok j := Json.parse raw then
       if let some (t, m) := apiError j then
@@ -294,7 +312,8 @@ def runRequest (job : Job) (config : String) : IO Outcome := do
 /-- A plain message for a request that did not produce a reply. `none` means it worked. -/
 def failureOf (o : Outcome) : Option String :=
   let hint := "Write the formal text yourself, or try again."
-  if o.exitCode == 28 then some s!"No reply after {maxSeconds} seconds. {hint}"
+  if o.resting.isSome then o.resting
+  else if o.exitCode == 28 then some s!"No reply after {maxSeconds} seconds. {hint}"
   else if o.exitCode == 6 || o.exitCode == 7 then some s!"Could not reach Claude: no connection. {hint}"
   else if o.exitCode == 127 then some "This server cannot run curl, so it cannot reach Claude. Write the formal text yourself."
   else if o.exitCode != 0 then some s!"The connection to Claude failed (curl error {o.exitCode}). {hint}"
