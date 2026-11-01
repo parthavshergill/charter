@@ -1,5 +1,6 @@
 arm,world,run,label,steps,games,wins,target_wins,codes
 restricted,island,v2-fix,v2fix-44.2M,44236800,6,1,1,BCDHX YVFQS PJUXZ YQGBG HEVPH UAWCR
-restricted,island,v2-fix,v2fix-0,0,3,0,0,QRYYQ GUTUS WNACY
+restricted,island,v2-fix,v2fix-0,0,7,0,0,QRYYQ GUTUS WNACY YFMRJ UDDCS HBRFH NSYWU
 restricted,island,v2-fix,v2fix-29.5M,29491200,3,2,2,VPCYN BHJUA YUZSF
-restricted,island,v2-long-champ,c4-99M,99287040,2,2,2,UGFBQ KSCQX
+restricted,island,v2-long-champ,c4-99M,99287040,4,3,3,UGFBQ NZJWC KSCQX RTPQK
+restricted,island,hero-v2,hv2-97.3M,97320960,1,1,1,WADXR
