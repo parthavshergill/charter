@@ -11,7 +11,8 @@ word on every event. This file needs only the engine and `Server/GameFacts.lean`
 The policy is simple. On its own turn a bot places where the dice pay most, upgrades, builds, trades with
 the bank to complete a build, and ends its turn. It votes yes on a law when the law would not cost it
 resources on the next turn change and hands no other seat the win. It signs a deal that pays it at least
-what it pays, and it accepts an offer that gives it at least what it gives.
+what it pays, and it accepts an offer that gives it at least what it gives. A good that counts as points
+stays out of its bank trades, and an offer that costs it points must pay for them in goods.
 
 It tests only the moves it is about to consider. It does not ask the engine for every legal move.
 -/
@@ -31,6 +32,9 @@ def resourceBonus : Int := 5
 
 /-- What each step between a road and a free site costs. -/
 def roadStepPenalty : Int := 40
+
+/-- How many goods one point is worth, when accepting an offer. -/
+def pointValue : Int := 100
 
 /-! ## The map, worked out once -/
 
@@ -81,6 +85,21 @@ def Ctx.of (G : GameDef) : Ctx G := { board := Board.of G }
 /-! ## What a seat can see -/
 
 def bal (s : State G) (p : Nat) (r : Res) : Nat := s.balance (.player p) r
+
+/-- The points one unit of this good is worth under these rules. Most goods are worth 0. -/
+def worthIn (R : Rules) (r : Res) : Nat := ((R.worth.find? (·.1 == r)).map (·.2)).getD 0
+
+/-- The points these goods are worth under these rules. -/
+def bundleWorth (R : Rules) (b : Bundle) : Nat := (b.map fun x => x.2 * worthIn R x.1).sum
+
+/-- The points a piece of this kind is worth under the rules in force. -/
+def piecePoints (s : State G) (k : PieceKind) : Nat := ((s.rules.piece? k).map (·.points)).getD 0
+
+/-- The seat keeps all of this good when it gives `n` of it in a trade toward a build that costs `cost`
+and is worth `gain` points. That is so when the good counts as points, unless the build is worth more
+points than its cost and the `n` given together. -/
+def keeps (R : Rules) (cost : Bundle) (gain n : Nat) (r : Res) : Bool :=
+  decide (worthIn R r > 0) && !decide (gain > bundleWorth R cost + n * worthIn R r)
 
 /-- What a spot is worth: `pipValue` for each pip, and `resourceBonus` for each good it touches. -/
 def spotValue (ctx : Ctx G) (v : Nat) : Int :=
@@ -238,12 +257,14 @@ def setupPlaces (ctx : Ctx G) (s : State G) (p : Nat) : List Move :=
 
 /-! ## Choosing a move -/
 
-/-- A bank trade toward paying `cost`, if trades can cover all of it. `ok` says which moves can happen. -/
-def tradeToward (s : State G) (p : Nat) (cost : Bundle) (ok : Move → Bool) : Option Move :=
+/-- A bank trade toward paying `cost`, if trades can cover all of it. `ok` says which moves can happen. The
+seat gives none of a good that `keep` picks. -/
+def tradeToward (s : State G) (p : Nat) (cost : Bundle) (ok : Move → Bool)
+    (keep : Res → Bool := fun _ => false) : Option Move :=
   let rate := s.rules.bankRate
   let need (r : Res) : Nat := ((cost.find? (·.1 == r)).map (·.2)).getD 0
   let names := G.resources.map (·.name)
-  let surplus (r : Res) : Nat := bal s p r - need r
+  let surplus (r : Res) : Nat := if keep r then 0 else bal s p r - need r
   let short := names.filter fun r => need r > bal s p r
   let missing := (short.map fun r => need r - bal s p r).sum
   if missing == 0 || rate == 0 then none else
@@ -292,16 +313,19 @@ def actionMove (ctx : Ctx G) (s : State G) (p : Nat) : Move := Id.run do
       | .place _ (.link l) => some (m, roadValue ctx free.get l)
       | _ => none
     if let some m := bestLegal s p roads then return m
-  let trade (cost : Bundle) := tradeToward s p cost (isLegal s p)
+  let R := s.rules
+  let trade (d : PieceDef) :=
+    let cost := s.costOf d.name
+    tradeToward s p cost (isLegal s p) (keeps R cost (piecePoints s d.name) R.bankRate)
   if let some (d, old) := upgradePiece G then
     if s.countOf p old > 0 && (s.rules.piece? d.name).isSome then
-      if let some m := trade (s.costOf d.name) then return m
+      if let some m := trade d then return m
   if hasSite.get then
     if let some d := spotPiece G then
-      if let some m := trade (s.costOf d.name) then return m
+      if let some m := trade d then return m
   else
     if let some d := linkPiece G then
-      if let some m := trade (s.costOf d.name) then return m
+      if let some m := trade d then return m
   return .endTurn
 
 /-- The move of this seat if it is its turn, whatever the phase. -/
@@ -343,9 +367,12 @@ def dealOk (p : Nat) (d : Deal) : Bool :=
 
 def bundleTotal (b : Bundle) : Nat := (b.map (·.2)).sum
 
-/-- A seat takes an offer that gives it at least as many goods as it gives. -/
-def offerOk (o : Offer) : Bool :=
-  decide (bundleTotal o.give ≥ bundleTotal o.get)
+/-- A seat takes an offer that gives it at least as many goods as it gives, counting each point that the
+goods are worth as `pointValue` goods. -/
+def offerOk (s : State G) (o : Offer) : Bool :=
+  let R := s.rules
+  let points := pointValue * ((bundleWorth R o.give : Int) - (bundleWorth R o.get : Int))
+  decide ((bundleTotal o.give : Int) - (bundleTotal o.get : Int) + points ≥ 0)
 
 /-- Votes, signatures and accepted offers from these seats. `mayVote` says which laws can be voted on now. -/
 def reactions (s : State G) (bots : List Nat) (mayVote : Nat → Bool := fun _ => true) : List Event := Id.run do
@@ -362,7 +389,7 @@ def reactions (s : State G) (bots : List Nat) (mayVote : Nat → Bool := fun _ =
   if s.phase == .actions then
     for o in s.offers do
       for b in bots do
-        if o.src != b && (o.to.isNone || o.to == some b) && offerOk o then
+        if o.src != b && (o.to.isNone || o.to == some b) && offerOk s o then
           out := out.push (.move b (.accept o.id))
   return out.toList
 
