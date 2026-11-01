@@ -23,7 +23,9 @@
     "Charter.Proofs.a_founded_game_exists",
     "Charter.Proofs.a_full_island_game_exists",
     "Charter.Proofs.island_starts_with_no_laws",
-    "Charter.Proofs.a_finished_island_game_can_happen"
+    "Charter.Proofs.a_finished_island_game_can_happen",
+    "Charter.Rules.nothing_gets_ignored",
+    "Charter.Rules.only_real_resources"
   ],
   "permitted_axioms": [
     "propext",
