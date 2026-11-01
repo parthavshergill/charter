@@ -209,7 +209,7 @@ def extension_pack(srv):
     srv.post(f"/api/games/{t}/bot", {})
     v = srv.get(f"/api/games/{t}/view?token={token}")
     check(v["game"]["name"] == "Not Catan" and v["game"]["blurb"], "the view names the pack")
-    check(len(v["laws"]) == 7 and all(l["english"] and l["by"] is None for l in v["laws"]), "founding laws are in force from the start, with their sentences")
+    check(len(v["laws"]) == 7 and all(l["description"]["status"] == "pack" and l["description"]["text"] and l["by"] is None for l in v["laws"]), "founding laws are in force from the start, in the pack's own words")
     check([l["id"] for l in v["laws"]] == list(range(7)), "founding laws take the first ids")
     check(sum(l["text"].startswith("In force from the founding") for l in v["chronicle"]) == 7, "the chronicle states each founding law")
     check("alarm" not in v["resources"] and "laurel" in v["resources"], "a counter is off the screen, and a good a piece costs is on it")
@@ -437,7 +437,7 @@ def held(v, seat):
 
 def a_roll_law_fires(srv):
     """Two people pass a law that pays the bank's grain on every roll, and it pays on the next one, to
-    the seat whose turn that roll starts. The chronicle says so, and the read-back is plain."""
+    the seat whose turn that roll starts. The chronicle says so."""
     code = srv.post("/api/games", {"seats": 2})["code"]
     tokens = [srv.post(f"/api/games/{code}/join", {"name": n, "nonce": 7})["token"] for n in ("Mara", "Ada")]
     # The Island's law fee is 1 grain and 1 wool.
@@ -449,7 +449,7 @@ def a_roll_law_fires(srv):
     check(r["ok"], "a law that reacts to the roll can be proposed")
     vs = srv.get(f"/api/games/{code}/view?token={tokens[b]}")
     p = vs["proposals"][-1]
-    check(p["english"].startswith("Each time the dice roll, the player whose turn starts gets 1 grain from the bank."), "the read-back of a roll law is plain")
+    check(p["text"] == law and p["description"] == {"status": "none"}, "a roll law typed by hand shows its source, and it has no description")
     check(srv.post(f"/api/games/{code}/vote", {"token": tokens[a], "id": p["id"], "yes": True})["ok"], "the proposer votes for it")
     check(srv.post(f"/api/games/{code}/vote", {"token": tokens[b], "id": p["id"], "yes": True})["ok"], "the other seat votes for it")
     before = srv.get(f"/api/games/{code}/view?token={tokens[a]}")

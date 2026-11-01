@@ -389,14 +389,14 @@ def checkText (g : Game) (text : String) : Json :=
   match g.parse text with
   | .error e => Json.mkObj [("ok", toJson false), ("error", e)]
   | .ok p =>
-    let english := match p with
-      | .law L => Text.lawText L
-      | .deal d => Text.dealText g.nameOf d
+    let english : List (String × Json) := match p with
+      | .law _ => []
+      | .deal d => [("english", Json.str (Text.dealText g.nameOf d))]
     let problems := match g.state, p with
       | some s, .law L => lawProblems g.spec.G s L
       | some s, .deal d => dealProblems s d
       | none, _ => ["the game has not started"]
-    Json.mkObj [("ok", toJson true), ("english", english), ("problems", toJson problems),
-      ("text", Rules.printProposal p)]
+    Json.mkObj ([("ok", toJson true), ("problems", toJson problems),
+      ("text", Rules.printProposal p)] ++ english)
 
 end CharterServer.View
