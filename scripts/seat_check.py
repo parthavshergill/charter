@@ -207,6 +207,16 @@ def main():
     port = free_port()
     srv = Server(port, data, api_port)
     try:
+        # An answer that places a piece in setup cannot also end the turn: the next piece's places show only then.
+        reset()
+        q = Table(srv)
+        spot = [m for m in q.view()["legalMoves"] if m["move"]["t"] == "place"][-1]["move"]["spot"]
+        StandIn.seat_replies.extend([answer([{"action": "place", "kind": "settlement", "spot": spot}, {"action": "end_turn"}])])
+        q.my_setup_turn()
+        wait_for(lambda: len(StandIn.seat_requests) >= 2, "the seat to be asked again after placing in setup")
+        check("road" in user_text(StandIn.seat_requests[1]) and any(e.get("t") == "move" and e["move"].get("t") == "place" for e in q.srv.get(f"/api/games/{q.code}/events")),
+              "a seat that places and ends its turn in one setup answer is asked again, and can place its next piece")
+        wait_for(lambda: q.view()["turn"] == q.human, "that seat to finish its turn", 30)
         # What a seat's request looks like, and what it sees.
         reset()
         t = Table(srv)
