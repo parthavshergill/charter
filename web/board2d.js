@@ -1,7 +1,7 @@
 // The 2D fallback board. It draws the server's view and turns a click on a marked spot into the
 // pick id of the matching legal moves, the same id the 3D player reports.
 const NS = "http://www.w3.org/2000/svg";
-const SCALE = 52;
+export const SCALE = 52;
 
 function el(tag, attrs, parent) {
   const n = document.createElementNS(NS, tag);
