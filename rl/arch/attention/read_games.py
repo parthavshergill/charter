@@ -20,8 +20,6 @@ import json
 import os
 import sys
 
-import numpy as np
-
 HERE = os.path.dirname(os.path.abspath(__file__))
 RL = os.path.join(HERE, "..", "..")
 sys.path.insert(0, os.path.join(RL, "env"))
@@ -99,7 +97,7 @@ def play(spec, maker, game_id, opponent, k, laws, settings):
     end_with_build, turns_ended, decisions = 0, 0, 0
     points, last_round = [], -1
     refused = 0
-    g_round = col("global", "round")
+    live_left, limit = None, None
     while not g.over:
         info = g.info()
         r = int(info["round"])
@@ -110,6 +108,10 @@ def play(spec, maker, game_id, opponent, k, laws, settings):
         obs = g.obs().copy()
         legal = g.legal()
         if seat == at:
+            left = float(obs[TABLE["global"]["offset"] + col("global", "rounds_left")])
+            live_left = left
+            if limit is None:
+                limit = (r, left)
             a = (g.suggest("hand") if subject is None else subject.act(g))
             a = a if a >= 0 else 0
             decisions += 1
@@ -140,14 +142,10 @@ def play(spec, maker, game_id, opponent, k, laws, settings):
     obs = g.obs()
     final = [int(info[f"points{s}"]) for s in range(SEATS)]
     points.append(["end"] + final)
-    rounds_left = None
-    try:
-        rounds_left = float(obs[TABLE["global"]["offset"] + col("global", "rounds_left")])
-    except Exception:  # noqa: BLE001
-        pass
+    rounds_left = live_left
     return {"game": game_id, "opponent": opponent, "laws": laws, "k": k, "seed": seed, "subject_seat": at,
             "winner": int(info["winner"]), "won": int(info["winner"]) == at, "rounds": int(info["round"]),
-            "final_points": final, "rounds_left_at_end": rounds_left, "laws_proposed": int(info["proposed"]),
+            "final_points": final, "rounds_left_at_end": rounds_left, "first_decision_round_and_left": limit, "laws_proposed": int(info["proposed"]),
             "laws_passed": int(info["passed"]), "decisions": decisions, "refused": refused,
             "moves": moves, "other_moves": other_moves, "builds": builds, "bank_trades": trades,
             "declares": declares, "turns_ended": turns_ended, "ended_with_build_on_offer": end_with_build,
@@ -159,7 +157,8 @@ def text_of(rec):
     out = [f"### {rec['game']} vs 3 {rec['opponent']}, game {rec['k']}, laws {'on' if rec['laws'] else 'off'}, "
            f"subject at seat {me}",
            f"- winner: seat {rec['winner']}{' (the subject)' if rec['won'] else ''}, after {rec['rounds']} rounds; "
-           f"final points {rec['final_points']}; rounds left at the end: {rec['rounds_left_at_end']}",
+           f"final points {rec['final_points']}; `rounds_left` at the subject's last decision: "
+           f"{rec['rounds_left_at_end']} (at its first: {rec['first_decision_round_and_left']}, as (round, left))",
            f"- laws proposed {rec['laws_proposed']}, passed {rec['laws_passed']}",
            f"- subject's moves: {dict(sorted(rec['moves'].items()))} over {rec['decisions']} decisions; refused {rec['refused']}",
            f"- turns ended with a piece still placeable: {rec['ended_with_build_on_offer']} of {rec['turns_ended']}"]
@@ -167,11 +166,16 @@ def text_of(rec):
         out.append(f"- random seats' moves: {dict(sorted(rec['other_moves'].items()))}")
     out.append("- built: " + ("; ".join(f"r{b['round']} {b['what']} at {b['where']}" for b in rec["builds"]) or "nothing"))
     if rec["bank_trades"]:
-        out.append("- bank trades: " + "; ".join(
-            f"r{t['round']} row {t['give_row']} (worth {t['give_worth']:g}, stock {t['give_stock']:g}) -> row "
-            f"{t['get_row']} (worth {t['get_worth']:g})" for t in rec["bank_trades"]))
+        out.append("- bank trades (round: gave row -> got row): " + "; ".join(
+            f"r{t['round']}: {t['give_row']} -> {t['get_row']}" for t in rec["bank_trades"]))
     if rec["declares"]:
-        out.append("- declarations: " + "; ".join(f"r{d['round']} row {d['row']} level {d['level']}" for d in rec["declares"]))
+        by = {}
+        for d in rec["declares"]:
+            key = f"row {d['row']} level {d['level']}"
+            by.setdefault(key, set()).add(d["round"])
+            by[key + " n"] = by.get(key + " n", 0) + 1
+        out.append("- declarations: " + "; ".join(
+            f"{k}: {by[k + ' n']} times in rounds {min(v)}-{max(v)}" for k, v in by.items() if not k.endswith(" n")))
     pts = rec["points_by_round"]
     step = max(1, len(pts) // 12)
     out.append("- points by round (round: seat 0..3): " + ", ".join(
