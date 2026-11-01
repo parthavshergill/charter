@@ -177,6 +177,23 @@ svg.shield { width: 16px; height: 19px; flex: none; vertical-align: -4px; clip-p
 .english { white-space: pre-line; }
 .titleline { color: var(--ink-2); font-size: 14px; font-style: italic; }
 .diff { margin: 0 0 var(--s3); padding-left: var(--s3); border-left: 2px solid var(--wax); font-size: 14px; color: var(--ink); }
+.diffby { color: var(--ink-2); }
+.byline { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px var(--s2); margin-bottom: 2px; font-size: 12px; letter-spacing: .04em; color: var(--ink-3); }
+.notasked { padding: 1px 6px; border: 1px solid var(--wax); color: var(--wax); letter-spacing: 0; white-space: nowrap; }
+/* Room for about 40 words, kept while they are being written, so that nothing below them moves. */
+.described { margin: var(--s2) 0 var(--s3); }
+.described.held { min-height: calc(18px + 4 * 1.32 * 17px); }
+.described .words { margin: 0; font-size: 17px; line-height: 1.32; }
+.described .nowords { margin: 0; font-size: 14px; color: var(--ink-2); }
+.described .ghost { display: grid; gap: calc(1.32 * 17px - 9px); padding-top: 7px; }
+.described .ghost i { display: block; height: 9px; background: var(--vellum-3); opacity: .55; }
+.described .ghost i:nth-child(1) { width: 92%; }
+.described .ghost i:nth-child(2) { width: 84%; }
+.described .ghost i:nth-child(3) { width: 58%; }
+@media (prefers-reduced-motion: no-preference) { .described .ghost i { animation: ghost 1.6s ease-in-out infinite; } }
+@keyframes ghost { 50% { opacity: .25; } }
+.source { margin: var(--s3) 0; }
+.source .sexp { margin-top: 0; }
 .advice { margin: 0 0 var(--s3); padding: var(--s2) var(--s3); background: rgba(120, 88, 40, .12); font-size: 14px; line-height: 1.4; color: var(--ink-2); }
 .advice p { margin: 0; font-style: italic; }
 .advicehead { margin-bottom: 2px; font-size: 12px; letter-spacing: .04em; color: var(--ink-3); }
