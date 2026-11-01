@@ -33,7 +33,8 @@ observation never reads `State.seed`, so it shows nothing a seat should not see.
 
 ## 2. The mask and 5. decoding
 
-`legal T ep places s d` gives the actions on offer, and `decode T ep places d a` turns action `a` into an `Event`:
+`legal T ep places s d undo` gives the actions on offer (`undo` is `Env.undo`: the bank trade that would reverse
+the seat's last bank trade this turn, which is not offered), and `decode T ep places d a` turns action `a` into an `Event`:
 - 0: end turn. 1 and 2: vote no and yes (only when `d` is a vote).
 - 3 to 258: bank trade, give row `i / 16`, get row `i % 16`, with `i = a - 3`.
 - 259 to 386: declare (only in games where a law reads declarations, or with `declare_always`).
