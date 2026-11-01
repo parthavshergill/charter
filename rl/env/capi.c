@@ -24,6 +24,8 @@ lean_object* charter_rl_rewards(lean_object* e);
 lean_object* charter_rl_info(lean_object* e);
 uint32_t charter_rl_suggest(lean_object* e, lean_object* name);
 uint32_t charter_rl_seats(lean_object* e);
+lean_object* charter_rl_saved_log(lean_object* e, lean_object* code, lean_object* names);
+lean_object* charter_rl_saved_state(lean_object* e);
 uint32_t charter_rl_obs_size(lean_object* e);
 uint32_t charter_rl_act_size(uint32_t);
 uint32_t charter_rl_base_size(uint32_t);
@@ -106,6 +108,10 @@ int charter_mask(void* e, uint8_t* out, int cap) {
     return n;
 }
 int charter_suggest(void* e, const char* name) { return (int)(int32_t)charter_rl_suggest(READ(e), lean_mk_string(name)); }
+int charter_saved_log(void* e, const char* code, const char* names, char* out, int cap) {
+    return copy_string(charter_rl_saved_log(READ(e), lean_mk_string(code), lean_mk_string(names)), out, cap);
+}
+int charter_saved_state(void* e, char* out, int cap) { return copy_string(charter_rl_saved_state(READ(e)), out, cap); }
 int charter_obs_size(void* e) { return (int)charter_rl_obs_size(READ(e)); }
 int charter_act_size(void) { return (int)charter_rl_act_size(0); }
 int charter_base_size(void) { return (int)charter_rl_base_size(0); }
