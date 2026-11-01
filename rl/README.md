@@ -39,6 +39,16 @@ cd rl && modal run modal_app.py --action eval --run <name>/try1 --subjects "rand
 `train` writes `/vol/<run>/train.log`, `ckpt/` and a meta JSON next to the first and last checkpoint, on the volume
 `charter-rl`. Behind an HTTPS proxy, install `modal[api-proxy-support]` and set `SSL_CERT_FILE` to its CA bundle.
 
+## PufferLib patches
+
+`rl/puffer/patches/` is applied to every build (`--no-patch` turns it off):
+- `0001-learner-rows-only` (10 lines): minibatches walked all `total_agents` rows, so PPO also trained on frozen
+  seats' rows (other policies' actions). With one buffer, this keeps the rows before `policy_layout[1]`. Real by
+  reading the code. An A/B at 20M steps (Island and Not Catan, 8 min each) showed no measurable difference: against
+  three `hand`, 2.2% (1.2 to 4.2) with it, 1.2% (0.5 to 2.9) without, on training games.
+- `0002-warm-start` (8 lines): `--base.warm_start_path=FILE` loads weights into the trainable policy first.
+  `rl/imitation/bc.py` writes such a file.
+
 ## A custom encoder
 
 Put it in `rl/arch/<name>/` (or `rl/<name>/`) with:
