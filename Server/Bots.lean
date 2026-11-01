@@ -33,7 +33,10 @@ def candidatesFor (g : Game) (bots : List Nat) (mayVote : Nat → Bool := fun _ 
   | some s =>
     -- The board takes some work to make, so do not make it for a seat with nothing to do.
     if s.openProposals.isEmpty && s.offers.isEmpty && !(s.currentSeat.any bots.contains) then [] else
-    (handEvents (Ctx.of g.spec.G) s bots mayVote).filterMap eventJson?
+    -- In a game that hides something, each bot decides from what it may know.
+    if g.marked then
+      bots.flatMap fun b => (handEvents (Ctx.of g.spec.G) (observe g.secrecy (some b) s) [b] mayVote).filterMap eventJson?
+    else (handEvents (Ctx.of g.spec.G) s bots mayVote).filterMap eventJson?
 
 /-- The first of these seats' candidates that the engine accepts. -/
 def nextFor? (g : Game) (bots : List Nat) (mayVote : Nat → Bool := fun _ => true) : Option Json :=

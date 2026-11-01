@@ -25,10 +25,11 @@ SOURCES = [
     "Charter/Proofs/Witness.lean",
     "Charter/Proofs/IslandWitness.lean",
     "Server/ParserFacts.lean",
+    "Server/SecrecyPromise.lean",
 ]
 # Helper lemmas that promise nothing by themselves.
 SKIP = {"witness_of_check"}
-IMPORTS = ["Charter.Constitution.Promises", "Charter.Games.Witnesses", "Charter.Games.Island", "Server.ResourcesNamed"]
+IMPORTS = ["Charter.Constitution.Promises", "Charter.Games.Witnesses", "Charter.Games.Island", "Server.ResourcesNamed", "Server.Secrecy"]
 AXIOMS = ["propext", "Quot.sound", "Classical.choice"]
 
 OPENERS = {"(": ")", "[": "]", "{": "}", "⟨": "⟩"}

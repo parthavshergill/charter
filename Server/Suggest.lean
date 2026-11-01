@@ -107,8 +107,8 @@ Open offers:
 {offers}"
 
 /-- The chronicle: the newest lines, and the older ones worth telling. -/
-def chronicleLines (g : Game) : List String :=
-  let all := g.chronicle.toList
+def chronicleLines (g : Game) (seat : Nat) : List String :=
+  let all := (g.chronicleFor (some seat)).toList
   let older := all.take (all.length - maxRecentLines)
   let told := (older.filter (·.major)).reverse.take maxOlderLines |>.reverse
   let recent := all.drop (all.length - maxRecentLines)
@@ -138,7 +138,7 @@ def build (g : Game) (s : State g.spec.G) (seat : Nat) (talk : List Talk.Line) (
   let mem := if mem.isEmpty then "" else s!"\n\n{mem}"
   let base := "\n\n".intercalate
     [ s!"<table>\n{tableContext g s seat}\n\n{publicFacts g s}\n</table>{mem}"
-    , block "chronicle" (chronicleLines g)
+    , block "chronicle" (chronicleLines g seat)
     , block "table_talk" (publicLines g talk)
     , block "your_private_messages" (privateLines g seat talk)
     , block "your_earlier_suggestions" (suggestionLines g notes)
@@ -233,7 +233,7 @@ def run (job : Job) (cfg : Settings) (current : IO (Option Game)) (talk : List T
     strike job s!"the instructions are missing: {cfg.promptPath}"
     return
   let some g ← current | finish (.failed "The game is gone.")
-  let some s := g.state | finish (.failed "The game has not started.")
+  let some s := g.seenBy (some job.seat) | finish (.failed "The game has not started.")
   job.state.modify fun st => { st with atEvent := g.events }
   let mine := notes.filter (·.seat == job.seat)
   let giveUp (why : String) : IO Unit :=

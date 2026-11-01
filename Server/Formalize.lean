@@ -472,7 +472,7 @@ def differenceProblem (r : Reply) : Option String :=
 /-- Why a formal text cannot go to the table now. An empty list means it can. -/
 def problemsOf (g : Game) (seat : Nat) (text : String) : Except String (List String) := do
   let p ← g.parse text
-  match g.state with
+  match g.seenBy (some seat) with
   | none => pure ["the game has not started"]
   | some s =>
     match p with
@@ -566,7 +566,7 @@ def run (job : Job) (cfg : Settings) (current : IO (Option Game)) (notes : List 
     strike job s!"the instructions are missing: {cfg.promptPath}"
     return
   let some g ← current | finish (.failed "The game is gone.")
-  let some s := g.state | finish (.failed "The game has not started.")
+  let some s := g.seenBy (some job.seat) | finish (.failed "The game has not started.")
   let memory := Clerk.memoryBlock g job.seat notes
   let mut retry : Option (String × String) := none
   for n in (List.range maxAttempts).map (· + 1) do

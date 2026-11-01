@@ -6,3 +6,4 @@ results/
 .claude/
 contact-sheets/
 .DS_Store
+__pycache__/

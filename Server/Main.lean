@@ -217,7 +217,8 @@ def route (ctx : Ctx) (start : StartInfo) (req : Req) : ContextAsync Resp := do
         match gameAt e at_ with
         | .error err => respondErr err
         | .ok g =>
-          respondJson (View.withField (View.withReplay (View.view g code none [] (← bookOf ctx code)) at_ e.events.size) "realTokens" (← realTokens ctx code g))
+          -- A replay shows what a spectator saw, until the whole game has ended. Then it shows everything.
+          respondJson (View.withField (View.withReplay (View.view g code none [] (← bookOf ctx code) (reveal := e.game.ended)) at_ e.events.size) "realTokens" (← realTokens ctx code g))
       | none =>
         -- This is how the server knows who is here. A table with no people, held since a restart,
         -- waits only for someone to watch it.
@@ -273,10 +274,10 @@ def route (ctx : Ctx) (start : StartInfo) (req : Req) : ContextAsync Resp := do
         match gameAt e at_ with
         | .error err => respondErr err
         | .ok g =>
-          let s := g.state.getD (emptyBoard g.spec)
+          let s := (if e.game.ended then g.state else g.seenBy none).getD (emptyBoard g.spec)
           respondScene req (Scene.sceneBytes g.spec.layout s none .none)
       | none =>
-        let s := e.game.state.getD (emptyBoard e.game.spec)
+        let s := (e.game.seenBy (seatOf e token)).getD (emptyBoard e.game.spec)
         respondScene req (Scene.sceneBytes e.game.spec.layout s (seatOf e token) show_)
     | "draft", false =>
       let some e ← findEntry ctx code | respondErr s!"no game {code}" .notFound
@@ -327,7 +328,7 @@ def route (ctx : Ctx) (start : StartInfo) (req : Req) : ContextAsync Resp := do
     | "events", false =>
       let some e ← findEntry ctx code | respondErr s!"no game {code}" .notFound
       let from_ := ((q.get "from").bind String.toNat?).getD 0
-      respondJson (Json.arr ((e.events.extract from_ e.events.size).map stripPrivate))
+      respondJson (Json.arr ((e.events.extract from_ e.events.size).map (View.eventSeen e.game ∘ stripPrivate)))
     | "join", true => handleJoin ctx req code (← readBody req)
     | "bot", true => handleBot ctx code
     | "claude", true => handleClaude ctx req code (← readBody req)
@@ -347,9 +348,9 @@ def route (ctx : Ctx) (start : StartInfo) (req : Req) : ContextAsync Resp := do
     | "check", true =>
       let body ← readBody req
       let some e ← findEntry ctx code | respondErr s!"no game {code}" .notFound
-      let seat := (seatOf e (jStr body "token")).getD 0
-      match proposalText body seat with
-      | .ok text => respondJson (View.checkText e.game text)
+      let you := seatOf e (jStr body "token")
+      match proposalText body (you.getD 0) with
+      | .ok text => respondJson (View.checkText e.game you text)
       | .error err => respondJson (errJson err)
     | "vote", true =>
       let body ← readBody req

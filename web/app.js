@@ -981,8 +981,13 @@ function renderHouses() {
         s.tokenPoints ? h("div", { class: "row" }, `${plural(s.tokenPoints, "point")} from what they hold`) : null,
         s.persona ? h("div", { class: "row" }, `Plays as a ${s.persona}: ${s.voice}.`) : null,
         held.length ? h("div", { class: "row" }, held.map(([r, n]) => h("span", {}, String(n), " ", resIcon(r, "res small")))) : h("div", { class: "row" }, "Holds nothing"),
+        hiddenFrom(v, s).length ? h("div", { class: "row" }, `Their ${hiddenFrom(v, s).join(" and ")}: hidden from you`) : null,
         built.length ? h("div", { class: "row" }, built.map(([k, n]) => h("span", {}, plural(n, k)))) : null));
   }));
+}
+/** The goods of this seat the viewer may not see. The server leaves them out of the view. */
+function hiddenFrom(v, s) {
+  return s.seat === v.you || v.phase === "ended" ? [] : (v.secrecy?.hidden || []);
 }
 /** What every seat has declared this round, plainly. It shows only while a law reads declarations. */
 function renderDeclared() {
@@ -992,7 +997,7 @@ function renderDeclared() {
   if (!show) return;
   const bySeat = new Map();
   for (const r of d.rows) { if (!bySeat.has(r.seat)) bySeat.set(r.seat, []); bySeat.get(r.seat).push(r); }
-  fill(U.declared, h("div", { class: "lbl" }, "Declared this round"),
+  fill(U.declared, h("div", { class: "lbl" }, v.secrecy?.sealedDeclarations ? "Declared this round, sealed: each seat sees only its own" : "Declared this round"),
     d.rows.length ? [...bySeat.entries()].map(([s, rows]) => h("div", { class: "line" },
       h("b", {}, s === v.you ? "You" : nameOf(s)),
       rows.map(r => h("span", { class: "chg" }, String(r.n), " ", resIcon(r.res, "res small"), ` ${r.res}`))))
@@ -1289,7 +1294,9 @@ function declareDoc() {
   };
   return h("div", { class: "declaresheet" },
     h("h3", {}, "Declare a number"),
-    h("p", { class: "note-line" }, "Everyone can see it. It moves nothing by itself, and only laws read it. You can change it on your turn. It clears when the round ends."),
+    h("p", { class: "note-line" }, v.secrecy?.sealedDeclarations
+      ? "Only you can see it until the round ends. It moves nothing by itself, and only laws read it. You can change it on your turn. It clears when the round ends."
+      : "Everyone can see it. It moves nothing by itself, and only laws read it. You can change it on your turn. It clears when the round ends."),
     goodsInPlay(v).map(row));
 }
 function flashFocus() {

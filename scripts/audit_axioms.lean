@@ -24,13 +24,19 @@ def parserFacts : Name := `Server.ParserFacts
 /-- The two statements about the parser. -/
 def parserStatements : List Name := [`Charter.Rules.nothing_gets_ignored, `Charter.Rules.only_real_resources]
 
+/-- The modules about what a seat may know. -/
+def secrecy : List Name :=
+  [`Server.Secrecy, `Server.SecrecyProofs, `Server.SecrecyPromise, `Server.SecrecyExamples, `Server.SecrecyReach]
+
 /-- This module's theorems are checked. -/
-def isChecked (m : Name) : Bool := (`Charter).isPrefixOf m || m == parserFacts || m == `Server.ParserProof
+def isChecked (m : Name) : Bool :=
+  (`Charter).isPrefixOf m || m == parserFacts || m == `Server.ParserProof || secrecy.contains m
 
 /-- This theorem is one a reader of the constitution sees, or a statement about the parser. -/
 def isShown (m n : Name) : Bool :=
   (m == `Charter.Constitution || m == `Charter.Constitution.Supporting ||
-    m == `Charter.Constitution.Examples || m == `Charter.Proofs.IslandWitness || m == parserFacts) &&
+    m == `Charter.Constitution.Examples || m == `Charter.Proofs.IslandWitness || m == parserFacts ||
+    m == `Server.SecrecyPromise || m == `Server.SecrecyExamples || m == `Server.SecrecyReach) &&
   !n.isInternal && !isPrivateName n &&
   match n with
   | .str _ s => !s.startsWith "eq_" && s != "induct" && s != "mutual_induct"
@@ -66,8 +72,9 @@ partial def axiomsOf (env : Environment) (c : Name) : StateM Seen NameSet := do
 unsafe def main : IO UInt32 := do
   initSearchPath (← findSysroot)
   enableInitializersExecution
-  let env ← importModules #[{ module := `Charter }, { module := parserFacts }] {} (loadExts := true)
-  for statement in parserStatements do
+  let env ← importModules #[{ module := `Charter }, { module := parserFacts }, { module := `Server.SecrecyExamples },
+    { module := `Server.SecrecyReach }] {} (loadExts := true)
+  for statement in parserStatements ++ [`CharterServer.Secrecy.nobody_sees_what_is_hidden] do
     unless env.contains statement do
       IO.eprintln s!"NOT FOUND: {statement}"
       return 1
