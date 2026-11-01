@@ -109,6 +109,7 @@ def moveLabel (bankRate : Nat) : Move → String
   | .offer _ give get => s!"Offer {bundleText give} for {bundleText get}"
   | .accept _ => "Accept the offer"
   | .cancel _ => "Take back the offer"
+  | .declare r n => s!"Declare {n} {r}"
   | .endTurn => "End turn"
 
 end Charter.Text

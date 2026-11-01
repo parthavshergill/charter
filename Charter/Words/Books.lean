@@ -19,7 +19,7 @@ inductive Account where
 
 /-- Why resources moved. -/
 inductive Reason where
-  | cost | trade | harvest | lawFee | lawEffect | setDeposit | dealPayment | refund
+  | cost | trade | harvest | lawEffect | setDeposit | dealPayment | refund
   deriving Repr, DecidableEq
 
 /-- One written movement of resources. -/

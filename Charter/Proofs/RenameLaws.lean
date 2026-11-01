@@ -26,6 +26,7 @@ def trigger : Trigger → Trigger
   | .build a k => .build (σ.to a) k
   | .roundEnd => .roundEnd
   | .roll a n => .roll (σ.to a) n
+  | .now => .now
 
 theorem party_account (E : LawEnv) (p : Party) :
     p.account (σ.env E) = (p.account E).map σ.account := by
@@ -45,46 +46,70 @@ theorem bodyFor_trigger (c : Clause) (t : Trigger) : c.bodyFor (σ.trigger t) = 
 
 /-! ## Numbers and conditions -/
 
-/-- A law's number is the same in the renamed game. -/
-theorem expr_eval (s : State G) (E : LawEnv) (e : Expr) :
-    e.eval (σ.state s) (σ.env E) = e.eval s E := by
-  induction e with
-  | lit n => rfl
-  | harvestedAmount => rfl
-  | rolled => rfl
-  | holding p r =>
-    simp only [Expr.eval, party_account, resRef_get]
-    cases p.account E <;> cases r.get E <;> simp [balance_rename]
-  | points p =>
-    simp only [Expr.eval, party_seat]
-    cases p.seat E <;> simp
-  | count p k =>
-    simp only [Expr.eval, party_seat]
-    cases p.seat E <;> simp
-  | add a b iha ihb => simp only [Expr.eval, iha, ihb]
-  | sub a b iha ihb => simp only [Expr.eval, iha, ihb]
-  | mul a b iha ihb => simp only [Expr.eval, iha, ihb]
-  | div a n iha => simp only [Expr.eval, iha]
-  | min a b iha ihb => simp only [Expr.eval, iha, ihb]
-  | max a b iha ihb => simp only [Expr.eval, iha, ihb]
-
-/-- A law's condition is the same in the renamed game. -/
-theorem cond_eval (s : State G) (E : LawEnv) (c : Cond) :
-    c.eval (σ.state s) (σ.env E) = c.eval s E := by
-  induction c with
-  | yes => rfl
-  | lt a b => simp only [Cond.eval, expr_eval]
-  | le a b => simp only [Cond.eval, expr_eval]
-  | eq a b => simp only [Cond.eval, expr_eval]
-  | and a b iha ihb => simp only [Cond.eval, iha, ihb]
-  | or a b iha ihb => simp only [Cond.eval, iha, ihb]
-  | not c ih => simp only [Cond.eval, ih]
-  | harvestedIs r => rfl
-
-/-! ## Effects and laws -/
-
 theorem env_each (E : LawEnv) (p : Seat) :
     ({ σ.env E with each := some (σ.to p) } : LawEnv) = σ.env { E with each := some p } := rfl
+
+/-- A measure gives the same values in the renamed game, in the same order. -/
+theorem measured_rename (s : State G) (E : LawEnv) (test' test : LawEnv → Bool)
+    (value' value : LawEnv → Nat) (ht : ∀ E, test' (σ.env E) = test E)
+    (hv : ∀ E, value' (σ.env E) = value E) :
+    measured (σ.state s) (σ.env E) test' value' = measured s E test value := by
+  simp only [measured, state_turnOrder, List.filterMap_map, Function.comp_def, env_each, ht, hv]
+
+mutual
+  /-- A law's number is the same in the renamed game. -/
+  theorem expr_eval (s : State G) : (e : Expr) → (E : LawEnv) →
+      e.eval (σ.state s) (σ.env E) = e.eval s E
+    | .lit _, _ => by simp only [Expr.eval]
+    | .harvestedAmount, _ => rfl
+    | .rolled, _ => rfl
+    | .holding p r, E => by
+      simp only [Expr.eval, party_account, resRef_get]
+      cases p.account E <;> cases r.get E <;> simp [balance_rename]
+    | .points p, E => by
+      simp only [Expr.eval, party_seat]
+      cases p.seat E <;> simp
+    | .count p k, E => by
+      simp only [Expr.eval, party_seat]
+      cases p.seat E <;> simp
+    | .add a b, E => by simp only [Expr.eval, expr_eval s a, expr_eval s b]
+    | .sub a b, E => by simp only [Expr.eval, expr_eval s a, expr_eval s b]
+    | .mul a b, E => by simp only [Expr.eval, expr_eval s a, expr_eval s b]
+    | .div a n, E => by simp only [Expr.eval, expr_eval s a]
+    | .divBy a b, E => by simp only [Expr.eval, expr_eval s a, expr_eval s b]
+    | .min a b, E => by simp only [Expr.eval, expr_eval s a, expr_eval s b]
+    | .max a b, E => by simp only [Expr.eval, expr_eval s a, expr_eval s b]
+    | .round, _ => rfl
+    | .declared p r, E => by
+      simp only [Expr.eval, party_seat, resRef_get]
+      cases p.seat E <;> cases r.get E <;> simp [state_declared]
+    | .totalOver c a, E => by
+      simp only [Expr.eval]
+      rw [measured_rename σ s E (fun e => c.eval (σ.state s) e) (fun e => c.eval s e)
+        (fun e => a.eval (σ.state s) e) (fun e => a.eval s e) (cond_eval s c) (expr_eval s a)]
+    | .mostOver c a, E => by
+      simp only [Expr.eval]
+      rw [measured_rename σ s E (fun e => c.eval (σ.state s) e) (fun e => c.eval s e)
+        (fun e => a.eval (σ.state s) e) (fun e => a.eval s e) (cond_eval s c) (expr_eval s a)]
+    | .leastOver c a, E => by
+      simp only [Expr.eval]
+      rw [measured_rename σ s E (fun e => c.eval (σ.state s) e) (fun e => c.eval s e)
+        (fun e => a.eval (σ.state s) e) (fun e => a.eval s e) (cond_eval s c) (expr_eval s a)]
+
+  /-- A law's condition is the same in the renamed game. -/
+  theorem cond_eval (s : State G) : (c : Cond) → (E : LawEnv) →
+      c.eval (σ.state s) (σ.env E) = c.eval s E
+    | .yes, _ => rfl
+    | .lt a b, E => by simp only [Cond.eval, expr_eval s a, expr_eval s b]
+    | .le a b, E => by simp only [Cond.eval, expr_eval s a, expr_eval s b]
+    | .eq a b, E => by simp only [Cond.eval, expr_eval s a, expr_eval s b]
+    | .and a b, E => by simp only [Cond.eval, cond_eval s a, cond_eval s b]
+    | .or a b, E => by simp only [Cond.eval, cond_eval s a, cond_eval s b]
+    | .not c, E => by simp only [Cond.eval, cond_eval s c]
+    | .harvestedIs _, _ => rfl
+end
+
+/-! ## Effects and laws -/
 
 mutual
   /-- An effect's transfers in the renamed game are the renamed transfers. -/
@@ -94,6 +119,7 @@ mutual
     | .transfer src dst r amount, E => by
         simp only [Effect.plan, party_account, resRef_get, expr_eval]
         cases src.account E <;> cases dst.account E <;> cases r.get E <;> rfl
+    | .movePiece .., _ => rfl
     | .forEach c body, E => by
         simp only [Effect.plan, state_turnOrder, List.flatMap_map, List.map_flatMap, env_each,
           cond_eval, planAll_rename s body]
@@ -116,6 +142,168 @@ end
 theorem law_plan (s : State G) (t : Trigger) (L : Law) :
     Law.plan (σ.state s) (σ.trigger t) L = (Law.plan s t L).map σ.entry := by
   simp only [Law.plan, bodyFor_trigger, trigger_env, planAll_rename, List.map_flatMap]
+
+/-! ## Moving pieces -/
+
+/-- The same order, with its seats renamed. -/
+def order (o : PieceOrder) : PieceOrder := { o with src := σ.to o.src, dst := o.dst.map σ.to }
+
+mutual
+  /-- An effect's orders in the renamed game are the renamed orders. -/
+  theorem planOrders_rename (s : State G) :
+      (e : Effect) → (E : LawEnv) →
+      Effect.planOrders (σ.state s) e (σ.env E) = (Effect.planOrders s e E).map σ.order
+    | .transfer .., _ => rfl
+    | .movePiece src dst k, E => by
+        simp only [Effect.planOrders, party_seat]
+        cases src.seat E with
+        | none => cases dst <;> rfl
+        | some a => cases dst <;> cases hq : Party.seat E _ <;> first | rfl | simp [Party.seat, env] at hq ⊢ <;> simp_all [order]
+    | .forEach c body, E => by
+        simp only [Effect.planOrders, state_turnOrder, List.flatMap_map, List.map_flatMap, env_each,
+          cond_eval, planOrdersAll_rename s body]
+        congr 1
+        funext p
+        split <;> simp
+    | .when c body, E => by
+        simp only [Effect.planOrders, cond_eval, planOrdersAll_rename s body]
+        split <;> simp
+
+  /-- The same, for a list of effects. -/
+  theorem planOrdersAll_rename (s : State G) :
+      (es : List Effect) → (E : LawEnv) →
+      Effect.planOrdersAll (σ.state s) es (σ.env E) = (Effect.planOrdersAll s es E).map σ.order
+    | [], _ => rfl
+    | e :: es, E => by
+        simp only [Effect.planOrdersAll, planOrders_rename s e E, planOrdersAll_rename s es E,
+          List.map_append]
+end
+
+theorem lawOrders_rename (s : State G) (t : Trigger) :
+    lawOrders (σ.state s) (σ.trigger t) = (lawOrders s t).map σ.order := by
+  simp only [lawOrders, bodyFor_trigger, trigger_env, planOrdersAll_rename, List.map_flatMap, state_laws]
+
+theorem piece_beq (x y : Piece) : (σ.piece x == σ.piece y) = (x == y) := by
+  have hinj : σ.piece x = σ.piece y ↔ x = y := by
+    constructor
+    · intro h
+      have h1 := congrArg Piece.owner h
+      have h2 := congrArg Piece.kind h
+      have h3 := congrArg Piece.loc h
+      simp only [piece] at h1 h2 h3
+      have h0 : x.owner = y.owner := by
+        have := congrArg σ.back h1
+        simpa [σ.back_to] using this
+      cases x; cases y; simp_all
+    · rintro rfl; rfl
+  rw [Bool.eq_iff_iff]
+  simp [hinj]
+
+theorem contains_piece' (l : List Piece) (y : Piece) :
+    (l.map σ.piece).contains (σ.piece y) = l.contains y := by
+  induction l with
+  | nil => rfl
+  | cons a t ih =>
+    simp only [List.map_cons, List.contains_cons, ih, piece_beq]
+
+theorem carriedWith_rename (R : Rules) (ps : List Piece) (x : Piece) :
+    carriedWith R (ps.map σ.piece) (σ.piece x) = (carriedWith R ps x).map σ.piece := by
+  unfold carriedWith
+  suffices h : ∀ (l acc : List Piece),
+      (l.map σ.piece).foldl (fun a y =>
+        if y.owner == (σ.piece x).owner && y.loc == (σ.piece x).loc && !a.contains y &&
+          R.attachesTo y.kind (a.map (·.kind)) then a ++ [y] else a) (acc.map σ.piece) =
+      (l.foldl (fun a y =>
+        if y.owner == x.owner && y.loc == x.loc && !a.contains y &&
+          R.attachesTo y.kind (a.map (·.kind)) then a ++ [y] else a) acc).map σ.piece from h ps [x]
+  intro l
+  induction l with
+  | nil => intro acc; rfl
+  | cons y t ih =>
+    intro acc
+    simp only [List.map_cons, List.foldl_cons]
+    rw [← ih]
+    congr 1
+    have h1 : ((σ.piece y).owner == (σ.piece x).owner) = (y.owner == x.owner) := by
+      simp [piece]
+    have h2 : (acc.map σ.piece).map (·.kind) = acc.map (·.kind) := by
+      simp [Function.comp_def, piece]
+    simp only [h1, h2, contains_piece']
+    have h3 : (σ.piece y).loc = y.loc := rfl
+    have h4 : (σ.piece x).loc = x.loc := rfl
+    have h5 : (σ.piece y).kind = y.kind := rfl
+    rw [h3, h4, h5]
+    split <;> simp
+
+theorem landing_rename (R : Rules) (ps : List Piece) (dst : Option Seat) (y : Piece) :
+    landing R (ps.map σ.piece) (dst.map σ.to) (σ.piece y) = (landing R ps dst y).map σ.piece := by
+  cases dst with
+  | none => rfl
+  | some q =>
+    simp only [landing, Option.map_some]
+    have h : ((ps.map σ.piece).filter fun z => z.owner == σ.to q && z.kind == (σ.piece y).kind).length =
+        (ps.filter fun z => z.owner == q && z.kind == y.kind).length := by
+      rw [List.filter_map, List.length_map]
+      congr 2
+      funext z
+      simp [piece]
+    rw [h]
+    have h5 : (σ.piece y).kind = y.kind := rfl
+    rw [h5]
+    split
+    · simp only [Option.map_some, Option.some.injEq]
+      rfl
+    · rfl
+
+theorem applyOrder_rename (R : Rules) (ps : List Piece) (o : PieceOrder) :
+    applyOrder R (ps.map σ.piece) (σ.order o) = (applyOrder R ps o).map σ.piece := by
+  unfold applyOrder
+  have h0 : ((σ.order o).dst == some (σ.order o).src) = (o.dst == some o.src) := by
+    cases hd : o.dst with
+    | none => simp [order, hd]
+    | some q => simp [order, hd]
+  simp only [h0]
+  split
+  · rfl
+  · have hf : ((ps.map σ.piece).filter fun y => y.owner == (σ.order o).src && y.kind == (σ.order o).kind) =
+        (ps.filter fun y => y.owner == o.src && y.kind == o.kind).map σ.piece := by
+      rw [List.filter_map]
+      congr 2
+      funext z
+      simp [piece, order]
+    rw [hf, List.getLast?_map]
+    cases (ps.filter fun y => y.owner == o.src && y.kind == o.kind).getLast? with
+    | none => rfl
+    | some x =>
+      simp only [Option.map_some]
+      rw [carriedWith_rename]
+      have hg : ((ps.map σ.piece).filter fun y => y.owner == (σ.order o).src &&
+            !((carriedWith R ps x).map σ.piece).contains y) =
+          (ps.filter fun y => y.owner == o.src && !(carriedWith R ps x).contains y).map σ.piece := by
+        rw [List.filter_map]
+        congr 2
+        funext z
+        simp only [Function.comp_def, contains_piece']
+        simp [piece, order]
+      rw [hg]
+      simp only [List.isEmpty_map]
+      split
+      · rfl
+      · rw [List.filterMap_map, List.map_filterMap]
+        congr 1
+        funext z
+        simp only [Function.comp_def, contains_piece']
+        split
+        · exact σ.landing_rename R ps o.dst z
+        · rfl
+
+theorem applyOrders_rename (R : Rules) (orders : List PieceOrder) (ps : List Piece) :
+    applyOrders R (orders.map σ.order) (ps.map σ.piece) = (applyOrders R orders ps).map σ.piece := by
+  induction orders generalizing ps with
+  | nil => rfl
+  | cons o t ih =>
+    simp only [applyOrders, List.map_cons, List.foldl_cons] at ih ⊢
+    rw [applyOrder_rename, ih]
 
 /-! ## Settling shortfalls -/
 

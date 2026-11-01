@@ -205,10 +205,6 @@ theorem bundleEntries_rename (a b : Account) (x : Bundle) (r : Reason) :
     bundleEntries (σ.account a) (σ.account b) x r = (bundleEntries a b x r).map σ.entry := by
   simp [bundleEntries, Function.comp_def, entry]
 
-theorem lawFeeEntries_rename (p : Seat) :
-    lawFeeEntries G (σ.to p) = (lawFeeEntries G p).map σ.entry :=
-  σ.bundleEntries_rename (.player p) .bank G.lawFee .lawFee
-
 @[simp] theorem offer_id (o : Offer) : (σ.offer o).id = o.id := rfl
 @[simp] theorem offer_src (o : Offer) : (σ.offer o).src = σ.to o.src := rfl
 @[simp] theorem offer_to (o : Offer) : (σ.offer o).to = o.to.map σ.to := rfl

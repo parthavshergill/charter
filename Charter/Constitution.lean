@@ -68,7 +68,8 @@ theorem II_one_law_for_all (G : GameDef) (hG : G.Valid) (s : State G) (hs : Reac
 /-- **III. Only the majority changes the rules.**
 * The laws in force change only by a yes vote on an open law, from a seat in the game that had not
   voted. That vote gives the law more than half of all seats. The change is exactly that law: its
-  repeals take effect, and it joins the list.
+  repeals take effect, and it joins the list, unless all of its clauses act once when it passes. What
+  those clauses do happens at that vote, and every other event leaves them out.
 * In the actions phase, such a vote is accepted and enacts the law, if the seat is under its action
   limit and the law passes `lawProblems`.
 * On an open proposal, no seat votes or signs twice. Every seat there is in the game.
@@ -120,20 +121,31 @@ theorem IV_promises_are_paid_up_front (G : GameDef) (hG : G.Valid) (s : State G)
 * A deal payment comes only from a deposit, on the step that ends a round.
 * A refund goes only from a deposit to its owner, when the deal closes.
 * Money leaves a seat's own account only for that seat's build, that seat's trade at the exact price
-  or agreed amounts, the fee for that seat's law, its deposit, or what a law in force says.
+  or agreed amounts, its deposit, or what a law in force says.
 * Money leaves the bank or treasury only when the dice pay out, for a bank trade at its exact price,
-  or under a law in force. -/
+  or under a law in force.
+
+What you own leaves you only for a stated reason, and this covers pieces too:
+* A piece leaves its owner only for that seat's own upgrade, by a law in force at a turn change, or by a
+  law's `now` clause at the vote that passes it. A law can do this only at a round's end, on a roll or at
+  that vote.
+* A turn change leaves exactly the pieces `turnPieces` says, and the vote that passes a law leaves exactly
+  what its `now` clauses say. No other event but placing a piece changes any.
+* A seat that has a piece always keeps one. -/
 theorem V_your_money_is_yours (G : GameDef) (hG : G.Valid) (s s' : State G) (e : Event)
     (hs : Reachable G s) (h : Engine.step G s e = .ok s') :
     OffersKept s s' e ∧
     AcceptedOffersAreExact s s' e ∧
-    ∀ x ∈ newEntries s s',
+    (∀ x ∈ newEntries s s',
       MoneyEntersDepositOnlyToFundDeal s s' e x ∧
       MoneyLeavesDepositOnlyAsPromised s x ∧
       DealsPayOnlyAtRoundEnd s e x ∧
       RefundsGoToOwnerAtClose s s' x ∧
       MoneyLeavesSeatOnlyFor s s' e x ∧
-      MoneyLeavesBankOnlyFor s e x :=
+      MoneyLeavesBankOnlyFor s e x) ∧
+    PiecesKept s s' e ∧
+    PieceLeavesOnlyFor s s' e ∧
+    SeatsKeepAPiece s s' :=
   Proofs.V_your_money_is_yours G hG s s' e (hs.inv hG) h
 
 /-- **VI. Every deal ends.**

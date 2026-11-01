@@ -32,7 +32,6 @@ def tinySettlers : GameDef where
   targetPoints := 4
   rounds := 10
   bankRate := 4
-  lawFee := [("grain", 1)]
   setupPieces := ["settlement", "road"]
 
 /-- The same engine with a different structure: two resources, a new upgrade path, and two
@@ -60,7 +59,6 @@ def tinySpace : GameDef where
   targetPoints := 5
   rounds := 12
   bankRate := 3
-  lawFee := [("alloy", 1)]
   setupPieces := ["outpost", "lane"]
 
 theorem tinySettlers_valid : tinySettlers.Valid := by decide
@@ -103,7 +101,7 @@ def tinySevens : GameDef :=
 theorem tinySevens_valid : tinySevens.Valid := by decide +kernel
 
 /-- A law that pays each seat from each seat, three levels deep. That is 8 payments at 2 seats and 216
-at 6, which is over the limit of 64. -/
+at 6, which is over the limit of 128. -/
 def tooManyPayments : Law :=
   { title := "Everyone pays everyone"
     clauses := [.onRoundEnd [.forEach .yes [.forEach .yes [.forEach .yes

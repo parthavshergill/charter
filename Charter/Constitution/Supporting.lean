@@ -10,23 +10,27 @@ close gaps that the commandments leave open.
 
 namespace Charter
 
-/-- **A winner earned it.** Nobody has more points than the winner, and the winner reached the target
-or the rounds really ran out. A game ends only by one of those two routes, so an ended game always has
-a winner. Reaching the target ends the game at once.
+/-- **A winner earned it.** Nobody has more points than the winner, and the winner reached the target,
+the rounds really ran out, or a majority ended the game. A game ends only by one of those three routes, so
+an ended game always has a winner. Points come from what a seat has built and from what it holds that a law says counts. After a move or a
+vote, a seat at the target has ended the game. A turn change does not look: a seat that reaches the target
+from a harvest, or by a law that gives it a piece, wins at the next move or vote by anyone.
 
 Why it matters: the commandments say how a game runs, and this says that its result means something. -/
 theorem the_winner_earned_it (G : GameDef) (hG : G.Valid) (s : State G) (hs : Reachable G s) :
     (∀ w, s.winner = some w →
       s.phase = .ended ∧ w ∈ s.turnOrder ∧
       (∀ p ∈ s.turnOrder, s.pointsOf p ≤ s.pointsOf w) ∧
-      (G.targetPoints ≤ s.pointsOf w ∨ s.turnsTaken = maxTurns G s.turnOrder.length)) ∧
+      (G.targetPoints ≤ s.pointsOf w ∨ s.turnsTaken = maxTurns G s.turnOrder.length ∨
+        MajorityEndedTheGame s)) ∧
     (s.phase = .ended → s.winner.isSome = true) ∧
-    ((∃ p ∈ s.turnOrder, G.targetPoints ≤ s.pointsOf p) → s.phase = .ended) :=
+    (∀ e s', Engine.step G s e = .ok s' → LooksForWinner e →
+      (∃ p ∈ s'.turnOrder, G.targetPoints ≤ s'.pointsOf p) → s'.phase = .ended) :=
   Proofs.the_winner_earned_it G hG s (hs.inv hG)
 
 /-- **The limits hold.** The fixed limits hold in every game: laws in force and their size, open
 proposals per seat, and running deals. Each law, and all the laws together, ask for a limited number
-of payments on any one trigger.
+of payments on any one trigger. All the laws together read a limited number of numbers and tests.
 
 Why it matters: no law can stall the game by making a turn too slow to run. -/
 theorem limits_hold (G : GameDef) (hG : G.Valid) (s : State G) (hs : Reachable G s) :
@@ -35,48 +39,58 @@ theorem limits_hold (G : GameDef) (hG : G.Valid) (s : State G) (hs : Reachable G
     (∀ seat, (s.openProposals.filter (·.by_ == seat)).length ≤ maxOpenPerSeat) ∧
     s.deals.length ≤ maxActiveDeals ∧
     (∀ x ∈ s.laws, x.2.plannedEntries s.turnOrder.length ≤ maxPlannedEntries) ∧
-    plannedTotal s.laws s.turnOrder.length ≤ maxPlannedTotal :=
+    plannedTotal s.laws s.turnOrder.length ≤ maxPlannedTotal ∧
+    readsTotal s.laws s.turnOrder.length ≤ maxReadsTotal :=
   Proofs.limits_hold G hG s (hs.inv hG)
 
 /-- **What most other events do.** With commandments VII and X, this and V's rule for accepted offers
 cover every event except a bank trade and a setup placement. Commandment V limits what those take from
 a seat. Only the tests check their entries in full.
 
-An exit, an offer, a cancelled offer and a proposed deal make no entries. A proposed law makes exactly
-its fee. A signature makes no entries, unless it is the last, which makes exactly the deal's deposits.
-A vote makes no entries, unless it ends the game, which makes only refunds. Accepting needs an offer
-that exists. A seat can end a turn only when it is the current seat. Only placing a piece changes the
-pieces. Only ending a turn moves the turn or the dice.
+An exit and a proposal make no entries. An offer or a cancelled offer makes none either, unless a seat
+is at the target and the game ends, which makes only refunds. A signature makes no entries, unless it is the last, which makes exactly the deal's deposits.
+A vote makes exactly what `VoteWritesExactly` says. Accepting needs an offer
+that exists. A seat can end a turn only when it is the current seat. Only placing a piece, a turn change and passing a law change the
+pieces, and commandment V says how. Only ending a turn moves the turn or the dice.
+
+A declaration changes one number and adds to the sender's action count and the count of events. It
+changes nothing else, unless a seat is at the target and the game ends. `DeclarationsKept` says how declared numbers can change in any step.
 
 Why it matters: it rules out hidden side effects in the events the commandments do not list. -/
 theorem every_other_event_is_exact (G : GameDef) (hG : G.Valid) (s s' : State G) (e : Event)
     (hs : Reachable G s) (h : Engine.step G s e = .ok s') :
     (∀ seat dealId, e = .exit seat dealId → newEntries s s' = []) ∧
-    (∀ p to give get, e = .move p (.offer to give get) → newEntries s s' = []) ∧
-    (∀ p id, e = .move p (.cancel id) → newEntries s s' = []) ∧
+    (∀ p to give get, e = .move p (.offer to give get) → NoEntriesUnlessEnded s s') ∧
+    (∀ p id, e = .move p (.cancel id) → NoEntriesUnlessEnded s s') ∧
     (∀ seat d, e = .propose seat (.deal d) → newEntries s s' = []) ∧
-    (∀ seat L, e = .propose seat (.law L) → newEntries s s' = lawFeeEntries G seat) ∧
+    (∀ seat L, e = .propose seat (.law L) → newEntries s s' = []) ∧
     (∀ seat id, e = .sign seat id → ∃ p d,
       s.openProposal? id = some p ∧ p.body = .deal d ∧
       ((∀ j ∈ d.signers, j ∈ p.signed ∨ j = seat) →
         newEntries s s' = depositEntries s.dealsStarted d) ∧
       ((¬ ∀ j ∈ d.signers, j ∈ p.signed ∨ j = seat) → newEntries s s' = [])) ∧
-    (∀ seat id yes, e = .vote seat id yes →
-      (s'.phase = .ended → newEntries s s' = s.deals.flatMap s.refundEntries) ∧
-      (s'.phase ≠ .ended → newEntries s s' = [])) ∧
+    (∀ seat id yes, e = .vote seat id yes → VoteWritesExactly s s' e) ∧
     (∀ p id, e = .move p (.accept id) → ∃ o, s.offers.find? (·.id == id) = some o) ∧
     (∀ p, e = .move p .endTurn → EndsTurn s e) ∧
-    ((∀ p k loc, e ≠ .move p (.place k loc)) → s'.pieces = s.pieces) ∧
+    (¬ EndsTurn s e → (∀ p k loc, e ≠ .move p (.place k loc)) → (∀ L, ¬ LawPasses s e L) →
+      s'.pieces = s.pieces) ∧
     (¬ EndsTurn s e →
       s'.turnsTaken = s.turnsTaken ∧ s'.turnIndex = s.turnIndex ∧ s'.round = s.round ∧
-      s'.rollsMade = s.rollsMade) :=
+      s'.rollsMade = s.rollsMade) ∧
+    (∀ p r n, e = .move p (.declare r n) → NoEntriesUnlessEnded s s' ∧ s'.phase ≠ .ended →
+      s' = { s with
+        declared := fun q x => if q = p ∧ x = r then n else s.declared q x
+        actionsThisTurn := fun q => if q = p then s.actionsThisTurn q + 1 else s.actionsThisTurn q
+        eventsApplied := s.eventsApplied + 1 }) ∧
+    DeclarationsKept s s' e :=
   Proofs.every_other_event_is_exact G hG s s' e (hs.inv hG) h
 
--- This proof does not need `hs`. The statement keeps it, so it matches the others.
+-- This proof needs neither `hG` nor `hs`. The statement keeps them, so it matches the others.
 set_option linter.unusedVariables false in
 /-- **Proposals cannot be switched off.** In the actions phase, a seat in the game that is under its
 action limit and its limit of open proposals can propose a law exactly when the law passes
-`lawProblems` and it can pay the fee. It can propose a deal exactly when the deal passes
+`lawProblems`. Proposing costs nothing, so no seat can be too poor to ask for a repeal. It can propose a
+deal exactly when the deal passes
 `dealProblems` and the seat is one of its signers. An accepted proposal goes on the end of the open
 list.
 
@@ -86,13 +100,13 @@ theorem proposals_are_accepted (G : GameDef) (hG : G.Valid) (s : State G) (hs : 
     (hActs : s.actionsThisTurn seat < maxActionsPerTurn)
     (hOpen : (s.openProposals.filter (·.by_ == seat)).length < maxOpenPerSeat) :
     (∀ L, (∃ s', Engine.step G s (.propose seat (.law L)) = .ok s') ↔
-      lawProblems G s L = [] ∧ s.affords seat G.lawFee = true) ∧
+      lawProblems G s L = []) ∧
     (∀ d, (∃ s', Engine.step G s (.propose seat (.deal d)) = .ok s') ↔
       dealProblems s d = [] ∧ seat ∈ d.signers) ∧
     (∀ body s', Engine.step G s (.propose seat body) = .ok s' →
       s'.openProposals = s.openProposals ++
         [{ id := s.nextProposalId, by_ := seat, body := body, votes := [], signed := [] }]) :=
-  Proofs.proposals_are_accepted hG s seat hPhase hSeat hActs hOpen
+  Proofs.proposals_are_accepted s seat hPhase hSeat hActs hOpen
 
 -- This proof needs neither `hG` nor `hs`. The statement keeps them, so it matches the others.
 set_option linter.unusedVariables false in

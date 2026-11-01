@@ -95,7 +95,6 @@ def game : GameDef where
   targetPoints := 10
   rounds := 24
   bankRate := 3
-  lawFee := [("pollen", 1)]
   setupPieces := ["node", "tendril"]
   foundingLaws := foundingLaws
 

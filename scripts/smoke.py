@@ -85,7 +85,7 @@ def buy_from_a_bot(srv, code, post, v, you, need):
 
 
 def settle_value(m):
-    """How much a corner pays, with most weight on what the law fee costs."""
+    """How much a corner pays, with most weight on grain and wool."""
     return sum(y["pips"] * (3 if y["res"] in ("grain", "wool") else 1) for y in m.get("yields", []))
 
 
@@ -435,13 +435,30 @@ REFUSED_LAWS = [
     ('(law "x" (on-round-end (for-each-player true (transfer each each grain 1))))', "moves nothing"),
     ('(law "x" (on-round-end (transfer bank treasury grain (/ 4 0))))', "divide by zero"),
     ('(law "x" (set-bank-rate 3) (set-bank-rate 5))', "same rule twice"),
-    ('(law "x" (on-round-end (for-each-player true ' + "(transfer bank each grain 1) " * 22 + ')))', "too many payments"),
+    ('(law "x" (on-round-end (for-each-player true ' + "(transfer bank each grain 1) " * 45 + ')))', "too many payments"),
     ('(law "x" (on-roll (transfer each treasury grain 1)))', "does not exist where this rule runs"),
     ('(law "x" (on-roll (transfer actor treasury res 1)))', "does not exist where this rule runs"),
     ('(law "x" (on-roll (transfer bank bank grain 1)))', "moves nothing"),
     ('(law "x" (on-roll (transfer bank treasury grain (/ rolled 0))))', "divide by zero"),
-    ('(law "x" (on-roll (for-each-player true ' + "(transfer bank each grain 1) " * 22 + ')))', "too many payments"),
+    ('(law "x" (on-roll (for-each-player true ' + "(transfer bank each grain 1) " * 45 + ')))', "too many payments"),
 ]
+
+
+class TableRanOut(Exception):
+    """The rounds ran out before the table reached the state a test needs. The dice decide that."""
+
+
+def on_fresh_tables(test):
+    """Run a test that needs certain cards in hand. If a table's rounds run out first, try a new table. A test
+    still fails if any of its checks fail, and also if no table reaches the state it needs."""
+    def run(srv):
+        for _ in range(8):
+            try:
+                return test(srv)
+            except TableRanOut:
+                continue
+        raise SystemExit(f"FAILED: {test.__name__}: no table reached the state this test needs")
+    return run
 
 
 def end_turn_until(srv, code, tokens, ok):
@@ -450,6 +467,8 @@ def end_turn_until(srv, code, tokens, ok):
         v = srv.get(f"/api/games/{code}/view?token={tokens[0]}")
         if ok(v):
             return v
+        if v["phase"] == "ended":
+            raise TableRanOut()
         seat = v["turn"]
         vs = srv.get(f"/api/games/{code}/view?token={tokens[seat]}")
         place = [m for m in vs["legalMoves"] if m["move"]["t"] == "place"]
@@ -464,12 +483,12 @@ def held(v, seat):
     return [k for k, n in v["seats"][seat]["hand"].items() if n > 0]
 
 
+@on_fresh_tables
 def a_roll_law_fires(srv):
     """Two people pass a law that pays the bank's grain on every roll, and it pays on the next one, to
     the seat whose turn that roll starts. The chronicle says so."""
     code = srv.post("/api/games", {"seats": 2})["code"]
     tokens = [srv.post(f"/api/games/{code}/join", {"name": n, "nonce": 7})["token"] for n in ("Mara", "Ada")]
-    # The Island's law fee is 1 grain and 1 wool.
     v = end_turn_until(srv, code, tokens, lambda v: v["phase"] == "actions" and all(v["seats"][v["turn"]]["hand"][k] >= 1 for k in ("grain", "wool")))
     a = v["turn"]
     b = 1 - a
@@ -496,6 +515,7 @@ def a_roll_law_fires(srv):
     check(any(l["major"] and l["text"].startswith("By law, on") for l in after["chronicle"][lines:]), "that line is one the screen tells")
 
 
+@on_fresh_tables
 def refusals_and_embargo(srv):
     """Three people at a table. The propose route refuses bad laws. Then one seat signs a promise not to
     trade with a seat that does not sign. Those two cannot trade, whichever offers. The seat that did

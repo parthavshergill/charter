@@ -84,6 +84,8 @@ structure State (G : GameDef) where
   nextOfferId : Nat
   builtThisRound : List (Seat × PieceKind)
   actionsThisTurn : Seat → Nat
+  /-- Each seat's public number for each resource. It clears when the round ends. -/
+  declared : Seat → Res → Nat
   /-- Every event accepted so far. -/
   eventsApplied : Nat
   winner : Option Seat
@@ -97,6 +99,8 @@ inductive Move where
   | offer (to : Option Seat) (give get : Bundle)
   | accept (offerId : Nat)
   | cancel (offerId : Nat)
+  /-- On your own turn, set your public number for this resource. It moves nothing. -/
+  | declare (r : Res) (n : Nat)
   | endTurn
   deriving Repr, DecidableEq
 
@@ -152,6 +156,8 @@ definition and the laws in force.
 structure Rules where
   pieces : List PieceDef
   bankRate : Nat
+  /-- What a unit of a resource is worth in points. A resource not listed is worth 0. -/
+  worth : List (Res × Nat)
   deriving Repr
 
 /-- The piece of this kind, if the rules have one. -/
@@ -164,6 +170,7 @@ def Clause.applyTo : Clause → Rules → Rules
   | .setPoints k n, R =>
       { R with pieces := R.pieces.map fun p => if p.name == k then { p with points := n } else p }
   | .setBankRate n, R => { R with bankRate := n }
+  | .setWorth r n, R => { R with worth := R.worth.filter (·.1 != r) ++ [(r, n)] }
   | .newPiece p, R => { R with pieces := R.pieces ++ [p] }
   | _, R => R
 
@@ -172,7 +179,7 @@ def Law.applyTo (L : Law) (R : Rules) : Rules := L.clauses.foldl (fun R c => c.a
 
 /-- The rules: the game's starting rules, then each law in force, oldest first. -/
 def rulesFrom (G : GameDef) (laws : List (Nat × Law)) : Rules :=
-  laws.foldl (fun R x => x.2.applyTo R) { pieces := G.pieces, bankRate := G.bankRate }
+  laws.foldl (fun R x => x.2.applyTo R) { pieces := G.pieces, bankRate := G.bankRate, worth := [] }
 
 /-- The ids of the laws this law repeals. -/
 def Law.repeals (L : Law) : List Nat :=
@@ -180,9 +187,10 @@ def Law.repeals (L : Law) : List Nat :=
     | .repeal n => some n
     | _ => none
 
-/-- The laws in force after law `id` passes: repeals take effect, and it joins the list. -/
+/-- The laws in force after law `id` passes: repeals take effect, and it joins the list, unless it is a law
+of only `now` clauses. -/
 def enact (laws : List (Nat × Law)) (id : Nat) (L : Law) : List (Nat × Law) :=
-  (laws.filter fun x => !L.repeals.contains x.1) ++ [(id, L)]
+  (laws.filter fun x => !L.repeals.contains x.1) ++ if L.isDecree then [] else [(id, L)]
 
 /-- The laws in force after these laws pass in order, with ids counting up from `id`. -/
 def enactAll : List (Nat × Law) → Nat → List Law → List (Nat × Law)
@@ -206,15 +214,21 @@ def costOf (s : State G) (k : PieceKind) : Bundle :=
 def countOf (s : State G) (p : Seat) (k : PieceKind) : Nat :=
   (s.pieces.filter fun x => x.owner == p && x.kind == k).length
 
-/-- A seat's points: the current worth of everything it owns. A piece whose law was repealed is
-worth 0. -/
-def pointsOf (s : State G) (p : Seat) : Nat :=
+/-- The points from what a seat has built. A piece whose law was repealed is worth 0. -/
+def builtPointsOf (s : State G) (p : Seat) : Nat :=
   ((s.pieces.filter (·.owner == p)).map fun x =>
     ((s.rules.piece? x.kind).map (·.points)).getD 0).sum
 
-/-- `s` with this law enacted. Used to say what a vote's preview means. -/
-def withLaw (s : State G) (id : Nat) (L : Law) : State G :=
-  { s with laws := enact s.laws id L }
+/-- The points from what a seat holds that a law says is worth something. Only a seat's own account
+counts, so a deposit does not. -/
+def tokenPointsOf (s : State G) (p : Seat) : Nat :=
+  (s.rules.worth.map fun x => x.2 * s.balance (.player p) x.1).sum
+
+/-- A seat's points: what it has built, and what it holds that counts. -/
+def pointsOf (s : State G) (p : Seat) : Nat := s.builtPointsOf p + s.tokenPointsOf p
+
+/-- A law in force ends the game. -/
+def lawEnds (s : State G) : Bool := s.laws.any fun x => x.2.clauses.any Clause.isEndGame
 
 /-- `s` with entries posted to its books. Used to say what a later entry could see. -/
 def afterPosting (s : State G) (es : List Entry) : State G :=

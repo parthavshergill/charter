@@ -243,10 +243,6 @@ def mayDraw (s s' : State G) (e : Event) (x : Entry) (i : Seat) : Bool :=
       | some o => (i == o.src || i == p) && (offerEntries o p).contains x
       | none => false
     | _ => false
-  | .lawFee =>
-    match e with
-    | .propose p (.law _) => p == i && (lawFeeEntries G i).contains x
-    | _ => false
   | .setDeposit =>
     match x.dst with
     | .deposit k _ => fundsDeal s s' e x k i
@@ -518,8 +514,8 @@ def claimOtherEvents (s s' : State G) (e : Event) : List String :=
     claim "other events: only an open offer is accepted" (s.offers.find? (·.id == id)).isSome
   | .move p .endTurn => claim "other events: only the current seat ends its turn" (endsTurn s (.move p .endTurn))
   | .propose _ (.deal _) => claim "other events: proposing a deal makes no entries" entries.isEmpty
-  | .propose seat (.law _) =>
-    claim "other events: proposing a law makes exactly the fee" (entries == lawFeeEntries G seat)
+  | .propose _ (.law _) =>
+    claim "other events: proposing a law makes no entries" entries.isEmpty
   | .sign seat id =>
     claim "other events: a signature makes exactly the deal's deposits, or nothing" <|
       match s.openProposal? id with
@@ -546,11 +542,11 @@ def claimProposals (s : State G) : List String :=
         s2.openProposals.length == s.openProposals.length + 1 &&
         (s2.openProposals.getLast?.map fun q =>
           q.id == s.nextProposalId && q.by_ == seat && q.votes.isEmpty && q.signed.isEmpty) == some true
-      claim "proposals: a law is accepted exactly when it can pass and the fee can be paid"
+      claim "proposals: a law is accepted exactly when it can pass"
         ((lawPool G s).all fun L =>
           match step G s (.propose seat (.law L)) with
-          | .ok s2 => (lawProblems G s L).isEmpty && s.affords seat G.lawFee && appended s2
-          | .error _ => !((lawProblems G s L).isEmpty && s.affords seat G.lawFee)) ++
+          | .ok s2 => (lawProblems G s L).isEmpty && appended s2
+          | .error _ => !(lawProblems G s L).isEmpty) ++
       claim "proposals: a deal is accepted exactly when it can run and the seat signs it"
         (s.turnOrder.all fun other => (dealPool G seat other 0).all fun d =>
           match step G s (.propose seat (.deal d)) with
@@ -682,10 +678,10 @@ def claimWinner (s : State G) : List String :=
        s.phase == .ended && s.turnOrder.contains w &&
        (s.turnOrder.all fun p => decide (s.pointsOf p ≤ s.pointsOf w)) &&
        (decide (G.targetPoints ≤ s.pointsOf w) ||
-         s.turnsTaken == maxTurns G s.turnOrder.length)) ++
+         s.turnsTaken == maxTurns G s.turnOrder.length || s.lawEnds)) ++
   claim "an ended game has a winner" (s.phase != .ended || s.winner.isSome) ++
-  claim "reaching the target ends the game"
-    (s.phase == .ended || !s.turnOrder.any fun p => decide (G.targetPoints ≤ s.pointsOf p))
+  claim "reaching the target with built points ends the game"
+    (s.phase == .ended || !s.turnOrder.any fun p => decide (G.targetPoints ≤ s.builtPointsOf p))
 
 /-- A value as text, for types that have no equality test. -/
 def textOf {α : Type} [Repr α] (x : α) : String := toString (repr x)
@@ -925,7 +921,10 @@ def senderOf : Event → Option Seat
 def fieldsAfterAction (s s' : State G) (e : Event) : List String :=
   if endsTurn s e then [] else
   let seats := 999 :: s.turnOrder
-  let won := !(seatsAtTarget s').isEmpty
+  let looks := match e with
+    | .move .. | .vote .. => true
+    | _ => false
+  let won := looks && !(winCandidates s').isEmpty
   claim "fields: the sender is in the game and under its limit"
     (match senderOf e with
      | some p => s.turnOrder.contains p && decide (s.actionsThisTurn p < maxActionsPerTurn)
@@ -946,7 +945,7 @@ def fieldsAfterAction (s s' : State G) (e : Event) : List String :=
       | _ => false) ++
   (if won then
     claim "fields: a win ends the game and names the winner"
-      (s'.phase == .ended && s'.winner == bestSeat s' (seatsAtTarget s')) ++
+      (s'.phase == .ended && s'.winner == bestSeat s' s'.turnOrder) ++
     (businessDiff (businessOf s')
       { afterAction s e with deals := [], offers := [], openProposals := [] }).map
         ("fields: after a win, " ++ ·)
@@ -1121,15 +1120,16 @@ def seat1OfferRound2 : List Event := settlersRound2 ++ [endT 0, offerToSeat0]
 def seat0HasGrain : List Event := settlersRound2
 
 #guard after (settlers2 (seat0HasGrain ++ [.propose 0 (.law cheapCities)])) fun s =>
-  seatBalance s 0 "grain" == 0 && s.balance .bank "grain" == 23 &&
-  s.journal.getLast? == some ⟨.player 0, .bank, "grain", 1, .lawFee⟩ &&
+  seatBalance s 0 "grain" == 1 && s.balance .bank "grain" == 22 &&
   s.openProposals.length == 1 && s.laws.isEmpty
--- A law needs a fee the proposer can pay.
-#guard rejects (settlers2 settlersSetup) (.propose 0 (.law cheapCities))
+-- Proposing moves nothing, so a seat that holds nothing can propose.
+#guard after (settlers2 settlersSetup) fun s =>
+  (tinySettlers.resources.all fun r => seatBalance s 0 r.name == 0) && s.phase == .actions
+#guard accepts (settlers2 settlersSetup) (.propose 0 (.law cheapCities))
 
 def badLaw (clauses : List Clause) : Law := { title := "bad", clauses := clauses }
 
--- A law that cannot pass is rejected, with no fee taken.
+-- A law that cannot pass is rejected.
 #guard rejects (settlers2 seat0HasGrain) (.propose 0 (.law (badLaw [])))
 #guard rejects (settlers2 seat0HasGrain) (.propose 0 (.law (badLaw [.repeal 7])))
 #guard rejects (settlers2 seat0HasGrain) (.propose 0 (.law (badLaw [.setBankRate 1])))
@@ -1236,12 +1236,12 @@ def roadToll : Law :=
   { title := "Road toll"
     clauses := [.onBuild "road" [.transfer .actor .treasury (.lit "brick") (.lit 1)]] }
 
--- Rent asks each seat for 1 grain. Seat 0 paid its grain as the fee, so it pays nothing.
+-- Rent asks each seat for 1 grain.
 def rentGame : List Event :=
   settlersRound2 ++ [.propose 0 (.law rentLaw), .vote 0 0 true, .vote 1 0 true, endT 0, endT 1]
 
 #guard after (settlers2 rentGame) fun s =>
-  s.balance .treasury "grain" == 1 && seatBalance s 0 "grain" == 0 && seatBalance s 1 "grain" == 0
+  s.balance .treasury "grain" == 2 && seatBalance s 0 "grain" == 0 && seatBalance s 1 "grain" == 0
 #guard traceFailures tinySettlers 2 42 rentGame == []
 
 def tollGame : List Event :=
@@ -1510,13 +1510,16 @@ def afterSetupForced : List Event := List.replicate 4 .forceEndTurn
 def eightDealsARound (round : Nat) : List Event :=
   startEmptyDeals 1 (round * maxActiveDeals) maxActiveDeals ++ [.forceEndTurn, .forceEndTurn]
 
--- A game can start 64 deals. Ids are below 64, so the last signature of the 65th is rejected.
-def sixtyFourDeals : List Event :=
-  afterSetupForced ++ (List.range 8).flatMap eightDealsARound
+-- A game can start 128 deals. Ids are below 128, so the last signature of the 129th is rejected. Tiny
+-- Settlers is too short for that many, so this game has more rounds.
+def longSettlers : GameDef := { tinySettlers with name := "Long Settlers", rounds := 30 }
 
-#guard after (settlers2 sixtyFourDeals) fun s =>
-  s.dealsStarted == maxDealsPerGame && s.deals.isEmpty && s.round == 9
-#guard rejects (settlers2 (sixtyFourDeals ++ [.propose 0 (.deal (emptyDeal 1)), .sign 0 64])) (.sign 1 64)
+def allTheDeals : List Event :=
+  afterSetupForced ++ (List.range 16).flatMap eightDealsARound
+
+#guard after (play longSettlers 2 42 allTheDeals) fun s =>
+  s.dealsStarted == maxDealsPerGame && s.deals.isEmpty && s.round == 17
+#guard rejects (play longSettlers 2 42 (allTheDeals ++ [.propose 0 (.deal (emptyDeal 1)), .sign 0 128])) (.sign 1 128)
 
 /-! ### The order of a round's end -/
 
@@ -2077,7 +2080,7 @@ def bigSettlements : Law := { title := "Big", clauses := [.setPoints "settlement
   (step tinySpace s (.propose 2 (.deal { title := "x", signers := [0, 1], rounds := 1, exitNotice := 0
                                          deposits := [], terms := [] }))).toOption.isNone
 #guard after (settlers2 seat0HasGrain) fun s =>
-  (lawProblems tinySettlers s cheapCities).isEmpty && s.affords 0 tinySettlers.lawFee &&
+  (lawProblems tinySettlers s cheapCities).isEmpty &&
   (step tinySettlers s (.propose 0 (.law cheapCities))).toOption.isSome
 
 /-! ## Prices cannot list a resource twice
@@ -2091,10 +2094,6 @@ def doublePrice : GameDef :=
       if p.name == "road" then { p with cost := [("timber", 1), ("timber", 1)] } else p }
 
 theorem doublePrice_invalid : ¬ doublePrice.Valid := by decide
-
-def doubleFee : GameDef := { tinySettlers with lawFee := [("grain", 1), ("grain", 1)] }
-
-theorem doubleFee_invalid : ¬ doubleFee.Valid := by decide
 
 /-! ## Every seat can always place its setup pieces
 
@@ -2186,11 +2185,13 @@ def sixSeats : State tinySettlers := testStart tinySettlers 6 42
 #guard (deepLaw 30).size == 63
 #guard (deepLaw 30).size ≤ maxLawSize
 #guard (deepLaw 30).plannedEntries 2 == 2 ^ 30
--- It is now rejected, for these two reasons: it is too big alone, and so is the total.
+-- It is now rejected, for these three reasons: it is too big alone, the total is too big, and so is what
+-- the laws would read.
 #guard after (settlers2 seat0HasGrain) fun s =>
   lawProblems tinySettlers s (deepLaw 30) ==
     ["this law could make too many payments at once",
-     "the laws in force could make too many payments at once"]
+     "the laws in force could make too many payments at once",
+     "the laws in force would read too many numbers at once"]
 #guard rejects (settlers2 seat0HasGrain) (.propose 0 (.law (deepLaw 30)))
 -- Sensible laws still pass, in the smallest and the largest game.
 #guard accepts (settlers2 seat0HasGrain) (.propose 0 (.law (deepLaw 1)))
@@ -2200,19 +2201,19 @@ def sixSeats : State tinySettlers := testStart tinySettlers 6 42
 #guard accepts (settlers2 seat0HasGrain) (.propose 0 (.law brickSweep))
 #guard (lawProblems tinySettlers sixSeats rentLaw).isEmpty
 #guard (lawProblems tinySettlers sixSeats (deepLaw 2)).isEmpty
--- The limit, at 6 seats. Ten transfers per seat pass, and eleven do not.
-#guard (wideLaw 10).plannedEntries 6 == 60
-#guard (lawProblems tinySettlers sixSeats (wideLaw 10)).isEmpty
-#guard (wideLaw 11).plannedEntries 6 == 66
-#guard !(lawProblems tinySettlers sixSeats (wideLaw 11)).isEmpty
+-- The limit, at 6 seats. 21 transfers per seat pass, and 22 do not.
+#guard (wideLaw 21).plannedEntries 6 == 126
+#guard (lawProblems tinySettlers sixSeats (wideLaw 21)).isEmpty
+#guard (wideLaw 22).plannedEntries 6 == 132
+#guard !(lawProblems tinySettlers sixSeats (wideLaw 22)).isEmpty
 -- Three levels pass at 2 seats and fail at 6, because the cost depends on the seats.
 #guard after (settlers2 seat0HasGrain) fun s => (lawProblems tinySettlers s (deepLaw 3)).isEmpty
 #guard !(lawProblems tinySettlers sixSeats (deepLaw 3)).isEmpty
 -- A law at the limit plays through a round's end, and the claims hold.
 #guard traceFailures tinySettlers 2 42
-  (settlersRound2 ++ [.propose 0 (.law (deepLaw 6)), .vote 0 0 true, .vote 1 0 true, endT 0, endT 1]) == []
-#guard after (settlers2 (settlersRound2 ++ [.propose 0 (.law (deepLaw 6)), .vote 0 0 true, .vote 1 0 true]))
-  fun s => (deepLaw 6).plannedEntries 2 == 64 && s.laws.length == 1
+  (settlersRound2 ++ [.propose 0 (.law (deepLaw 7)), .vote 0 0 true, .vote 1 0 true, endT 0, endT 1]) == []
+#guard after (settlers2 (settlersRound2 ++ [.propose 0 (.law (deepLaw 7)), .vote 0 0 true, .vote 1 0 true]))
+  fun s => (deepLaw 7).plannedEntries 2 == 128 && s.laws.length == 1
 
 /-! ## Laws that would do nothing -/
 
@@ -2422,13 +2423,13 @@ def penaltyGame : Option (State tinySevens) :=
 #guard lawAccepted [.onRoundEnd [.transfer .bank .treasury (.lit "grain") .harvestedAmount]]
 -- Roll clauses count in both payment caps.
 #guard (badLaw [.onRoll [nestedEach 0, .forEach .yes [nestedEach 0]]]).plannedEntries 6 == 7
-#guard !(lawProblems tinySettlers sixSeats (badLaw [.onRoll [.forEach .yes (List.replicate 11 (nestedEach 0))]])).isEmpty
-#guard (lawProblems tinySettlers sixSeats (badLaw [.onRoll [.forEach .yes (List.replicate 10 (nestedEach 0))]])).isEmpty
+#guard !(lawProblems tinySettlers sixSeats (badLaw [.onRoll [.forEach .yes (List.replicate 22 (nestedEach 0))]])).isEmpty
+#guard (lawProblems tinySettlers sixSeats (badLaw [.onRoll [.forEach .yes (List.replicate 21 (nestedEach 0))]])).isEmpty
 #guard plannedTotal [(0, badLaw [.onRoll [.forEach .yes [nestedEach 0]]])] 6 == 6
 #guard (lawProblems tinySettlers
-    { sixSeats with laws := [(0, badLaw [.onRoll [.forEach .yes (List.replicate 10 (nestedEach 0))]]),
-                             (1, badLaw [.onRoll [.forEach .yes (List.replicate 10 (nestedEach 0))]])] }
-    (badLaw [.onRoll [.forEach .yes (List.replicate 10 (nestedEach 0))]])) ==
+    { sixSeats with laws := [(0, badLaw [.onRoll [.forEach .yes (List.replicate 21 (nestedEach 0))]]),
+                             (1, badLaw [.onRoll [.forEach .yes (List.replicate 21 (nestedEach 0))]])] }
+    (badLaw [.onRoll [.forEach .yes (List.replicate 21 (nestedEach 0))]])) ==
   ["the laws in force could make too many payments at once"]
 -- A roll law cannot change the roll: the dice are the same with and without one.
 #guard after (sevens2 (forced 5)) fun s =>
@@ -2517,6 +2518,111 @@ def spaceLawOpen : List Event := spaceSetup ++ [endT 0, endT 1, endT 2, .propose
   s.laws.map (·.1) == [1]
 #guard traceFailures tinySpace 3 7 (spaceLawOpen ++ [.vote 0 1 false, .vote 1 1 true, .vote 2 1 true]) == []
 
+/-! ### Measures -/
+
+-- Inside a measure, `each` is the seat being measured, and a surrounding `each` comes back after it.
+def richGame : State tinySettlers :=
+  { testStart tinySettlers 3 42 with
+    phase := .actions
+    round := 4
+    books := fun a r => match a, r with
+      | .player 0, "grain" => 5 | .player 1, "grain" => 9 | .player 2, "grain" => 9
+      | .treasury, "timber" => 4 | _, _ => 0 }
+
+def held0 : Expr := .holding .each (.lit "grain")
+def evalRich (e : Expr) : Nat := e.eval richGame {}
+#guard evalRich (.totalOver .yes held0) == 23
+#guard evalRich (.mostOver .yes held0) == 9
+#guard evalRich (.leastOver .yes held0) == 5
+#guard evalRich (.totalOver (.lt (.lit 5) held0) (.lit 1)) == 2
+#guard evalRich (.leastOver (.lt (.lit 5) held0) held0) == 9
+#guard evalRich (.mostOver (.lt (.lit 100) held0) held0) == 0
+#guard evalRich (.leastOver (.lt (.lit 100) held0) held0) == 0
+#guard evalRich (.totalOver (.lt (.lit 100) held0) held0) == 0
+#guard evalRich .round == 4
+#guard evalRich (.divBy (.lit 23) (.holding .treasury (.lit "timber"))) == 5
+#guard evalRich (.divBy (.lit 23) (.holding .treasury (.lit "grain"))) == 0
+-- A measure inside a `forEach`: each seat is compared with the most, and a tie passes both.
+#guard Effect.planAll richGame [.forEach (.eq held0 (.mostOver .yes held0))
+    [.transfer .bank .each (.lit "timber") (.lit 1)]] {} ==
+  [⟨.bank, .player 1, "timber", 1, .lawEffect⟩, ⟨.bank, .player 2, "timber", 1, .lawEffect⟩]
+-- Size counts what is inside a measure, and the payment caps count what the law around it plans.
+#guard (Expr.totalOver (.lt (.lit 1) (.lit 2)) (.add (.lit 1) (.lit 2))).size == 7
+#guard (Expr.divBy (.lit 1) (.lit 2)).size == 3
+#guard (Expr.totalOver .yes (.lit 2)).reads 6 == 13
+#guard (Expr.totalOver .yes (.totalOver .yes (.lit 2))).reads 6 == 85
+#guard (Cond.lt (.lit 1) (.totalOver .yes (.lit 2))).reads 6 == 15
+-- A literal zero below a division is refused. A zero that the law computes gives 0.
+#guard lawRejected [.onHarvest [payTreasury (.divBy (.lit 4) (.lit 0))]]
+#guard lawRejected [.onHarvest [payTreasury (.totalOver .yes (.div (.lit 4) 0))]]
+#guard lawRejected [.onHarvest [.when (.lt (.mostOver (.lt (.lit 1) (.div (.lit 4) 0)) (.lit 1)) (.lit 1)) [payTreasury (.lit 1)]]]
+#guard lawAccepted [.onHarvest [payTreasury (.divBy (.lit 4) (.holding .treasury (.lit "grain")))]]
+#guard lawAccepted [.onHarvest [payTreasury (.mostOver .yes (.points .each))]]
+#guard lawAccepted [.onRoll [payTreasury .round]]
+
+/-! ### Declarations -/
+
+def declareSetup : List Event := settlersRound2
+
+-- On your own turn, for a real resource, within the limit. No entries, and it counts as an action.
+#guard after (settlers2 declareSetup) fun s => s.currentSeat == some 0 && s.phase == .actions
+#guard accepts (settlers2 declareSetup) (.move 0 (.declare "grain" 5))
+#guard accepts (settlers2 declareSetup) (.move 0 (.declare "grain" maxDeclared))
+#guard rejects (settlers2 declareSetup) (.move 0 (.declare "grain" (maxDeclared + 1)))
+#guard rejects (settlers2 declareSetup) (.move 0 (.declare "gold" 5))
+#guard rejects (settlers2 declareSetup) (.move 1 (.declare "grain" 5))
+#guard rejects (settlers2 declareSetup) (.move 7 (.declare "grain" 5))
+#guard after (settlers2 (declareSetup ++ [.move 0 (.declare "grain" 5)])) fun s =>
+  s.declared 0 "grain" == 5 && s.declared 0 "timber" == 0 && s.declared 1 "grain" == 0 &&
+  s.actionsThisTurn 0 == 1
+-- A later declaration replaces the first, and 0 clears it.
+#guard after (settlers2 (declareSetup ++ [.move 0 (.declare "grain" 5), .move 0 (.declare "grain" 2)])) fun s =>
+  s.declared 0 "grain" == 2
+#guard after (settlers2 (declareSetup ++ [.move 0 (.declare "grain" 5), .move 0 (.declare "grain" 0)])) fun s =>
+  s.declared 0 "grain" == 0
+-- It stays through the round, and clears when the round ends.
+#guard after (settlers2 (declareSetup ++ [.move 0 (.declare "grain" 5), endT 0])) fun s =>
+  s.declared 0 "grain" == 5
+#guard after (settlers2 (declareSetup ++ [.move 0 (.declare "grain" 5), endT 0, endT 1])) fun s =>
+  s.declared 0 "grain" == 0
+-- The claims hold on a game with declarations.
+#guard traceFailures tinySettlers 2 42 (declareSetup ++ [.move 0 (.declare "grain" 5), .move 0 (.declare "timber" 1), endT 0, .forceEndTurn]) == []
+-- At the action limit, a seat cannot declare.
+#guard rejects (settlers2 (declareSetup ++ List.replicate maxActionsPerTurn (.move 0 (.declare "grain" 5)))) (.move 0 (.declare "grain" 5))
+-- The treasury and the bank have no number, and neither does a missing seat.
+#guard (Expr.declared .treasury (.lit "grain")).eval richGame {} == 0
+#guard (Expr.declared .each (.lit "grain")).eval richGame {} == 0
+#guard (Expr.declared .each (.lit "grain")).eval
+  ({ richGame with declared := fun _ _ => 3 } : State tinySettlers) { each := some 1 } == 3
+-- `legalMoves` does not list declarations, as it does not list offers.
+#guard after (settlers2 declareSetup) fun s =>
+  (legalMoves tinySettlers s 0).all fun | .declare .. => false | _ => true
+
+/-! ### What a resource is worth -/
+
+def worthState : State tinySettlers :=
+  { testStart tinySettlers 2 42 with
+    phase := .actions
+    laws := [(0, { title := "w", clauses := [.setWorth "grain" 2] })]
+    books := fun a r => match a, r with
+      | .player 0, "grain" => 3 | .player 1, "timber" => 9 | .deposit 0 1, "grain" => 9 | _, _ => 0 }
+
+#guard worthState.pointsOf 0 == 6
+#guard worthState.tokenPointsOf 0 == 6
+#guard worthState.builtPointsOf 0 == 0
+#guard worthState.pointsOf 1 == 0
+-- A later clause replaces an earlier one, and a repeal takes it away.
+#guard ({ worthState with laws := worthState.laws ++ [(1, { title := "x", clauses := [.setWorth "grain" 5] })] } : State tinySettlers).pointsOf 0 == 15
+#guard ({ worthState with laws := [] } : State tinySettlers).pointsOf 0 == 0
+#guard lawAccepted [.setWorth "grain" 1]
+#guard lawRejected [.setWorth "gold" 1]
+#guard lawRejected [.setWorth "grain" 1, .setWorth "grain" 2]
+-- The law's own vote looks for a winner: this law makes seat 0 win at once.
+#guard after (settlers2 (settlersRound2 ++ [.propose 0 (.law { title := "w", clauses := [.setWorth "grain" 100] }), .vote 0 0 true, .vote 1 0 true]))
+  fun s => s.phase == .ended && s.winner.isSome
+-- The claims hold when the win comes from what a seat holds.
+#guard traceFailures tinySettlers 2 42 (settlersRound2 ++ [.propose 0 (.law { title := "w", clauses := [.setWorth "grain" 100] }), .vote 0 0 true, .vote 1 0 true]) == []
+
 /-! ### The total limit on planned payments -/
 
 /-- `count` laws in force, each of one `forEach` with `transfers` transfers. -/
@@ -2526,24 +2632,38 @@ def simpleLaws (count transfers : Nat) : List (Nat × Law) :=
 def withLaws (seats : Nat) (laws : List (Nat × Law)) : State tinySettlers :=
   { testStart tinySettlers seats 42 with laws := laws, phase := .actions }
 
--- 16 simple laws fit at 6 seats. The 16th passes with 15 in force.
-#guard plannedTotal (simpleLaws 16 1) 6 == 96
-#guard plannedTotal (simpleLaws 16 1) 6 ≤ maxPlannedTotal
-#guard (lawProblems tinySettlers (withLaws 6 (simpleLaws 15 1)) (wideLaw 1)).isEmpty
+-- 42 simple laws fit at 6 seats. The 42nd passes with 41 in force.
+#guard plannedTotal (simpleLaws 42 1) 6 == 252
+#guard plannedTotal (simpleLaws 42 1) 6 ≤ maxPlannedTotal
+#guard (lawProblems tinySettlers (withLaws 6 (simpleLaws 41 1)) (wideLaw 1)).isEmpty
 -- The limit is exact. At 2 seats, a `forEach` with `k` transfers plans `2 * k` entries.
-#guard (lawProblems tinySettlers (withLaws 2 (simpleLaws 1 32)) (wideLaw (maxPlannedTotal / 2 - 32))).length ≤ 1
-#guard (lawProblems tinySettlers (withLaws 2 (simpleLaws 2 16 ++ [(9, wideLaw 16)])) (wideLaw 16)).isEmpty
-#guard plannedTotal (simpleLaws 2 16 ++ [(9, wideLaw 16)] ++ [(0, wideLaw 16)]) 2 == maxPlannedTotal
-#guard (lawProblems tinySettlers (withLaws 2 (simpleLaws 2 16 ++ [(9, wideLaw 16), (8, wideLaw 16)])) (wideLaw 1)) ==
+#guard (lawProblems tinySettlers (withLaws 2 (simpleLaws 1 64)) (wideLaw (maxPlannedTotal / 2 - 64))).length ≤ 1
+#guard (lawProblems tinySettlers (withLaws 2 (simpleLaws 2 32 ++ [(9, wideLaw 32)])) (wideLaw 32)).isEmpty
+#guard plannedTotal (simpleLaws 2 32 ++ [(9, wideLaw 32)] ++ [(0, wideLaw 32)]) 2 == maxPlannedTotal
+#guard (lawProblems tinySettlers (withLaws 2 (simpleLaws 2 32 ++ [(9, wideLaw 32), (8, wideLaw 32)])) (wideLaw 1)) ==
   ["the laws in force could make too many payments at once"]
+-- The cap on reads is exact too. A law that plans little can read a lot, inside a number.
+def readingLaw (n : Nat) : Law :=
+  badLaw [.onRoundEnd [.forEach .yes [.transfer .each .treasury (.lit "grain")
+    ((List.range n).foldl (fun e _ => .add e (.lit 0)) (.lit 1))]]]
+#guard (readingLaw 61).reads 6 == 751
+#guard (lawProblems tinySettlers
+    { sixSeats with laws := (List.range 9).map fun i => (i, readingLaw 61) } (readingLaw 61)).isEmpty
+#guard (lawProblems tinySettlers
+    { sixSeats with laws := (List.range 10).map fun i => (i, readingLaw 61) } (readingLaw 61)) ==
+  ["the laws in force would read too many numbers at once"]
+-- Nested `forEach`s with empty bodies plan nothing, but they count here, so they cannot stall a turn.
+#guard (lawProblems tinySettlers sixSeats (badLaw [.onRoundEnd [nestedEach 0,
+    (List.range 20).foldl (fun e _ => Effect.forEach .yes [e]) (Effect.forEach .yes [])]])).contains
+  "the laws in force would read too many numbers at once"
 -- A full budget still lets a law pass if it plans nothing, or if it repeals enough to fit.
-#guard (lawProblems tinySettlers (withLaws 2 (simpleLaws 2 16 ++ [(9, wideLaw 16), (8, wideLaw 16)]))
+#guard (lawProblems tinySettlers (withLaws 2 (simpleLaws 2 32 ++ [(9, wideLaw 32), (8, wideLaw 32)]))
   (badLaw [.setBankRate 2])).isEmpty
-#guard (lawProblems tinySettlers (withLaws 2 (simpleLaws 2 16 ++ [(9, wideLaw 16), (8, wideLaw 16)]))
+#guard (lawProblems tinySettlers (withLaws 2 (simpleLaws 2 32 ++ [(9, wideLaw 32), (8, wideLaw 32)]))
   (badLaw [.repeal 9, .onRoundEnd [nestedEach 1]])).isEmpty
 -- The check runs again at the deciding vote: a law that no longer fits closes and is not enacted.
 def fullBudgetVote : State tinySettlers :=
-  { withLaws 2 (simpleLaws 2 16 ++ [(9, wideLaw 16), (8, wideLaw 16)]) with
+  { withLaws 2 (simpleLaws 2 32 ++ [(9, wideLaw 32), (8, wideLaw 32)]) with
     openProposals := [{ id := 20, by_ := 0, body := .law (wideLaw 1), votes := [(0, true)], signed := [] }]
     nextProposalId := 21 }
 

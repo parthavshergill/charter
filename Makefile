@@ -4,6 +4,7 @@
 # make clerk-check  checks the clerk and the Claude seats, against a stand-in for the API.
 # make deploy-check checks budgets, pausing, waking and the copy to storage, against stand-ins. See docs/deploy.md.
 # make audit        checks every theorem's axioms, replays the proofs through leanchecker, and scans for banned constructs.
+# make measure      times the worst turn at the limits, or at others: make measure ARGS="--laws 32".
 # make contact-sheet PACK=<id>  draws all of a pack's looks in one image, in contact-sheets/. See docs/process/reskins.md.
 # make sim          plays complete games with no browser. See below.
 # make spectate     opens a finished run in the browser, as a spectator.
@@ -28,7 +29,7 @@ GAME ?= island
 KINDS ?= claude
 MAX_MINUTES ?= 360
 
-.PHONY: install run smoke clerk-check deploy-check audit sim spectate contact-sheet
+.PHONY: install run smoke clerk-check deploy-check audit measure sim spectate contact-sheet
 
 install:
 	@command -v lake >/dev/null || { echo "lake not found: install elan from https://github.com/leanprover/elan"; exit 1; }
@@ -46,6 +47,10 @@ clerk-check: install
 
 deploy-check: install
 	python3 scripts/deploy_check.py
+
+measure:
+	lake build charter-measure
+	.lake/build/bin/charter-measure $(ARGS)
 
 sim: install
 	.lake/build/bin/charter-sim --games $(GAMES) --seats $(SEATS) --game $(GAME) --kinds $(KINDS) --max-minutes $(MAX_MINUTES) \

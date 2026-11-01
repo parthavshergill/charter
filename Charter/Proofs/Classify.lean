@@ -38,6 +38,7 @@ mutual
         subst hx
         exact ⟨rfl, party_account_notDeposit ha, party_account_notDeposit hb⟩
       · simp at hx
+    | .movePiece .., _, x, hx => by simp [Effect.plan] at hx
     | .forEach c body, env, x, hx => by
       simp only [Effect.plan, List.mem_flatMap] at hx
       obtain ⟨p, _, hx⟩ := hx
@@ -120,7 +121,7 @@ theorem harvestEntries_form {s : State G} {roll : Nat} {x : Entry}
 
 /-- A roll is the harvest, then what laws do in reaction to the roll. -/
 theorem rollEntries_cases {s : State G} {roll : Nat} {x : Entry}
-    (hx : x ∈ rollEntries s roll) : x ∈ harvestEntries s roll ∨ LawForm x := by
+    (hx : x ∈ rollEntries s roll) : x ∈ harvestEntries s.atRoll roll ∨ LawForm x := by
   simp only [rollEntries, List.mem_append] at hx
   refine hx.imp id (fun hx => ?_)
   cases hn : s.nextRoller with
@@ -221,7 +222,7 @@ theorem closing_gone {s : State G} (hl : s.isLastTurn = true) (hnd : (s.deals.ma
 
 theorem mem_turnEntries {s : State G} {roll : Nat} {x : Entry} (hx : x ∈ turnEntries s roll) :
     (s.isLastTurn = true ∧ x ∈ s.roundEndEntries) ∨
-    x ∈ rollEntries (s.afterPosting s.entriesBeforeRoll) roll := by
+    x ∈ rollEntries s.afterRoundEnd roll := by
   have before : x ∈ s.entriesBeforeRoll → s.isLastTurn = true ∧ x ∈ s.roundEndEntries := by
     intro h
     unfold State.entriesBeforeRoll at h
@@ -253,15 +254,14 @@ def SeatOut (s s' : State G) (e : Event) (x : Entry) (i : Seat) : Prop :=
     ((∃ give get, e = .move i (.bankTrade give get) ∧ x ∈ s.bankTradeEntries i give get) ∨
      (∃ p id o, e = .move p (.accept id) ∧ s.offers.find? (·.id == id) = some o ∧
        (i = o.src ∨ i = p) ∧ x ∈ offerEntries o p))) ∨
-  (x.reason = .lawFee ∧ ∃ L, e = .propose i (.law L) ∧ x ∈ lawFeeEntries G i) ∨
   (∃ k, FundsDeal s s' e x k i) ∨
   (x.reason = .lawEffect ∧
     ((∃ b k loc, e = .move b (.place k loc) ∧
        x ∈ lawEntries (s.afterPosting (s.costEntries b k)) (.build b k)) ∨
      (EndsTurn s e ∧
        (x ∈ s.roundEndLawEntries ∨
-        x ∈ rollEntries (s.afterPosting s.entriesBeforeRoll)
-          (rollAt G s.seed s.rollsMade)))))
+        x ∈ rollEntries s.afterRoundEnd (rollAt G s.seed s.rollsMade))) ∨
+     (∃ L, LawPasses s e L ∧ x ∈ s.decreeEntries L)))
 
 /-- Everything commandment V says about one entry. -/
 def VConj (s s' : State G) (e : Event) (x : Entry) : Prop :=
@@ -324,23 +324,23 @@ theorem vconj_payment {s s' : State G} {e : Event} {x : Entry} (hx : x ∈ s.due
 /-- A law's entry at a turn change. -/
 theorem vconj_turnLaw {s s' : State G} {e : Event} {x : Entry} (hf : LawForm x) (hend : EndsTurn s e)
     (hx : x ∈ s.roundEndLawEntries ∨
-      x ∈ rollEntries (s.afterPosting s.entriesBeforeRoll) (rollAt G s.seed s.rollsMade)) :
+      x ∈ rollEntries s.afterRoundEnd (rollAt G s.seed s.rollsMade)) :
     VConj s s' e x :=
   vconj_plain hf.2.1 hf.2.2 (by rw [hf.1]; simp) (by rw [hf.1]; simp)
-    (fun _ _ => Or.inr (Or.inr (Or.inr (Or.inr ⟨hf.1, Or.inr ⟨hend, hx⟩⟩))))
+    (fun _ _ => Or.inr (Or.inr (Or.inr ⟨hf.1, Or.inr (Or.inl ⟨hend, hx⟩)⟩)))
 
 /-- Every entry of a turn change is allowed. -/
 theorem vconj_turn {s : State G} {e : Event} (hend : EndsTurn s e)
-    (hnd : (s.deals.map (·.id)).Nodup) {b : Books} {j : List Entry} {x : Entry}
+    (hnd : (s.deals.map (·.id)).Nodup) {b : Books} {j : List Entry} {ps : List Piece} {x : Entry}
     (hx : x ∈ turnEntries s (rollAt G s.seed s.rollsMade)) :
-    VConj s (startNextTurn { s with books := b, journal := j } (rollAt G s.seed s.rollsMade)) e x := by
+    VConj s (startNextTurn { s with books := b, journal := j, pieces := ps } (rollAt G s.seed s.rollsMade)) e x := by
   rcases mem_turnEntries hx with ⟨hl, hx⟩ | hx
   · rcases mem_roundEndEntries hx with h | h | ⟨d, hd, h⟩
     · exact vconj_payment h hend hl
     · exact vconj_turnLaw (lawEntries_form _ _ x h) hend (Or.inl h)
     · obtain ⟨hr, i, _, h1, h2⟩ := refundEntries_form h
       exact vconj_refund (closingDeals_mem hd)
-        (closing_gone (s := { s with books := b, journal := j }) hl hnd hd _) hr h1 h2
+        (closing_gone (s := { s with books := b, journal := j, pieces := ps }) hl hnd hd _) hr h1 h2
   · obtain ⟨h1, h2, h3, h4⟩ := rollEntries_form hx
     refine vconj_plain h1 h2 h3 h4 ?_
     intro i hi
@@ -352,7 +352,7 @@ theorem vconj_turn {s : State G} {e : Event} (hend : EndsTurn s e)
           cases this
         · exact hb
       · exact hb
-    exact Or.inr (Or.inr (Or.inr (Or.inr ⟨hlaw.1, Or.inr ⟨hend, Or.inr hx⟩⟩)))
+    exact Or.inr (Or.inr (Or.inr ⟨hlaw.1, Or.inr (Or.inl ⟨hend, Or.inr hx⟩)⟩))
 
 /-- The entries of a bundle go between the two accounts given. -/
 theorem mem_bundleEntries {a b : Account} {bd : Bundle} {r : Reason} {x : Entry}
@@ -393,7 +393,7 @@ theorem body_vconj {s s1 s' : State G} {e : Event} (hb : bodyOf s e = .ok s1)
         | inr hl =>
           have hf := lawEntries_form _ _ x hl
           exact vconj_plain hf.2.1 hf.2.2 (by rw [hf.1]; simp) (by rw [hf.1]; simp)
-            (fun _ _ => Or.inr (Or.inr (Or.inr (Or.inr ⟨hf.1, Or.inl ⟨p, k, loc, rfl, hl⟩⟩))))
+            (fun _ _ => Or.inr (Or.inr (Or.inr ⟨hf.1, Or.inl ⟨p, k, loc, rfl, hl⟩⟩)))
     | bankTrade a c =>
       obtain ⟨_, _, _, _, _, hr⟩ := bankTradeBody_ok hb
       obtain ⟨_, _, rfl⟩ := record_ok hr
@@ -435,22 +435,22 @@ theorem body_vconj {s s1 s' : State G} {e : Event} (hb : bodyOf s e = .ok s1)
     | cancel i =>
       obtain ⟨_, _, rfl⟩ := cancelBody_ok hb
       exact ⟨[], by simp, by simp⟩
+    | declare r n =>
+      obtain ⟨_, _, rfl⟩ := declareBody_ok hb
+      exact ⟨[], by simp, by simp⟩
   | propose seat b =>
-    obtain ⟨_, _, ⟨L, rfl, _, _, _, rfl⟩ | ⟨_, _, _, _, rfl⟩⟩ := proposeBody_ok hb
-    · refine ⟨_, rfl, ?_⟩
-      intro x hx
-      obtain ⟨h1, h2, h3⟩ := mem_bundleEntries hx
-      refine vconj_plain (h1 ▸ notDepPlayer _) (h2 ▸ notDepBank) (by rw [h3]; simp) (by rw [h3]; simp) ?_
-      intro i hi
-      rw [h1] at hi
-      injection hi with hi
-      subst hi
-      exact Or.inr (Or.inr (Or.inl ⟨h3, L, rfl, hx⟩))
+    obtain ⟨_, _, ⟨L, rfl, _, rfl⟩ | ⟨_, _, _, _, rfl⟩⟩ := proposeBody_ok hb
+    · exact ⟨[], by simp [addProposal], by simp⟩
     · exact ⟨[], by simp [addProposal], by simp⟩
   | vote seat i y =>
-    obtain ⟨_, _, _, _, _, _, ⟨_, rfl⟩ | ⟨_, rfl⟩⟩ := voteBody_ok hb
-    · exact ⟨[], by simp [(decideLaw_fields s i _).2.1], by simp⟩
-    · exact ⟨[], by simp, by simp⟩
+    have hv : voteBody s seat i y = .ok s1 := hb
+    rcases vote_view hv with ⟨L, hp, _, hs1⟩ | ⟨_, _, hj, _⟩
+    · refine ⟨s.decreeEntries L, by rw [hs1], ?_⟩
+      intro x hx
+      have hf : LawForm x := settle_form (fun z hz => lawPlan_form s .now L z hz) x hx
+      exact vconj_plain hf.2.1 hf.2.2 (by rw [hf.1]; simp) (by rw [hf.1]; simp)
+        (fun _ _ => Or.inr (Or.inr (Or.inr ⟨hf.1, Or.inr (Or.inr ⟨L, hp, hx⟩)⟩)))
+    · exact ⟨[], by simp [hj], by simp⟩
   | sign seat i =>
     obtain ⟨_, p, d, hp, hd, _, _, ⟨hall, hst⟩ | ⟨_, rfl⟩⟩ := signBody_ok hb
     · obtain ⟨_, hprob, _, _, hs1⟩ := startDeal_ok hst
@@ -484,7 +484,7 @@ theorem body_vconj {s s1 s' : State G} {e : Event} (hb : bodyOf s e = .ok s1)
       · intro j h
         injection h with hj
         subst hj
-        exact Or.inr (Or.inr (Or.inr (Or.inl ⟨_, hfund⟩)))
+        exact Or.inr (Or.inr (Or.inl ⟨_, hfund⟩))
     · exact ⟨[], by simp, by simp⟩
   | exit seat i =>
     obtain ⟨_, _, rfl⟩ := exitBody_ok hb

@@ -135,12 +135,10 @@ theorem addProposal_rename (s : State G) (seat : Seat) (body : Proposal) :
 theorem proposeLaw_rename (s : State G) (seat : Seat) (L : Law) :
     proposeLaw (σ.state s) (σ.to seat) L = (proposeLaw s seat L).map σ.state := by
   unfold proposeLaw
-  simp only [lawProblems_rename, lawFeeEntries_rename, record_rename]
+  simp only [lawProblems_rename]
   split
   · rfl
-  · cases record s (lawFeeEntries G seat) with
-    | error m => rfl
-    | ok s1 => exact congrArg Except.ok (σ.addProposal_rename s1 seat (.law L))
+  · exact congrArg Except.ok (σ.addProposal_rename s seat (.law L))
 
 theorem proposeDeal_rename (s : State G) (seat : Seat) (d : Deal) :
     proposeDeal (σ.state s) (σ.to seat) (σ.deal d) = (proposeDeal s seat d).map σ.state := by
@@ -178,11 +176,36 @@ theorem isDecidingVote_rename (s : State G) (p : OpenProposal) (seat : Seat) (ye
     isDecidingVote (σ.state s) (σ.openProposal p) (σ.to seat) yes = isDecidingVote s p seat yes := by
   simp only [isDecidingVote, withVote_rename, yesCount_rename, state_turnOrder, List.length_map]
 
+theorem decreeEntries_rename (s : State G) (L : Law) :
+    (σ.state s).decreeEntries L = (s.decreeEntries L).map σ.entry := by
+  unfold State.decreeEntries
+  rw [← settle_rename]
+  congr 1
+  exact σ.law_plan s .now L
+
+theorem decreeOrders_rename (s : State G) (L : Law) :
+    (σ.state s).decreeOrders L = (s.decreeOrders L).map σ.order := by
+  unfold State.decreeOrders
+  simp only [List.map_flatMap]
+  congr 1
+  funext c
+  exact σ.planOrdersAll_rename s (c.bodyFor .now) Trigger.now.env
+
+theorem withLaw_rename (s : State G) (id : Nat) (L : Law) :
+    (σ.state s).withLaw id L = σ.state (s.withLaw id L) := by
+  unfold State.withLaw
+  rw [decreeEntries_rename, afterPosting_rename, decreeOrders_rename]
+  simp only [state_rules, state_pieces, applyOrders_rename, state_laws]
+  rfl
+
 theorem decideLaw_rename (s : State G) (id : Nat) (L : Law) :
     decideLaw (σ.state s) id L = σ.state (decideLaw s id L) := by
   unfold decideLaw
   simp only [lawProblems_rename, state_openProposals, state_laws, filter_proposals]
-  split <;> rfl
+  split
+  · simp only [withLaw_rename, decreeEntries_rename, state_journal, ← List.map_append]
+    rfl
+  · rfl
 
 theorem voteBody_rename (s : State G) (seat id : Nat) (yes : Bool) :
     voteBody (σ.state s) (σ.to seat) id yes = (voteBody s seat id yes).map σ.state := by
@@ -232,18 +255,57 @@ theorem nextRoller_rename (s : State G) : (σ.state s).nextRoller = s.nextRoller
   rw [nextStage_rename]
   cases nextStage s <;> simp [state_turnOrder]
 
+theorem atRoll_rename (s : State G) : (σ.state s).atRoll = σ.state s.atRoll := by
+  unfold State.atRoll
+  rw [nextStage_rename]
+  split <;> rfl
+
 theorem rollEntries_rename (s : State G) (roll : Nat) :
     rollEntries (σ.state s) roll = (rollEntries s roll).map σ.entry := by
-  simp only [rollEntries, harvestEntries_rename, afterPosting_rename, nextRoller_rename,
+  simp only [rollEntries, atRoll_rename, harvestEntries_rename, afterPosting_rename, nextRoller_rename,
     List.map_append]
   congr 1
   cases s.nextRoller with
   | none => rfl
   | some a => exact σ.lawEntries_rename _ (.roll a roll)
 
+theorem piecesBeforeRoll_rename (s : State G) :
+    (σ.state s).piecesBeforeRoll = s.piecesBeforeRoll.map σ.piece := by
+  unfold State.piecesBeforeRoll
+  rw [isLastTurn_rename]
+  split
+  · have h := σ.lawOrders_rename (s.afterPosting s.duePayments) .roundEnd
+    rw [← afterPosting_rename] at h
+    rw [duePayments_rename]
+    rw [state_rules, state_pieces]
+    exact (congrArg (fun o => applyOrders s.rules o (s.pieces.map σ.piece)) h).trans
+      (σ.applyOrders_rename _ _ _)
+  · rfl
+
+theorem afterRoundEnd_rename (s : State G) : (σ.state s).afterRoundEnd = σ.state s.afterRoundEnd := by
+  unfold State.afterRoundEnd
+  rw [entriesBeforeRoll_rename, afterPosting_rename, piecesBeforeRoll_rename]
+  rfl
+
+theorem turnPieces_rename (s : State G) (roll : Nat) :
+    (σ.state s).turnPieces roll = (s.turnPieces roll).map σ.piece := by
+  unfold State.turnPieces
+  simp only [afterRoundEnd_rename, nextStage_rename, nextRoller_rename]
+  split
+  · cases s.afterRoundEnd.nextRoller with
+    | none => rfl
+    | some a =>
+      simp only [Option.map_some, atRoll_rename, harvestEntries_rename, afterPosting_rename]
+      rw [state_rules, state_pieces]
+      have h := σ.lawOrders_rename
+        (s.afterRoundEnd.atRoll.afterPosting (harvestEntries s.afterRoundEnd.atRoll roll)) (.roll a roll)
+      exact (congrArg (fun o => applyOrders s.afterRoundEnd.rules o (s.afterRoundEnd.pieces.map σ.piece)) h).trans
+        (σ.applyOrders_rename _ _ _)
+  · rfl
+
 theorem turnEntries_rename (s : State G) (roll : Nat) :
     turnEntries (σ.state s) roll = (turnEntries s roll).map σ.entry := by
-  simp only [turnEntries, entriesBeforeRoll_rename, nextStage_rename, afterPosting_rename,
+  simp only [turnEntries, entriesBeforeRoll_rename, nextStage_rename, afterRoundEnd_rename,
     rollEntries_rename]
   split <;> simp
 
@@ -271,6 +333,7 @@ def roundBase (s : State G) : State G :=
   { turnBase s with
     round := s.round + 1
     builtThisRound := []
+    declared := fun _ _ => 0
     deals := s.deals.filter fun d => decide (s.round < d.lastRound) }
 
 theorem roundBase_rename (s : State G) : roundBase (σ.state s) = σ.state (roundBase s) := by
@@ -300,7 +363,11 @@ theorem endTurnNow_rename (s : State G) :
   simp only [state_seed, state_rollsMade, turnEntries_rename, record_rename]
   cases record s (turnEntries s (rollAt G s.seed s.rollsMade)) with
   | error m => rfl
-  | ok s1 => exact congrArg Except.ok (σ.startNextTurn_rename s1 _)
+  | ok s1 =>
+    have h := σ.startNextTurn_rename ({ s1 with pieces := s.turnPieces (rollAt G s.seed s.rollsMade) } : State G)
+      (rollAt G s.seed s.rollsMade)
+    simp only [turnPieces_rename]
+    exact congrArg Except.ok h
 
 /-! ## The whole of `step` -/
 
@@ -354,6 +421,9 @@ theorem step_rename (s : State G) (e : Event) :
         show actThenCheckWin (σ.state s) (σ.to p) (moveBody (σ.state s) (σ.to p) (σ.move _)) = _
         rw [moveBody_rename, actThenCheckWin_rename]
       | cancel id =>
+        show actThenCheckWin (σ.state s) (σ.to p) (moveBody (σ.state s) (σ.to p) (σ.move _)) = _
+        rw [moveBody_rename, actThenCheckWin_rename]
+      | declare r n =>
         show actThenCheckWin (σ.state s) (σ.to p) (moveBody (σ.state s) (σ.to p) (σ.move _)) = _
         rw [moveBody_rename, actThenCheckWin_rename]
 

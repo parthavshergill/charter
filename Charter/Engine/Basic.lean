@@ -21,6 +21,26 @@ def record (s : State G) (es : List Entry) : Except String (State G) :=
   | some b => .ok { s with books := b, journal := s.journal ++ es }
   | none => .error "an entry cannot be posted in full"
 
+/-- `record`, keeping a table of the books each time the journal passes a multiple of 128. So a read never
+walks back through more than a few dozen steps, however long the game has run. -/
+def recordFast (s : State G) (es : List Entry) : Except String (State G) :=
+  match s.books.postAll es with
+  | some b =>
+    let n := s.journal.length
+    if n / 128 == (n + es.length) / 128 then .ok { s with books := b, journal := s.journal ++ es }
+    else
+      let t := b.table s.tableKeys
+      .ok { s with books := Books.ofTable t b, journal := s.journal ++ es }
+  | none => .error "an entry cannot be posted in full"
+
+/-- The faster `record` gives the same result, so the compiler can run it instead. -/
+@[csimp] theorem record_eq_recordFast : @record = @recordFast := by
+  funext G s es
+  simp only [record, recordFast]
+  split
+  · simp only [Books.ofTable_table]; split <;> rfl
+  · rfl
+
 /-- Count an accepted event against the seat that sent it. -/
 def countAction (s : State G) (seat : Seat) : State G :=
   { s with
@@ -41,12 +61,14 @@ def bestSeat (s : State G) (seats : List Seat) : Option Seat :=
       | some b => if s.pointsOf b < s.pointsOf c then some c else some b)
     none
 
-/-- End the game early: refund every running deal and clear what is still open. -/
+/-- End the game early: refund every running deal and clear what is still open. A refund can change a
+seat's points, so the winner is the seat with the most points after the refunds. Most points wins, then
+earlier turn order. `w` is used only if there are no seats at all. -/
 def endGame (s : State G) (w : Seat) : Except String (State G) := do
   let s1 ← record s (s.deals.flatMap s.refundEntries)
   pure { s1 with
     phase := .ended
-    winner := some w
+    winner := some ((bestSeat s1 s1.turnOrder).getD w)
     deals := []
     offers := []
     openProposals := [] }
@@ -55,9 +77,16 @@ def endGame (s : State G) (w : Seat) : Except String (State G) := do
 def seatsAtTarget (s : State G) : List Seat :=
   s.turnOrder.filter fun p => decide (G.targetPoints ≤ s.pointsOf p)
 
-/-- A seat at or above the target wins at once. Most points wins a tie, then earlier turn order. -/
+/-- The seats that could win now: every seat if a law has just ended the game, and otherwise those at the
+target. -/
+def winCandidates (s : State G) : List Seat :=
+  if s.lawEnds then s.turnOrder else seatsAtTarget s
+
+/-- If a law ends the game, or a seat is at or above the target, the game ends. Moves and votes look for this, and a turn change
+does not. So a seat that reaches the target by holding goods at a turn change wins at the next move or
+vote by anyone. -/
 def checkWin (s : State G) : Except String (State G) :=
-  match bestSeat s (seatsAtTarget s) with
+  match bestSeat s (winCandidates s) with
   | some w => endGame s w
   | none => .ok s
 

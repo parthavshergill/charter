@@ -211,8 +211,9 @@ theorem turnEntries_posts (hG : G.Valid) {s : State G} (hc : Cover s) (hi : IdIn
   obtain ⟨b1, h1⟩ := beforeRoll_posts hG hc hi
   simp only [turnEntries]
   split
-  · obtain ⟨b2, h2⟩ := rollEntries_posts (s.afterPosting s.entriesBeforeRoll) roll
-    rw [afterPosting_books h1] at h2
+  · obtain ⟨b2, h2⟩ := rollEntries_posts s.afterRoundEnd roll
+    have hbk : s.afterRoundEnd.books = b1 := afterPosting_books h1
+    rw [hbk] at h2
     rw [postAll_append, h1, Option.bind_some]
     exact ⟨b2, h2⟩
   · exact ⟨b1, h1⟩
@@ -226,7 +227,7 @@ theorem record_some {s : State G} {es : List Entry} {b : Books} (h : s.books.pos
 theorem endTurnNow_some (hG : G.Valid) {s : State G} (hc : Cover s) (hi : IdInv s) :
     ∃ s', endTurnNow s = .ok s' ∧ s'.turnsTaken = s.turnsTaken + 1 := by
   obtain ⟨b, hb⟩ := turnEntries_posts hG hc hi (rollAt G s.seed s.rollsMade)
-  refine ⟨startNextTurn { s with books := b, journal := s.journal ++ turnEntries s (rollAt G s.seed s.rollsMade) }
+  refine ⟨startNextTurn { s with books := b, journal := s.journal ++ turnEntries s (rollAt G s.seed s.rollsMade), pieces := s.turnPieces (rollAt G s.seed s.rollsMade) }
     (rollAt G s.seed s.rollsMade), ?_, startNextTurn_turnsTaken _ _⟩
   unfold endTurnNow
   simp only
@@ -255,7 +256,7 @@ theorem turnEntries_last {s : State G} (hl : s.isLastTurn = true) (roll : Nat) :
     ∃ H, turnEntries s roll = s.duePayments ++ (s.roundEndLawEntries ++
         (s.closingDeals.flatMap (s.afterPosting (s.duePayments ++ s.roundEndLawEntries)).refundEntries
           ++ H)) ∧
-      ∀ x ∈ H, x ∈ rollEntries (s.afterPosting s.entriesBeforeRoll) roll := by
+      ∀ x ∈ H, x ∈ rollEntries s.afterRoundEnd roll := by
   have hb : s.entriesBeforeRoll = s.roundEndEntries := by
     simp [State.entriesBeforeRoll, hl]
   simp only [turnEntries]
@@ -273,7 +274,8 @@ theorem step_endsTurn {s s' : State G} {e : Event} (hend : EndsTurn s e)
       s' = startNextTurn
         { s with
           books := b
-          journal := s.journal ++ turnEntries s (rollAt G s.seed s.rollsMade) }
+          journal := s.journal ++ turnEntries s (rollAt G s.seed s.rollsMade)
+          pieces := s.turnPieces (rollAt G s.seed s.rollsMade) }
         (rollAt G s.seed s.rollsMade) := by
   rcases step_view h with ⟨_, h⟩ | ⟨hn, _⟩
   · exact endTurnNow_ok h

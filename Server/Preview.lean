@@ -2,6 +2,7 @@ import Lean.Data.Json
 import Charter.Engine
 import Charter.Scene.OfState
 import Server.Text
+import Server.Rules
 
 /-!
 # What a law would do at this table, right now
@@ -88,9 +89,16 @@ what it would have left, so there are no exact figures to give. -/
 def canPay (x : State G) (p : Nat) (k : PieceKind) : Bool :=
   (x.books.postAll (x.costEntries p k)).isSome
 
+/-- A law that reacts only to the end of a round or to a build cannot change what a roll pays, unless the
+turn that just ended closes the round. So its preview need not work out the dice. -/
+def rollsCannotChange (s : State G) (L : Law) : Bool :=
+  !s.isLastTurn && L.clauses.all fun
+    | .onRoundEnd _ | .onBuild .. => true
+    | _ => false
+
 /-- Rolls that change something, likeliest first, with equal cases joined. -/
-def rollSections (s s' : State G) : List Section :=
-  let rolls := Scene.rollsOf G
+def rollSections (s s' : State G) (L : Law) : List Section :=
+  let rolls := if rollsCannotChange s L then [] else Scene.rollsOf G
   let cases := (rolls.map fun r => (r, rollRows s s' r)).filter (!·.2.isEmpty)
   let grouped : List (List Nat × List Row) := cases.foldl (fun acc (r, rows) =>
     if acc.any (·.2 == rows) then
@@ -131,13 +139,31 @@ def unpaidBuildNotes (s s' : State G) (actor : Nat) : List String :=
 def ruleNotes (s s' : State G) : List String :=
   let bank := if s'.rules.bankRate != s.rules.bankRate then
       [s!"Today the bank takes {s.rules.bankRate} for 1."] else []
+  let worth := s'.rules.worth.filterMap fun x =>
+    if s.rules.worth.contains x then none else
+    some s!"Each {x.1} in a seat's own hand would be worth {x.2} points."
   let costs := s'.rules.pieces.filterMap fun d =>
     match s.rules.piece? d.name with
     | some old => if old.cost != d.cost then some s!"Today {Charter.Text.article d.name} costs {Charter.Text.bundleText old.cost}." else none
     | none => none
   let gone := s.rules.pieces.filterMap fun d =>
     if (s'.rules.piece? d.name).isNone then some s!"The {d.name} would no longer exist." else none
-  bank ++ costs ++ gone
+  bank ++ worth ++ costs ++ gone
+
+/-- Pieces a law would take or give at the next turn change, for this roll, in words. -/
+def pieceNotes (s s' : State G) (roll : Nat) (names : Nat → String) : List String :=
+  let before := s.turnPieces roll
+  let after := s'.turnPieces roll
+  let gone := after.isEmpty && before.isEmpty
+  if gone then [] else
+  s.turnOrder.flatMap fun p =>
+    (s'.rules.pieces.map (·.name)).filterMap fun k =>
+      let count (ps : List Piece) : Nat := (ps.filter fun x => x.owner == p && x.kind == k).length
+      let a := count before
+      let b := count after
+      if a == b then none
+      else if b < a then some s!"{names p} would lose {a - b} {k}."
+      else some s!"{names p} would gain {b - a} {k}."
 
 def rowJson (r : Row) : Json :=
   Json.mkObj [("seat", toJson r.who), ("res", toJson r.res), ("delta", toJson r.delta)]
@@ -155,13 +181,30 @@ def lawPreview (s : State G) (id : Nat) (L : Law) (you : Option Nat) (names : Na
     if a == b then none else
     some (Json.mkObj [("seat", toJson p), ("from", toJson a), ("to", toJson b),
       ("wins", toJson (decide (G.targetPoints ≤ b)))])
-  let rolls := rollSections s s'
-  let sections := roundEndSections s s' ++ buildSections s s' you names ++ rolls.take 3
+  let rolls := rollSections s s' L
+  -- What a law's `now` clauses do is the first thing that happens, the moment it passes.
+  let nowRows := rowsOf s [] (s.decreeEntries L)
+  let nowSection : List Section :=
+    if nowRows.isEmpty then [] else [{ whenText := "The moment this passes", dice := false, rows := nowRows }]
+  let sections := nowSection ++ roundEndSections s s' ++ buildSections s s' you names ++ rolls.take 3
   let actor := (you.orElse fun _ => s.turnOrder.head?).getD 0
   let refused := match lawProblems G s L with
     | [] => []
     | ps => [s!"As things stand, this law would not take effect: {", ".intercalate ps}."]
-  let notes := refused ++ ruleNotes s s' ++ unpaidBuildNotes s s' actor
+  -- Declarations can change until the round ends, so figures that read them hold only if they stay.
+  let readsDeclared := Rules.lawReadsDeclared L || s.laws.any (Rules.lawReadsDeclared ·.2)
+  let declared := if readsDeclared then
+      ["These figures hold if declarations stay as they are. A seat can change its own on its turn."]
+    else []
+  let firstRoll := (Scene.rollsOf G).head?.getD 0
+  -- A round's end law gives the same answer on any roll. Roll laws can depend on it, and those show what they do at this roll.
+  let pieces := if L.clauses.any Clause.movesPieces then pieceNotes s s' firstRoll names else []
+  let ending := if L.clauses.any Clause.isEndGame then
+      match Engine.bestSeat s' s'.turnOrder with
+      | some w => [s!"This ends the game the moment it passes. {names w} would win with {s'.pointsOf w} points."]
+      | none => []
+    else []
+  let notes := refused ++ ending ++ declared ++ pieces ++ ruleNotes s s' ++ unpaidBuildNotes s s' actor
   Json.mkObj
     [ ("sections", Json.arr (sections.map sectionJson).toArray)
     , ("moreRolls", toJson (rolls.length - min rolls.length 3))
@@ -170,8 +213,8 @@ def lawPreview (s : State G) (id : Nat) (L : Law) (you : Option Nat) (names : Na
     , ("dice", toJson (!rolls.isEmpty))
     , ("nothing", toJson (sections.isEmpty && points.isEmpty && notes.isEmpty)) ]
 
-/-- The preview for the person drafting a law: the table as it will be once they have paid the fee. -/
+/-- The preview for the person drafting a law. -/
 def draftPreview (s : State G) (id : Nat) (L : Law) (you : Nat) (names : Nat → String) : Json :=
-  lawPreview (s.afterPosting (lawFeeEntries G you)) id L (some you) names
+  lawPreview s id L (some you) names
 
 end CharterServer.Preview

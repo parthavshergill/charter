@@ -9,23 +9,27 @@ A law must pass these checks when it is proposed, and again at the vote that dec
 
 namespace Charter
 
-/-- How many nodes a number has. -/
-def Expr.size : Expr → Nat
-  | .add a b | .sub a b | .mul a b | .min a b | .max a b => a.size + b.size + 1
-  | .div a _ => a.size + 1
-  | _ => 1
+mutual
+  /-- How many nodes a number has. -/
+  def Expr.size : Expr → Nat
+    | .add a b | .sub a b | .mul a b | .min a b | .max a b | .divBy a b => a.size + b.size + 1
+    | .div a _ => a.size + 1
+    | .totalOver c a | .mostOver c a | .leastOver c a => c.size + a.size + 1
+    | _ => 1
 
-/-- How many nodes a condition has. -/
-def Cond.size : Cond → Nat
-  | .lt a b | .le a b | .eq a b => a.size + b.size + 1
-  | .and a b | .or a b => a.size + b.size + 1
-  | .not c => c.size + 1
-  | _ => 1
+  /-- How many nodes a condition has. -/
+  def Cond.size : Cond → Nat
+    | .lt a b | .le a b | .eq a b => a.size + b.size + 1
+    | .and a b | .or a b => a.size + b.size + 1
+    | .not c => c.size + 1
+    | _ => 1
+end
 
 mutual
   /-- How many nodes an effect has, counting its numbers and conditions. -/
   def Effect.size : Effect → Nat
     | .transfer _ _ _ amount => amount.size + 1
+    | .movePiece .. => 1
     | .forEach c body => c.size + Effect.sizeAll body + 1
     | .when c body => c.size + Effect.sizeAll body + 1
 
@@ -37,7 +41,7 @@ end
 
 /-- The effects inside a clause. -/
 def Clause.effects : Clause → List Effect
-  | .onHarvest b | .onBuild _ b | .onRoundEnd b | .onRoll b => b
+  | .onHarvest b | .onBuild _ b | .onRoundEnd b | .onRoll b | .now b => b
   | _ => []
 
 /-- How many nodes a clause has. -/
@@ -61,12 +65,15 @@ def clauseProblems {G : GameDef} (s : State G) (L : Law) : Clause → List Strin
   | .onHarvest _ => []
   | .onRoundEnd _ => []
   | .onRoll _ => []
+  | .now _ => if s.phase == .setup then ["a founding law cannot act once"] else []
+  | .endGame => if s.phase == .setup then ["a founding law cannot end the game"] else []
   | .onBuild k _ => if s.knownKind L k then [] else [s!"there is no piece named {k}"]
   | .setCost k b =>
       (if s.knownKind L k then [] else [s!"there is no piece named {k}"]) ++
       (if G.bundleOk b then [] else ["a cost must name real resources, each once"])
   | .setPoints k _ => if s.knownKind L k then [] else [s!"there is no piece named {k}"]
   | .setBankRate n => if 2 ≤ n then [] else ["the bank rate must be at least 2"]
+  | .setWorth r _ => if G.isRes r then [] else [s!"there is no resource called {r}"]
   | .newPiece p =>
       (if (s.rules.piece? p.name).isSome then [s!"the piece {p.name} already exists"] else []) ++
       (if G.bundleOk p.cost then [] else ["a cost must name real resources, each once"]) ++
@@ -81,6 +88,7 @@ mutual
   /-- The most entries an effect can ask for, when every condition is true. -/
   def Effect.plannedEntries (seats : Nat) : Effect → Nat
     | .transfer .. => 1
+    | .movePiece .. => 1
     | .forEach _ body => seats * Effect.plannedAll seats body
     | .when _ body => Effect.plannedAll seats body
 
@@ -98,18 +106,64 @@ def Law.plannedEntries (L : Law) (seats : Nat) : Nat :=
 def plannedTotal (laws : List (Nat × Law)) (seats : Nat) : Nat :=
   (laws.map fun x => x.2.plannedEntries seats).sum
 
-/-- This number divides by zero somewhere. -/
-def Expr.dividesByZero : Expr → Bool
-  | .add a b | .sub a b | .mul a b | .min a b | .max a b => a.dividesByZero || b.dividesByZero
-  | .div a n => n == 0 || a.dividesByZero
-  | _ => false
+mutual
+  /-- How many numbers and tests this number reads when it runs. A measure reads what is inside it once
+  per seat. -/
+  def Expr.reads (seats : Nat) : Expr → Nat
+    | .add a b | .sub a b | .mul a b | .min a b | .max a b | .divBy a b =>
+        a.reads seats + b.reads seats + 1
+    | .div a _ => a.reads seats + 1
+    | .totalOver c a | .mostOver c a | .leastOver c a => seats * (c.reads seats + a.reads seats) + 1
+    | _ => 1
 
-/-- This condition divides by zero somewhere. -/
-def Cond.dividesByZero : Cond → Bool
-  | .lt a b | .le a b | .eq a b => a.dividesByZero || b.dividesByZero
-  | .and a b | .or a b => a.dividesByZero || b.dividesByZero
-  | .not c => c.dividesByZero
-  | _ => false
+  /-- How many numbers and tests this test reads when it runs. -/
+  def Cond.reads (seats : Nat) : Cond → Nat
+    | .lt a b | .le a b | .eq a b => a.reads seats + b.reads seats + 1
+    | .and a b | .or a b => a.reads seats + b.reads seats + 1
+    | .not c => c.reads seats + 1
+    | _ => 1
+end
+
+mutual
+  /-- How many numbers and tests an effect reads when it runs, when every condition is true. A
+  `forEach` reads what is inside it once per seat. -/
+  def Effect.reads (seats : Nat) : Effect → Nat
+    | .transfer _ _ _ amount => amount.reads seats + 1
+    | .movePiece .. => 1
+    | .forEach c body => seats * (c.reads seats + Effect.readsAll seats body) + 1
+    | .when c body => c.reads seats + Effect.readsAll seats body + 1
+
+  /-- How many numbers and tests a list of effects reads. -/
+  def Effect.readsAll (seats : Nat) : List Effect → Nat
+    | [] => 0
+    | e :: es => e.reads seats + Effect.readsAll seats es
+end
+
+/-- How many numbers and tests a law reads on one trigger, counting all its clauses. -/
+def Law.reads (L : Law) (seats : Nat) : Nat :=
+  (L.clauses.map fun c => Effect.readsAll seats c.effects).sum
+
+/-- How many numbers and tests a list of laws reads together on one trigger. -/
+def readsTotal (laws : List (Nat × Law)) (seats : Nat) : Nat :=
+  (laws.map fun x => x.2.reads seats).sum
+
+mutual
+  /-- This number divides by zero somewhere, in its own words. A computed number that turns out to be
+  zero is not caught here: dividing by it gives 0. -/
+  def Expr.dividesByZero : Expr → Bool
+    | .add a b | .sub a b | .mul a b | .min a b | .max a b => a.dividesByZero || b.dividesByZero
+    | .div a n => n == 0 || a.dividesByZero
+    | .divBy a b => b == .lit 0 || a.dividesByZero || b.dividesByZero
+    | .totalOver c a | .mostOver c a | .leastOver c a => c.dividesByZero || a.dividesByZero
+    | _ => false
+
+  /-- This condition divides by zero somewhere, in its own words. -/
+  def Cond.dividesByZero : Cond → Bool
+    | .lt a b | .le a b | .eq a b => a.dividesByZero || b.dividesByZero
+    | .and a b | .or a b => a.dividesByZero || b.dividesByZero
+    | .not c => c.dividesByZero
+    | _ => false
+end
 
 mutual
   /-- Why an effect is wrong where it runs. `env` says who and what exists there. A transfer that
@@ -122,6 +176,10 @@ mutual
          else []) ++
         (if src == dst then ["a transfer from an account to itself moves nothing"] else []) ++
         (if amount.dividesByZero then ["a law cannot divide by zero"] else [])
+    | .movePiece src dst _ =>
+        (if (src.seat env).isNone then ["a piece can be moved only from a seat where this rule runs"] else []) ++
+        (if dst == .bank || (dst.seat env).isSome then [] else ["a piece can go only to the bank or a seat"]) ++
+        (if src == dst then ["a move from a seat to itself moves nothing"] else [])
     | .forEach c body =>
         (if c.dividesByZero then ["a law cannot divide by zero"] else []) ++
         Effect.problemsAll { env with each := some 0 } body
@@ -135,6 +193,52 @@ mutual
     | e :: es => Effect.problems env e ++ Effect.problemsAll env es
 end
 
+mutual
+  /-- The kinds of piece this effect moves. -/
+  def Effect.kindsMoved : Effect → List PieceKind
+    | .transfer .. => []
+    | .movePiece _ _ k => [k]
+    | .forEach _ body | .when _ body => Effect.kindsMovedAll body
+
+  /-- The kinds of piece these effects move. -/
+  def Effect.kindsMovedAll : List Effect → List PieceKind
+    | [] => []
+    | e :: es => e.kindsMoved ++ Effect.kindsMovedAll es
+end
+
+mutual
+  /-- This number reads the acting player. -/
+  def Expr.usesActor : Expr → Bool
+    | .holding p _ | .points p | .count p _ | .declared p _ => p == .actor
+    | .add a b | .sub a b | .mul a b | .min a b | .max a b | .divBy a b => a.usesActor || b.usesActor
+    | .div a _ => a.usesActor
+    | .totalOver c a | .mostOver c a | .leastOver c a => c.usesActor || a.usesActor
+    | _ => false
+
+  /-- This test reads the acting player. -/
+  def Cond.usesActor : Cond → Bool
+    | .lt a b | .le a b | .eq a b => a.usesActor || b.usesActor
+    | .and a b | .or a b => a.usesActor || b.usesActor
+    | .not c => c.usesActor
+    | _ => false
+end
+
+mutual
+  /-- This effect names or reads the acting player. -/
+  def Effect.usesActor : Effect → Bool
+    | .transfer src dst _ amount => src == .actor || dst == .actor || amount.usesActor
+    | .movePiece src dst _ => src == .actor || dst == .actor
+    | .forEach c body | .when c body => c.usesActor || Effect.usesActorAll body
+
+  /-- One of these effects names or reads the acting player. -/
+  def Effect.usesActorAll : List Effect → Bool
+    | [] => false
+    | e :: es => e.usesActor || Effect.usesActorAll es
+end
+
+/-- This clause can move a piece. -/
+def Clause.movesPieces (c : Clause) : Bool := !(Effect.kindsMovedAll c.effects).isEmpty
+
 /-- Who and what exists where this clause's effects run. -/
 def Clause.env : Clause → LawEnv
   | .onHarvest _ => (Trigger.harvest 0 "" 0).env
@@ -146,9 +250,19 @@ def Clause.env : Clause → LawEnv
 clause applies, and `final` is the rules after the whole law applies. -/
 def Clause.noEffect (G : GameDef) (R final : Rules) (c : Clause) : List String :=
   Effect.problemsAll c.env c.effects ++
+  (match c with
+   | .onHarvest b | .onBuild _ b =>
+     if (Effect.kindsMovedAll b).isEmpty then []
+     else ["a law can move a piece only at a round's end or on a roll"]
+   | _ => []) ++
+  ((Effect.kindsMovedAll c.effects).flatMap fun k =>
+    if (final.piece? k).isSome then [] else [s!"no piece named {k} will exist"]) ++
   match c with
   | .onHarvest b | .onRoundEnd b | .onRoll b =>
       if Effect.plannedAll 2 b == 0 then ["this rule has no effects"] else []
+  | .now b =>
+      (if Effect.plannedAll 2 b == 0 then ["this rule has no effects"] else []) ++
+      (if Effect.usesActorAll b then ["a rule that acts once has no acting player, so it cannot reward one"] else [])
   | .onBuild k b =>
       (if Effect.plannedAll 2 b == 0 then ["this rule has no effects"] else []) ++
       (if (final.piece? k).isSome then [] else [s!"no piece named {k} will exist"])
@@ -168,6 +282,7 @@ def Clause.ruleSet : Clause → Option String
   | .setCost k _ => some s!"cost of {k}"
   | .setPoints k _ => some s!"points of {k}"
   | .setBankRate _ => some "bank rate"
+  | .setWorth r _ => some s!"worth of {r}"
   | _ => none
 
 /-- Why a law cannot pass in this state. An empty list means it can. -/
@@ -178,6 +293,8 @@ def lawProblems (G : GameDef) (s : State G) (L : Law) : List String :=
    else ["this law could make too many payments at once"]) ++
   (if plannedTotal (enact s.laws 0 L) s.turnOrder.length ≤ maxPlannedTotal then []
    else ["the laws in force could make too many payments at once"]) ++
+  (if readsTotal (enact s.laws 0 L) s.turnOrder.length ≤ maxReadsTotal then []
+   else ["the laws in force would read too many numbers at once"]) ++
   (if decide (L.clauses.filterMap Clause.ruleSet).Nodup then []
    else ["this law sets the same rule twice, so the first would do nothing"]) ++
   (if decide L.repeals.Nodup then [] else ["this law repeals a law twice"]) ++

@@ -4,6 +4,7 @@ import Charter.Words.GameDef
 import Charter.Words.Books
 import Charter.Words.Deal
 import Charter.Words.State
+import Charter.Words.Fast
 import Charter.Words.LawEffects
 import Charter.Words.Payments
 import Charter.Words.Placing
@@ -26,6 +27,8 @@ A theorem means only what its words mean. These files define the words. Read the
 * `Words/Deal.lean`: what a deal can say.
 * `Words/State.lean`: the game state, events, and the rules in force.
 * `Words/Turns.lean`: what comes after a turn, and how long a game can be.
+* `Words/Fast.lean`: `settle`, which shrinks payments when an account is short, and faster code for it
+  that is proved equal.
 * `Words/LawEffects.lean`: what a law does when it runs, the dice payout, and the whole of a roll.
 * `Words/Payments.lean`: what deals owe, and what trades and fees move.
 * `Words/Placing.lean`: when a build is allowed, what it costs, and the board after it.

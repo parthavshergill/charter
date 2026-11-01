@@ -61,31 +61,40 @@ def parseBundle (rs : List Res) : SExp → P Bundle
       | x => fail "expected (RESOURCE n)" x
   | x => fail "expected (bundle (RESOURCE n)...)" x
 
-def parseExpr (rs : List Res) : SExp → P Expr
-  | .num i => if 0 ≤ i then .ok (.lit i.toNat) else .error "negative number"
-  | .atom "amount" => .ok .harvestedAmount
-  | .atom "rolled" => .ok .rolled
-  | .list [.atom "holding", p, r] => return .holding (← parseParty p) (← parseResRef rs r)
-  | .list [.atom "points", p] => return .points (← parseParty p)
-  | .list [.atom "count", p, k] => return .count (← parseParty p) (← parseKind k)
-  | .list [.atom "+", a, b] => return .add (← parseExpr rs a) (← parseExpr rs b)
-  | .list [.atom "-", a, b] => return .sub (← parseExpr rs a) (← parseExpr rs b)
-  | .list [.atom "*", a, b] => return .mul (← parseExpr rs a) (← parseExpr rs b)
-  | .list [.atom "/", a, n] => return .div (← parseExpr rs a) (← parseNat n)
-  | .list [.atom "min", a, b] => return .min (← parseExpr rs a) (← parseExpr rs b)
-  | .list [.atom "max", a, b] => return .max (← parseExpr rs a) (← parseExpr rs b)
-  | x => fail "bad number" x
+mutual
+  def parseExpr (rs : List Res) : SExp → P Expr
+    | .num i => if 0 ≤ i then .ok (.lit i.toNat) else .error "negative number"
+    | .atom "amount" => .ok .harvestedAmount
+    | .atom "rolled" => .ok .rolled
+    | .atom "round" => .ok .round
+    | .list [.atom "declared", p, r] => return .declared (← parseParty p) (← parseResRef rs r)
+    | .list [.atom "holding", p, r] => return .holding (← parseParty p) (← parseResRef rs r)
+    | .list [.atom "points", p] => return .points (← parseParty p)
+    | .list [.atom "count", p, k] => return .count (← parseParty p) (← parseKind k)
+    | .list [.atom "+", a, b] => return .add (← parseExpr rs a) (← parseExpr rs b)
+    | .list [.atom "-", a, b] => return .sub (← parseExpr rs a) (← parseExpr rs b)
+    | .list [.atom "*", a, b] => return .mul (← parseExpr rs a) (← parseExpr rs b)
+    -- A fixed number divides as it always did. Anything else is computed when the law runs.
+    | .list [.atom "/", a, .num n] => return .div (← parseExpr rs a) (← parseNat (.num n))
+    | .list [.atom "/", a, b] => return .divBy (← parseExpr rs a) (← parseExpr rs b)
+    | .list [.atom "min", a, b] => return .min (← parseExpr rs a) (← parseExpr rs b)
+    | .list [.atom "max", a, b] => return .max (← parseExpr rs a) (← parseExpr rs b)
+    | .list [.atom "total-over", c, a] => return .totalOver (← parseCond rs c) (← parseExpr rs a)
+    | .list [.atom "most-over", c, a] => return .mostOver (← parseCond rs c) (← parseExpr rs a)
+    | .list [.atom "least-over", c, a] => return .leastOver (← parseCond rs c) (← parseExpr rs a)
+    | x => fail "bad number" x
 
-def parseCond (rs : List Res) : SExp → P Cond
-  | .atom "true" => .ok .yes
-  | .list [.atom "<", a, b] => return .lt (← parseExpr rs a) (← parseExpr rs b)
-  | .list [.atom "<=", a, b] => return .le (← parseExpr rs a) (← parseExpr rs b)
-  | .list [.atom "=", a, b] => return .eq (← parseExpr rs a) (← parseExpr rs b)
-  | .list [.atom "and", a, b] => return .and (← parseCond rs a) (← parseCond rs b)
-  | .list [.atom "or", a, b] => return .or (← parseCond rs a) (← parseCond rs b)
-  | .list [.atom "not", c] => return .not (← parseCond rs c)
-  | .list [.atom "res-is", r] => return .harvestedIs (← parseRes rs r)
-  | x => fail "bad condition" x
+  def parseCond (rs : List Res) : SExp → P Cond
+    | .atom "true" => .ok .yes
+    | .list [.atom "<", a, b] => return .lt (← parseExpr rs a) (← parseExpr rs b)
+    | .list [.atom "<=", a, b] => return .le (← parseExpr rs a) (← parseExpr rs b)
+    | .list [.atom "=", a, b] => return .eq (← parseExpr rs a) (← parseExpr rs b)
+    | .list [.atom "and", a, b] => return .and (← parseCond rs a) (← parseCond rs b)
+    | .list [.atom "or", a, b] => return .or (← parseCond rs a) (← parseCond rs b)
+    | .list [.atom "not", c] => return .not (← parseCond rs c)
+    | .list [.atom "res-is", r] => return .harvestedIs (← parseRes rs r)
+    | x => fail "bad condition" x
+end
 
 /-- A plain transfer. -/
 def parseTransfer (rs : List Res) : SExp → P Effect
@@ -93,13 +102,19 @@ def parseTransfer (rs : List Res) : SExp → P Effect
       return .transfer (← parseParty f) (← parseParty t) (← parseResRef rs r) (← parseExpr rs e)
   | x => fail "expected (transfer FROM TO RESOURCE AMOUNT)" x
 
+/-- A transfer, or a law moving a piece. -/
+def parseMove (rs : List Res) : SExp → P Effect
+  | .list [.atom "move-piece", f, t, k] =>
+      return .movePiece (← parseParty f) (← parseParty t) (← parseKind k)
+  | x => parseTransfer rs x
+
 /-- An effect at the inner level: a transfer, or an `if` holding transfers. -/
 def parseInnerEffect (rs : List Res) : SExp → P Effect
   | .list (.atom "if" :: c :: body) => do
       let c ← parseCond rs c
-      let b ← body.mapM (parseTransfer rs)
+      let b ← body.mapM (parseMove rs)
       if b.isEmpty then .error "if needs at least one transfer" else return .when c b
-  | x => parseTransfer rs x
+  | x => parseMove rs x
 
 /-- An effect at the top of a clause. -/
 def parseEffect (rs : List Res) : SExp → P Effect
@@ -126,15 +141,18 @@ def parseClause (rs : List Res) : SExp → P Clause
       return .onBuild (← parseKind k) (← parseEffects1 rs "on-build" body)
   | .list (.atom "on-round-end" :: body) => .onRoundEnd <$> parseEffects1 rs "on-round-end" body
   | .list (.atom "on-roll" :: body) => .onRoll <$> parseEffects1 rs "on-roll" body
+  | .list (.atom "now" :: body) => .now <$> parseEffects1 rs "now" body
   | .list [.atom "set-cost", k, b] => return .setCost (← parseKind k) (← parseBundle rs b)
   | .list [.atom "set-points", k, n] => return .setPoints (← parseKind k) (← parseNat n)
   | .list [.atom "set-bank-rate", n] => return .setBankRate (← parseNat n)
+  | .list [.atom "set-worth", r, n] => return .setWorth (← parseRes rs r) (← parseNat n)
   | .list [.atom "new-piece", .atom name, b, .list [.atom "points", n], pl,
       .list [.atom "yield", y], .list [.atom "limit", l]] =>
       return .newPiece { name := name, cost := ← parseBundle rs b, points := ← parseNat n
                          placement := ← parsePlacement pl, yield := ← parseNat y
                          limit := ← parseNat l }
   | .list [.atom "repeal", n] => return .repeal (← parseNat n)
+  | .list [.atom "end-game"] => .ok .endGame
   | x => fail "bad clause" x
 
 def parseLaw (rs : List Res) : SExp → P Law
@@ -196,33 +214,42 @@ def partyS : Party → SExp
 def bundleS (b : Bundle) : SExp :=
   .list (.atom "bundle" :: b.map fun x => .list [.atom x.1, natS x.2])
 
-def exprS : Expr → SExp
-  | .lit n => natS n
-  | .harvestedAmount => .atom "amount"
-  | .rolled => .atom "rolled"
-  | .holding p r => .list [.atom "holding", partyS p, resRefS r]
-  | .points p => .list [.atom "points", partyS p]
-  | .count p k => .list [.atom "count", partyS p, .atom k]
-  | .add a b => .list [.atom "+", exprS a, exprS b]
-  | .sub a b => .list [.atom "-", exprS a, exprS b]
-  | .mul a b => .list [.atom "*", exprS a, exprS b]
-  | .div a n => .list [.atom "/", exprS a, natS n]
-  | .min a b => .list [.atom "min", exprS a, exprS b]
-  | .max a b => .list [.atom "max", exprS a, exprS b]
+mutual
+  def exprS : Expr → SExp
+    | .lit n => natS n
+    | .harvestedAmount => .atom "amount"
+    | .rolled => .atom "rolled"
+    | .round => .atom "round"
+    | .declared p r => .list [.atom "declared", partyS p, resRefS r]
+    | .holding p r => .list [.atom "holding", partyS p, resRefS r]
+    | .points p => .list [.atom "points", partyS p]
+    | .count p k => .list [.atom "count", partyS p, .atom k]
+    | .add a b => .list [.atom "+", exprS a, exprS b]
+    | .sub a b => .list [.atom "-", exprS a, exprS b]
+    | .mul a b => .list [.atom "*", exprS a, exprS b]
+    | .div a n => .list [.atom "/", exprS a, natS n]
+    | .divBy a b => .list [.atom "/", exprS a, exprS b]
+    | .min a b => .list [.atom "min", exprS a, exprS b]
+    | .max a b => .list [.atom "max", exprS a, exprS b]
+    | .totalOver c a => .list [.atom "total-over", condS c, exprS a]
+    | .mostOver c a => .list [.atom "most-over", condS c, exprS a]
+    | .leastOver c a => .list [.atom "least-over", condS c, exprS a]
 
-def condS : Cond → SExp
-  | .yes => .atom "true"
-  | .lt a b => .list [.atom "<", exprS a, exprS b]
-  | .le a b => .list [.atom "<=", exprS a, exprS b]
-  | .eq a b => .list [.atom "=", exprS a, exprS b]
-  | .and a b => .list [.atom "and", condS a, condS b]
-  | .or a b => .list [.atom "or", condS a, condS b]
-  | .not c => .list [.atom "not", condS c]
-  | .harvestedIs r => .list [.atom "res-is", .atom r]
+  def condS : Cond → SExp
+    | .yes => .atom "true"
+    | .lt a b => .list [.atom "<", exprS a, exprS b]
+    | .le a b => .list [.atom "<=", exprS a, exprS b]
+    | .eq a b => .list [.atom "=", exprS a, exprS b]
+    | .and a b => .list [.atom "and", condS a, condS b]
+    | .or a b => .list [.atom "or", condS a, condS b]
+    | .not c => .list [.atom "not", condS c]
+    | .harvestedIs r => .list [.atom "res-is", .atom r]
+end
 
 mutual
   def effectS : Effect → SExp
     | .transfer f t r e => .list [.atom "transfer", partyS f, partyS t, resRefS r, exprS e]
+    | .movePiece f t k => .list [.atom "move-piece", partyS f, partyS t, .atom k]
     | .forEach c body => .list (.atom "for-each-player" :: condS c :: effectsS body)
     | .when c body => .list (.atom "if" :: condS c :: effectsS body)
   def effectsS : List Effect → List SExp
@@ -240,13 +267,16 @@ def clauseS : Clause → SExp
   | .onBuild k b => .list (.atom "on-build" :: .atom k :: effectsS b)
   | .onRoundEnd b => .list (.atom "on-round-end" :: effectsS b)
   | .onRoll b => .list (.atom "on-roll" :: effectsS b)
+  | .now b => .list (.atom "now" :: effectsS b)
   | .setCost k b => .list [.atom "set-cost", .atom k, bundleS b]
   | .setPoints k n => .list [.atom "set-points", .atom k, natS n]
   | .setBankRate n => .list [.atom "set-bank-rate", natS n]
+  | .setWorth r n => .list [.atom "set-worth", .atom r, natS n]
   | .newPiece p =>
       .list [.atom "new-piece", .atom p.name, bundleS p.cost, .list [.atom "points", natS p.points],
         placementS p.placement, .list [.atom "yield", natS p.yield], .list [.atom "limit", natS p.limit]]
   | .repeal n => .list [.atom "repeal", natS n]
+  | .endGame => .list [.atom "end-game"]
 
 def lawS (l : Law) : SExp := .list (.atom "law" :: .str l.title :: l.clauses.map clauseS)
 
@@ -272,6 +302,10 @@ def dealS (d : Deal) : SExp :=
 def printProposal : Proposal → String
   | .law l => (lawS l).render
   | .deal d => (dealS d).render
+
+/-- This law reads what seats have declared. -/
+def lawReadsDeclared (L : Law) : Bool :=
+  ((lawS { L with title := "" }).render.splitOn "(declared ").length > 1
 
 /-! ## Sample laws
 

@@ -320,11 +320,44 @@ def manyTransfers (n : Nat) : String :=
   let one := "(transfer bank each grain 1)"
   s!"(law \"x\" (on-round-end (for-each-player true {" ".intercalate (List.replicate n one)})))"
 
+-- Measures, division by a computed number and the round read and print back the same.
+def roundTrips (text : String) : Bool :=
+  match Rules.parseProposal text with
+  | .ok p => Rules.printProposal p == text
+  | .error _ => false
+
+#guard roundTrips "(law \"Grain prize\" (on-round-end (for-each-player (= (holding each grain) (most-over true (holding each grain))) (transfer treasury each wool 2))))"
+#guard roundTrips "(law \"Floor\" (on-round-end (for-each-player (= (holding each grain) (least-over (< 0 (holding each grain)) (holding each grain))) (transfer treasury each wool 2))))"
+#guard roundTrips "(law \"Total\" (on-round-end (transfer bank treasury wool (total-over true (holding each wool)))))"
+#guard roundTrips "(law \"Tax\" (on-round-end (for-each-player true (transfer each treasury wool (/ (* (holding each wool) (holding treasury ore)) 100)))))"
+#guard roundTrips "(law \"Share\" (on-round-end (for-each-player true (transfer each treasury wool (/ (holding each wool) (holding treasury ore))))))"
+#guard roundTrips "(law \"Late\" (on-roll (transfer bank treasury wool round)))"
+#guard roundTrips "(law \"Auction\" (on-round-end (for-each-player (and (< 0 (declared each grain)) (= (declared each grain) (most-over true (declared each grain)))) (transfer each treasury wool (declared each grain)) (transfer treasury each grain (holding treasury grain)))))"
+#guard (match Rules.parseProposal "(law \"x\" (on-round-end (transfer bank treasury wool (declared each grain))))" with
+  | .ok (.law L) => Rules.lawReadsDeclared L
+  | _ => false)
+#guard (match Rules.parseProposal "(law \"(declared each grain)\" (on-round-end (transfer bank treasury wool 1)))" with
+  | .ok (.law L) => !Rules.lawReadsDeclared L
+  | _ => false)
+#guard roundTrips "(law \"Ore counts\" (set-worth ore 1))"
+#guard (Rules.parseProposal "(law \"x\" (set-worth gold 1))").toOption.isNone
+#guard roundTrips "(law \"Cut down\" (on-round-end (for-each-player (= (points each) (most-over true (points each))) (move-piece each bank settlement))))"
+#guard roundTrips "(law \"Seize\" (on-roll (if (= rolled 7) (move-piece each actor road))))"
+#guard roundTrips "(law \"One gift\" (now (for-each-player true (transfer bank each grain 2))))"
+#guard roundTrips "(law \"Gift and rule\" (now (for-each-player true (transfer bank each grain 2))) (set-bank-rate 3))"
+#guard roundTrips "(law \"Call it\" (end-game))"
+-- A number below a division stays the fixed kind, so an old law reads as it did.
+#guard (match Rules.parseProposal "(law \"x\" (on-round-end (transfer bank treasury wool (/ 7 2))))" with
+  | .ok (.law { clauses := [.onRoundEnd [.transfer _ _ _ (.div (.lit 7) 2)]], .. }) => true
+  | _ => false)
+-- A measure cannot name a seat either.
+#guard (Rules.parseProposal "(law \"x\" (on-round-end (transfer bank treasury wool (most-over true (holding 2 wool)))))").toOption.isNone
+
 -- The limit on planned payments counts one payment per seat per transfer.
-#guard problems table6 (manyTransfers 10) == []
-#guard refusedFor table6 (manyTransfers 11) "too many payments"
-#guard problems table4 (manyTransfers 16) == []
-#guard refusedFor table4 (manyTransfers 17) "too many payments"
+#guard problems table6 (manyTransfers 21) == []
+#guard refusedFor table6 (manyTransfers 22) "too many payments"
+#guard problems table4 (manyTransfers 32) == []
+#guard refusedFor table4 (manyTransfers 33) "too many payments"
 
 -- A promise not to trade can name a seat that does not sign.
 #guard problems table4 "(deal \"E\" (signers 0 1) (rounds 3) (exit-notice 1) (deposits) (no-trade 0 2) (no-trade 1 2))" == []

@@ -21,63 +21,79 @@ structure Agree (s t : State G) : Prop where
   books : s.books = t.books
   pieces : s.pieces = t.pieces
   laws : s.laws = t.laws
+  round : s.round = t.round
+  declared : s.declared = t.declared
 
 theorem Agree.pointsOf {s t : State G} (h : Agree s t) (q : Seat) : s.pointsOf q = t.pointsOf q :=
-  pointsOf_congr h.pieces h.laws q
+  pointsOf_congr h.pieces h.laws h.books q
 
 theorem Agree.countOf {s t : State G} (h : Agree s t) (q : Seat) (k : PieceKind) :
     s.countOf q k = t.countOf q k := by
   simp only [State.countOf, h.pieces]
 
-theorem expr_congr {s t : State G} (h : Agree s t) (env : LawEnv) (x : Expr) :
-    x.eval s env = x.eval t env := by
-  induction x with
-  | lit n => rfl
-  | harvestedAmount => rfl
-  | rolled => rfl
-  | holding p r =>
-    simp only [Expr.eval, State.balance, h.books]
-  | points p =>
-    simp only [Expr.eval]
-    cases p.seat env with
-    | none => rfl
-    | some q => simp [h.pointsOf]
-  | count p k =>
-    simp only [Expr.eval]
-    cases p.seat env with
-    | none => rfl
-    | some q => simp [h.countOf]
-  | add a b ia ib => simp only [Expr.eval, ia, ib]
-  | sub a b ia ib => simp only [Expr.eval, ia, ib]
-  | mul a b ia ib => simp only [Expr.eval, ia, ib]
-  | div a n ia => simp only [Expr.eval, ia]
-  | min a b ia ib => simp only [Expr.eval, ia, ib]
-  | max a b ia ib => simp only [Expr.eval, ia, ib]
+theorem measured_congr {s t : State G} (h : Agree s t) (env : LawEnv) (test : LawEnv → Bool)
+    (value : LawEnv → Nat) : measured s env test value = measured t env test value := by
+  simp only [measured, h.turnOrder]
 
-theorem cond_congr {s t : State G} (h : Agree s t) (env : LawEnv) (c : Cond) :
-    c.eval s env = c.eval t env := by
-  induction c with
-  | yes => rfl
-  | lt a b => simp only [Cond.eval, expr_congr h]
-  | le a b => simp only [Cond.eval, expr_congr h]
-  | eq a b => simp only [Cond.eval, expr_congr h]
-  | and a b ia ib => simp only [Cond.eval, ia, ib]
-  | or a b ia ib => simp only [Cond.eval, ia, ib]
-  | not c ih => simp only [Cond.eval, ih]
-  | harvestedIs r => rfl
+mutual
+  theorem expr_congr {s t : State G} (h : Agree s t) : ∀ (x : Expr) (env : LawEnv),
+      x.eval s env = x.eval t env
+    | .lit _, _ => by simp only [Expr.eval]
+    | .harvestedAmount, _ => rfl
+    | .rolled, _ => rfl
+    | .holding p r, env => by
+      simp only [Expr.eval, State.balance, h.books]
+    | .points p, env => by
+      simp only [Expr.eval]
+      cases p.seat env with
+      | none => rfl
+      | some q => simp [h.pointsOf]
+    | .count p k, env => by
+      simp only [Expr.eval]
+      cases p.seat env with
+      | none => rfl
+      | some q => simp [h.countOf]
+    | .add a b, env => by simp only [Expr.eval, expr_congr h a, expr_congr h b]
+    | .sub a b, env => by simp only [Expr.eval, expr_congr h a, expr_congr h b]
+    | .mul a b, env => by simp only [Expr.eval, expr_congr h a, expr_congr h b]
+    | .div a n, env => by simp only [Expr.eval, expr_congr h a]
+    | .divBy a b, env => by simp only [Expr.eval, expr_congr h a, expr_congr h b]
+    | .min a b, env => by simp only [Expr.eval, expr_congr h a, expr_congr h b]
+    | .max a b, env => by simp only [Expr.eval, expr_congr h a, expr_congr h b]
+    | .round, _ => by simp only [Expr.eval, h.round]
+    | .declared p r, env => by simp only [Expr.eval, h.declared]
+    | .totalOver c a, env => by
+      simp only [Expr.eval, measured_congr h, cond_congr h c, expr_congr h a]
+    | .mostOver c a, env => by
+      simp only [Expr.eval, measured_congr h, cond_congr h c, expr_congr h a]
+    | .leastOver c a, env => by
+      simp only [Expr.eval, measured_congr h, cond_congr h c, expr_congr h a]
+
+  theorem cond_congr {s t : State G} (h : Agree s t) : ∀ (c : Cond) (env : LawEnv),
+      c.eval s env = c.eval t env
+    | .yes, _ => rfl
+    | .lt a b, env => by simp only [Cond.eval, expr_congr h a, expr_congr h b]
+    | .le a b, env => by simp only [Cond.eval, expr_congr h a, expr_congr h b]
+    | .eq a b, env => by simp only [Cond.eval, expr_congr h a, expr_congr h b]
+    | .and a b, env => by simp only [Cond.eval, cond_congr h a, cond_congr h b]
+    | .or a b, env => by simp only [Cond.eval, cond_congr h a, cond_congr h b]
+    | .not c, env => by simp only [Cond.eval, cond_congr h c]
+    | .harvestedIs _, _ => rfl
+end
 
 mutual
   theorem plan_congr {s t : State G} (h : Agree s t) : ∀ (e : Effect) (env : LawEnv),
       Effect.plan s e env = Effect.plan t e env
     | .transfer src dst r amount, env => by
-      simp only [Effect.plan, expr_congr h]
+      simp only [Effect.plan, expr_congr h amount]
+    | .movePiece .., _ => rfl
     | .forEach c body, env => by
       simp only [Effect.plan, h.turnOrder]
       congr 1
       funext p
-      simp only [cond_congr h, planAll_congr h body]
+      simp only [cond_congr h c, planAll_congr h body]
     | .when c body, env => by
-      simp only [Effect.plan, cond_congr h, planAll_congr h body]
+      simp only [Effect.plan, cond_congr h c, planAll_congr h body]
 
   theorem planAll_congr {s t : State G} (h : Agree s t) : ∀ (es : List Effect) (env : LawEnv),
       Effect.planAll s es env = Effect.planAll t es env
@@ -102,7 +118,7 @@ theorem lawEntries_congr {s t : State G} (h : Agree s t) (tr : Trigger) :
 
 theorem Agree.afterPosting {s t : State G} (h : Agree s t) (es : List Entry) :
     Agree (s.afterPosting es) (t.afterPosting es) :=
-  ⟨h.turnOrder, by simp only [State.afterPosting, h.books], h.pieces, h.laws⟩
+  ⟨h.turnOrder, by simp only [State.afterPosting, h.books], h.pieces, h.laws, h.round, h.declared⟩
 
 theorem baseHarvest_congr {s t : State G} (h : Agree s t) (roll : Nat) :
     baseHarvest s roll = baseHarvest t roll := by
@@ -129,7 +145,6 @@ structure TurnAgree (s t : State G) : Prop extends Agree s t where
   phase : s.phase = t.phase
   turnIndex : s.turnIndex = t.turnIndex
   turnsTaken : s.turnsTaken = t.turnsTaken
-  round : s.round = t.round
   deals : s.deals = t.deals
   builtThisRound : s.builtThisRound = t.builtThisRound
 
@@ -142,20 +157,26 @@ theorem TurnAgree.nextStage {s t : State G} (h : TurnAgree s t) :
 theorem TurnAgree.afterPosting {s t : State G} (h : TurnAgree s t) (es : List Entry) :
     TurnAgree (s.afterPosting es) (t.afterPosting es) :=
   { toAgree := h.toAgree.afterPosting es, phase := h.phase, turnIndex := h.turnIndex,
-    turnsTaken := h.turnsTaken, round := h.round, deals := h.deals,
+    turnsTaken := h.turnsTaken, deals := h.deals,
     builtThisRound := h.builtThisRound }
 
 theorem TurnAgree.nextRoller {s t : State G} (h : TurnAgree s t) : s.nextRoller = t.nextRoller := by
   simp only [State.nextRoller, h.nextStage, h.turnOrder]
 
+theorem TurnAgree.atRoll {s t : State G} (h : TurnAgree s t) : Agree s.atRoll t.atRoll := by
+  simp only [State.atRoll, h.nextStage]
+  split
+  · exact ⟨h.turnOrder, h.books, h.pieces, h.laws, by simp only [h.round], rfl⟩
+  · exact h.toAgree
+
 /-- The whole of a roll is the same in two states that agree on what a turn change reads. -/
 theorem rollEntries_congr {s t : State G} (h : TurnAgree s t) (roll : Nat) :
     rollEntries s roll = rollEntries t roll := by
-  simp only [rollEntries, harvestEntries_congr h.toAgree, h.nextRoller]
+  simp only [rollEntries, harvestEntries_congr h.atRoll, h.nextRoller]
   congr 1
   cases t.nextRoller with
   | none => rfl
-  | some a => exact lawEntries_congr (h.toAgree.afterPosting _) _
+  | some a => exact lawEntries_congr (h.atRoll.afterPosting _) _
 
 theorem TurnAgree.duePayments {s t : State G} (h : TurnAgree s t) :
     s.duePayments = t.duePayments := by
@@ -186,19 +207,70 @@ theorem TurnAgree.entriesBeforeRoll {s t : State G} (h : TurnAgree s t) :
     h.roundEndEntries]
   rfl
 
+mutual
+  theorem planOrders_congr {s t : State G} (h : Agree s t) : ∀ (e : Effect) (env : LawEnv),
+      Effect.planOrders s e env = Effect.planOrders t e env
+    | .transfer .., _ => rfl
+    | .movePiece .., _ => rfl
+    | .forEach c body, env => by
+      simp only [Effect.planOrders, h.turnOrder]
+      congr 1
+      funext p
+      simp only [cond_congr h c, planOrdersAll_congr h body]
+    | .when c body, env => by
+      simp only [Effect.planOrders, cond_congr h c, planOrdersAll_congr h body]
+
+  theorem planOrdersAll_congr {s t : State G} (h : Agree s t) : ∀ (es : List Effect) (env : LawEnv),
+      Effect.planOrdersAll s es env = Effect.planOrdersAll t es env
+    | [], _ => rfl
+    | e :: es, env => by
+      simp only [Effect.planOrdersAll, planOrders_congr h e, planOrdersAll_congr h es]
+end
+
+theorem lawOrders_congr {s t : State G} (h : Agree s t) (tr : Trigger) :
+    lawOrders s tr = lawOrders t tr := by
+  simp only [lawOrders, h.laws, planOrdersAll_congr h]
+
+theorem TurnAgree.piecesBeforeRoll {s t : State G} (h : TurnAgree s t) :
+    s.piecesBeforeRoll = t.piecesBeforeRoll := by
+  have hr : s.rules = t.rules := by simp only [State.rules, h.laws]
+  have hl : s.isLastTurn = t.isLastTurn := by
+    simp only [State.isLastTurn, h.phase, h.turnIndex, h.turnOrder]
+  have ho : lawOrders (s.afterPosting s.duePayments) .roundEnd =
+      lawOrders (t.afterPosting t.duePayments) .roundEnd := by
+    rw [h.duePayments]
+    exact lawOrders_congr (h.toAgree.afterPosting _) _
+  simp only [State.piecesBeforeRoll, hl, ho, hr, h.pieces]
+
+/-- On a turn that does not end a round, the round's end changes nothing. -/
+theorem afterRoundEnd_not_last {s : State G} (hl : s.isLastTurn = false) : s.afterRoundEnd = s := by
+  simp [State.afterRoundEnd, State.entriesBeforeRoll, State.piecesBeforeRoll, hl, State.afterPosting,
+    Books.postAll]
+
+theorem TurnAgree.afterRoundEnd {s t : State G} (h : TurnAgree s t) :
+    TurnAgree s.afterRoundEnd t.afterRoundEnd :=
+  let a := h.afterPosting s.entriesBeforeRoll
+  { toAgree := ⟨a.turnOrder, by
+      simp only [State.afterRoundEnd]
+      rw [h.entriesBeforeRoll]
+      have := (h.afterPosting t.entriesBeforeRoll).books
+      exact this, h.piecesBeforeRoll, a.laws, a.round, a.declared⟩
+    phase := h.phase, turnIndex := h.turnIndex, turnsTaken := h.turnsTaken, deals := h.deals,
+    builtThisRound := h.builtThisRound }
+
 /-- A turn change writes the same entries in two states that agree on what it reads. -/
 theorem turnEntries_congr {s t : State G} (h : TurnAgree s t) (roll : Nat) :
     turnEntries s roll = turnEntries t roll := by
   simp only [turnEntries, h.nextStage, h.entriesBeforeRoll]
   split
-  · rw [rollEntries_congr (h.afterPosting _)]
+  · rw [rollEntries_congr h.afterRoundEnd]
   · rfl
 
 /-! ## Rolls -/
 
 theorem turnEntries_rolls {s : State G} (h : (nextStage s).rolls = true) (roll : Nat) :
     turnEntries s roll = s.entriesBeforeRoll ++
-      rollEntries (s.afterPosting s.entriesBeforeRoll) roll := by
+      rollEntries s.afterRoundEnd roll := by
   simp only [turnEntries, h, ↓reduceIte]
 
 theorem turnEntries_no_roll {s : State G} (h : (nextStage s).rolls = false) (roll : Nat) :
@@ -245,7 +317,7 @@ theorem rolls_of_counter {s s' : State G} {e : Event} (hend : EndsTurn s e)
   cases hr : (nextStage s).rolls with
   | true => rfl
   | false =>
-    have := startNextTurn_not_rolled (s := { s with books := b, journal := s.journal ++ turnEntries s (rollAt G s.seed s.rollsMade) })
+    have := startNextTurn_not_rolled (s := { s with books := b, journal := s.journal ++ turnEntries s (rollAt G s.seed s.rollsMade), pieces := s.turnPieces (rollAt G s.seed s.rollsMade) })
       hr (rollAt G s.seed s.rollsMade)
     rw [← hs] at this
     change s'.rollsMade = s.rollsMade at this
@@ -259,7 +331,7 @@ theorem no_roll_of_counter {s s' : State G} {e : Event} (hend : EndsTurn s e)
   cases hr : (nextStage s).rolls with
   | false => rfl
   | true =>
-    have := (startNextTurn_rolled (s := { s with books := b, journal := s.journal ++ turnEntries s (rollAt G s.seed s.rollsMade) })
+    have := (startNextTurn_rolled (s := { s with books := b, journal := s.journal ++ turnEntries s (rollAt G s.seed s.rollsMade), pieces := s.turnPieces (rollAt G s.seed s.rollsMade) })
       hr (rollAt G s.seed s.rollsMade)).1
     rw [← hs] at this
     change s'.rollsMade = s.rollsMade + 1 at this
@@ -278,7 +350,7 @@ theorem bodyFor_roll {c : Clause} (h : ∀ b, c ≠ .onRoll b) (a : Seat) (n : N
 such law replays as it always did. -/
 theorem rollEntries_no_roll_law (s : State G) (roll : Nat)
     (h : ∀ x ∈ s.laws, ∀ c ∈ x.2.clauses, ∀ b, c ≠ .onRoll b) :
-    rollEntries s roll = harvestEntries s roll := by
+    rollEntries s roll = harvestEntries s.atRoll roll := by
   have hlaw : ∀ (a : Seat) (t : State G), t.laws = s.laws → lawEntries t (.roll a roll) = [] := by
     intro a t ht
     have hplan : t.laws.flatMap (fun x => Law.plan t (.roll a roll) x.2) = [] := by
@@ -296,7 +368,8 @@ theorem rollEntries_no_roll_law (s : State G) (roll : Nat)
   | none => simp
   | some a =>
     simp only
-    rw [hlaw a (s.afterPosting (harvestEntries s roll)) rfl, List.append_nil]
+    rw [hlaw a (s.atRoll.afterPosting (harvestEntries s.atRoll roll)) (atRoll_laws s),
+      List.append_nil]
 
 /-! ## Commandment X, parts (c), (d), (e) -/
 
@@ -327,19 +400,19 @@ theorem roll_entries {s s' : State G} {e : Event} (h : Engine.step G s e = .ok s
       newEntries s s' = rollEntries s (rollAt G s.seed s.rollsMade)) ∧
     (s.isLastTurn = true →
       newEntries s s' = s.roundEndEntries ++
-        rollEntries (s.afterPosting s.roundEndEntries) (rollAt G s.seed s.rollsMade)) ∧
+        rollEntries s.afterRoundEnd (rollAt G s.seed s.rollsMade)) ∧
     s.nextRoller = s'.currentSeat := by
   have hr := rolls_of_counter hend h hc
   refine ⟨?_, ?_, ?_⟩
   · intro hl
     have hb : s.entriesBeforeRoll = [] := by simp [State.entriesBeforeRoll, hl]
-    rw [newEntries_endTurn hend h, turnEntries_rolls hr, hb]
+    rw [newEntries_endTurn hend h, turnEntries_rolls hr, hb, afterRoundEnd_not_last hl]
     rfl
   · intro hl
     have hb : s.entriesBeforeRoll = s.roundEndEntries := by simp [State.entriesBeforeRoll, hl]
     rw [newEntries_endTurn hend h, turnEntries_rolls hr, hb]
   · obtain ⟨b, _, hs⟩ := step_endsTurn hend h
-    rw [hs, startNextTurn_currentSeat (s := { s with books := b, journal := _ }) hr]
+    rw [hs, startNextTurn_currentSeat (s := { s with books := b, journal := _, pieces := _ }) hr]
     rfl
 
 /-- X(e): a turn change with no roll writes only the round-end entries, if any. -/
@@ -352,16 +425,15 @@ theorem no_roll_entries {s s' : State G} {e : Event} (h : Engine.step G s e = .o
 
 theorem vote_fields {s s1 : State G} {seat id : Nat} {yes : Bool}
     (hb : voteBody s seat id yes = .ok s1) :
-    s1.books = s.books ∧ s1.pieces = s.pieces ∧ s1.deals = s.deals ∧
-    s1.builtThisRound = s.builtThisRound := by
+    s1.deals = s.deals ∧ s1.builtThisRound = s.builtThisRound := by
   obtain ⟨_, _, L, _, _, _, ⟨_, rfl⟩ | ⟨_, rfl⟩⟩ := voteBody_ok hb
   · unfold decideLaw
     simp only
-    split <;> exact ⟨rfl, rfl, rfl, rfl⟩
-  · exact ⟨rfl, rfl, rfl, rfl⟩
+    split <;> exact ⟨rfl, rfl⟩
+  · exact ⟨rfl, rfl⟩
 
 theorem preview_exact {s s1 s2 : State G} {seat id : Nat} {L : Law} {roll : Nat} {e : Event}
-    (h1 : Engine.step G s (.vote seat id true) = .ok s1) (hl : s1.laws = enact s.laws id L)
+    (h1 : Engine.step G s (.vote seat id true) = .ok s1) (hp : LawPasses s (.vote seat id true) L)
     (hend : EndsTurn s1 e) (h2 : Engine.step G s1 e = .ok s2) (hr : s2.lastRoll = some roll) :
     newEntries s1 s2 = Engine.predictNextTurn G (s.withLaw id L) roll := by
   have hne1 := step_not_ended h2
@@ -372,17 +444,22 @@ theorem preview_exact {s s1 s2 : State G} {seat id : Nat} {L : Law} {roll : Nat}
     · obtain ⟨_, _, h3⟩ := endGame_ok hw
       exact absurd (by rw [h3]) hne1
   have hb' : voteBody s seat id true = .ok sb := hb
-  obtain ⟨f1, f2, f3, f4⟩ := vote_fields hb'
+  obtain ⟨f3, f4⟩ := vote_fields hb'
   have fr := bodyOf_frame hb
   have hagree : TurnAgree s1 (s.withLaw id L) := by
-    rw [hs1] at hl ⊢
-    exact ⟨⟨fr.turnOrder, f1, f2, hl⟩, fr.phase, fr.turnIndex, fr.turnsTaken, fr.round, f3, f4⟩
+    rw [hs1]
+    rcases vote_view hb' with ⟨L', hp', hu, hs⟩ | ⟨hno, _⟩
+    · have hL : L = L' := hu L hp
+      subst hL
+      exact ⟨⟨fr.turnOrder, by rw [hs]; rfl, by rw [hs]; rfl, by rw [hs]; rfl, fr.round, by
+        rw [hs]; rfl⟩, fr.phase, fr.turnIndex, fr.turnsTaken, f3, f4⟩
+    · exact absurd hp (hno L)
   have hroll : turnEntries s1 (rollAt G s1.seed s1.rollsMade) = turnEntries s1 roll := by
     cases hrs : (nextStage s1).rolls with
     | false => rw [turnEntries_no_roll hrs, turnEntries_no_roll hrs]
     | true =>
       obtain ⟨b, _, hs2⟩ := step_endsTurn hend h2
-      have := (startNextTurn_rolled (s := { s1 with books := b, journal := s1.journal ++ turnEntries s1 (rollAt G s1.seed s1.rollsMade) })
+      have := (startNextTurn_rolled (s := { s1 with books := b, journal := s1.journal ++ turnEntries s1 (rollAt G s1.seed s1.rollsMade), pieces := s1.turnPieces (rollAt G s1.seed s1.rollsMade) })
         hrs (rollAt G s1.seed s1.rollsMade)).2
       rw [← hs2, hr] at this
       injection this with h3

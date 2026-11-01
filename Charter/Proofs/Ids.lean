@@ -57,9 +57,12 @@ theorem body_deals_cases {s s1 : State G} {e : Event} (h : bodyOf s e = .ok s1) 
     | cancel i =>
       obtain ⟨_, _, rfl⟩ := cancelBody_ok h
       exact ⟨rfl, rfl⟩
+    | declare r n =>
+      obtain ⟨_, _, rfl⟩ := declareBody_ok h
+      exact ⟨rfl, rfl⟩
   | propose seat b =>
     left
-    obtain ⟨_, _, ⟨_, _, _, _, _, rfl⟩ | ⟨_, _, _, _, rfl⟩⟩ := proposeBody_ok h <;> exact ⟨rfl, rfl⟩
+    obtain ⟨_, _, ⟨_, _, _, rfl⟩ | ⟨_, _, _, _, rfl⟩⟩ := proposeBody_ok h <;> exact ⟨rfl, rfl⟩
   | vote seat i y =>
     left
     obtain ⟨_, _, _, _, _, _, ⟨_, rfl⟩ | ⟨_, rfl⟩⟩ := voteBody_ok h
@@ -113,9 +116,12 @@ theorem body_open_cases {s s1 : State G} {e : Event} (h : bodyOf s e = .ok s1) :
     | cancel i =>
       obtain ⟨_, _, rfl⟩ := cancelBody_ok h
       exact ⟨rfl, rfl⟩
+    | declare r n =>
+      obtain ⟨_, _, rfl⟩ := declareBody_ok h
+      exact ⟨rfl, rfl⟩
   | propose seat b =>
     right; left
-    obtain ⟨_, _, ⟨_, _, _, _, _, rfl⟩ | ⟨_, _, _, _, rfl⟩⟩ := proposeBody_ok h
+    obtain ⟨_, _, ⟨_, _, _, rfl⟩ | ⟨_, _, _, _, rfl⟩⟩ := proposeBody_ok h
     · exact ⟨_, rfl, rfl, rfl, rfl, rfl⟩
     · exact ⟨_, rfl, rfl, rfl, rfl, rfl⟩
   | vote seat i y =>
@@ -474,7 +480,7 @@ theorem IdInv.step {s s' : State G} {e : Event} (hi : IdInv s) (h : Engine.step 
     IdInv s' := by
   rcases step_view h with ⟨_, h⟩ | ⟨_, _, s1, hb, hf⟩
   · obtain ⟨b, _, rfl⟩ := endTurnNow_ok h
-    exact IdInv.startNextTurn (s := { s with books := b, journal := _ })
+    exact IdInv.startNextTurn (s := { s with books := b, journal := _, pieces := _ })
       ⟨hi.1, hi.2, hi.3, hi.4, hi.5, hi.6, hi.7, hi.8, hi.9⟩ _
   · have h1 := hi.body hb
     rcases finish_cases hf with rfl | ⟨w, he⟩

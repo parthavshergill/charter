@@ -343,8 +343,8 @@ def bankDraw : Law :=
   | some s => holds s 0 "ore" == 4 && holds s 1 "ore" == 0
   | none => false
 
--- Only two more kinds of piece fit, so three of these cards cannot all pass.
-#guard (lawProblems game { fresh with laws := game.startingLaws ++ [(90, monopolyOnOre), (91, plentyFixed)] } freeRoads).contains
+-- All three of these cards can pass: a game can have 16 kinds of piece.
+#guard !(lawProblems game { fresh with laws := game.startingLaws ++ [(90, monopolyOnOre), (91, plentyFixed)] } freeRoads).contains
   "there would be too many kinds of piece"
 
 /-! ### An award that moves

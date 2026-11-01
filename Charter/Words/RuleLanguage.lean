@@ -27,39 +27,60 @@ inductive ResRef where
   | harvested
   deriving Repr, DecidableEq
 
-/-- A number a law can compute. `sub` stops at zero and `div` rounds down. -/
-inductive Expr where
-  | lit (n : Nat)
-  /-- The amount the dice just paid. -/
-  | harvestedAmount
-  /-- The total the dice just showed. It is 0 outside a roll. -/
-  | rolled
-  | holding (p : Party) (r : ResRef)
-  | points (p : Party)
-  | count (p : Party) (k : PieceKind)
-  | add (a b : Expr)
-  | sub (a b : Expr)
-  | mul (a b : Expr)
-  | div (a : Expr) (n : Nat)
-  | min (a b : Expr)
-  | max (a b : Expr)
-  deriving Repr, DecidableEq
+mutual
+  /-- A number a law can compute. `sub` stops at zero and `div` rounds down. -/
+  inductive Expr where
+    | lit (n : Nat)
+    /-- The amount the dice just paid. -/
+    | harvestedAmount
+    /-- The total the dice just showed. It is 0 outside a roll. -/
+    | rolled
+    | holding (p : Party) (r : ResRef)
+    | points (p : Party)
+    | count (p : Party) (k : PieceKind)
+    | add (a b : Expr)
+    | sub (a b : Expr)
+    | mul (a b : Expr)
+    /-- Divides by a fixed number. -/
+    | div (a : Expr) (n : Nat)
+    /-- Divides by a computed number. Dividing by zero gives 0. -/
+    | divBy (a b : Expr)
+    | min (a b : Expr)
+    | max (a b : Expr)
+    /-- The current round. -/
+    | round
+    /-- The number this seat has declared for this resource this round. It is 0 for the treasury, the
+    bank and anyone not in play here. -/
+    | declared (p : Party) (r : ResRef)
+    /-- The sum of `a` over every seat that passes `c`. Inside, `each` means the seat being measured. -/
+    | totalOver (c : Cond) (a : Expr)
+    /-- The most of `a` over every seat that passes `c`, or 0 if none does. This is a number, not a seat.
+    Inside, `each` means the seat being measured. -/
+    | mostOver (c : Cond) (a : Expr)
+    /-- The least of `a` over every seat that passes `c`, or 0 if none does. This is a number, not a seat.
+    Inside, `each` means the seat being measured. -/
+    | leastOver (c : Cond) (a : Expr)
+    deriving Repr, DecidableEq
 
-/-- A true-or-false test a law can make. -/
-inductive Cond where
-  | yes
-  | lt (a b : Expr)
-  | le (a b : Expr)
-  | eq (a b : Expr)
-  | and (a b : Cond)
-  | or (a b : Cond)
-  | not (c : Cond)
-  | harvestedIs (r : Res)
-  deriving Repr, DecidableEq
+  /-- A true-or-false test a law can make. -/
+  inductive Cond where
+    | yes
+    | lt (a b : Expr)
+    | le (a b : Expr)
+    | eq (a b : Expr)
+    | and (a b : Cond)
+    | or (a b : Cond)
+    | not (c : Cond)
+    | harvestedIs (r : Res)
+    deriving Repr, DecidableEq
+end
 
-/-- What a law can do: move resources, for each seat that passes a test, or if a test passes. -/
+/-- What a law can do: move resources or a piece, for each seat that passes a test, or if a test passes. -/
 inductive Effect where
   | transfer (src dst : Party) (r : ResRef) (amount : Expr)
+  /-- Moves `src`'s newest piece of kind `k`. Moving it to the bank destroys it. Moving it to a seat seizes
+  it. `lawProblems` allows this only at a round's end or on a roll. -/
+  | movePiece (src dst : Party) (k : PieceKind)
   | forEach (c : Cond) (body : List Effect)
   | when (c : Cond) (body : List Effect)
   deriving Repr
@@ -71,10 +92,16 @@ inductive Clause where
   | onRoundEnd (body : List Effect)
   /-- Runs on every roll of the dice, including a roll that pays nobody. -/
   | onRoll (body : List Effect)
+  /-- Runs once, the moment the law passes. A law of only these does not join the laws in force. -/
+  | now (body : List Effect)
   | setCost (k : PieceKind) (b : Bundle)
   | setPoints (k : PieceKind) (n : Nat)
   | setBankRate (n : Nat)
+  /-- Each unit of this resource in a seat's own account is now worth `n` points. -/
+  | setWorth (r : Res) (n : Nat)
   | newPiece (p : PieceDef)
+  /-- Ends the game the moment the law passes. Most points wins, with ties settled as at any other end. -/
+  | endGame
   /-- Removes the law with this id, and with it every rule that law changed. If that law made a new
   piece, the pieces already on the board stay there, and they are worth 0 points and yield 0. -/
   | repeal (lawId : Nat)
@@ -85,5 +112,18 @@ structure Law where
   title : String
   clauses : List Clause
   deriving Repr
+
+/-- This clause runs once when its law passes. -/
+def Clause.isNow : Clause → Bool
+  | .now _ => true
+  | _ => false
+
+/-- This clause ends the game. -/
+def Clause.isEndGame : Clause → Bool
+  | .endGame => true
+  | _ => false
+
+/-- Every clause of this law runs once when it passes, so it takes no place among the laws in force. -/
+def Law.isDecree (L : Law) : Bool := L.clauses.all Clause.isNow
 
 end Charter

@@ -97,6 +97,7 @@ def state {G : GameDef} (s : State G) : State G :=
     offers := s.offers.map σ.offer
     builtThisRound := s.builtThisRound.map fun x => (σ.to x.1, x.2)
     actionsThisTurn := fun p => s.actionsThisTurn (σ.back p)
+    declared := fun p r => s.declared (σ.back p) r
     winner := s.winner.map σ.to }
 
 end Renaming

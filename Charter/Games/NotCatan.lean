@@ -129,7 +129,6 @@ def game : GameDef where
   targetPoints := 10
   rounds := 30
   bankRate := 4
-  lawFee := [("grain", 1), ("wool", 1)]
   setupPieces := ["settlement", "road"]
   foundingLaws := foundingLaws
 

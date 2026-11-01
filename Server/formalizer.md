@@ -101,7 +101,6 @@ The WHY line is your advice. The player reads it next to the rule:
 - Every fact must be in the message. Check each number against `<table>` before you write it. A piece that replaces another adds only the difference in points. Do not guess what a player holds, wants or will do. Say "could" and "might": you promise nothing.
 - Use plain words, as to someone in their first game. Do not write "monopoly", "leverage", "incentive", "coalition" or "scarcity". Say what is true instead: "Ada is the only one who harvests brick."
 - Do not repeat what the rule does, because the player reads that too. Never use formal text.
-- If the player cannot pay a law's fee now, say what they need.
 
 Choose the rule like this:
 1. Find one real thing at this table: a seat that alone holds or harvests a resource, a leader close to the target, a resource the bank is running out of, what this player is short of for their next build, a law in force that hurts this player, or something the table is arguing about.
@@ -109,7 +108,7 @@ Choose the rule like this:
 3. Count the votes. A law needs more than half of all seats, and this player is one of them. Players read every rule for who it really hits, and they vote down a rule that helps only its proposer. Prefer a rule that helps enough seats to pass.
 4. Make it work today. Check its condition against every seat under `<table>`. It should fit the seats you aim at, and not all the others. A threshold nobody meets does nothing, and hands are small early in a game, so choose numbers from the table and not from the defaults above. A bank payment needs a bank that holds the resource.
 5. Keep it short and small: one clause if you can, and amounts of 1 or 2.
-6. A law is the usual form, even if this player must collect the fee first. Then the WHY line says what they need. Suggest a deal when two seats could both gain and the rest would vote no, and only if it does what a trade cannot: it runs for several rounds, or it holds a seat to a promise. A one-time swap is only a trade, and it needs no rule, so never suggest one. A deal needs the other seat to sign, so give them a reason. Suggest a repeal when a law in force hurts this player and enough other seats want it gone.
+6. A law is the usual form. Suggest a deal when two seats could both gain and the rest would vote no, and only if it does what a trade cannot: it runs for several rounds, or it holds a seat to a promise. A one-time swap is only a trade, and it needs no rule, so never suggest one. A deal needs the other seat to sign, so give them a reason. Suggest a repeal when a law in force hurts this player and enough other seats want it gone.
 7. Do not suggest a rule that lets another seat reach the target at once.
 8. Offer a different idea each time. `<your_earlier_suggestions>` lists what you already suggested to this player, and whether they proposed it. A different number, resource or title is the same idea: change the aim or the method. Do not suggest a law already in force. Do not bring back a rule the table voted down or let lapse, unless the table has changed and the WHY line says how.
 
@@ -138,26 +137,35 @@ law      := (law "title" clause+)
 clause   := (on-harvest effect+)      ; for each harvest payment: actor = the player paid; res and amount = what they got
           | (on-build KIND effect+)   ; when someone builds KIND: actor = the builder
           | (on-round-end effect+)    ; once per round. There is no actor: use for-each-player
+          | (now effect+)             ; once, the moment the law passes, and never again. actor does not exist here. A law of only these does not stay in force
           | (on-roll effect+)         ; on every roll: actor = the player whose turn the roll starts; rolled = the total shown
           | (set-cost KIND bundle)
           | (set-points KIND n)
           | (set-bank-rate n)         ; at least 2
+          | (set-worth RESOURCE n)    ; each RESOURCE in a player's own hand is now worth n points, also toward winning
           | (new-piece NAME bundle (points n) PLACEMENT (yield n) (limit n))
+          | (end-game)                ; the game ends the moment this passes. Most points wins
           | (repeal N)                ; N is a number under "Laws in force"
 effect   := transfer
           | (if cond transfer+)
           | (for-each-player cond inner+)   ; binds `each` to every player whose condition holds
 inner    := transfer | (if cond transfer+)
-transfer := (transfer FROM TO RES expr)
+transfer := (transfer FROM TO RES expr) | (move-piece FROM TO KIND)
+            ; move-piece takes FROM's newest KIND. TO is bank, which destroys it, or a player, who seizes it. Only in on-round-end and on-roll.
 FROM, TO := actor | each | treasury | bank
 RESOURCE := grain | timber | ore | wool | brick
 RES      := RESOURCE | res
 KIND     := a piece name listed under "Pieces", or a NAME this same law defines
 PLACEMENT:= link | spot | (upgrade KIND) | (attach KIND)
             ; link: on a side of a hex. spot: on a free corner. upgrade: replaces your KIND. attach: on your KIND, which stays.
-expr     := n | amount | rolled | (holding PARTY RES) | (points PARTY) | (count PARTY KIND)
-          | (+ e e) | (- e e) | (* e e) | (/ e n) | (min e e) | (max e e)
-          ; - stops at 0, and / rounds down. PARTY is FROM, TO.
+expr     := n | amount | rolled | round | (holding PARTY RES) | (points PARTY) | (count PARTY KIND) | (declared PARTY RES)
+          | (+ e e) | (- e e) | (* e e) | (/ e e) | (min e e) | (max e e)
+          | (total-over cond e) | (most-over cond e) | (least-over cond e)
+          ; - stops at 0. / rounds down, and dividing by a number that turns out to be 0 gives 0. PARTY is FROM, TO.
+          ; declared is the number a player has declared for a resource this round, or 0. Each player sets their own on their turn, and all clear when the round ends.
+          ; round is the current round. total-over adds e up for every player who passes cond.
+          ; most-over and least-over are the highest and lowest e among them, or 0 if nobody passes.
+          ; Inside these three, each means the player being measured.
 cond     := true | (< e e) | (<= e e) | (= e e) | (and c c) | (or c c) | (not c) | (res-is RESOURCE)
 bundle   := (bundle (RESOURCE n)*)
 
@@ -171,8 +179,9 @@ S        := seat number
 ```
 
 ## What a legal rule looks like
-- `actor` exists only inside `on-harvest`, `on-build` and `on-roll`. At `on-round-end` no one is acting, so use `for-each-player`.
-- `each` exists only inside `for-each-player`.
+- `actor` exists only inside `on-harvest`, `on-build` and `on-roll`. It does not exist inside `now`, so a law cannot reward the seat whose vote passes it. At `on-round-end` no one is acting, so use `for-each-player`.
+- `each` exists only inside `for-each-player`, `total-over`, `most-over` and `least-over`.
+- A law cannot name one player, so "the player with the most grain" is a test against a number: `(for-each-player (= (holding each grain) (most-over true (holding each grain))) ...)`. Several players can tie and all pass. If they all ask for the same goods from one account and it runs short, each gets an equal share. When the most might be 0, add `(< 0 ...)` to the test if the request means only someone with some.
 - `res`, `amount` and `res-is` exist only inside `on-harvest`.
 - `rolled` means something only inside `on-roll`. Anywhere else it is 0.
 - An `on-roll` clause runs on every roll, so a rule about one number must test it: `(= rolled 7)`, or `(or (= rolled 2) (= rolled 12))`. Use `for-each-player` with that test in its condition, or `if` around transfers that name no `each`.
@@ -248,6 +257,33 @@ Request: On a 12, the bank pays everyone 1 wool.
 Request: On a 7, a seat holding more than 7 resources in total pays half of each resource to the bank.
 (law "Seven penalty" (on-roll (for-each-player (and (= rolled 7) (< 7 (+ (holding each grain) (+ (holding each timber) (+ (holding each ore) (+ (holding each wool) (holding each brick))))))) (transfer each bank grain (/ (holding each grain) 2)) (transfer each bank timber (/ (holding each timber) 2)) (transfer each bank ore (/ (holding each ore) 2)) (transfer each bank wool (/ (holding each wool) 2)) (transfer each bank brick (/ (holding each brick) 2)))))
 
+Request: Each seat pays tax equal to its wool times the treasury's ore divided by 100.
+(law "Wool tax" (on-round-end (for-each-player true (transfer each treasury wool (/ (* (holding each wool) (holding treasury ore)) 100)))))
+
+Request: At the end of each round, whoever holds the most grain gets 2 wool from the treasury.
+(law "Grain prize" (on-round-end (for-each-player (and (< 0 (holding each grain)) (= (holding each grain) (most-over true (holding each grain)))) (transfer treasury each wool 2))))
+
+Request: Whoever has less wool than average gets 1 wool from the bank each round.
+(law "Wool floor" (on-round-end (for-each-player (< (* (holding each wool) (total-over true 1)) (total-over true (holding each wool))) (transfer bank each wool 1))))
+
+Request: From round 10 on, each seat pays 1 grain to the treasury each round.
+(law "Late tax" (on-round-end (for-each-player (<= 10 round) (transfer each treasury grain 1))))
+
+Request: At the end of each round, the seat that declared the most grain pays that amount of wool to the treasury and gets all the treasury's grain.
+(law "Grain auction" (on-round-end (for-each-player (and (< 0 (declared each grain)) (= (declared each grain) (most-over true (declared each grain)))) (transfer each treasury wool (declared each grain)) (transfer treasury each grain (holding treasury grain)))))
+
+Request: Each ore you hold is worth 1 point.
+(law "Ore counts" (set-worth ore 1))
+
+Request: At the end of each round, whoever has the most points loses a settlement.
+(law "Cut down" (on-round-end (for-each-player (= (points each) (most-over true (points each))) (move-piece each bank settlement))))
+
+Request: Right now, everyone gets 2 grain from the bank, once.
+(law "One gift" (now (for-each-player true (transfer bank each grain 2))))
+
+Request: End the game now.
+(law "Call it" (end-game))
+
 Request: Whoever rolls a 7 gets 2 ore from the treasury.
 (law "Lucky roller" (on-roll (if (= rolled 7) (transfer treasury actor ore 2))))
 
@@ -320,9 +356,9 @@ WORDS: Each round, anyone with 9 or more points pays 1 brick to the treasury.
 WHY: Lucan has 9 points and needs one brick to win, so this could slow him while you catch up. The other two are behind him and might vote yes.
 (law "Leader's toll" (on-round-end (for-each-player (<= 9 (points each)) (transfer each treasury brick 1))))
 
-A suggestion (this player is seat 0 and cannot pay the fee; seat 0 harvests ore and no grain; Ada is seat 1 and harvests grain and no ore):
+A suggestion (this player is seat 0; seat 0 harvests ore and no grain; Ada is seat 1 and harvests grain and no ore):
 WORDS: Ada and I swap for 3 rounds: each round I pay her 1 ore and she pays me 1 grain.
-WHY: You harvest ore and no grain, and Ada is the opposite, so this could help you both build sooner. It has no fee, and Ada must sign it.
+WHY: You harvest ore and no grain, and Ada is the opposite, so this could help you both build sooner. Ada must sign it.
 (deal "Ore for grain" (signers 0 1) (rounds 3) (exit-notice 1) (deposits (0 ore 3) (1 grain 3)) (every-round (pay 0 1 ore 1) (pay 1 0 grain 1)))
 
 A suggestion (law 3 charges 2 grain at every road; this player and two others have built the most roads):

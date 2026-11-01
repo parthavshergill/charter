@@ -22,14 +22,18 @@ clause := (on-harvest effect...)     ; runs once for each harvest payment
         | (on-build KIND effect...)  ; runs when anyone builds KIND
         | (on-round-end effect...)   ; runs once at the end of each round
         | (on-roll effect...)        ; runs once on every roll of the dice, after the bank has paid the harvest
+        | (now effect...)            ; runs once, the moment the law passes. A law of only these does not stay in force
         | (set-cost KIND (bundle (RESOURCE n)...))  ; this is now the whole cost. An empty bundle means free
         | (set-points KIND n)        ; each KIND is now worth n points, also those already built
         | (set-bank-rate n)          ; the bank now trades n of one resource for 1 of another
+        | (set-worth RESOURCE n)     ; each RESOURCE in a player's own hand is now worth n points. It counts toward winning. 0 means it is worth nothing
         | (new-piece NAME bundle (points n) PLACEMENT (yield n) (limit n))  ; a new kind of piece
+        | (end-game)                 ; the game ends the moment this passes. Most points wins
         | (repeal N)                 ; law N ends, and every rule it changed ends with it. Pieces it made stay on the board, worth 0 points and yielding 0
 effect := (transfer from FROM to TO RESOURCE number)   ; FROM pays TO
         | (when test transfer...)              ; all of these, only if the test holds now
         | (for-each-player test effect...)     ; for every player who passes the test
+        | (move-piece FROM TO KIND)            ; FROM's newest KIND moves. To the bank, it is destroyed. To a player, it is seized. What sits on it goes with it. A player always keeps their last piece, and a player at their limit cannot receive one, so it is destroyed
 PLACEMENT := link (on a side of a hex, as a road is) | spot (on a free corner, as a settlement is)
            | (upgrade KIND) (replaces your KIND) | (attach KIND) (goes on your KIND, which stays)
 (yield n)  ; collects n when a hex it touches pays. (limit n) ; each player can own at most n
@@ -46,7 +50,11 @@ Numbers:
 - `res` and `amount` are the resource and the size of the one harvest payment that set off `on-harvest`. A roll can make many payments, and the clause runs for each.
 - `rolled` is the total the dice just showed. It is 0 outside `on-roll`. `on-roll` runs on every roll, also a 7 and a roll that pays nobody, so a test on `rolled` chooses the numbers. `(= rolled 7)` means the dice show 7. A law reads the roll and cannot change it.
 - `(- a b)` stops at 0. `(- (holding each grain) 7)` means the grain above 7, and it is 0 for a player with 7 or fewer.
-- `(/ a n)` rounds down. `(/ amount 2)` of a payment of 1 is 0, so nothing moves.
+- `(/ a b)` rounds down. `(/ amount 2)` of a payment of 1 is 0, so nothing moves. `b` can be any number, and a number that turns out to be 0 gives 0.
+- `(declared P R)` is the number P has declared for R this round. Each player sets their own number on their turn, everyone can see it, and it clears when the round ends. It moves nothing by itself. Call it "declared", as in "the grain they declared".
+- `round` is the number of the current round. On a roll that starts a new round, it is already the new round.
+- `(total-over test n)` adds up n for every player who passes the test. `(most-over test n)` is the highest n among them, and `(least-over test n)` is the lowest. If nobody passes, each is 0. Inside these three, `each` is the player being measured.
+- These give a number, not a player. So `(= (holding each grain) (most-over true (holding each grain)))` means a player has as much grain as anyone, and several players can share it.
 - `(* 2 (count each road))` means 2 per road they own. `(min a b)` is the smaller, and `(max a b)` is the larger.
 
 Tests read from left to right, so check the direction with care:
@@ -136,6 +144,31 @@ On a roll of 7, each player with more than 7 grain pays the bank half their grai
       (transfer from treasury to actor ore 2))))
 </law>
 On a roll of 2, the treasury pays 2 ore to the player whose turn it starts, if the treasury has it.
+
+<law>
+(law ""
+  (on-round-end
+    (for-each-player (= (holding each grain) (most-over true (holding each grain)))
+      (transfer from treasury to each wool 2))))
+</law>
+Each round, the treasury pays 2 wool to each player tied for the most grain, if the treasury has it.
+
+<law>
+(law ""
+  (on-round-end
+    (for-each-player true
+      (transfer from each to treasury wool (/ (* (holding each wool) (holding treasury ore)) 100)))))
+</law>
+Each round, each player pays the treasury a tax in wool: their wool times the treasury's ore, divided by 100, rounded down.
+
+<law>
+(law ""
+  (on-round-end
+    (for-each-player (and (< 0 (declared each grain)) (= (declared each grain) (most-over true (declared each grain))))
+      (transfer from each to treasury wool (declared each grain))
+      (transfer from treasury to each grain (holding treasury grain)))))
+</law>
+Each round, the player who declared the most grain pays that much wool to the treasury and gets all the treasury's grain. Tied players each pay and share the grain.
 
 <law>
 (law ""

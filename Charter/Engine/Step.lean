@@ -39,7 +39,8 @@ def replay (G : GameDef) (seats : Nat) (serverSeed : UInt64) (nonces : List UInt
 def allLocs (G : GameDef) : List Loc :=
   (List.range G.map.spotCount).map .spot ++ G.map.links.map .link
 
-/-- Moves worth testing for a seat. Offers have free-form contents, so they are not listed. -/
+/-- Moves worth testing for a seat. Offers and declarations have free-form contents, so they are not
+listed. -/
 def candidateMoves {G : GameDef} (s : State G) : List Move :=
   let resources := G.resources.map (·.name)
   [Move.endTurn] ++
@@ -48,8 +49,10 @@ def candidateMoves {G : GameDef} (s : State G) : List Move :=
   s.offers.map (fun o => .accept o.id) ++
   s.offers.map (fun o => .cancel o.id)
 
-/-- The moves `step` accepts from this seat now, except offers. -/
+/-- The moves `step` accepts from this seat now, except offers and declarations. `step` adds to the journal and never reads
+it, so these tries leave it out. Otherwise each one would copy the whole journal. -/
 def legalMoves (G : GameDef) (s : State G) (p : Seat) : List Move :=
-  (candidateMoves s).filter fun m => (step G s (.move p m)).toOption.isSome
+  let probe : State G := { s with journal := [] }
+  (candidateMoves s).filter fun m => (step G probe (.move p m)).toOption.isSome
 
 end Charter.Engine

@@ -143,7 +143,7 @@ def meshFiles : List String :=
 
 /-! ## Counters
 
-A game can have a resource that no piece and no law fee costs. Nobody wants it for itself, so it is a
+A game can have a resource that no piece costs. Nobody wants it for itself, so it is a
 counter that laws read, such as a flag a law keeps in the treasury. The screen and the Claude seats leave it out of hands,
 trades and what a corner pays. It is still in the books and the laws' text, and the rules treat it like
 any other resource. -/

@@ -58,7 +58,6 @@ def belt : GameDef where
   targetPoints := 8
   rounds := 20
   bankRate := 3
-  lawFee := [("ice", 1)]
   setupPieces := ["outpost", "lane"]
 
 theorem belt_valid : belt.Valid := by decide +kernel

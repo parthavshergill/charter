@@ -110,6 +110,13 @@ def cancelBody (s : State G) (p : Seat) (offerId : Nat) : Except String (State G
     .ok { s with offers := s.offers.filter (·.id != offerId) }
   else .error "you have no offer with that id"
 
+/-- Declare a public number for a resource, on your turn. It moves nothing and writes no entries. -/
+def declareBody (s : State G) (p : Seat) (r : Res) (n : Nat) : Except String (State G) :=
+  if !(s.phase == .actions && s.isTurnOf p) then .error "you can declare on your turn"
+  else if !G.isRes r then .error "there is no such resource"
+  else if maxDeclared < n then .error "that number is too large to declare"
+  else .ok { s with declared := fun q x => if q = p ∧ x = r then n else s.declared q x }
+
 /-- Every move except ending the turn. `step` handles that one first. -/
 def moveBody (s : State G) (p : Seat) : Move → Except String (State G)
   | .place k loc => placeBody s p k loc
@@ -117,6 +124,7 @@ def moveBody (s : State G) (p : Seat) : Move → Except String (State G)
   | .offer to give get => offerBody s p to give get
   | .accept offerId => acceptBody s p offerId
   | .cancel offerId => cancelBody s p offerId
+  | .declare r n => declareBody s p r n
   | .endTurn => .error "only the current seat can end its turn"
 
 end Charter.Engine

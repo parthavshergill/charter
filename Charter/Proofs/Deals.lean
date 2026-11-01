@@ -273,7 +273,7 @@ theorem deal_ended_empty {s : State G} (hdep : DepositInv G s) (hc : Core s) (hi
   rcases step_view h with ⟨hend, h2⟩ | ⟨hnot, _, s1, hb, hf⟩
   · obtain ⟨b, hbk, hs⟩ := endTurnNow_ok h2
     subst hs
-    obtain ⟨hl, hcl⟩ := gone_is_closing (s := { s with books := b, journal := s.journal ++ turnEntries s (rollAt G s.seed s.rollsMade) })
+    obtain ⟨hl, hcl⟩ := gone_is_closing (s := { s with books := b, journal := s.journal ++ turnEntries s (rollAt G s.seed s.rollsMade), pieces := s.turnPieces (rollAt G s.seed s.rollsMade) })
       hph _ hd hgone
     change s.isLastTurn = true at hl
     change d ∈ s.closingDeals at hcl

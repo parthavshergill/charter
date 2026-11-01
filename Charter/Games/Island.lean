@@ -76,7 +76,6 @@ def island : GameDef where
   targetPoints := 10
   rounds := 30
   bankRate := 4
-  lawFee := [("grain", 1), ("wool", 1)]
   setupPieces := ["settlement", "road"]
 
 theorem island_valid : island.Valid := by decide +kernel

@@ -13,6 +13,31 @@ open Charter Charter.Engine
 
 variable {G : GameDef}
 
+/-! ## What a roll reads -/
+
+/-- What a roll reads differs from the state only in the round and the declarations. -/
+theorem atRoll_eq (s : State G) : ∃ n d, s.atRoll = { s with round := n, declared := d } := by
+  unfold State.atRoll
+  split
+  · exact ⟨_, _, rfl⟩
+  · exact ⟨s.round, s.declared, rfl⟩
+
+theorem atRoll_turnOrder (s : State G) : s.atRoll.turnOrder = s.turnOrder := by
+  obtain ⟨_, _, h⟩ := atRoll_eq s; rw [h]
+
+theorem atRoll_pieces (s : State G) : s.atRoll.pieces = s.pieces := by
+  obtain ⟨_, _, h⟩ := atRoll_eq s; rw [h]
+
+theorem atRoll_books (s : State G) : s.atRoll.books = s.books := by
+  obtain ⟨_, _, h⟩ := atRoll_eq s; rw [h]
+
+theorem atRoll_laws (s : State G) : s.atRoll.laws = s.laws := by
+  obtain ⟨_, _, h⟩ := atRoll_eq s; rw [h]
+
+/-- The bank's payments do not read the round. -/
+theorem baseHarvest_atRoll (s : State G) (roll : Nat) : baseHarvest s.atRoll roll = baseHarvest s roll := by
+  obtain ⟨_, _, h⟩ := atRoll_eq s; rw [h]; rfl
+
 /-- A valid game passes the checks on its own parts. -/
 theorem valid_shape (hG : G.Valid) : G.shapeChecks = true := by
   simp only [GameDef.Valid, GameDef.checks, Bool.and_eq_true] at hG
@@ -42,7 +67,10 @@ theorem endGame_ok {s s' : State G} {w : Seat} (h : endGame s w = .ok s') :
     ∃ b, s.books.postAll (s.deals.flatMap s.refundEntries) = some b ∧
       s' = { s with
         books := b, journal := s.journal ++ s.deals.flatMap s.refundEntries
-        phase := .ended, winner := some w, deals := [], offers := [], openProposals := [] } := by
+        phase := .ended
+        winner := some ((bestSeat ({ s with books := b, journal := s.journal ++ s.deals.flatMap s.refundEntries } : State G)
+          s.turnOrder).getD w)
+        deals := [], offers := [], openProposals := [] } := by
   unfold endGame at h
   cases hr : record s (s.deals.flatMap s.refundEntries) with
   | error m => simp [hr, bind, Except.bind] at h
@@ -75,7 +103,7 @@ theorem bestSeat_none {s : State G} {L : List Seat} (h : bestSeat s L = none) : 
     simp at hs
 
 theorem checkWin_ok {s s' : State G} (h : checkWin s = .ok s') :
-    (s' = s ∧ seatsAtTarget s = []) ∨ (∃ w, endGame s w = .ok s') := by
+    (s' = s ∧ winCandidates s = []) ∨ (∃ w, endGame s w = .ok s') := by
   unfold checkWin at h
   split at h
   · exact Or.inr ⟨_, h⟩
@@ -295,6 +323,22 @@ theorem acceptBody_ok {s s1 : State G} {p : Seat} {id : Nat} (h : acceptBody s p
       simp [h2]
   · cases h
 
+theorem declareBody_ok {s s1 : State G} {p : Seat} {r : Res} {n : Nat} (h : declareBody s p r n = .ok s1) :
+    (s.phase = .actions ∧ s.isTurnOf p = true) ∧ (G.isRes r = true ∧ n ≤ maxDeclared) ∧
+    s1 = { s with declared := fun q x => if q = p ∧ x = r then n else s.declared q x } := by
+  unfold declareBody at h
+  split at h
+  · cases h
+  rename_i h1
+  split at h
+  · cases h
+  rename_i h2
+  split at h
+  · cases h
+  rename_i h3
+  simp only [Bool.not_eq_true', Bool.not_eq_false, Bool.and_eq_true, beq_iff_eq] at h1 h2
+  exact ⟨h1, ⟨h2, by omega⟩, (Except.ok.inj h).symm⟩
+
 theorem cancelBody_ok {s s1 : State G} {p : Seat} {id : Nat} (h : cancelBody s p id = .ok s1) :
     s.phase = .actions ∧ s.offers.any (fun o => o.id == id && o.src == p) = true ∧
     s1 = { s with offers := s.offers.filter (·.id != id) } := by
@@ -312,10 +356,7 @@ theorem cancelBody_ok {s s1 : State G} {p : Seat} {id : Nat} (h : cancelBody s p
 theorem proposeBody_ok {s s1 : State G} {seat : Seat} {body : Proposal}
     (h : proposeBody s seat body = .ok s1) :
     s.phase = .actions ∧ (s.openProposals.filter (·.by_ == seat)).length < maxOpenPerSeat ∧
-    ((∃ L, body = .law L ∧ lawProblems G s L = [] ∧ ∃ b,
-        s.books.postAll (lawFeeEntries G seat) = some b ∧
-        s1 = addProposal { s with books := b, journal := s.journal ++ lawFeeEntries G seat }
-          seat (.law L)) ∨
+    ((∃ L, body = .law L ∧ lawProblems G s L = [] ∧ s1 = addProposal s seat (.law L)) ∨
      (∃ d, body = .deal d ∧ d.signers.contains seat = true ∧ dealProblems s d = [] ∧
         s1 = addProposal s seat (.deal d))) := by
   unfold proposeBody at h
@@ -332,11 +373,7 @@ theorem proposeBody_ok {s s1 : State G} {seat : Seat} {body : Proposal}
     split at h
     · cases h
     rename_i hl
-    split at h
-    · rename_i s2 hr
-      obtain ⟨b, hb, rfl⟩ := record_ok hr
-      exact Or.inl ⟨L, rfl, by simpa using hl, b, hb, by simpa using h.symm⟩
-    · cases h
+    exact Or.inl ⟨L, rfl, by simpa using hl, by simpa using h.symm⟩
   · rename_i d
     unfold proposeDeal at h
     split at h
@@ -382,7 +419,8 @@ theorem endTurnNow_ok {s s' : State G} (h : endTurnNow s = .ok s') :
       s' = startNextTurn
         { s with
           books := b
-          journal := s.journal ++ turnEntries s (rollAt G s.seed s.rollsMade) }
+          journal := s.journal ++ turnEntries s (rollAt G s.seed s.rollsMade)
+          pieces := s.turnPieces (rollAt G s.seed s.rollsMade) }
         (rollAt G s.seed s.rollsMade) := by
   unfold endTurnNow at h
   simp only at h
@@ -458,6 +496,9 @@ theorem step_view {s s' : State G} {e : Event} (h : step G s e = .ok s') :
       obtain ⟨hc, s1, hb, hf⟩ := actThenCheckWin_ok h
       exact Or.inr ⟨fun x => x, hc, s1, hb, hf⟩
     | cancel i =>
+      obtain ⟨hc, s1, hb, hf⟩ := actThenCheckWin_ok h
+      exact Or.inr ⟨fun x => x, hc, s1, hb, hf⟩
+    | declare r n =>
       obtain ⟨hc, s1, hb, hf⟩ := actThenCheckWin_ok h
       exact Or.inr ⟨fun x => x, hc, s1, hb, hf⟩
   | propose seat b =>

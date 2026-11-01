@@ -24,10 +24,10 @@ structure Layout where
 
 variable {G : GameDef}
 
-/-- A resource no piece and no law fee costs. Nobody wants it for itself, so it is a counter that laws
+/-- A resource no piece costs. Nobody wants it for itself, so it is a counter that laws
 read, such as a flag a law keeps in the treasury. It is not money, so it adds nothing to the treasury's pile. -/
 def markRes (G : GameDef) (r : Res) : Bool :=
-  !(G.pieces.any fun d => d.cost.any (·.1 == r)) && !(G.lawFee.any (·.1 == r))
+  !(G.pieces.any fun d => d.cost.any (·.1 == r))
 
 /-- How many outcomes of the dice give each total, for totals from 0 up. -/
 def diceWays (G : GameDef) : List Nat :=

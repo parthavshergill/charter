@@ -29,7 +29,10 @@ theorem endGame_eq {t : State G} {b : Books} (w : Seat)
     (hb : t.books.postAll (t.deals.flatMap t.refundEntries) = some b) :
     endGame t w = .ok { t with
       books := b, journal := t.journal ++ t.deals.flatMap t.refundEntries
-      phase := .ended, winner := some w, deals := [], offers := [], openProposals := [] } := by
+      phase := .ended
+      winner := some ((bestSeat ({ t with books := b, journal := t.journal ++ t.deals.flatMap t.refundEntries } : State G)
+        t.turnOrder).getD w)
+      deals := [], offers := [], openProposals := [] } := by
   unfold endGame
   rw [record_some hb]
   rfl
@@ -108,6 +111,7 @@ theorem majority_passes (hG : G.Valid) {s : State G} (hi : IdInv s) (seat id : N
     have hx : (lawProblems G s L).isEmpty = true := by rw [hprob]; rfl
     unfold decideLaw
     simp only [hx, ↓reduceIte]
+    rfl
   have hdeals : (decideLaw s id L).deals = s.deals := (decideLaw_counters s id L).2.2.1
   obtain ⟨s'', h1, h2⟩ := checkWin_some hG (countAction (decideLaw s id L) seat)
     (by rw [countAction_deals, hdeals]; exact hi.deal_nodup)

@@ -143,17 +143,25 @@ theorem body_ok {s s1 : State G} {e : Event} (hP : PiecesOk s) (hO : OffersOk s)
     | cancel i =>
       obtain ⟨_, _, rfl⟩ := cancelBody_ok h
       exact ⟨Posted.refl rfl rfl, hP, fun x hx => hO x (List.mem_filter.mp hx).1, hD⟩
+    | declare r n =>
+      obtain ⟨_, _, rfl⟩ := declareBody_ok h
+      exact ⟨Posted.refl rfl rfl, hP, hO, hD⟩
   | propose seat b =>
     simp only [seatOf] at hs
-    obtain ⟨_, _, ⟨_, _, _, b, hb, rfl⟩ | ⟨_, _, _, _, rfl⟩⟩ := proposeBody_ok h
-    · exact ⟨⟨_, rfl, hb, bundleEntries_ok (a := .player seat) (b := .bank) hs trivial _ _⟩, hP, hO, hD⟩
+    obtain ⟨_, _, ⟨_, _, _, rfl⟩ | ⟨_, _, _, _, rfl⟩⟩ := proposeBody_ok h
+    · exact ⟨Posted.refl rfl rfl, hP, hO, hD⟩
     · exact ⟨Posted.refl rfl rfl, hP, hO, hD⟩
   | vote seat i y =>
-    obtain ⟨_, _, _, _, _, _, ⟨_, rfl⟩ | ⟨_, rfl⟩⟩ := voteBody_ok h
+    obtain ⟨_, _, L0, _, _, _, ⟨_, rfl⟩ | ⟨_, rfl⟩⟩ := voteBody_ok h
     · unfold decideLaw
       simp only
       split
-      · exact ⟨Posted.refl rfl rfl, hP, hO, hD⟩
+      · obtain ⟨b, hb⟩ := settle_posts s (Law.plan s .now L0)
+        have hbk : (s.afterPosting (s.decreeEntries L0)).books = b := afterPosting_books hb
+        refine ⟨⟨s.decreeEntries L0, rfl, ?_, decreeEntries_ok s L0⟩, applyOrders_owner hP (decreeOrders_ok s L0), hO, hD⟩
+        show s.books.postAll (s.decreeEntries L0) = some (s.afterPosting (s.decreeEntries L0)).books
+        rw [hbk]
+        exact hb
       · exact ⟨Posted.refl rfl rfl, hP, hO, hD⟩
     · exact ⟨Posted.refl rfl rfl, hP, hO, hD⟩
   | sign seat i =>
@@ -225,7 +233,7 @@ theorem step_posted {s s' : State G} {e : Event} (hc : Core s) (h : step G s e =
     refine ⟨⟨_, by simp; rfl, by simpa using hbk, turnEntries_ok hc.pieces hc.deals _⟩, ?_, ?_, ?_⟩
     · intro x hx
       simp only [startNextTurn_pieces] at hx
-      simpa using hc.pieces x hx
+      simpa using turnPieces_ok hc.pieces _ x hx
     · intro x hx
       simp at hx
     · intro d hd

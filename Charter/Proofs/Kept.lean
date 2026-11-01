@@ -267,6 +267,9 @@ theorem move_open {s s1 : State G} {p : Seat} {m : Move} (hb : bodyOf s (.move p
   | cancel i =>
     obtain ⟨_, _, rfl⟩ := cancelBody_ok hb
     rfl
+  | declare r n =>
+    obtain ⟨_, _, rfl⟩ := declareBody_ok hb
+    rfl
 
 theorem body_kept {s s1 : State G} {e : Event} (hi : IdInv s) (hb : bodyOf s e = .ok s1) :
     BodyKept s s1 e := by
@@ -287,7 +290,7 @@ theorem body_kept {s s1 : State G} {e : Event} (hi : IdInv s) (hb : bodyOf s e =
     have hb' : proposeBody s seat b = .ok s1 := hb
     have hopen : s1.openProposals = s.openProposals ++
         [{ id := s.nextProposalId, by_ := seat, body := b, votes := [], signed := [] }] := by
-      obtain ⟨_, _, ⟨_, rfl, _, _, _, rfl⟩ | ⟨_, rfl, _, _, rfl⟩⟩ := proposeBody_ok hb' <;> rfl
+      obtain ⟨_, _, ⟨_, rfl, _, rfl⟩ | ⟨_, rfl, _, _, rfl⟩⟩ := proposeBody_ok hb' <;> rfl
     have hcl := nocl (by simp) (by simp)
     refine ⟨?_, fun p _ h => absurd h (hcl p), ?_⟩
     · intro q hq
@@ -677,8 +680,11 @@ theorem offers_kept {s s' : State G} {e : Event} (h : Engine.step G s e = .ok s'
       | cancel i =>
         obtain ⟨_, _, rfl⟩ := cancelBody_ok hb
         exact Or.inl (List.mem_filter.mp ho1).1
+      | declare r n =>
+        obtain ⟨_, _, rfl⟩ := declareBody_ok hb
+        exact Or.inl ho1
     | propose seat b =>
-      obtain ⟨_, _, ⟨_, _, _, _, _, rfl⟩ | ⟨_, _, _, _, rfl⟩⟩ := proposeBody_ok hb <;> exact Or.inl ho1
+      obtain ⟨_, _, ⟨_, _, _, rfl⟩ | ⟨_, _, _, _, rfl⟩⟩ := proposeBody_ok hb <;> exact Or.inl ho1
     | vote seat i y =>
       obtain ⟨_, _, _, _, _, _, ⟨_, rfl⟩ | ⟨_, rfl⟩⟩ := voteBody_ok hb
       · have hx : (decideLaw s i ‹_›).offers = s.offers := by
@@ -726,8 +732,11 @@ theorem body_built {s s1 : State G} {e : Event} (hb : bodyOf s e = .ok s1)
     | cancel i =>
       obtain ⟨_, _, rfl⟩ := cancelBody_ok hb
       rfl
+    | declare r n =>
+      obtain ⟨_, _, rfl⟩ := declareBody_ok hb
+      rfl
   | propose seat b =>
-    obtain ⟨_, _, ⟨_, _, _, _, _, rfl⟩ | ⟨_, _, _, _, rfl⟩⟩ := proposeBody_ok hb <;> rfl
+    obtain ⟨_, _, ⟨_, _, _, rfl⟩ | ⟨_, _, _, _, rfl⟩⟩ := proposeBody_ok hb <;> rfl
   | vote seat i y =>
     obtain ⟨_, _, L, _, _, _, ⟨_, rfl⟩ | ⟨_, rfl⟩⟩ := voteBody_ok hb
     · unfold decideLaw
@@ -794,7 +803,7 @@ theorem step_round_le {s s' : State G} {e : Event} (h : Engine.step G s e = .ok 
   · obtain ⟨b, _, hs⟩ := endTurnNow_ok h2
     rw [hs]
     exact startNextTurn_round_ge
-      ({ s with books := b, journal := s.journal ++ turnEntries s (rollAt G s.seed s.rollsMade) } : State G) _
+      ({ s with books := b, journal := s.journal ++ turnEntries s (rollAt G s.seed s.rollsMade), pieces := s.turnPieces (rollAt G s.seed s.rollsMade) } : State G) _
   · exact Nat.le_of_eq (act_frame hb hf).round.symm
 
 theorem KeptInv.step {s s' : State G} {e : Event} (hk : KeptInv s) (hi : IdInv s)

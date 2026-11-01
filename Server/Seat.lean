@@ -63,6 +63,7 @@ def replySchema : Json :=
         action "offer" [("to", nullable "integer"), ("give", tBundle), ("get", tBundle)],
         action "accept" [("id", tInt)],
         action "cancel" [("id", tInt)],
+        action "declare" [("res", tStr), ("n", tInt)],
         action "vote" [("id", tInt), ("yes", tBool)],
         action "sign" [("id", tInt)],
         action "exit" [("deal_id", tInt)],
@@ -141,6 +142,7 @@ def actOfJson (g : Game) (seat : Nat) (a : Json) : Except String Act := do
       pure (move (Json.mkObj [("t", "offer"), ("to", toJson (jNat a "to")), ("give", give), ("get", get)]))
     | "accept" => pure (move (Json.mkObj [("t", "accept"), ("id", toJson (← num "id"))]))
     | "cancel" => pure (move (Json.mkObj [("t", "cancel"), ("id", toJson (← num "id"))]))
+    | "declare" => pure (move (Json.mkObj [("t", "declare"), ("res", ← txt "res"), ("n", toJson (← num "n"))]))
     | "end_turn" => pure (move (Json.mkObj [("t", "endTurn")]))
     | "vote" =>
       let yes ← need "yes" (jBool a "yes")
@@ -178,7 +180,7 @@ def gameFacts (spec : GameSpec) : String :=
     s!"{v}: {spotPays G v}; next to {", ".intercalate (near.map toString)}")
   let guide := if spec.guide.isEmpty then "" else s!"\n\n{spec.guide}"
   s!"## This game: {spec.name}
-The first seat to {G.targetPoints} points wins, within {G.rounds} rounds. Dice: {G.diceCount} dice with {G.diceSides} sides. The resources are {res}. The bank trades {G.bankRate} of a resource for 1 of another. A law costs {Text.bundleText G.lawFee} to propose. In setup each seat places, free: {", ".intercalate G.setupPieces}.{guide}
+The first seat to {G.targetPoints} points wins, within {G.rounds} rounds. Dice: {G.diceCount} dice with {G.diceSides} sides. The resources are {res}. The bank trades {G.bankRate} of a resource for 1 of another. Proposing a law costs nothing. In setup each seat places, free: {", ".intercalate G.setupPieces}.{guide}
 
 Pieces:
 {pieces}
@@ -261,7 +263,13 @@ def legalBlock (sit : Situation) : String :=
   let accepts := sit.offers.get.map fun o => s!"- accept offer {o.id}"
   let cancels := legal.filterMap fun | .cancel i => some s!"- cancel your offer {i}" | _ => none
   let ending := if legal.contains .endTurn then ["- end_turn"] else []
-  let lines := places ++ bank ++ accepts ++ cancels ++ ending
+  let readsDeclared := s.laws.any (Rules.lawReadsDeclared ·.2) || s.openProposals.any fun p =>
+    match p.body with
+    | .law L => Rules.lawReadsDeclared L
+    | .deal _ => false
+  let declares := if readsDeclared && s.phase == .actions && s.isTurnOf sit.seat then
+      [s!"- declare: set your public number for a resource, from 0 to {maxDeclared}"] else []
+  let lines := places ++ bank ++ accepts ++ cancels ++ declares ++ ending
   if lines.isEmpty then "nothing on the board" else "\n".intercalate lines
 
 /-- The game as it is now. All of it is public. -/
@@ -291,6 +299,10 @@ def gameBlock (sit : Situation) (book : Describe.Book) : String :=
     s!"- seat {p}: {if mine.isEmpty then "nothing" else ", ".intercalate (mine.map at_)}")
   let laws := if s.laws.isEmpty then "none" else "\n".intercalate (s.laws.map fun x =>
     s!"- Law {x.1}, titled \"{x.2.title}\". {lawForSeat book x.2}")
+  let declaredRows := s.turnOrder.flatMap fun p =>
+    (G.resources.map (·.name)).filterMap fun r =>
+      let n := s.declared p r
+      if n == 0 then none else some s!"seat {p} declared {n} {r}"
   let deals := if s.deals.isEmpty then "none" else "\n".intercalate (s.deals.map fun d =>
     s!"- Deal {d.id}, until round {d.lastRound}: {Text.dealLine g.nameOf d.deal}")
   let open_ := if s.openProposals.isEmpty then "none" else
@@ -303,7 +315,7 @@ def gameBlock (sit : Situation) (book : Describe.Book) : String :=
   let roll := match s.lastRoll with
     | some r => s!" The last roll was {r}."
     | none => ""
-  s!"{phase} {turn}{roll} You are seat {sit.seat}, and you have exactly {s.pointsOf sit.seat} points. Trust this number and not your notes. First to {G.targetPoints} points wins. The bank trades {s.rules.bankRate} for 1. The treasury holds {held .treasury}. The fee for a law: {Text.bundleText G.lawFee}.
+  s!"{phase} {turn}{roll} You are seat {sit.seat}, and you have exactly {s.pointsOf sit.seat} points. Trust this number and not your notes. First to {G.targetPoints} points wins. The bank trades {s.rules.bankRate} for 1. The treasury holds {held .treasury}.
 
 Seats:
 {seats}
@@ -316,7 +328,7 @@ The board:
 
 Laws in force:
 {laws}
-
+{if declaredRows.isEmpty then "" else s!"\nDeclared this round: {", ".intercalate declaredRows}.\n"}
 Deals running:
 {deals}
 

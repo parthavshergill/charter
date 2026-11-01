@@ -115,6 +115,18 @@ svg.shield { width: 16px; height: 19px; flex: none; vertical-align: -4px; clip-p
 .caption { margin-top: var(--s1); max-width: 560px; font-size: 16px; line-height: 1.25; color: var(--bright); text-shadow: 0 1px 3px #000, 0 0 12px #000; pointer-events: none; opacity: 0; transition: opacity .25s; }
 .caption.on { opacity: 1; }
 
+/* ---------- what seats have declared ---------- */
+.declared { position: fixed; left: var(--s3); bottom: calc(var(--ledge) + var(--s3)); max-width: 280px; padding: var(--s2) var(--s3); font-size: 14px; z-index: 9; }
+.declared[hidden] { display: none; }
+.declared .lbl { font-size: 12px; color: var(--ink-3); margin-bottom: 2px; }
+.declared .line { display: flex; flex-wrap: wrap; gap: var(--s1) var(--s2); align-items: center; }
+.declared .line.none { color: var(--ink-3); }
+.declared .line b { font-weight: 600; }
+.declared .chg { display: inline-flex; gap: 3px; align-items: center; }
+.declaresheet .drow { display: grid; grid-template-columns: 24px 1fr 76px auto; align-items: center; gap: var(--s2); padding: var(--s1) 0; }
+.declaresheet .drow svg.res { width: 22px; height: 22px; }
+.declaresheet .drow input { width: 100%; padding: 4px 6px; font: inherit; font-variant-numeric: tabular-nums; background: var(--vellum); color: var(--ink); border: 1px solid var(--ink-3); }
+
 /* ---------- the ledge: your hand and your actions ---------- */
 .ledge { position: fixed; left: 0; right: 0; bottom: 0; height: var(--ledge); display: flex; align-items: center; gap: var(--s4); padding: 0 calc(var(--rail) + var(--s3)) 0 var(--s4); background: linear-gradient(var(--walnut-2), var(--walnut-1) 12px); box-shadow: 0 -1px 0 var(--brass); z-index: 10; }
 /* It has become your turn: a line of gold runs out along the edge of the ledge, and is gone. */
@@ -139,6 +151,9 @@ svg.shield { width: 16px; height: 19px; flex: none; vertical-align: -4px; clip-p
 .rcard.none b { display: none; }
 .delta { position: fixed; z-index: 31; padding: 0 5px; font-size: 14px; font-weight: 600; background: var(--ink); color: var(--vellum); pointer-events: none; translate: -50% -70%; box-shadow: 0 2px 4px var(--drop); }
 .delta.up { background: var(--vellum); color: var(--ink); }
+.hand.many { display: grid; grid-template-rows: 1fr 1fr; grid-auto-flow: column; grid-auto-columns: 44px; flex: none; gap: var(--s1); }
+.hand.many .rcard { width: 44px; height: 32px; flex-direction: row; font-size: 14px; rotate: 0deg; --edges: none; }
+.hand.many .rcard svg.res { width: 16px; height: 16px; }
 .tray { display: flex; gap: var(--s1); flex: 1; min-width: 0; }
 .tool { position: relative; width: 66px; height: 72px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 12px; line-height: 1.1; color: var(--pale); background: var(--walnut-2); box-shadow: inset 0 1px 0 var(--walnut-3), 0 3px 0 var(--walnut-0); transition: background .12s, color .12s, translate .1s cubic-bezier(.2,.9,.3,1.2); }
 @media (hover: hover) { .tool:not(:disabled):hover { background: var(--walnut-3); translate: 0 -3px; } }
@@ -270,7 +285,6 @@ details.formal summary:hover { color: var(--ink); }
 .proposebar { position: sticky; bottom: calc(-1 * var(--s4)); margin: var(--s3) calc(-1 * var(--s4)) calc(-1 * var(--s4)); padding: var(--s3) var(--s4); background: var(--paper), var(--vellum-2); display: flex; align-items: center; gap: var(--s3); box-shadow: 0 -1px 0 var(--vellum-3); }
 .proposebar .act { flex: 1; }
 .proposebar svg.res { width: 20px; height: 20px; }
-.proposebar .needline { font-size: 14px; color: var(--wax); }
 .dim { opacity: .45; }
 
 /* the vote */

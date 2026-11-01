@@ -24,7 +24,7 @@ theorem state_fields_eq {x y : State G}
     (h16 : x.deals = y.deals) (h17 : x.dealsStarted = y.dealsStarted) (h18 : x.offers = y.offers)
     (h19 : x.nextOfferId = y.nextOfferId) (h20 : x.builtThisRound = y.builtThisRound)
     (h21 : x.actionsThisTurn = y.actionsThisTurn) (h22 : x.eventsApplied = y.eventsApplied)
-    (h23 : x.winner = y.winner) : x = y := by
+    (h23 : x.winner = y.winner) (h24 : x.declared = y.declared) : x = y := by
   cases x; cases y; simp_all
 
 /-- Prove two states equal field by field, and close the fields that hold by computation. -/
@@ -100,17 +100,32 @@ theorem seatsAtTarget_rename (s : State G) :
     seatsAtTarget (σ.state s) = (seatsAtTarget s).map σ.to := by
   simp [seatsAtTarget, List.filter_map, Function.comp_def]
 
+theorem winCandidates_rename (s : State G) :
+    winCandidates (σ.state s) = (winCandidates s).map σ.to := by
+  unfold winCandidates
+  have hl : (σ.state s).lawEnds = s.lawEnds := rfl
+  rw [hl, seatsAtTarget_rename]
+  split <;> rfl
+
 theorem endGame_rename (s : State G) (w : Seat) :
     endGame (σ.state s) (σ.to w) = (endGame s w).map σ.state := by
   unfold endGame
   rw [refunds_rename, record_rename]
-  cases record s (s.deals.flatMap s.refundEntries) <;> rfl
+  cases record s (s.deals.flatMap s.refundEntries) with
+  | error m => rfl
+  | ok s1 =>
+    simp only [Except.map, bind, Except.bind, pure, Except.pure, Except.ok.injEq]
+    have hb : bestSeat (σ.state s1) (σ.state s1).turnOrder = (bestSeat s1 s1.turnOrder).map σ.to :=
+      σ.bestSeat_rename s1 s1.turnOrder
+    state_ext
+    rw [hb]
+    cases bestSeat s1 s1.turnOrder <;> rfl
 
 theorem checkWin_rename (s : State G) :
     checkWin (σ.state s) = (checkWin s).map σ.state := by
   unfold checkWin
-  rw [seatsAtTarget_rename, bestSeat_rename]
-  cases bestSeat s (seatsAtTarget s) with
+  rw [winCandidates_rename, bestSeat_rename]
+  cases bestSeat s (winCandidates s) with
   | none => rfl
   | some w => exact σ.endGame_rename s w
 
@@ -265,6 +280,25 @@ theorem cancelBody_rename (s : State G) (p : Seat) (id : Nat) :
       exact σ.filter_offers s id
     · rfl
 
+theorem declareBody_rename (s : State G) (p : Seat) (r : Res) (n : Nat) :
+    declareBody (σ.state s) (σ.to p) r n = (declareBody s p r n).map σ.state := by
+  unfold declareBody
+  simp only [state_phase, isTurnOf_rename]
+  split
+  · rfl
+  · split
+    · rfl
+    · split
+      · rfl
+      · simp only [map_ok, Except.ok.injEq]
+        state_ext
+        funext q x
+        by_cases hq : q = σ.to p
+        · subst hq
+          simp [state, σ.back_to]
+        · have : σ.back q ≠ p := fun h => hq (by rw [← h, σ.to_back])
+          simp [state, hq, this]
+
 theorem moveBody_rename (s : State G) (p : Seat) (m : Move) :
     moveBody (σ.state s) (σ.to p) (σ.move m) = (moveBody s p m).map σ.state := by
   cases m with
@@ -273,6 +307,7 @@ theorem moveBody_rename (s : State G) (p : Seat) (m : Move) :
   | offer to give get => exact σ.offerBody_rename s p to give get
   | accept id => exact σ.acceptBody_rename s p id
   | cancel id => exact σ.cancelBody_rename s p id
+  | declare r n => exact σ.declareBody_rename s p r n
   | endTurn => rfl
 
 end Charter.Renaming

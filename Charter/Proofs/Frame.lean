@@ -68,8 +68,11 @@ theorem bodyOf_frame {s s1 : State G} {e : Event} (h : bodyOf s e = .ok s1) : Bo
     | cancel i =>
       obtain ⟨_, _, rfl⟩ := cancelBody_ok h
       body_frame
+    | declare r n =>
+      obtain ⟨_, _, rfl⟩ := declareBody_ok h
+      body_frame
   | propose seat b =>
-    obtain ⟨_, _, ⟨_, _, _, _, _, rfl⟩ | ⟨_, _, _, _, rfl⟩⟩ := proposeBody_ok h <;> body_frame
+    obtain ⟨_, _, ⟨_, _, _, rfl⟩ | ⟨_, _, _, _, rfl⟩⟩ := proposeBody_ok h <;> body_frame
   | vote seat i y =>
     obtain ⟨_, _, _, _, _, _, ⟨_, rfl⟩ | ⟨_, rfl⟩⟩ := voteBody_ok h
     · exact decideLaw_frame _ _ _
@@ -81,6 +84,51 @@ theorem bodyOf_frame {s s1 : State G} {e : Event} (h : bodyOf s e = .ok s1) : Bo
   | exit seat i =>
     obtain ⟨_, _, rfl⟩ := exitBody_ok h
     body_frame
+
+/-- Only a declaration changes the declared numbers in an event body. -/
+theorem bodyOf_declared {s s1 : State G} {e : Event} (h : bodyOf s e = .ok s1)
+    (hne : ∀ p r n, e ≠ .move p (.declare r n)) : s1.declared = s.declared := by
+  cases e with
+  | forceEndTurn => cases h
+  | move p m =>
+    cases m with
+    | endTurn => cases h
+    | place k loc =>
+      rcases placeBody_ok h with ⟨_, h⟩ | ⟨_, h⟩
+      · obtain ⟨_, rfl⟩ := setupBody_ok h
+        rfl
+      · obtain ⟨_, _, _, rfl⟩ := buildBody_ok h
+        rfl
+    | bankTrade a b =>
+      obtain ⟨_, _, _, _, _, hr⟩ := bankTradeBody_ok h
+      obtain ⟨_, _, rfl⟩ := record_ok hr
+      rfl
+    | offer t a b =>
+      obtain ⟨_, _, rfl⟩ := offerBody_ok h
+      rfl
+    | accept i =>
+      obtain ⟨_, _, _, _, _, _, _, _, rfl⟩ := acceptBody_ok h
+      rfl
+    | cancel i =>
+      obtain ⟨_, _, rfl⟩ := cancelBody_ok h
+      rfl
+    | declare r n => exact absurd rfl (hne p r n)
+  | propose seat b =>
+    obtain ⟨_, _, ⟨_, _, _, rfl⟩ | ⟨_, _, _, _, rfl⟩⟩ := proposeBody_ok h <;> rfl
+  | vote seat i y =>
+    obtain ⟨_, _, _, _, _, _, ⟨_, rfl⟩ | ⟨_, rfl⟩⟩ := voteBody_ok h
+    · unfold decideLaw
+      simp only
+      split <;> rfl
+    · rfl
+  | sign seat i =>
+    obtain ⟨_, _, _, _, _, _, _, ⟨_, h⟩ | ⟨_, rfl⟩⟩ := signBody_ok h
+    · obtain ⟨_, _, _, _, rfl⟩ := startDeal_ok h
+      rfl
+    · rfl
+  | exit seat i =>
+    obtain ⟨_, _, rfl⟩ := exitBody_ok h
+    rfl
 
 /-! ## After the body -/
 

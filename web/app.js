@@ -429,6 +429,7 @@ async function gameScreen(code) {
     clock: h("div", { "data-key": "clock", class: "clock", hidden: true }),
     caption: h("div", { class: "caption", role: "status" }),
     ledge: h("div", { class: "ledge" }),
+    declared: h("div", { class: "declared vellum", hidden: true }),
     replayBar: h("div", { class: "replaybar", hidden: true }),
     prompt: h("div", { class: "prompt", role: "status", hidden: true }),
     slips: h("div", { class: "slips" }),
@@ -444,7 +445,7 @@ async function gameScreen(code) {
   buildDraftDesk();
   buildLedge();
   app.replaceChildren(h("div", { class: "stage" }, canvas, svg, h("div", { class: "vignette" })),
-    h("div", { class: "crown" }, U.houses, h("div", { class: "heraldry" }, U.herald, U.caption)), U.slips, U.prompt, U.ledge, U.replayBar, U.dock, U.rail, U.menu, U.pickmenu, U.tip, U.center);
+    h("div", { class: "crown" }, U.houses, h("div", { class: "heraldry" }, U.herald, U.caption)), U.slips, U.prompt, U.declared, U.ledge, U.replayBar, U.dock, U.rail, U.menu, U.pickmenu, U.tip, U.center);
   G.player = await loadPlayer(canvas);
   if (G.player) { G.player.onPick = onPick; G.player.onHover = onHover; } else G.use3d = false;
   applyMode();
@@ -561,13 +562,29 @@ function renderHouses() {
       h("span", { class: "name" }, s.seat === v.you ? "You" : s.name.replace(/^Bot /, "")),
       h("div", { class: "card-tip vellum" },
         h("div", {}, h("strong", {}, s.name), ` · ${plural(s.points, "point")} of ${v.target}`),
+        s.tokenPoints ? h("div", { class: "row" }, `${plural(s.tokenPoints, "point")} from what they hold`) : null,
         s.persona ? h("div", { class: "row" }, `Plays as a ${s.persona}: ${s.voice}.`) : null,
         held.length ? h("div", { class: "row" }, held.map(([r, n]) => h("span", {}, String(n), " ", resIcon(r, "res small")))) : h("div", { class: "row" }, "Holds nothing"),
         built.length ? h("div", { class: "row" }, built.map(([k, n]) => h("span", {}, plural(n, k)))) : null));
   }));
 }
+/** What every seat has declared this round, plainly. It shows only while a law reads declarations. */
+function renderDeclared() {
+  const v = G.view, U = G.ui, d = v.declarations;
+  const show = !!d?.inUse && v.phase === "actions";
+  U.declared.hidden = !show;
+  if (!show) return;
+  const bySeat = new Map();
+  for (const r of d.rows) { if (!bySeat.has(r.seat)) bySeat.set(r.seat, []); bySeat.get(r.seat).push(r); }
+  fill(U.declared, h("div", { class: "lbl" }, "Declared this round"),
+    d.rows.length ? [...bySeat.entries()].map(([s, rows]) => h("div", { class: "line" },
+      h("b", {}, s === v.you ? "You" : nameOf(s)),
+      rows.map(r => h("span", { class: "chg" }, String(r.n), " ", resIcon(r.res, "res small"), ` ${r.res}`))))
+      : h("div", { class: "line none" }, "Nobody yet."));
+}
 function renderHerald() {
   const v = G.view, U = G.ui;
+  renderDeclared();
   if (v.phase === "lobby") { fill(U.herald); return; }
   const die = v.lastRoll != null ? h("div", { "data-key": "die", class: "die", title: "The last roll" }, String(v.lastRoll)) : null;
   morphKids(U.herald, [h("div", { "data-key": "tab", class: "tab" }, v.phase === "setup" ? "The founding" : v.phase === "ended" ? "The end" : `Round ${v.round}`), die, U.clock]);
@@ -617,6 +634,8 @@ function renderLedge() {
   if (!seated) return;
   const inPlay = goodsInPlay(v);
   renderHand();
+  // A game can have 16 goods, and the hand was drawn for five. Past six, the cards shrink into two rows.
+  U.hand.classList.toggle("many", goodsInPlay(v).length > 6);
   const moves = v.legalMoves || [];
   const end = moves.find(m => m.move.t === "endTurn");
   const mine = v.turn === v.you;
@@ -636,6 +655,7 @@ function renderLedge() {
       void i;
     });
     tools.push(h("button", { "data-key": "trade", class: "tool sep" + (G.dock?.t === "trade" ? " selected" : ""), title: "Trade with the bank or the table (T)", onclick: () => toggleDock({ t: "trade" }) }, uiIcon("trade"), h("span", { class: "nm" }, "Trade")));
+    if (v.declarations?.inUse) tools.push(h("button", { "data-key": "declare", class: "tool" + (G.dock?.t === "declare" ? " selected" : ""), title: "Declare a public number. A law reads these.", onclick: () => toggleDock({ t: "declare" }) }, uiIcon("declare"), h("span", { class: "nm" }, "Declare")));
   }
   morphKids(U.tray, tools);
   U.tray.classList.toggle("many", tools.length > 5);
@@ -678,6 +698,9 @@ function renderPrompt() {
   p.className = "prompt" + (G.dock ? " dock-open" : "");
   if (G.errMsg) { p.classList.add("err"); p.textContent = G.errMsg; p.hidden = false; return; }
   if (!v || v.phase === "lobby" || v.phase === "ended") { p.hidden = true; return; }
+  // A harvest can put a seat at the target by what it holds. It wins at the next move or vote by anyone.
+  const atTarget = v.phase === "actions" && (v.seats || []).find(s => s.points >= v.target);
+  if (atTarget && !G.selected) { p.textContent = `${nameOf(atTarget.seat)} reached the target. The next move or vote ends the game.`; p.hidden = false; return; }
   if (G.selected) {
     const d = (v.pieceDefs || []).find(x => x.name === G.selected);
     fill(p, `${capital(G.selected)}: `, costOf(d?.cost), `. Pick a glowing place, or Esc.`);
@@ -782,12 +805,36 @@ function renderDock() {
   if (d.t === "chronicle") { renderChronicle(); return; }
   if (d.t === "talk") { renderTalk(); return; }
   if (d.t === "end") { fill(U.sheet, proclamation(G.view)); return; }
+  if (d.t === "declare") {
+    if (!G.view.declarations?.can) { closeDock(); return; }
+    // Keep typing in the box alive across polls.
+    if (!U.sheet.contains(document.activeElement) || !U.sheet.querySelector(".declaresheet")) fill(U.sheet, declareDoc());
+    return;
+  }
   if (d.t === "trade") {
     if (G.view.turn !== G.view.you || G.view.phase !== "actions") { closeDock(); return; }
     // Keep typing in the amount boxes alive across polls.
     if (!U.sheet.contains(document.activeElement) || !U.sheet.querySelector(".tradesheet")) renderTrade();
     return;
   }
+}
+/** The control for one public number per good. Each change is one action. */
+function declareDoc() {
+  const v = G.view, d = v.declarations;
+  const mine = r => (d.rows.find(x => x.seat === v.you && x.res === r)?.n) || 0;
+  const row = r => {
+    const box = h("input", { type: "number", min: "0", max: String(d.max), value: String(mine(r)), "aria-label": `Number to declare for ${r}` });
+    const send = () => {
+      const n = Math.max(0, Math.min(d.max, Math.floor(Number(box.value) || 0)));
+      postMove({ t: "declare", res: r, n });
+    };
+    box.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); send(); } });
+    return h("div", { class: "drow" }, resIcon(r), h("span", { class: "nm" }, capital(r)), box, h("button", { class: "act", onclick: send }, "Declare"));
+  };
+  return h("div", { class: "declaresheet" },
+    h("h3", {}, "Declare a number"),
+    h("p", { class: "note-line" }, "Everyone can see it. It moves nothing by itself, and only laws read it. You can change it on your turn. It clears when the round ends."),
+    goodsInPlay(v).map(row));
 }
 function flashFocus() {
   if (G.dock?.focus == null) return;
@@ -1579,12 +1626,7 @@ function renderDraft() {
   const bar = U.proposeBar;
   bar.hidden = !same;
   if (same) {
-    const fee = rv.fee;
-    const can = rv.canPropose && (!fee || fee.canPay);
-    fill(bar,
-      h("button", { class: "act gold", disabled: !can, onclick: () => proposeDraft(rv.text) },
-        "Propose", fee ? [" · ", costOf(fee.cost)] : null),
-      fee && !fee.canPay ? h("span", { class: "needline" }, `Need ${costText(fee.short)}`) : null);
+    fill(bar, h("button", { class: "act gold", disabled: !rv.canPropose, onclick: () => proposeDraft(rv.text) }, "Propose"));
   }
 }
 function draftingView(d) {
@@ -1648,7 +1690,8 @@ function gathering(v) {
 function proclamation(v) {
   const w = seat(v.winner);
   const order = [...v.seats].sort((a, b) => b.points - a.points);
-  const pieces = s => Object.entries(s.pieces || {}).filter(([k, n]) => n > 0 && !(v.look?.quietPieces || []).includes(k)).map(([k, n]) => plural(n, k)).join(", ");
+  const pieces = s => Object.entries(s.pieces || {}).filter(([k, n]) => n > 0 && !(v.look?.quietPieces || []).includes(k)).map(([k, n]) => plural(n, k))
+    .concat(s.tokenPoints ? [`${plural(s.tokenPoints, "point")} from what they held`] : []).join(", ");
   const nLaws = (v.laws || []).length;
   // The result is sealed, and the seal lands only the first time it is drawn.
   const landing = !G.endSealed;

@@ -14,9 +14,9 @@ The ten commandments and the five supporting promises mention 275 definitions in
 
 | Text a reader must review | Size |
 |---|---|
-| The commandments | 241 lines in `Constitution.lean` |
-| The named parts | 439 lines in `Constitution/Promises.lean` |
-| The words | 1,540 lines, in 15 files by topic |
+| The commandments | 253 lines in `Constitution.lean` |
+| The named parts | 497 lines in `Constitution/Promises.lean` |
+| The words | 2,062 lines, in 16 files by topic. `Fast.lean` holds faster code that is proved equal to the plain words, and a reader can skip all of it but `settle` |
 | SHA-256 | 111 lines |
 
 Three kinds of text are outside the surface: setup placement, which is in the engine; the tiny games, in `Games/Tiny.lean`; and the examples and rejection tests, in `Constitution/Examples.lean`.
@@ -71,14 +71,15 @@ All ten commandments rest on the same 121 definitions: the data types of a game,
 | X | 166 | 45 | `Engine.replay`, `Engine.predictNextTurn`, `lawEntries`, `harvestEntries`, `rollEntries`, `roundEndEntries` |
 | `the_winner_earned_it` | 123 | 2 | `pointsOf`, `maxTurns` |
 | `limits_hold` | 123 | 2 | `maxActiveDeals`, `maxOpenPerSeat` |
-| `every_other_event_is_exact` | 130 | 9 | `depositEntries`, `lawFeeEntries`, `refundEntries` |
+| `every_other_event_is_exact` | 130 | 9 | `depositEntries`, `refundEntries` |
 | `proposals_are_accepted` | 133 | 12 | `dealProblems` and its checks |
 | `deals_can_start` | 137 | 16 | `dealProblems`, `canStartDeal`, `depositEntries` |
 
 ## What is trusted
 
 - **The Lean kernel and compiler.** The kernel checks the proofs. The compiler builds the server that runs `Engine.step`. No proof uses `native_decide`, so no proof trusts the compiler.
-- **Lean's own library.** Lists, numbers and strings come from it.
+- **Lean's own library.** Lists, numbers and strings come from it. So does the hash table in `Charter/Words/Fast.lean`, whose lemmas the `@[csimp]` theorems use.
+- **`@[csimp]`.** The compiler runs the faster function that each such theorem proves equal to a plain one. The kernel checks the equality. The compiler is already trusted to do the replacement.
 - **The server's duties.** The theorems cannot see four things. The server must decide who may send an event for a seat. It must decide who may send `forceEndTurn`. It must publish the fingerprint first, use each player's own nonce, when the player supplies one, and keep its seed from clients until the game ends. It must check `G.Valid` before it runs a game, because the engine never checks it. For the Island, `island_valid` proves that check.
 - **The seed's size.** `commitmentOf` hashes a 64-bit seed with no salt. A very large search could find the seed from its fingerprint.
 - **SHA-256, to hide the seed.** Neither side alone can choose the dice, assuming four things. The server publishes the fingerprint before players add nonces. It uses each player's own nonce, when the player supplies one. It keeps its seed secret until the game ends. SHA-256 hides the seed. These assumptions are not proved.

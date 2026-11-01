@@ -75,16 +75,21 @@ theorem body_bank {s s1 : State G} {e : Event} (hb : bodyOf s e = .ok s1) :
     | cancel i =>
       obtain ⟨_, _, rfl⟩ := cancelBody_ok hb
       exact ⟨[], by simp, by simp⟩
+    | declare r n =>
+      obtain ⟨_, _, rfl⟩ := declareBody_ok hb
+      exact ⟨[], by simp, by simp⟩
   | propose seat b =>
-    obtain ⟨_, _, ⟨_, _, _, _, _, rfl⟩ | ⟨_, _, _, _, rfl⟩⟩ := proposeBody_ok hb
-    · refine ⟨_, rfl, ?_⟩
-      intro x hx
-      exact bank_of_player (mem_bundleEntries hx).1
+    obtain ⟨_, _, ⟨_, _, _, rfl⟩ | ⟨_, _, _, _, rfl⟩⟩ := proposeBody_ok hb
+    · exact ⟨[], by simp [addProposal], by simp⟩
     · exact ⟨[], by simp [addProposal], by simp⟩
   | vote seat i y =>
-    obtain ⟨_, _, _, _, _, _, ⟨_, rfl⟩ | ⟨_, rfl⟩⟩ := voteBody_ok hb
-    · exact ⟨[], by simp [(decideLaw_fields s i _).2.1], by simp⟩
-    · exact ⟨[], by simp, by simp⟩
+    have hv : voteBody s seat i y = .ok s1 := hb
+    rcases vote_view hv with ⟨L, hp, _, hs1⟩ | ⟨_, _, hj, _⟩
+    · refine ⟨s.decreeEntries L, by rw [hs1], ?_⟩
+      intro x hx
+      have hf : LawForm x := settle_form (fun z hz => lawPlan_form s .now L z hz) x hx
+      exact fun _ => Or.inr (Or.inr ⟨hf.1, Or.inr (Or.inr ⟨L, hp, hx⟩)⟩)
+    · exact ⟨[], by simp [hj], by simp⟩
   | sign seat i =>
     obtain ⟨_, _, _, _, _, _, _, ⟨_, hst⟩ | ⟨_, rfl⟩⟩ := signBody_ok hb
     · obtain ⟨_, _, _, _, rfl⟩ := startDeal_ok hst
@@ -108,14 +113,16 @@ theorem step_bank {s s' : State G} {e : Event} (h : Engine.step G s e = .ok s') 
     · rcases mem_roundEndEntries hx with h3 | h3 | ⟨d, _, h3⟩
       · obtain ⟨_, d, _, p, _, h4, _⟩ := duePayments_form h3
         exact bank_of_deposit h4
-      · exact fun _ => Or.inr (Or.inr ⟨(lawEntries_form _ _ x h3).1, Or.inr ⟨hend, Or.inl h3⟩⟩)
+      · exact fun _ => Or.inr (Or.inr ⟨(lawEntries_form _ _ x h3).1, Or.inr (Or.inl ⟨hend, Or.inl h3⟩)⟩)
       · obtain ⟨_, j, _, h4, _⟩ := refundEntries_form h3
         exact bank_of_deposit h4
     · rcases rollEntries_cases hx with h3 | h3
       · rcases harvestEntries_cases h3 with h4 | h4
-        · exact fun _ => Or.inl ⟨(baseHarvest_form h4).2.1, hend, h3⟩
-        · exact fun _ => Or.inr (Or.inr ⟨h4.1, Or.inr ⟨hend, Or.inr hx⟩⟩)
-      · exact fun _ => Or.inr (Or.inr ⟨h3.1, Or.inr ⟨hend, Or.inr hx⟩⟩)
+        · rw [baseHarvest_atRoll] at h4
+          exact fun _ => Or.inl ⟨(baseHarvest_form h4).2.1, hend,
+            List.mem_append_left _ h4⟩
+        · exact fun _ => Or.inr (Or.inr ⟨h4.1, Or.inr (Or.inl ⟨hend, Or.inr hx⟩)⟩)
+      · exact fun _ => Or.inr (Or.inr ⟨h3.1, Or.inr (Or.inl ⟨hend, Or.inr hx⟩)⟩)
   · obtain ⟨es, hj, hes⟩ := body_bank hb
     rcases finish_cases hf with rfl | ⟨w, hw⟩
     · have : newEntries s (countAction s1 (seatOf e)) = es := newEntries_of hj
@@ -183,6 +190,7 @@ theorem laws_change_valid {s s' : State G} {e : Event} (h : Engine.step G s e = 
       rw [hl1, hs1]
       unfold decideLaw
       simp only [hx, ↓reduceIte]
+      rfl
     · exfalso
       apply hsame
       have hf : (lawProblems G s L').isEmpty = false := by simpa using hx
@@ -197,10 +205,23 @@ theorem laws_change_valid {s s' : State G} {e : Event} (h : Engine.step G s e = 
 structure PlannedInv (s : State G) : Prop where
   each : ∀ x ∈ s.laws, x.2.plannedEntries s.turnOrder.length ≤ maxPlannedEntries
   total : plannedTotal s.laws s.turnOrder.length ≤ maxPlannedTotal
+  reads : readsTotal s.laws s.turnOrder.length ≤ maxReadsTotal
+
+theorem readsTotal_enact (laws : List (Nat × Law)) (id : Nat) (L : Law) (n : Nat) :
+    readsTotal (enact laws id L) n = readsTotal (enact laws 0 L) n := by
+  simp only [enact, readsTotal, List.map_append, List.sum_append]
+  split <;> simp
+
+theorem lawProblems_reads {s : State G} {L : Law} (h : lawProblems G s L = []) :
+    readsTotal (enact s.laws 0 L) s.turnOrder.length ≤ maxReadsTotal := by
+  by_cases hc : readsTotal (enact s.laws 0 L) s.turnOrder.length ≤ maxReadsTotal
+  · exact hc
+  · simp [lawProblems, hc] at h
 
 theorem plannedTotal_enact (laws : List (Nat × Law)) (id : Nat) (L : Law) (n : Nat) :
     plannedTotal (enact laws id L) n = plannedTotal (enact laws 0 L) n := by
-  simp [enact, plannedTotal]
+  simp only [enact, plannedTotal, List.map_append, List.sum_append]
+  split <;> simp
 
 theorem lawProblems_planned {s : State G} {L : Law} (h : lawProblems G s L = []) :
     L.plannedEntries s.turnOrder.length ≤ maxPlannedEntries ∧
@@ -217,14 +238,16 @@ theorem PlannedInv.step {s s' : State G} {e : Event} (hp : PlannedInv s)
     (h : Engine.step G s e = .ok s') : PlannedInv s' := by
   have hT := step_turnOrder h
   by_cases hsame : s'.laws = s.laws
-  · refine ⟨?_, ?_⟩
+  · refine ⟨?_, ?_, ?_⟩
     · rw [hT, hsame]
       exact hp.each
     · rw [hT, hsame]
       exact hp.total
+    · rw [hT, hsame]
+      exact hp.reads
   · obtain ⟨id, L, hprob, hl⟩ := laws_change_valid h hsame
     obtain ⟨h1, h2⟩ := lawProblems_planned hprob
-    refine ⟨?_, ?_⟩
+    refine ⟨?_, ?_, ?_⟩
     · rw [hT, hl]
       intro x hx
       rcases mem_enact hx with hm | rfl
@@ -232,6 +255,8 @@ theorem PlannedInv.step {s s' : State G} {e : Event} (hp : PlannedInv s)
       · exact h1
     · rw [hT, hl, plannedTotal_enact]
       exact h2
+    · rw [hT, hl, readsTotal_enact]
+      exact lawProblems_reads hprob
 
 /-! ## A new game's founding laws -/
 
@@ -241,6 +266,7 @@ structure FoundingFacts (G : GameDef) (n : Nat) (laws : List (Nat × Law)) : Pro
   size : ∀ x ∈ laws, x.2.size ≤ maxLawSize
   each : ∀ x ∈ laws, x.2.plannedEntries n ≤ maxPlannedEntries
   total : plannedTotal laws n ≤ maxPlannedTotal
+  reads : readsTotal laws n ≤ maxReadsTotal
   prices : ∀ x ∈ laws, ∀ c ∈ x.2.clauses, ClausePriceOk G c
 
 theorem FoundingFacts.enact {n : Nat} {laws : List (Nat × Law)} {L : Law} (hf : FoundingFacts G n laws)
@@ -249,8 +275,9 @@ theorem FoundingFacts.enact {n : Nat} {laws : List (Nat × Law)} {L : Law} (hf :
   have hn := lawProblems_nil hp
   have hl := lawProblems_planned hp
   have hc := lawProblems_price hp
-  simp only [initialState, List.length_range] at hn hl
-  refine ⟨?_, ?_, ?_, ?_, ?_⟩
+  have hr := lawProblems_reads hp
+  simp only [initialState, List.length_range] at hn hl hr
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
   · rw [enact_length]
     exact hn.2
   · intro x hx
@@ -263,6 +290,8 @@ theorem FoundingFacts.enact {n : Nat} {laws : List (Nat × Law)} {L : Law} (hf :
     · exact hl.1
   · rw [plannedTotal_enact]
     exact hl.2
+  · rw [readsTotal_enact]
+    exact hr
   · intro x hx
     rcases mem_enact hx with hm | rfl
     · exact hf.prices x hm
@@ -281,7 +310,8 @@ theorem foundingFacts_all {n : Nat} (Ls : List Law) : ∀ (laws : List (Nat × L
 theorem startingLaws_facts (hG : G.Valid) {n : Nat} (h1 : minSeats ≤ n) (h2 : n ≤ maxSeats) :
     FoundingFacts G n G.startingLaws :=
   foundingFacts_all _ _ _ (valid_founding hG h1 h2)
-    ⟨by simp [maxLawsInForce], by simp, by simp, by simp [plannedTotal, maxPlannedTotal], by simp⟩
+    ⟨by simp [maxLawsInForce], by simp, by simp, by simp [plannedTotal, maxPlannedTotal],
+      by simp [readsTotal, maxReadsTotal], by simp⟩
 
 theorem Limits.start (hG : G.Valid) (seats : Nat) (serverSeed : UInt64) (nonces : List UInt64)
     (h1 : minSeats ≤ seats) (h2 : seats ≤ maxSeats) :
@@ -298,9 +328,10 @@ theorem PlannedInv.start (hG : G.Valid) (seats : Nat) (serverSeed : UInt64) (non
     (h1 : minSeats ≤ seats) (h2 : seats ≤ maxSeats) :
     PlannedInv (initialState G seats serverSeed nonces) := by
   have hf := startingLaws_facts hG h1 h2
-  refine ⟨?_, ?_⟩ <;> simp only [initialState, List.length_range]
+  refine ⟨?_, ?_, ?_⟩ <;> simp only [initialState, List.length_range]
   · exact hf.each
   · exact hf.total
+  · exact hf.reads
 
 /-! ## The dice -/
 
@@ -311,7 +342,7 @@ theorem rolled_iff {s s' : State G} {e : Event} (h : Engine.step G s e = .ok s')
   · rintro ⟨hend, hr⟩
     obtain ⟨b, _, hs⟩ := step_endsTurn hend h
     rw [hs]
-    exact (startNextTurn_rolled (s := { s with books := b, journal := s.journal ++ turnEntries s (rollAt G s.seed s.rollsMade) })
+    exact (startNextTurn_rolled (s := { s with books := b, journal := s.journal ++ turnEntries s (rollAt G s.seed s.rollsMade), pieces := s.turnPieces (rollAt G s.seed s.rollsMade) })
       hr _).1
   · intro hc
     by_cases hend : EndsTurn s e
@@ -326,7 +357,7 @@ theorem turn_moved_on {s s' : State G} {e : Event} (hend : EndsTurn s e)
     (h : Engine.step G s e = .ok s') : TurnMovedOn s s' := by
   obtain ⟨b, _, hs⟩ := step_endsTurn hend h
   rw [hs]
-  exact startNextTurn_moved ({ s with books := b, journal := s.journal ++ turnEntries s (rollAt G s.seed s.rollsMade) } : State G) _
+  exact startNextTurn_moved ({ s with books := b, journal := s.journal ++ turnEntries s (rollAt G s.seed s.rollsMade), pieces := s.turnPieces (rollAt G s.seed s.rollsMade) } : State G) _
 
 /-! ## Seats, action counts and the phase -/
 
@@ -358,19 +389,57 @@ theorem phase_by_turn_or_win {s s' : State G} {e : Event} (h : Engine.step G s e
   rcases finish_winner hf with rfl | ⟨w, hbest, hend⟩
   · exact Or.inl (bodyOf_frame hb).phase
   · obtain ⟨hw, _⟩ := bestSeat_spec hbest
-    obtain ⟨hm, ht⟩ := List.mem_filter.mp hw
-    obtain ⟨_, _, hs2⟩ := endGame_ok hend
-    have ht2 : G.targetPoints ≤ (countAction s1 (seatOf e)).pointsOf w := by simpa using ht
-    have hP : s'.pieces = (countAction s1 (seatOf e)).pieces := by rw [hs2]
-    have hL : s'.laws = (countAction s1 (seatOf e)).laws := by rw [hs2]
+    obtain ⟨_, hbk, hs2⟩ := endGame_ok hend
     have hT : s'.turnOrder = (countAction s1 (seatOf e)).turnOrder := by rw [hs2]
-    exact Or.inr ⟨by rw [hs2], w, by rw [hT]; exact hm, by rw [pointsOf_congr hP hL]; exact ht2⟩
+    refine Or.inr ⟨by rw [hs2], ?_⟩
+    unfold winCandidates at hw
+    split at hw
+    · rename_i hl
+      obtain ⟨x, hx, hc⟩ := List.any_eq_true.mp hl
+      exact Or.inr ⟨x, by rw [hs2]; exact hx, hc⟩
+    · obtain ⟨hm, ht⟩ := List.mem_filter.mp hw
+      have ht2 : G.targetPoints ≤ (countAction s1 (seatOf e)).pointsOf w := by simpa using ht
+      refine Or.inl ⟨w, by rw [hT]; exact hm, ?_⟩
+      have hmono : (countAction s1 (seatOf e)).pointsOf w ≤ s'.pointsOf w :=
+        pointsOf_mono (by rw [hs2]) (by rw [hs2]) (fun r => by
+          rw [hs2]
+          exact postAll_seat_mono refunds_no_seat_src hbk w r)
+      omega
+
+/-- After a move or a vote, a seat at the target has ended the game. -/
+theorem looks_for_winner {s s' : State G} {e : Event} (h : Engine.step G s e = .ok s')
+    (hl : LooksForWinner e) (hat : ∃ p ∈ s'.turnOrder, G.targetPoints ≤ s'.pointsOf p) :
+    s'.phase = .ended := by
+  have hfin : ∃ t, checkWin t = .ok s' := by
+    rcases step_view h with ⟨hend, hnow⟩ | ⟨_, _, s1, _, hf⟩
+    · cases e with
+      | move p m =>
+        cases m with
+        | endTurn => exact hl.elim
+        | _ => exact hend.elim
+      | vote a b c => exact hend.elim
+      | _ => exact hl.elim
+    · cases e with
+      | move p m => exact ⟨_, hf⟩
+      | vote a b c => exact ⟨_, hf⟩
+      | _ => exact hl.elim
+  obtain ⟨t, hct⟩ := hfin
+  obtain ⟨p, hp, ht⟩ := hat
+  rcases checkWin_ok hct with ⟨rfl, hnil⟩ | ⟨w, hw⟩
+  · unfold winCandidates at hnil
+    split at hnil
+    · rw [hnil] at hp
+      cases hp
+    · have : p ∈ seatsAtTarget s' := List.mem_filter.mpr ⟨hp, by simpa using ht⟩
+      rw [hnil] at this
+      simp at this
+  · obtain ⟨_, _, rfl⟩ := endGame_ok hw
+    rfl
 
 /-! ## Accepted offers -/
 
-/-- Accepting an offer writes exactly the offer's entries. It cannot end the game, because it changes
-no points and no seat in a running game is at the target. -/
-theorem accepted_offers_exact {s s' : State G} {e : Event} (hn : NoPending s)
+/-- Accepting an offer writes exactly the offer's entries, and then any refunds if the game ends. -/
+theorem accepted_offers_exact {s s' : State G} {e : Event}
     (h : Engine.step G s e = .ok s') : AcceptedOffersAreExact s s' e := by
   rintro p id o rfl ho
   have he := step_not_ended h
@@ -381,11 +450,23 @@ theorem accepted_offers_exact {s s' : State G} {e : Event} (hn : NoPending s)
   rw [ho] at ho'
   injection ho' with ho'
   subst ho'
-  have hx := move_no_win (s := s) hn he (by subst hs1; rfl) (by subst hs1; rfl)
-    (by subst hs1; rfl) hf'
-  refine ⟨fun e => h1 e.symm, h2, newEntries_of ?_⟩
-  rw [hx, hs1]
-  rfl
+  refine ⟨fun e => h1 e.symm, h2, ?_⟩
+  rcases checkWin_ok hf' with ⟨rfl, _⟩ | ⟨w, hw⟩
+  · refine ⟨[], ?_, by simp, Or.inl rfl⟩
+    rw [List.append_nil]
+    apply newEntries_of
+    rw [hs1]
+    rfl
+  · obtain ⟨_, _, rfl⟩ := endGame_ok hw
+    refine ⟨(countAction s1 p).deals.flatMap (countAction s1 p).refundEntries, ?_, ?_, Or.inr rfl⟩
+    · apply newEntries_of
+      have hj : (countAction s1 p).journal = s.journal ++ offerEntries o p := by rw [hs1]; rfl
+      change (countAction s1 p).journal ++ _ = _
+      rw [hj, List.append_assoc]
+    · intro x hx
+      obtain ⟨d, _, hd⟩ := List.mem_flatMap.mp hx
+      exact (refundEntries_form hd).1
+
 
 /-! ## A running game has a current seat -/
 
@@ -440,7 +521,7 @@ theorem CurrentSeatInv.step {s s' : State G} {e : Event} (ht : CurrentSeatInv s)
   · obtain ⟨b, _, hs⟩ := endTurnNow_ok h2
     rw [hs]
     exact CurrentSeatInv.startNextTurn
-      (t := { s with books := b, journal := s.journal ++ turnEntries s (rollAt G s.seed s.rollsMade) })
+      (t := { s with books := b, journal := s.journal ++ turnEntries s (rollAt G s.seed s.rollsMade), pieces := s.turnPieces (rollAt G s.seed s.rollsMade) })
       ht he hn _
   · have f := act_frame hb hf
     intro _
@@ -540,14 +621,5 @@ theorem blocked_offer_rejected {s : State G} {p q : Seat} {give get : Bundle}
     cases this
 
 /-! ## Reaching the target ends the game -/
-
-theorem target_ends_game {s : State G} (hn : NoPending s) {p : Seat} (hp : p ∈ s.turnOrder)
-    (ht : G.targetPoints ≤ s.pointsOf p) : s.phase = .ended := by
-  by_cases he : s.phase = .ended
-  · exact he
-  · have hnil := hn he
-    have : p ∈ seatsAtTarget s := List.mem_filter.mpr ⟨hp, by simpa using ht⟩
-    rw [hnil] at this
-    cases this
 
 end Charter.Proofs

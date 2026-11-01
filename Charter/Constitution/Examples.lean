@@ -14,6 +14,14 @@ These show that the promises are not empty:
   example here gives a reachable state.
 * A law can react to a roll. `a_seven_moves_money` plays a real game in which a 7 moves money, and laws
   over the payment limits are rejected.
+* Totals, the most, the least, division by a computed number and the round each move money in a real
+  game, and a wrong amount is rejected.
+* A declaration changes what a law does. `an_auction_settles` is a worked auction, with a tie and a bid
+  nobody can pay.
+* A resource can be worth points, and a seat that reaches the target at a turn change wins at the next
+  move or vote.
+* A law can take a seat's newest piece, at a round's end or on a roll, and never its last.
+* A decree fires once, the moment its law passes, and it names no actor.
 * The promises reject bad steps. Each `..._is_rejected` theorem shows a named part of a commandment
   saying no to a forged step. Next to most is an `example` of the honest step, which it allows.
 
@@ -451,7 +459,7 @@ def sevenGame : State tinySevens :=
 def sevenRoll : Nat := rollAt tinySevens sevenGame.seed sevenGame.rollsMade
 
 /-- The honest entries: on a 7, the law pays exactly what it says. -/
-example : rollEntries (sevenGame.afterPosting sevenGame.entriesBeforeRoll) sevenRoll =
+example : rollEntries sevenGame.afterRoundEnd sevenRoll =
     luckySevenEntries 1 := by
   decide +kernel
 
@@ -461,7 +469,7 @@ example : rollEntries sevenGame 8 = [] := by decide +kernel
 /-- A roll that skips the law's payments. X rejects this: the entries of a roll must be exactly
 `rollEntries`, and those are not empty. -/
 theorem skipped_seven_is_rejected :
-    ([] : List Entry) ≠ rollEntries (sevenGame.afterPosting sevenGame.entriesBeforeRoll) sevenRoll := by
+    ([] : List Entry) ≠ rollEntries sevenGame.afterRoundEnd sevenRoll := by
   decide +kernel
 
 /-- On a 7, a step takes 1 grain from seat 0 for seat 1, and no law asks for it. V rejects this. -/
@@ -470,19 +478,19 @@ theorem forged_seven_payment_is_rejected :
       ⟨.player 0, .player 1, "grain", 1, .lawEffect⟩ := by
   intro h
   have hEnd : ⟨.player 0, .player 1, "grain", 1, .lawEffect⟩ ∉
-      rollEntries (sevenGame.afterPosting sevenGame.entriesBeforeRoll) sevenRoll := by decide +kernel
+      rollEntries sevenGame.afterRoundEnd sevenRoll := by decide +kernel
   have hRound : ⟨.player 0, .player 1, "grain", 1, .lawEffect⟩ ∉
       sevenGame.roundEndLawEntries := by decide +kernel
-  rcases h 0 rfl with ⟨hr, _⟩ | ⟨hr, _⟩ | ⟨hr, _⟩ | ⟨_, _, hf, _⟩ | ⟨_, h1⟩
-  · cases hr
+  rcases h 0 rfl with ⟨hr, _⟩ | ⟨hr, _⟩ | ⟨_, _, hf, _⟩ | ⟨_, h1⟩
   · cases hr
   · cases hr
   · cases hf
-  · rcases h1 with ⟨_, _, _, he, _⟩ | ⟨_, h2⟩
+  · rcases h1 with ⟨_, _, _, he, _⟩ | ⟨_, h2⟩ | ⟨_, ⟨_, _, _, he, _⟩, _⟩
     · cases he
     · rcases h2 with h2 | h2
       · exact hRound h2
       · exact hEnd h2
+    · cases he
 
 /-- On a 7, the bank pays the timber to seat 0, but the law pays the seat whose turn starts, which is
 seat 1. V rejects this. -/
@@ -490,27 +498,28 @@ theorem wrong_actor_is_rejected :
     ¬ MoneyLeavesBankOnlyFor sevenGame .forceEndTurn ⟨.bank, .player 0, "timber", 1, .lawEffect⟩ := by
   intro h
   have hEnd : ⟨.bank, .player 0, "timber", 1, .lawEffect⟩ ∉
-      rollEntries (sevenGame.afterPosting sevenGame.entriesBeforeRoll) sevenRoll := by decide +kernel
+      rollEntries sevenGame.afterRoundEnd sevenRoll := by decide +kernel
   have hRound : ⟨.bank, .player 0, "timber", 1, .lawEffect⟩ ∉
       sevenGame.roundEndLawEntries := by decide +kernel
   rcases h (Or.inl rfl) with ⟨hr, _⟩ | ⟨hr, _⟩ | ⟨_, h1⟩
   · cases hr
   · cases hr
-  · rcases h1 with ⟨_, _, _, he, _⟩ | ⟨_, h2⟩
+  · rcases h1 with ⟨_, _, _, he, _⟩ | ⟨_, h2⟩ | ⟨_, ⟨_, _, _, he, _⟩, _⟩
     · cases he
     · rcases h2 with h2 | h2
       · exact hRound h2
       · exact hEnd h2
+    · cases he
 
 /-- The honest entry is allowed: the bank pays seat 1, whose turn the roll starts. -/
 example : MoneyLeavesBankOnlyFor sevenGame .forceEndTurn ⟨.bank, .player 1, "timber", 1, .lawEffect⟩ :=
-  fun _ => Or.inr (Or.inr ⟨rfl, Or.inr ⟨trivial, Or.inr (by decide +kernel)⟩⟩)
+  fun _ => Or.inr (Or.inr ⟨rfl, Or.inr (Or.inl ⟨trivial, Or.inr (by decide +kernel)⟩)⟩)
 
-/-- With no law that reacts to a roll, a roll is the harvest alone. So a saved game with no such law
-replays as it always did. -/
+/-- With no law that reacts to a roll, a roll is the harvest alone, read from the round it starts. So a
+saved game with no such law replays as it always did: no old law could read the round. -/
 theorem no_roll_law_means_harvest_alone {G : GameDef} (s : State G) (roll : Nat)
     (h : ∀ x ∈ s.laws, ∀ c ∈ x.2.clauses, ∀ b, c ≠ .onRoll b) :
-    rollEntries s roll = harvestEntries s roll :=
+    rollEntries s roll = harvestEntries s.atRoll roll :=
   Proofs.rollEntries_no_roll_law s roll h
 
 /-- A law that reacts to a roll, with this many transfers for each seat. -/
@@ -523,21 +532,694 @@ def wideRollLaw (transfers : Nat) : Law :=
 def sixSeatGame (laws : List (Nat × Law)) : State tinySettlers :=
   { initialState tinySettlers 6 42 [25283273] with phase := .actions, laws := laws }
 
-/-- A roll law counts against the limit on one law. At 6 seats, 10 transfers for each seat pass. -/
-example : lawProblems tinySettlers (sixSeatGame []) (wideRollLaw 10) = [] := by decide +kernel
+/-- A roll law counts against the limit on one law. At 6 seats, 21 transfers for each seat pass. -/
+example : lawProblems tinySettlers (sixSeatGame []) (wideRollLaw 21) = [] := by decide +kernel
 
-/-- At 6 seats, 11 transfers for each seat ask for 66 payments on one roll, over the limit of 64. -/
+/-- At 6 seats, 22 transfers for each seat ask for 132 payments on one roll, over the limit of 128. -/
 theorem roll_law_over_the_cap_is_rejected :
     "this law could make too many payments at once" ∈
-      lawProblems tinySettlers (sixSeatGame []) (wideRollLaw 11) := by
+      lawProblems tinySettlers (sixSeatGame []) (wideRollLaw 22) := by
   decide +kernel
 
-/-- Roll laws count against the limit on all laws in force. Two laws of 60 payments are in force. A
-third would make 180, over the limit of 128. -/
+/-- Roll laws count against the limit on all laws in force. Two laws of 126 payments are in force. A
+third would make 378, over the limit of 256. -/
 theorem roll_laws_over_the_total_cap_are_rejected :
     "the laws in force could make too many payments at once" ∈
-      lawProblems tinySettlers (sixSeatGame [(0, wideRollLaw 10), (1, wideRollLaw 10)])
-        (wideRollLaw 10) := by
+      lawProblems tinySettlers (sixSeatGame [(0, wideRollLaw 21), (1, wideRollLaw 21)])
+        (wideRollLaw 21) := by
+  decide +kernel
+
+/-! ## Measures: totals, the most, the least, division by a computed number, and the round
+
+Each game here is real: it starts from a new game and every event goes through the engine. Nobody builds.
+A founding law pays the seat whose turn each roll starts, as much as the dice show, so the seats hold
+different amounts. The law under test then reads them. -/
+
+/-- What a step writes in the journal, after these events from a new game. -/
+def stepEntries (G : GameDef) (seats : Nat) (serverSeed : UInt64) (nonces : List UInt64)
+    (events : List Event) (e : Event) : Option (List Entry) :=
+  match Engine.replay G seats serverSeed nonces events with
+  | .error _ => none
+  | .ok s =>
+    match Engine.step G s e with
+    | .error _ => none
+    | .ok s' => some (newEntries s s')
+
+/-- If those entries are what `stepEntries` says, a reachable state really takes that step and writes
+them. So a game with no empty hypotheses comes from a single computed check. -/
+theorem real_step {G : GameDef} (hG : G.Valid) {seats : Nat} {serverSeed : UInt64} {nonces : List UInt64}
+    {events : List Event} {e : Event} {es : List Entry} (h1 : minSeats ≤ seats) (h2 : seats ≤ maxSeats)
+    (hc : stepEntries G seats serverSeed nonces events e = some es) :
+    ∃ s s', Reachable G s ∧ Engine.step G s e = .ok s' ∧ newEntries s s' = es := by
+  unfold stepEntries at hc
+  split at hc
+  · cases hc
+  · rename_i s hr
+    split at hc
+    · cases hc
+    · rename_i s' hs
+      refine ⟨s, s', ((X_what_you_vote_on_is_what_runs G hG).1 s).mpr
+        ⟨seats, serverSeed, nonces, events, h1, h2, hr⟩, hs, ?_⟩
+      exact Option.some.inj hc
+
+/-- A founding law: the seat whose turn the roll starts gets as much grain as the dice show. -/
+def rollerGift : Law :=
+  { title := "Roller's gift", clauses := [.onRoll [.transfer .bank .actor (.lit "grain") .rolled]] }
+
+/-- Tiny Settlers with two dice, with `rollerGift` and one more founding law. -/
+def giftGame (L : Law) : GameDef :=
+  { tinySettlers with
+    name := "Gift"
+    diceCount := 2
+    diceSides := 6
+    foundingLaws := [rollerGift, L] }
+
+/-- Every setup turn is skipped, and then the first two turns of round 1 end. The next turn end closes
+round 1. -/
+def toRoundEnd : List Event := List.replicate 5 .forceEndTurn
+
+/-- A step of a gift game, after `toRoundEnd`. -/
+theorem real_gift_step {L : Law} (hG : (giftGame L).Valid) {es : List Entry}
+    (hc : stepEntries (giftGame L) 2 42 [2] toRoundEnd .forceEndTurn = some es) :
+    ∃ s s', Reachable (giftGame L) s ∧ Engine.step (giftGame L) s .forceEndTurn = .ok s' ∧
+      newEntries s s' = es :=
+  real_step hG (by decide) (by decide) hc
+
+/-- A total: at a round's end, the bank pays the treasury as much timber as all seats hold grain. -/
+def totalLaw : Law :=
+  { title := "Total"
+    clauses := [.onRoundEnd [.transfer .bank .treasury (.lit "timber")
+      (.totalOver .yes (.holding .each (.lit "grain")))]] }
+
+theorem totalLaw_valid : (giftGame totalLaw).Valid := by decide +kernel
+
+/-- The law really moves money in a real game. The seats hold 10 and 5 grain, so the treasury gets 15 timber. The last entry is
+the next roll's gift. -/
+theorem a_total_moves_money :
+    ∃ s s', Reachable (giftGame totalLaw) s ∧ Engine.step (giftGame totalLaw) s .forceEndTurn = .ok s' ∧
+      newEntries s s' = [⟨.bank, .treasury, "timber", 15, .lawEffect⟩, ⟨.bank, .player 0, "grain", 3, .lawEffect⟩] :=
+  real_gift_step totalLaw_valid (by decide +kernel)
+
+/-- A step that pays only one seat's grain as the total is not what the law says. -/
+theorem wrong_total_is_rejected :
+    stepEntries (giftGame totalLaw) 2 42 [2] toRoundEnd .forceEndTurn ≠
+      some [⟨.bank, .treasury, "timber", 10, .lawEffect⟩, ⟨.bank, .player 0, "grain", 3, .lawEffect⟩] := by
+  decide +kernel
+
+/-- The most and the least: at a round's end, the bank pays timber to each seat with the most grain and
+brick to each seat with the least. These are numbers, so each seat is compared with them. -/
+def rankLaw : Law :=
+  { title := "Rank"
+    clauses := [.onRoundEnd
+      [ .forEach (.eq (.holding .each (.lit "grain")) (.mostOver .yes (.holding .each (.lit "grain"))))
+          [.transfer .bank .each (.lit "timber") (.lit 2)]
+      , .forEach (.eq (.holding .each (.lit "grain")) (.leastOver .yes (.holding .each (.lit "grain"))))
+          [.transfer .bank .each (.lit "brick") (.lit 1)] ]] }
+
+theorem rankLaw_valid : (giftGame rankLaw).Valid := by decide +kernel
+
+/-- In a real game, the richer seat gets the timber and the poorer seat gets the brick. -/
+theorem the_most_and_the_least_move_money :
+    ∃ s s', Reachable (giftGame rankLaw) s ∧ Engine.step (giftGame rankLaw) s .forceEndTurn = .ok s' ∧
+      newEntries s s' = [⟨.bank, .player 0, "timber", 2, .lawEffect⟩,
+        ⟨.bank, .player 1, "brick", 1, .lawEffect⟩, ⟨.bank, .player 0, "grain", 3, .lawEffect⟩] :=
+  real_gift_step rankLaw_valid (by decide +kernel)
+
+/-- Paying the prize to the poorer seat is rejected. -/
+theorem prize_to_the_wrong_seat_is_rejected :
+    stepEntries (giftGame rankLaw) 2 42 [2] toRoundEnd .forceEndTurn ≠
+      some [⟨.bank, .player 1, "timber", 2, .lawEffect⟩,
+        ⟨.bank, .player 0, "brick", 1, .lawEffect⟩, ⟨.bank, .player 0, "grain", 3, .lawEffect⟩] := by
+  decide +kernel
+
+/-- A real tie: with this seed both seats hold 7 grain, so both have the most and both have the least. -/
+theorem a_tie_pays_both_seats :
+    ∃ s s', Reachable (giftGame rankLaw) s ∧ Engine.step (giftGame rankLaw) s .forceEndTurn = .ok s' ∧
+      newEntries s s' = [⟨.bank, .player 0, "timber", 2, .lawEffect⟩, ⟨.bank, .player 1, "timber", 2, .lawEffect⟩,
+        ⟨.bank, .player 0, "brick", 1, .lawEffect⟩, ⟨.bank, .player 1, "brick", 1, .lawEffect⟩, ⟨.bank, .player 0, "grain", 3, .lawEffect⟩] :=
+  real_step (seats := 2) (serverSeed := 42) (nonces := [3]) (events := toRoundEnd) rankLaw_valid
+    (by decide) (by decide) (by decide +kernel)
+
+/-- A tie means several seats match. In a new game every seat holds 0 grain, so both seats pass. No seat
+is told apart, and the name of a seat plays no part. -/
+example : (Expr.mostOver .yes (.holding .each (.lit "grain"))).eval
+    (initialState tinySettlers 2 42 [3]) {} = 0 := by decide +kernel
+example : Effect.planAll (initialState tinySettlers 2 42 [3])
+    [.forEach (.eq (.holding .each (.lit "grain")) (.mostOver .yes (.holding .each (.lit "grain"))))
+      [.transfer .bank .each (.lit "timber") (.lit 2)]] {} =
+    [⟨.bank, .player 0, "timber", 2, .lawEffect⟩, ⟨.bank, .player 1, "timber", 2, .lawEffect⟩] := by
+  decide +kernel
+
+/-- With no seat passing the test, the most and the least are 0, and a total is 0. -/
+example : (Expr.mostOver (.lt (.lit 1) (.lit 0)) (.lit 5)).eval (initialState tinySettlers 2 42 [3]) {} = 0 ∧
+    (Expr.leastOver (.lt (.lit 1) (.lit 0)) (.lit 5)).eval (initialState tinySettlers 2 42 [3]) {} = 0 ∧
+    (Expr.totalOver (.lt (.lit 1) (.lit 0)) (.lit 5)).eval (initialState tinySettlers 2 42 [3]) {} = 0 := by
+  decide +kernel
+
+/-- Division by a computed number: at a round's end, each seat pays the treasury its grain divided by how
+many seats hold any. A number that turns out to be 0 gives 0. -/
+def divLaw : Law :=
+  { title := "Share"
+    clauses := [.onRoundEnd [.forEach .yes [.transfer .each .treasury (.lit "grain")
+      (.divBy (.holding .each (.lit "grain")) (.totalOver (.lt (.lit 0) (.holding .each (.lit "grain"))) (.lit 1)))]]] }
+
+theorem divLaw_valid : (giftGame divLaw).Valid := by decide +kernel
+
+theorem division_moves_money :
+    ∃ s s', Reachable (giftGame divLaw) s ∧ Engine.step (giftGame divLaw) s .forceEndTurn = .ok s' ∧
+      newEntries s s' = [⟨.player 0, .treasury, "grain", 5, .lawEffect⟩,
+        ⟨.player 1, .treasury, "grain", 2, .lawEffect⟩, ⟨.bank, .player 0, "grain", 3, .lawEffect⟩] :=
+  real_gift_step divLaw_valid (by decide +kernel)
+
+/-- Paying each seat's whole grain is not dividing it. -/
+theorem undivided_payment_is_rejected :
+    stepEntries (giftGame divLaw) 2 42 [2] toRoundEnd .forceEndTurn ≠
+      some [⟨.player 0, .treasury, "grain", 10, .lawEffect⟩,
+        ⟨.player 1, .treasury, "grain", 5, .lawEffect⟩, ⟨.bank, .player 0, "grain", 3, .lawEffect⟩] := by
+  decide +kernel
+
+example : (Expr.divBy (.lit 7) (.lit 2)).eval (initialState tinySettlers 2 42 [3]) {} = 3 ∧
+    (Expr.divBy (.lit 7) (.holding .treasury (.lit "grain"))).eval (initialState tinySettlers 2 42 [3]) {} = 0 := by
+  decide +kernel
+
+/-- A law cannot write a literal division by zero, in its own words. It can compute one. -/
+theorem literal_division_by_zero_is_rejected :
+    "a law cannot divide by zero" ∈
+      lawProblems tinySettlers (initialState tinySettlers 2 42 [3])
+        { title := "Zero", clauses := [.onRoundEnd [.transfer .bank .treasury (.lit "grain")
+            (.divBy (.lit 1) (.lit 0))]] } := by
+  decide +kernel
+
+/-- The round: on each roll, the bank pays the treasury as much timber as the round's number. -/
+def roundLaw : Law :=
+  { title := "Round", clauses := [.onRoll [.transfer .bank .treasury (.lit "timber") .round]] }
+
+theorem roundLaw_valid : (giftGame roundLaw).Valid := by decide +kernel
+
+/-- In a real game, the roll that starts round 2 reads 2, not 1. -/
+theorem the_round_moves_money :
+    ∃ s s', Reachable (giftGame roundLaw) s ∧ Engine.step (giftGame roundLaw) s .forceEndTurn = .ok s' ∧
+      newEntries s s' = [⟨.bank, .player 0, "grain", 3, .lawEffect⟩, ⟨.bank, .treasury, "timber", 2, .lawEffect⟩] :=
+  real_gift_step roundLaw_valid (by decide +kernel)
+
+/-- A roll that starts round 2 and reads round 1 is rejected. -/
+theorem old_round_is_rejected :
+    stepEntries (giftGame roundLaw) 2 42 [2] toRoundEnd .forceEndTurn ≠
+      some [⟨.bank, .player 0, "grain", 3, .lawEffect⟩, ⟨.bank, .treasury, "timber", 1, .lawEffect⟩] := by
+  decide +kernel
+
+/-- Measures that nest read what is inside them once per seat, so they count against `maxReadsTotal`.
+Three levels read 517 numbers at 6 seats. Five levels read over 18,000. -/
+def nestedMeasure : Nat → Expr
+  | 0 => .lit 1
+  | n + 1 => .totalOver .yes (nestedMeasure n)
+
+example : (nestedMeasure 3).reads 6 = 517 := by decide +kernel
+
+theorem nested_measures_over_the_cap_are_rejected :
+    "the laws in force would read too many numbers at once" ∈
+      lawProblems tinySettlers (sixSeatGame [])
+        { title := "Deep", clauses := [.onRoundEnd [.transfer .bank .treasury (.lit "grain") (nestedMeasure 6)]] } := by
+  decide +kernel
+
+/-! ## Declarations
+
+Each seat has one public number per resource, which it can change on its turn and which clears when the
+round ends. In these games, each roll pays the seat whose turn it starts in wool, and puts grain in the
+treasury. -/
+
+/-- A founding law: wool for the seat whose turn the roll starts, and 4 grain for the treasury. -/
+def auctionIncome : Law :=
+  { title := "Income"
+    clauses := [.onRoll [.transfer .bank .actor (.lit "wool") .rolled,
+      .transfer .bank .treasury (.lit "grain") (.lit 4)]] }
+
+/-- The bid of the seat being looked at. -/
+def bid : Expr := .declared .each (.lit "grain")
+
+/-- This seat holds enough wool to pay its bid. A bid it cannot pay does not count. -/
+def canPayBid : Cond := .le bid (.holding .each (.lit "wool"))
+
+/-- The worked auction, which uses a declaration, a test and the most. At a round's end, each seat with
+the highest bid it can pay pays its bid to the treasury and asks for all the treasury's grain. If two
+seats tie, both pay and they share the grain, as `settle` shrinks both requests alike. No seat's name
+plays a part. -/
+def auctionLaw : Law :=
+  { title := "Grain auction"
+    clauses := [.onRoundEnd [.forEach
+      (.and (.lt (.lit 0) bid) (.and canPayBid (.eq bid (.mostOver canPayBid bid))))
+      [ .transfer .each .treasury (.lit "wool") bid
+      , .transfer .treasury .each (.lit "grain") (.holding .treasury (.lit "grain")) ]]] }
+
+def auctionGame : GameDef :=
+  { tinySettlers with
+    name := "Auction"
+    resources := [⟨"grain", 200⟩, ⟨"timber", 24⟩, ⟨"brick", 24⟩, ⟨"wool", 200⟩]
+    diceCount := 2
+    diceSides := 6
+    foundingLaws := [auctionIncome, auctionLaw] }
+
+theorem auctionGame_valid : auctionGame.Valid := by decide +kernel
+
+/-- Setup is skipped. Rolls of 10 and 5 pay seats 0 and 1, and the treasury has 8 grain. These are the
+events up to seat 1's turn, with seat 0 having bid `a`, and then seat 1 bidding `b`. -/
+def auctionEvents (a b : Nat) : List Event :=
+  List.replicate 4 .forceEndTurn ++
+    [.move 0 (.declare "grain" a), .move 0 .endTurn, .move 1 (.declare "grain" b)]
+
+/-- The auction really settles. Seat 0 bids 5 and seat 1 bids 3. Seat 0 pays 5 wool and gets 8 grain. The
+last entries are the next roll's income. So a declaration changes what a law does. -/
+theorem an_auction_settles :
+    ∃ s s', Reachable auctionGame s ∧ Engine.step auctionGame s .forceEndTurn = .ok s' ∧
+      newEntries s s' = [⟨.player 0, .treasury, "wool", 5, .lawEffect⟩,
+        ⟨.treasury, .player 0, "grain", 8, .lawEffect⟩,
+        ⟨.bank, .player 0, "wool", 3, .lawEffect⟩, ⟨.bank, .treasury, "grain", 4, .lawEffect⟩] :=
+  real_step (seats := 2) (serverSeed := 42) (nonces := [2]) (events := auctionEvents 5 3)
+    auctionGame_valid (by decide) (by decide) (by decide +kernel)
+
+/-- The loser getting the grain is rejected. -/
+theorem wrong_auction_winner_is_rejected :
+    stepEntries auctionGame 2 42 [2] (auctionEvents 5 3) .forceEndTurn ≠
+      some [⟨.player 1, .treasury, "wool", 3, .lawEffect⟩,
+        ⟨.treasury, .player 1, "grain", 8, .lawEffect⟩,
+        ⟨.bank, .player 0, "wool", 3, .lawEffect⟩, ⟨.bank, .treasury, "grain", 4, .lawEffect⟩] := by
+  decide +kernel
+
+/-- A tie is neutral. Both seats bid 5, both pay, and each gets half the treasury's grain. -/
+theorem an_auction_tie_is_shared :
+    ∃ s s', Reachable auctionGame s ∧ Engine.step auctionGame s .forceEndTurn = .ok s' ∧
+      newEntries s s' = [⟨.player 0, .treasury, "wool", 5, .lawEffect⟩,
+        ⟨.treasury, .player 0, "grain", 4, .lawEffect⟩,
+        ⟨.player 1, .treasury, "wool", 5, .lawEffect⟩,
+        ⟨.treasury, .player 1, "grain", 4, .lawEffect⟩,
+        ⟨.bank, .player 0, "wool", 3, .lawEffect⟩, ⟨.bank, .treasury, "grain", 4, .lawEffect⟩] :=
+  real_step (seats := 2) (serverSeed := 42) (nonces := [2]) (events := auctionEvents 5 5)
+    auctionGame_valid (by decide) (by decide) (by decide +kernel)
+
+/-- A bid the seat cannot pay does not count. Seat 1 bids 100 and holds 5 wool, so seat 0's bid of 5 wins. -/
+theorem a_bid_nobody_can_pay_does_not_count :
+    ∃ s s', Reachable auctionGame s ∧ Engine.step auctionGame s .forceEndTurn = .ok s' ∧
+      newEntries s s' = [⟨.player 0, .treasury, "wool", 5, .lawEffect⟩,
+        ⟨.treasury, .player 0, "grain", 8, .lawEffect⟩,
+        ⟨.bank, .player 0, "wool", 3, .lawEffect⟩, ⟨.bank, .treasury, "grain", 4, .lawEffect⟩] :=
+  real_step (seats := 2) (serverSeed := 42) (nonces := [2]) (events := auctionEvents 5 100)
+    auctionGame_valid (by decide) (by decide) (by decide +kernel)
+
+/-- With no declaration, the auction moves nothing. Only the next roll's income is written. -/
+example : stepEntries auctionGame 2 42 [2] (List.replicate 5 .forceEndTurn) .forceEndTurn =
+    some [⟨.bank, .player 0, "wool", 3, .lawEffect⟩, ⟨.bank, .treasury, "grain", 4, .lawEffect⟩] := by
+  decide +kernel
+
+/-- What this event does after these events: `none` if the engine rejects it. -/
+def declaredAfter (events : List Event) (q : Seat) (r : Res) : Option Nat :=
+  match Engine.replay auctionGame 2 42 [2] events with
+  | .ok s => some (s.declared q r)
+  | .error _ => none
+
+/-- A declaration writes no entries, and it changes that seat's number. -/
+example : stepEntries auctionGame 2 42 [2] (List.replicate 4 .forceEndTurn)
+    (.move 0 (.declare "grain" 5)) = some [] := by decide +kernel
+example : declaredAfter (auctionEvents 5 3) 0 "grain" = some 5 := by decide +kernel
+example : declaredAfter (auctionEvents 5 3) 1 "grain" = some 3 := by decide +kernel
+
+/-- Declarations clear when the round ends. They clear after the round's end laws have read them, and
+before the roll that starts the next round. -/
+example : declaredAfter (auctionEvents 5 3 ++ [.forceEndTurn]) 0 "grain" = some 0 := by decide +kernel
+example : declaredAfter (auctionEvents 5 3 ++ [.forceEndTurn]) 1 "grain" = some 0 := by decide +kernel
+
+/-- A roll that starts a new round reads the numbers as cleared. -/
+example : (Expr.declared .actor (.lit "grain")).eval
+    (({ initialState auctionGame 2 42 [2] with
+        phase := .actions, turnIndex := 1, declared := fun _ _ => 5 } : State auctionGame).atRoll)
+    { actor := some 0 } = 0 := by decide +kernel
+
+/-- A seat cannot declare out of turn, for an unknown resource, or over the limit. -/
+theorem a_foreign_declaration_is_rejected :
+    stepEntries auctionGame 2 42 [2] (List.replicate 4 .forceEndTurn) (.move 1 (.declare "grain" 5)) = none := by
+  decide +kernel
+
+theorem an_unknown_resource_is_rejected :
+    stepEntries auctionGame 2 42 [2] (List.replicate 4 .forceEndTurn) (.move 0 (.declare "gold" 5)) = none := by
+  decide +kernel
+
+theorem a_declaration_over_the_limit_is_rejected :
+    stepEntries auctionGame 2 42 [2] (List.replicate 4 .forceEndTurn)
+      (.move 0 (.declare "grain" (maxDeclared + 1))) = none := by
+  decide +kernel
+
+/-- A step that takes a declaration from seat 0 and also changes seat 1's number breaks `DeclarationsKept`:
+it forges a number in another seat's name. -/
+theorem a_forged_declaration_is_rejected :
+    ¬ DeclarationsKept (({ initialState auctionGame 2 42 [2] with phase := .actions }) : State auctionGame)
+      ({ initialState auctionGame 2 42 [2] with
+          phase := .actions, declared := fun q _ => if q = 1 then 9 else 0 })
+      (.move 0 (.declare "grain" 5)) := by
+  intro h
+  obtain ⟨_, _, _, _, hk⟩ := h.1 0 "grain" 5 rfl
+  have h9 : (9 : Nat) = 0 := hk 1 "grain"
+  exact absurd h9 (by decide)
+
+/-- A number that stays after a round's end breaks it too. -/
+theorem a_number_that_stays_is_rejected :
+    ¬ DeclarationsKept (({ initialState auctionGame 2 42 [2] with phase := .actions, turnIndex := 1 }) : State auctionGame)
+      ({ initialState auctionGame 2 42 [2] with declared := fun _ _ => 9 })
+      .forceEndTurn := by
+  intro h
+  have h9 : (9 : Nat) = 0 := h.2.1 trivial (by decide +kernel) 0 "grain"
+  exact absurd h9 (by decide)
+
+/-! ## Proposing costs nothing -/
+
+/-- A law that takes everything every seat has been paid, each round. -/
+def drainLaw : Law :=
+  { title := "Drain"
+    clauses := [.onRoundEnd [.forEach .yes
+      [.transfer .each .bank (.lit "grain") (.holding .each (.lit "grain"))]]] }
+
+/-- A founding law drains everyone, and nobody holds anything. The law that repeals it is still accepted,
+and it writes no entry. A fee would have made this law impossible to repeal. -/
+theorem a_ruined_seat_can_ask_for_a_repeal :
+    ∃ s s', Reachable ({ giftGame drainLaw with foundingLaws := [drainLaw] } : GameDef) s ∧
+      Engine.step ({ giftGame drainLaw with foundingLaws := [drainLaw] } : GameDef) s
+        (.propose 0 (.law { title := "Repeal", clauses := [.repeal 0] })) = .ok s' ∧
+      newEntries s s' = [] :=
+  real_step (seats := 2) (serverSeed := 42) (nonces := [2]) (events := List.replicate 4 .forceEndTurn)
+    (by decide +kernel) (by decide) (by decide) (by decide +kernel)
+
+/-- A step that charges a seat for proposing a law is rejected. V lists every way money can leave a seat,
+and a proposal is not on it. -/
+theorem charging_to_propose_is_rejected :
+    ¬ MoneyLeavesSeatOnlyFor sevenGame sevenGame (.propose 0 (.law luckySeven))
+      ⟨.player 0, .bank, "grain", 1, .cost⟩ := by
+  intro h
+  rcases h 0 rfl with ⟨_, _, _, he, _⟩ | ⟨hr, _⟩ | ⟨_, _, hf, _⟩ | ⟨hr, _⟩
+  · cases he
+  · cases hr
+  · cases hf
+  · cases hr
+
+/-! ## What a resource is worth
+
+A law can say that a resource is worth points. Only a seat's own account counts. -/
+
+/-- Grain is worth a point, so holding it can win a game. -/
+def grainCounts : Law := { title := "Grain counts", clauses := [.setWorth "grain" 1] }
+
+/-- Tiny Settlers with `rollerGift` and grain worth a point, and a target of 15 points. -/
+def worthGame : GameDef :=
+  { tinySettlers with
+    name := "Worth"
+    diceCount := 2
+    diceSides := 6
+    targetPoints := 15
+    foundingLaws := [rollerGift, grainCounts] }
+
+theorem worthGame_valid : worthGame.Valid := by decide +kernel
+
+/-- What a state looks like after these events. -/
+def after2 (G : GameDef) (nonce : UInt64) (events : List Event) : Option (State G) :=
+  (Engine.replay G 2 42 [nonce] events).toOption
+
+/-- A real game. The first three rolls pay seat 0 10 grain, seat 1 5 grain and seat 0 3 grain. So seat 0
+has 13 points. A resource moves the score. -/
+example : ((after2 worthGame 2 (List.replicate 6 .forceEndTurn)).map (·.pointsOf 0)) = some 13 := by
+  decide +kernel
+
+/-- Later rolls take seat 0 past the target at a turn change, and the game goes on: a turn change does not
+look for a winner. -/
+def worthEvents : List Event := List.replicate 8 .forceEndTurn
+
+/-- At the end of those events, a seat is at the target and the game runs. -/
+example : ((after2 worthGame 2 worthEvents).map fun s =>
+    (s.phase, decide (15 ≤ s.pointsOf 0))) = some (.actions, true) := by decide +kernel
+
+/-- Any move or vote then ends the game, even one by another seat that moves nothing. So the winner is
+named the next time anyone acts. -/
+theorem a_seat_at_the_target_wins_at_the_next_move :
+    ∃ s s', Reachable worthGame s ∧ Engine.step worthGame s (.move 0 (.declare "grain" 0)) = .ok s' ∧
+      s.phase = .actions ∧ 15 ≤ s.pointsOf 0 ∧ s'.phase = .ended ∧ s'.winner = some 0 := by
+  have hc : (match Engine.replay worthGame 2 42 [2] worthEvents with
+      | .error _ => false
+      | .ok s =>
+        match Engine.step worthGame s (.move 0 (.declare "grain" 0)) with
+        | .error _ => false
+        | .ok s' => s.phase == .actions && decide (15 ≤ s.pointsOf 0) && s'.phase == .ended &&
+            s'.winner == some 0) = true := by decide +kernel
+  cases hr : Engine.replay worthGame 2 42 [2] worthEvents with
+  | error m => rw [hr] at hc; simp at hc
+  | ok s =>
+    rw [hr] at hc
+    cases hs : Engine.step worthGame s (.move 0 (.declare "grain" 0)) with
+    | error m => simp [hs] at hc
+    | ok s' =>
+      simp only [hs, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hc
+      obtain ⟨⟨⟨h1, h2⟩, h3⟩, h4⟩ := hc
+      exact ⟨s, s', ((X_what_you_vote_on_is_what_runs worthGame worthGame_valid).1 s).mpr
+        ⟨2, 42, [2], _, by decide, by decide, hr⟩, hs, h1, h2, h3, h4⟩
+
+/-- A move that does not end the game with a seat at the target is rejected: that is a false end. -/
+theorem no_win_at_the_target_is_rejected {s s' : State G} {e : Event} (h : Engine.step G s e = .ok s')
+    (hl : LooksForWinner e) (hp : p ∈ s'.turnOrder) (ht : G.targetPoints ≤ s'.pointsOf p) :
+    s'.phase = .ended :=
+  Proofs.looks_for_winner h hl ⟨p, hp, ht⟩
+
+/-- A deposit does not count. These books give seat 0 3 grain in a deposit and none in hand, so seat 0 has
+no points from them. -/
+example : (({ initialState worthGame 2 42 [2] with
+      books := fun a r => match a, r with
+        | .deposit 0 0, "grain" => 3
+        | _, _ => 0 } : State worthGame)).pointsOf 0 = 0 := by decide +kernel
+
+/-- A law that names no real resource is refused. -/
+theorem worth_of_nothing_is_rejected :
+    "there is no resource called gold" ∈ lawProblems tinySettlers (initialState tinySettlers 2 42 [3])
+      { title := "Gold", clauses := [.setWorth "gold" 1] } := by decide +kernel
+
+/-- Repealing the law takes the worth away. -/
+example : (({ initialState worthGame 2 42 [2] with
+      laws := [] ,
+      books := fun a r => match a, r with
+        | .player 0, "grain" => 3
+        | _, _ => 0 } : State worthGame)).pointsOf 0 = 0 := by decide +kernel
+
+/-! ## Moving pieces
+
+A law can take a seat's newest piece of a kind, at a round's end or on a roll. To the bank, it is destroyed.
+To a seat, it is seized. A seat keeps its last piece. -/
+
+/-- A list of pieces: seat 0 has a settlement with a mill on it and another settlement, and seat 1 has one. -/
+def movePieces : List Piece :=
+  [⟨0, "settlement", .spot 0⟩, ⟨0, "mill", .spot 0⟩, ⟨0, "settlement", .spot 3⟩, ⟨1, "settlement", .spot 6⟩]
+
+/-- Rules with a mill that attaches to a settlement, with a limit of 1 for each. -/
+def moveRules : Rules :=
+  { pieces := [ { name := "settlement", cost := [], points := 1, placement := .spot, yield := 1, limit := 2 }
+              , { name := "mill", cost := [], points := 1, placement := .attach "settlement", yield := 1, limit := 1 } ]
+    bankRate := 4, worth := [] }
+
+/-- The bank destroys the newest settlement, and the older one stays. -/
+example : applyOrder moveRules movePieces ⟨0, none, "settlement"⟩ =
+    [⟨0, "settlement", .spot 0⟩, ⟨0, "mill", .spot 0⟩, ⟨1, "settlement", .spot 6⟩] := by decide +kernel
+
+/-- A seizure keeps the piece where it is, and changes its owner. -/
+example : applyOrder moveRules movePieces ⟨0, some 1, "settlement"⟩ =
+    [⟨0, "settlement", .spot 0⟩, ⟨0, "mill", .spot 0⟩, ⟨1, "settlement", .spot 3⟩, ⟨1, "settlement", .spot 6⟩] := by
+  decide +kernel
+
+/-- What sits on a piece goes with it, and the seat's other settlement stays. -/
+example : applyOrder moveRules [⟨0, "settlement", .spot 3⟩, ⟨0, "settlement", .spot 0⟩, ⟨0, "mill", .spot 0⟩]
+      ⟨0, none, "settlement"⟩ = [⟨0, "settlement", .spot 3⟩] := by decide +kernel
+
+/-- A seat at its limit cannot receive a piece, so it is destroyed. -/
+example : applyOrder { moveRules with pieces := [ { name := "settlement", cost := [], points := 1, placement := .spot, yield := 1, limit := 1 } ] }
+      movePieces ⟨0, some 1, "settlement"⟩ =
+    [⟨0, "settlement", .spot 0⟩, ⟨0, "mill", .spot 0⟩, ⟨1, "settlement", .spot 6⟩] := by decide +kernel
+
+/-- A seat keeps its last piece: the order does nothing. Taking the settlement takes the mill on it, and that
+is all the seat has. -/
+example : applyOrder moveRules [⟨0, "settlement", .spot 0⟩, ⟨0, "mill", .spot 0⟩] ⟨0, none, "settlement"⟩ =
+    [⟨0, "settlement", .spot 0⟩, ⟨0, "mill", .spot 0⟩] := by decide +kernel
+
+/-- A step that takes a seat's last piece is rejected. -/
+theorem taking_the_last_piece_is_rejected :
+    ¬ SeatsKeepAPiece
+      ({ initialState tinySettlers 2 42 [2] with pieces := [⟨0, "settlement", .spot 0⟩] } : State tinySettlers)
+      (initialState tinySettlers 2 42 [2]) := by
+  intro h
+  obtain ⟨_, hx, _⟩ := h 0 ⟨⟨0, "settlement", .spot 0⟩, by simp, rfl⟩
+  cases hx
+
+/-- A piece that vanishes at a turn change with no law asking for it is rejected. -/
+theorem a_piece_vanishing_with_no_law_is_rejected :
+    ¬ PieceLeavesOnlyFor
+      ({ initialState tinySettlers 2 42 [2] with pieces := [⟨0, "settlement", .spot 0⟩] } : State tinySettlers)
+      (initialState tinySettlers 2 42 [2]) .forceEndTurn := by
+  intro h
+  rcases h ⟨0, "settlement", .spot 0⟩ (by simp) (by simp [initialState]) with ⟨_, _, he⟩ | ⟨_, L, hL, _⟩ | _
+  · cases he
+  · cases hL
+  · obtain ⟨_, ⟨_, _, _, he, _⟩, _⟩ := ‹∃ L, LawPasses _ _ L ∧ _›
+    cases he
+
+/-- A law that names a build or a harvest is refused, so commandment VII stays as it is. -/
+theorem moving_a_piece_on_a_build_is_rejected :
+    "a law can move a piece only at a round's end or on a roll" ∈
+      lawProblems tinySettlers (initialState tinySettlers 2 42 [2])
+        { title := "x", clauses := [.onBuild "road" [.movePiece .actor .bank "settlement"]] } := by
+  decide +kernel
+
+theorem moving_a_piece_on_a_harvest_is_rejected :
+    "a law can move a piece only at a round's end or on a roll" ∈
+      lawProblems tinySettlers (initialState tinySettlers 2 42 [2])
+        { title := "x", clauses := [.onHarvest [.movePiece .actor .bank "settlement"]] } := by
+  decide +kernel
+
+/-- A roll law takes the roller's newest road when the dice show anything. So in a real game the board changes. -/
+def roadTax : Law :=
+  { title := "Road tax", clauses := [.onRoll [.movePiece .actor .bank "road"]] }
+
+def roadGame : GameDef :=
+  { tinySettlers with name := "Road tax", diceCount := 2, diceSides := 6, foundingLaws := [roadTax] }
+
+theorem roadGame_valid : roadGame.Valid := by decide +kernel
+
+/-- Each seat places a settlement and a road, twice. On the roll that starts seat 0's turn, it loses its newest
+road and keeps everything else. -/
+def roadEvents : List Event :=
+  [ .move 0 (.place "settlement" (.spot 0)), .move 0 (.place "road" (.link (0, 1))), .move 0 .endTurn
+  , .move 1 (.place "settlement" (.spot 5)), .move 1 (.place "road" (.link (5, 6))), .move 1 .endTurn
+  , .move 1 (.place "settlement" (.spot 8)), .move 1 (.place "road" (.link (8, 9))), .move 1 .endTurn
+  , .move 0 (.place "settlement" (.spot 3)), .move 0 (.place "road" (.link (3, 4))) ]
+
+/-- A real game. After the last setup turn ends, seat 0 has lost the road it placed last. -/
+theorem a_law_really_takes_a_piece :
+    ∃ s s', Reachable roadGame s ∧ Engine.step roadGame s (.move 0 .endTurn) = .ok s' ∧
+      ⟨0, "road", .link (3, 4)⟩ ∈ s.pieces ∧ ⟨0, "road", .link (3, 4)⟩ ∉ s'.pieces ∧
+      ⟨0, "road", .link (0, 1)⟩ ∈ s'.pieces := by
+  have hc : (match Engine.replay roadGame 2 42 [2] roadEvents with
+      | .error _ => false
+      | .ok s =>
+        match Engine.step roadGame s (.move 0 .endTurn) with
+        | .error _ => false
+        | .ok s' => s.pieces.contains ⟨0, "road", .link (3, 4)⟩ && !s'.pieces.contains ⟨0, "road", .link (3, 4)⟩ &&
+            s'.pieces.contains ⟨0, "road", .link (0, 1)⟩) = true := by decide +kernel
+  cases hr : Engine.replay roadGame 2 42 [2] roadEvents with
+  | error m => rw [hr] at hc; simp at hc
+  | ok s =>
+    rw [hr] at hc
+    cases hs : Engine.step roadGame s (.move 0 .endTurn) with
+    | error m => simp [hs] at hc
+    | ok s' =>
+      simp only [hs, Bool.and_eq_true, Bool.not_eq_true', List.contains_iff_mem] at hc
+      obtain ⟨⟨h1, h2⟩, h3⟩ := hc
+      exact ⟨s, s', ((X_what_you_vote_on_is_what_runs roadGame roadGame_valid).1 s).mpr
+        ⟨2, 42, [2], _, by decide, by decide, hr⟩, hs, h1,
+        (fun hm => by rw [List.contains_iff_mem.mpr hm] at h2; cases h2), h3⟩
+
+/-! ## Decrees: a clause that fires once
+
+A `now` clause runs once, the moment its law passes. Nobody is the actor. A law of only such clauses does not
+join the laws in force and takes no slot. -/
+
+/-- The bank gives every seat 2 grain, once. -/
+def giftOnce : Law :=
+  { title := "One gift", clauses := [.now [.forEach .yes [.transfer .bank .each (.lit "grain") (.lit 2)]]] }
+
+/-- A law with a `now` part and a part that stays: every seat gets 2 grain now, and a road costs 1 brick. -/
+def giftAndRule : Law :=
+  { giftOnce with clauses := giftOnce.clauses ++ [.setCost "road" [("brick", 1)]] }
+
+def decreeEvents (L : Law) : List Event :=
+  List.replicate 4 .forceEndTurn ++ [.propose 0 (.law L), .vote 0 0 true]
+
+/-- The deciding vote moves the money, in a real game, and writes exactly the decree. -/
+theorem a_decree_moves_money :
+    ∃ s s', Reachable tinySettlers s ∧ Engine.step tinySettlers s (.vote 1 0 true) = .ok s' ∧
+      newEntries s s' = [⟨.bank, .player 0, "grain", 2, .lawEffect⟩, ⟨.bank, .player 1, "grain", 2, .lawEffect⟩] :=
+  real_step (seats := 2) (serverSeed := 42) (nonces := [25283273]) (events := decreeEvents giftOnce)
+    tinySettlers_valid (by decide) (by decide) (by decide +kernel)
+
+/-- A vote that pays only the seat that cast it is rejected. -/
+theorem a_decree_that_rewards_the_voter_is_rejected :
+    stepEntries tinySettlers 2 42 [25283273] (decreeEvents giftOnce) (.vote 1 0 true) ≠
+      some [⟨.bank, .player 1, "grain", 4, .lawEffect⟩] := by decide +kernel
+
+/-- The law takes no slot among the laws in force. A law with a part that stays does. -/
+example : ((after2 tinySettlers 25283273 (decreeEvents giftOnce ++ [.vote 1 0 true])).map (·.laws.length)) = some 0 := by
+  decide +kernel
+example : ((after2 tinySettlers 25283273 (decreeEvents giftAndRule ++ [.vote 1 0 true])).map (·.laws.length)) = some 1 := by
+  decide +kernel
+
+/-- It fires once. The law in force does nothing at later turn changes. -/
+example : stepEntries tinySettlers 2 42 [25283273] (decreeEvents giftAndRule ++ [.vote 1 0 true]) (.move 0 .endTurn) =
+    some [] := by decide +kernel
+
+/-- A decree cannot name the deciding voter. -/
+theorem a_decree_naming_the_actor_is_rejected :
+    "a rule that acts once has no acting player, so it cannot reward one" ∈
+      lawProblems tinySettlers (initialState tinySettlers 2 42 [2])
+        { title := "x", clauses := [.now [.when (.lt (.lit 0) (.points .actor)) [.transfer .bank .treasury (.lit "grain") (.lit 1)]]] } := by
+  decide +kernel
+
+/-- A founding law cannot be a decree. -/
+theorem a_founding_decree_is_invalid :
+    ¬ ({ tinySettlers with foundingLaws := [giftOnce] } : GameDef).Valid := by decide +kernel
+
+/-! ## Ending the game by law -/
+
+/-- A law that ends the game. -/
+def callIt : Law := { title := "Call it", clauses := [.endGame] }
+
+/-- The events up to the vote that decides it. -/
+def callEvents : List Event :=
+  List.replicate 4 .forceEndTurn ++ [.propose 0 (.law callIt), .vote 0 0 true]
+
+/-- In a real game, the deciding vote ends the game. A seat has the most points, or the earliest of those tied. -/
+theorem a_majority_can_end_the_game :
+    ∃ s s', Reachable tinySettlers s ∧ Engine.step tinySettlers s (.vote 1 0 true) = .ok s' ∧
+      s.phase = .actions ∧ s'.phase = .ended ∧ s'.winner = some 0 ∧ MajorityEndedTheGame s' := by
+  have hc : (match Engine.replay tinySettlers 2 42 [25283273] callEvents with
+      | .error _ => false
+      | .ok s =>
+        match Engine.step tinySettlers s (.vote 1 0 true) with
+        | .error _ => false
+        | .ok s' => s.phase == .actions && s'.phase == .ended && s'.winner == some 0 && s'.lawEnds) = true := by
+    decide +kernel
+  cases hr : Engine.replay tinySettlers 2 42 [25283273] callEvents with
+  | error m => rw [hr] at hc; simp at hc
+  | ok s =>
+    rw [hr] at hc
+    cases hs : Engine.step tinySettlers s (.vote 1 0 true) with
+    | error m => simp [hs] at hc
+    | ok s' =>
+      simp only [hs, Bool.and_eq_true, beq_iff_eq] at hc
+      obtain ⟨⟨⟨h1, h2⟩, h3⟩, h4⟩ := hc
+      obtain ⟨x, hx, hl⟩ := List.any_eq_true.mp h4
+      exact ⟨s, s', ((X_what_you_vote_on_is_what_runs tinySettlers tinySettlers_valid).1 s).mpr
+        ⟨2, 42, [25283273], _, by decide, by decide, hr⟩, hs, h1, h2, h3, x, hx, hl⟩
+
+/-- One yes of two seats is not a majority, so the game goes on. -/
+example : ((after2 tinySettlers 25283273 callEvents).map (·.phase)) = some .actions := by decide +kernel
+
+/-- A step that ends the game when no seat is at the target, no rounds ran out and no law says so is
+rejected. -/
+theorem an_unearned_end_is_rejected :
+    ¬ PhaseChangesOnlyByTurnOrWin (initialState tinySettlers 2 42 [2])
+      ({ initialState tinySettlers 2 42 [2] with phase := .ended }) (.move 0 (.bankTrade "grain" "wool")) := by
+  intro h
+  rcases h (by simp [EndsTurn]) with hp | ⟨_, ⟨p, hp, ht⟩ | ⟨x, hx, _⟩⟩
+  · cases hp
+  · have hzero : ({ initialState tinySettlers 2 42 [2] with phase := .ended } : State tinySettlers).pointsOf p = 0 := by
+      have hp' : p ∈ List.range 2 := hp
+      have hlt : p < 2 := List.mem_range.mp hp'
+      have : p = 0 ∨ p = 1 := Nat.le_one_iff_eq_zero_or_eq_one.mp (Nat.lt_succ_iff.mp hlt)
+      rcases this with rfl | rfl <;> decide +kernel
+    rw [hzero] at ht
+    exact absurd ht (by decide)
+  · cases hx
+
+/-- A founding law cannot end the game. -/
+theorem a_founding_end_is_invalid : ¬ ({ tinySettlers with foundingLaws := [callIt] } : GameDef).Valid := by
   decide +kernel
 
 /-- The conditions the theorems assume can be met: this new game is reachable. -/

@@ -77,8 +77,28 @@ def seatJson (g : Game) (s : Option (State g.spec.G)) (showPersona : Bool) (i : 
   | some st =>
     Json.mkObj (base ++
       [ ("points", toJson (st.pointsOf i))
+      , ("tokenPoints", toJson (st.tokenPointsOf i))
       , ("hand", handJson st (.player i))
       , ("pieces", Json.mkObj (st.rules.pieces.map fun d => (d.name, toJson (st.countOf i d.name)))) ])
+
+/-- What seats have declared. The screen stays quiet about this until a law in force or a proposal reads
+declarations. Then it shows everyone's numbers and a control on the seat's own turn. -/
+def declarationsJson (s : State G) (you : Option Nat) : Json :=
+  let reads (L : Law) : Bool := Rules.lawReadsDeclared L
+  let inUse := s.laws.any (reads ·.2) ||
+    s.openProposals.any fun p => match p.body with
+      | .law L => reads L
+      | .deal _ => false
+  let rows := s.turnOrder.flatMap fun p =>
+    (G.resources.map (·.name)).filterMap fun r =>
+      let n := s.declared p r
+      if n == 0 then none else
+      some (Json.mkObj [("seat", toJson p), ("res", r), ("n", toJson n)])
+  let can := match you, G.resources.head? with
+    | some y, some r => (Engine.step G { s with journal := [] } (.move y (.declare r.name 0))).toOption.isSome
+    | _, _ => false
+  Json.mkObj [("inUse", toJson inUse), ("can", toJson can), ("max", toJson maxDeclared),
+    ("rows", Json.arr rows.toArray)]
 
 def placementName : Placement → String
   | .link => "link"
@@ -144,14 +164,6 @@ def promptOf (g : Game) (s : State G) (you : Option Nat) (legal : List Move) : J
   | _, _ =>
     let _ := g
     Json.null
-
-def feeJson {G : GameDef} (s : State G) (you : Option Nat) : Json :=
-  let short := match you with
-    | some y => shortOf s y G.lawFee
-    | none => []
-  Json.mkObj
-    [ ("cost", bundleJson G.lawFee), ("short", bundleJson short)
-    , ("canPay", toJson short.isEmpty) ]
 
 /-- A law's preview for this viewer, and whether it has moved on since the law was proposed. -/
 def previewFor (g : Game) (s : State g.spec.G) (you : Option Nat) (id : Nat) (L : Law) : Json × Bool :=
@@ -275,12 +287,13 @@ def view (g : Game) (code : String) (you : Option Nat) (drafting : List Nat) (bo
       , ("turn", toJson s.currentSeat), ("lastRoll", toJson s.lastRoll)
       , ("rollsMade", toJson s.rollsMade)
       , ("target", toJson G.targetPoints), ("bankRate", toJson s.rules.bankRate)
-      , ("fee", feeJson s you)
       , ("prompt", promptOf g s you legal)
       , ("seats", Json.arr (s.turnOrder.map (seatJson g (some s) showPersona)).toArray)
       , ("pieces", Json.arr (s.pieces.map pieceJson).toArray)
       , ("pieceDefs", Json.arr (s.rules.pieces.map (pieceDefJson s you legal)).toArray)
       , ("treasury", handJson s .treasury), ("bank", handJson s .bank)
+      , ("worth", Json.arr (s.rules.worth.map fun x => Json.mkObj [("res", x.1), ("points", toJson x.2)]).toArray)
+      , ("declarations", declarationsJson s you)
       , ("legalMoves", Json.arr (legal.map (moveEntry g.spec.layout s)).toArray)
       , ("proposals", Json.arr (s.openProposals.map (proposalJson g s book you)).toArray)
       , ("laws", Json.arr (s.laws.map (lawJson g book)).toArray)
@@ -321,7 +334,6 @@ def reviewJson (g : Game) (book : Describe.Book) (you : Nat) (formal : String) (
     Json.mkObj
       [ ("kind", kind), ("title", title), words, ("difference", toJson difference)
       , ("preview", preview), ("text", Rules.printProposal p)
-      , ("fee", if kind == "law" then feeJson s (some you) else Json.null)
       , ("canPropose", toJson (s.phase == .actions)) ]
   | _, _ => Json.null
 
@@ -360,9 +372,7 @@ def explain (g : Game) (ev : Json) (raw : String) : String :=
   match g.state, seat with
   | some s, some y =>
     if raw == "an entry cannot be posted in full" then
-      if t == "propose" then
-        s!"You cannot pay the fee of {shortText g.spec.G.lawFee}. You need {shortText (shortOf s y g.spec.G.lawFee)} more."
-      else if moveT == some "place" then
+      if moveT == some "place" then
         let k := ((jField ev "move").bind (jStr · "kind")).getD "piece"
         s!"You cannot pay for {Text.article k}. You need {shortText (shortOf s y (s.costOf k))} more."
       else if moveT == some "bankTrade" then
