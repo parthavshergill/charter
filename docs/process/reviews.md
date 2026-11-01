@@ -336,7 +336,7 @@ The griefer in `make sim` ran on an older build, so it did not try this.
 
 ## How the checks work
 
-- **Axiom audit:** `make audit` fails if any theorem in a `Charter` module rests on an axiom other than `propext`, `Classical.choice` and `Quot.sound`. So a `sorry` fails it. It also replays the proofs through `leanchecker`, and scans for banned constructs.
+- **Axiom audit:** `make audit` fails if any theorem it checks rests on an axiom other than `propext`, `Classical.choice` and `Quot.sound`. So a `sorry` fails it. It also replays the proofs through `leanchecker`, and scans for banned constructs.
 - **Statement lock:** `make audit` also fails if a file that states the promises or defines their words has changed. Changing the lock needs the owner's approval.
 - **Claim checker:** `Charter/EngineTests.lean` tests each commandment, as far as it can be computed, on every accepted step of concrete and random games.
 - **Mutation testing:** this broke the engine on purpose to confirm the tests noticed. It is not kept in this repository, so it cannot be run again from here.
