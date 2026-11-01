@@ -10,6 +10,7 @@ import Charter.Games.IslandTests
 import Charter.Games.Belt
 import Charter.Games.NotCatan
 import Charter.Games.NotCatanTests
+import Charter.Games.SlimeParliament
 import Charter.Scene.Belt
 import Charter.Games.Witnesses
 import Charter.Scene.OfState

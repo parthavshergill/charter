@@ -33,3 +33,7 @@ root = "Server.Main"
 [[lean_exe]]
 name = "charter-sim"
 root = "Server.Sim"
+
+[[lean_exe]]
+name = "charter-contact"
+root = "Server.ContactSheet"

@@ -106,10 +106,14 @@ structure Theme where
   ownModel : PieceKind → Nat → Option (List Part) := fun _ _ => none
   /-- The model of a piece a law made, by its name and seat. It has its name over it. -/
   madeModel : String → Nat → List Part := lawPieceModel
+  /-- The directions a piece may stand from the piece it attaches to. -/
+  attachAngles : List Float := [0.0, pi / 3.0, -pi / 3.0, pi, 2.0 * pi / 3.0, -2.0 * pi / 3.0]
   /-- The colour of each seat. The model functions above use the same colours. -/
   seats : List UInt32 := seatColors
   /-- This world's mesh files, as `defineMeshFile` commands, with ids above the primitives' ids. -/
   meshDefs : List Cmd := []
+  /-- How many triangles each mesh file has, by id, for the build check. -/
+  meshTriangles : List (UInt32 × Nat) := []
   /-- What a tile is, by resource and seed, standing on the tile's base. Empty means the plain hex in
   the colour `ground`. The board stays a hex layout: pieces stand on the corners at height `top`. -/
   tileTop : Option Res → Nat → List Part := fun _ _ => []
@@ -417,7 +421,7 @@ def spotCmds (inp : Input) (j : Nat) (b : SpotPiece) : List Cmd :=
   let (x, z) := b.v.toPixel 1.0
   let seed := 613 * (j + 11)
   let turnOf := match b.shape with
-    | .custom k _ => pickFrom [0.0, pi / 3.0, -pi / 3.0, pi, 2.0 * pi / 3.0, -2.0 * pi / 3.0] (hashText k) (j % 3)
+    | .custom k _ => pickFrom inp.theme.attachAngles (hashText k) (j % 3)
     | _ => pickFrom [0.0, pi / 3.0, -pi / 3.0, pi] seed 1
   let (body, offset) : List Part × (Float × Float) := match b.shape with
     | .settlement => (inp.theme.smallModel seed b.owner inp.round, (0, 0))

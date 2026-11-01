@@ -197,7 +197,7 @@ def extension_pack(srv):
     limited, a counter stays off the screen, and bots play it to the end. Returns a table to check after
     a restart."""
     defs = {d["id"]: d for d in srv.get("/api/defs")}
-    check(list(defs) == ["island", "belt", "not-catan"], "the lobby lists the base game first, then the packs")
+    check(list(defs) == ["island", "belt", "not-catan", "slime-parliament"], "the lobby lists the base game first, then the packs")
     check(all(d["name"] and d["blurb"] for d in defs.values()), "each pack has a name and a sentence")
     check(defs["not-catan"]["minSeats"] == 3 and defs["not-catan"]["maxSeats"] == 4, "a pack says how many seats it supports")
     for n in (2, 5):

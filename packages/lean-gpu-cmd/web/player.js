@@ -73,6 +73,7 @@ function dropCurve(t) {
 const squash = (t) => (t > 0.55 && t < 0.85 ? Math.sin(Math.PI * (t - 0.55) / 0.3) : 0);
 
 const MOVE_MS = 350, APPEAR_MS = 460, VANISH_MS = 220;
+const reduceMotion = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 // ---------------------------------------------------------------- geometry
 
@@ -457,7 +458,9 @@ export class GpuPlayer {
       const g = this.geoms.get(c.mesh);
       if (!g) { console.warn(`gpc: draw of undefined mesh ${c.mesh}`); return null; }
       it.mesh = c.mesh;
-      const mat = new THREE.MeshStandardMaterial({ color: it.to.color, roughness: 0.55, metalness: 0.04 });
+      it.motion = g.motion ?? null;
+      it.phase = (c.pos[0] * 2.7 + c.pos[2] * 4.1) % (2 * Math.PI);
+      const mat = new THREE.MeshStandardMaterial({ color: it.to.color, roughness: 0.55, metalness: 0.04, vertexColors: !!g.colored, flatShading: !!g.colored });
       it.obj = new THREE.Mesh(g.geo, mat);
       it.obj.castShadow = it.to.opacity > 0.6;
       it.obj.receiveShadow = true;
@@ -560,7 +563,7 @@ export class GpuPlayer {
         const wave = Math.sin(now * 0.0017 + it.phase), mo = it.motion;
         if (mo.pulse) o.scale.multiplyScalar(1 + mo.pulse * wave);
         if (mo.sway) { o.rotation.x = mo.sway * wave; o.rotation.z = mo.sway * Math.cos(now * 0.0013 + it.phase); }
-        if (mo.glow) m.emissive.addScaledVector(mo.tint, mo.glow * (0.5 + 0.5 * wave));
+        if (mo.glow) { const g = mo.glow * (0.5 + 0.5 * wave); m.emissive.r += color.r * mo.tint.r * g; m.emissive.g += color.g * mo.tint.g * g; m.emissive.b += color.b * mo.tint.b * g; }
       }
       if (it.outline) {
         it.outline.material.opacity = (0.55 + 0.45 * pulse) * Math.min(1, opacity * 1.5);
@@ -754,7 +757,7 @@ export class GpuPlayer {
     return { meshes: this.items.filter((i) => !i.label).length, labels: this.items.filter((i) => i.label).length,
       pickables: new Set(this.items.filter((i) => i.pick).map((i) => i.pick)).size, highlights: this.highlights.size,
       animating: this.items.filter((i) => i.anim).length + this.dying.length, hover: this.hoverId,
-      moving: this.items.filter((i) => i.motion).length, triangles: this.renderer.info.render.triangles, calls: this.renderer.info.render.calls,
+      moving: this.items.filter((i) => i.motion).length, triangles: this.items.reduce((n, i) => { const g = i.obj.geometry; return i.label ? n : n + (g.index ? g.index.count : g.attributes.position.count) / 3; }, 0),
       meshFiles: [...this.meshFiles.values()].filter(Boolean).length, standIns: [...this.meshFiles.values()].filter((g) => !g).length };
   }
 
@@ -785,10 +788,11 @@ export class GpuPlayer {
     }
     const kh = 1 - Math.exp(-dt * 14);
     const t = performance.now();
+    this.still = reduceMotion();
     for (const it of this.items) {
       const h = it.pick && it.pick === id ? 1 : 0;
       it.hover = Math.abs(h - it.hover) < 1e-3 ? h : it.hover + (h - it.hover) * kh;
-      const busy = it.anim || it.hover || it.dirty || this.highlights.has(it.pick);
+      const busy = it.anim || it.hover || it.dirty || this.highlights.has(it.pick) || (it.motion && !this.still);
       if (busy || it.wasBusy) this._apply(it, t);  // one extra frame to settle cosmetics
       it.wasBusy = !!busy;
       it.dirty = false;

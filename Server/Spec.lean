@@ -1,6 +1,7 @@
 import Charter.Games.Island
 import Charter.Games.Belt
 import Charter.Games.NotCatan
+import Charter.Games.SlimeParliament
 import Charter.Scene.OfState
 import Charter.Scene.Belt
 import Charter.Scene.LookCheck
@@ -100,10 +101,24 @@ def notCatanSpec : GameSpec :=
     rollNotes := [(7, alarmNote)]
     upNote := alarmNote }
 
+def slimeSpec : GameSpec :=
+  { id := "slime-parliament"
+    name := "Slime Parliament"
+    blurb := "Rival slime moulds spread along a damp log and pass laws about oats. Towns pulse, and the big ones wear wigs."
+    G := Games.SlimeParliament.game
+    valid := Games.SlimeParliament.game_valid
+    layout :=
+      { tiles := Games.SlimeParliament.tiles, spots := Games.SlimeParliament.spots, edges := Games.SlimeParliament.edges
+        links := Games.SlimeParliament.links, theme := Games.SlimeParliament.theme, word := "the log" }
+    minSeats := 2
+    maxSeats := 4
+    meshFolder := "packs/slime-parliament/meshes"
+    guide := "You are a slime mould on a damp log. Oats, dew, rot and spores are the goods. A tendril costs oats and dew. A node costs oats, dew and rot. A swelling replaces a node. A puffball attaches to a node, costs spores, and gives every seat a spore. The founding laws say more." }
+
 instance : Inhabited GameSpec := ⟨islandSpec⟩
 
 /-- Every game this server can run. The first is the default. -/
-def gameSpecs : List GameSpec := [islandSpec, beltSpec, notCatanSpec]
+def gameSpecs : List GameSpec := [islandSpec, beltSpec, notCatanSpec, slimeSpec]
 
 /-- The game with this id. A log entry with no id is from before there was a choice: it is the Island. -/
 def specOf? (id : Option String) : Option GameSpec :=

@@ -277,7 +277,7 @@ export class GpuPlayer {
     this.geoms = new Map();     // mesh id -> {key, geo, colored, motion, sha}
     this.assetBase = opts.assetBase ?? '/assets';
     this.meshFiles = new Map(); // sha -> the file's geometry once loaded, null before then or if it failed
-    this.motionAt = 0;
+    this.motionAt = 0; this.motionSlow = 0;
     this.items = [];            // live objects
     this.dying = [];            // objects fading out
     this.highlights = new Map();
@@ -561,7 +561,7 @@ export class GpuPlayer {
         const wave = Math.sin(now * 0.0017 + it.phase), mo = it.motion;
         if (mo.pulse) o.scale.multiplyScalar(1 + mo.pulse * wave);
         if (mo.sway) { o.rotation.x = mo.sway * wave; o.rotation.z = mo.sway * Math.cos(now * 0.0013 + it.phase); }
-        if (mo.glow) m.emissive.addScaledVector(mo.tint, mo.glow * (0.5 + 0.5 * wave));
+        if (mo.glow) { const g = mo.glow * (0.5 + 0.5 * wave); m.emissive.r += color.r * mo.tint.r * g; m.emissive.g += color.g * mo.tint.g * g; m.emissive.b += color.b * mo.tint.b * g; }
       }
       if (it.outline) {
         it.outline.material.opacity = (0.55 + 0.45 * pulse) * Math.min(1, opacity * 1.5);
@@ -748,7 +748,7 @@ export class GpuPlayer {
     return { meshes: this.items.filter((i) => !i.label).length, labels: this.items.filter((i) => i.label).length,
       pickables: new Set(this.items.filter((i) => i.pick).map((i) => i.pick)).size, highlights: this.highlights.size,
       animating: this.items.filter((i) => i.anim).length + this.dying.length, hover: this.hoverId,
-      moving: this.items.filter((i) => i.motion).length, triangles: this.renderer.info.render.triangles, calls: this.renderer.info.render.calls,
+      moving: this.items.filter((i) => i.motion).length, triangles: this.items.reduce((n, i) => { const g = i.obj.geometry; return i.label ? n : n + (g.index ? g.index.count : g.attributes.position.count) / 3; }, 0),
       meshFiles: [...this.meshFiles.values()].filter(Boolean).length, standIns: [...this.meshFiles.values()].filter((g) => !g).length };
   }
 
@@ -785,10 +785,14 @@ export class GpuPlayer {
     const t = performance.now();
     const fx = id && this.hoverFx(id) ? id : 0;
     let animating = false;
-    // Things that move by themselves are drawn at 30 frames a second, and their shadows stay put.
-    this.still = reduceMotion();
+    // Things that move by themselves are drawn at 30 frames a second, and their shadows stay put. A
+    // machine that cannot keep up at 10 frames a second gets a still board instead of a slow one.
+    this.still = reduceMotion() || this.motionSlow >= 20;
     const moveNow = !this.still && t - this.motionAt >= 32;
-    if (moveNow) this.motionAt = t;
+    if (moveNow) {
+      this.motionSlow = t - this.motionAt > 100 && this.motionAt ? this.motionSlow + 1 : 0;
+      this.motionAt = t;
+    }
     for (const it of this.items) {
       const h = it.pick && it.pick === fx ? 1 : 0;
       it.hover = Math.abs(h - it.hover) < 1e-3 ? h : it.hover + (h - it.hover) * kh;

@@ -8,6 +8,7 @@ words what is missing, so the person or agent adding a pack can act on the messa
 -/
 
 namespace Charter.Scene
+open GpuCmd
 
 /-- The marks drawn in `web/icons.js`. -/
 def builtinMarks : List String :=
@@ -22,12 +23,10 @@ def colorTokens : List String :=
 /-- The fonts a pack can choose, as in `web/look.js`. -/
 def fontNames : List String := ["", "book", "slab", "humanist", "rounded", "typewriter"]
 
-/-- The most triangles one model may have, and the most mesh file triangles one full scene may have.
-`docs/process/reskins.md` says how these were measured. `web/vendor/meshfile.js` refuses a file over
-the size for the ground. -/
-def maxModelTriangles : Nat := 1500
-def maxGroundTriangles : Nat := 12000
-def maxSceneTriangles : Nat := 150000
+/-- The most mesh file triangles one model and one full board may have. `docs/process/reskins.md` says
+how these were measured. `web/vendor/meshfile.js` also refuses any one file over 12000. -/
+def maxModelTriangles : Nat := 5000
+def maxSceneTriangles : Nat := 200000
 
 def isHexColor (s : String) : Bool :=
   match s.toList with
@@ -64,6 +63,32 @@ def pieceModel (t : Theme) (d : PieceDef) (seat : Nat) : Option (List Part) :=
     | some .settlement => some (t.smallModel 7 seat 0)
     | some .city => some (t.largeModel 7 seat 0)
     | _ => t.ownModel d.name seat
+
+/-- How many mesh file triangles these commands draw. -/
+def trianglesIn (t : Theme) (cmds : List Cmd) : Nat :=
+  (cmds.map fun
+    | .draw m _ _ _ => ((t.meshTriangles.find? (·.1 == m)).map (·.2)).getD 0
+    | _ => 0).sum
+
+/-- A board as full as the game's limits allow, with a monument for each of 16 laws. -/
+def fullBoard (G : GameDef) (L : Layout) (seats : Nat) : Input :=
+  let count (d : PieceDef) : Nat := d.limit * seats
+  let onSpots := G.pieces.filter fun d => match d.placement with
+    | .link => false
+    | _ => true
+  let spotKinds := (onSpots.flatMap fun d => List.replicate (count d) d)
+  let spotPieces := (spotKinds.zip (List.range spotKinds.length)).filterMap fun (d, i) =>
+    (L.spots[i % max 1 L.spots.length]?).map fun v =>
+      { v, owner := i % seats, id := i
+        shape := (L.theme.shape d.name).getD (.custom d.name (match d.placement with
+          | .attach _ => true
+          | _ => false)) : SpotPiece }
+  let linkKinds := (G.pieces.filter fun d => match d.placement with
+    | .link => true
+    | _ => false).flatMap fun d => List.replicate (count d) d
+  let linkPieces := (linkKinds.zip L.edges).map fun (d, e) => { e, owner := 0, kind := d.name : LinkPiece }
+  { theme := L.theme, tiles := L.tiles, chance := fun _ => 3, spotPieces, linkPieces, round := 20, treasuryTotal := 40
+    laws := (List.range 16).map fun i => (i, MonumentKind.cost) }
 
 /-- Everything a pack's look lacks or has wrong, in words. Empty means it is complete. -/
 def lookProblems (G : GameDef) (L : Layout) : List String :=
@@ -109,6 +134,11 @@ def lookProblems (G : GameDef) (L : Layout) : List String :=
       else if sha.length == 64 && sha.toList.all (fun c => c.isDigit || ('a' ≤ c && c ≤ 'f')) then none
       else some s!"mesh id {id} does not have a SHA-256"
     | _ => some "meshDefs holds a command that is not defineMeshFile"
-  resources ++ pieces ++ icons ++ tokens ++ readable ++ fonts ++ monuments ++ meshes
+  let heavy := G.pieces.filterMap fun d =>
+    let n := trianglesIn t (((pieceModel t d 0).getD []).map (·.at 0 0 0))
+    if n > maxModelTriangles then some s!"piece {d.name} has {n} triangles, over the {maxModelTriangles} a model may have" else none
+  let full := trianglesIn t (render (fullBoard G L 4))
+  let scene := if full > maxSceneTriangles then [s!"a full board has {full} triangles, over the {maxSceneTriangles} a scene may have"] else []
+  resources ++ pieces ++ icons ++ tokens ++ readable ++ fonts ++ monuments ++ meshes ++ heavy ++ scene
 
 end Charter.Scene
