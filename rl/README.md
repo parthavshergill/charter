@@ -162,6 +162,17 @@ eval only).
 - **Setup:** the mask does not offer end turn in a setup turn while a placement is legal (the engine allows it, and
   policies gave up free opening pieces that way).
 
+**Pointless declarations** (`prune_declares = 1`, off by default, so older checkpoints evaluate as before): the
+mask no longer offers a declaration that would change nothing: the number the seat has already declared of that good
+this round, or a good that no law in force and no open proposal reads (a law reading the declaration of a good it does
+not name keeps every good's). `declare_once_per_turn = 1` also offers each good at most once per turn, since only the
+last number counts when laws read them at a round's end; a law that reads declarations at a build could make a
+mid-turn revision matter, so that one is a choice. The engine still accepts every declaration, and a person can
+still make them. `charter-rl-check` plays games with them on: no repeats and no unread declarations; on Pirate
+Republic seats still declare ballots and the hat changes hands. `rl/eval` reports the subject's declarations per
+game and most in one turn in every table, and each saved game's summary gives them per seat. `rl/RUN_A_POLICY.md`
+lists what the server's mask must mirror.
+
 **Warning:** with `declare_always = 1` and `stale_wait = 0`, `attention2` found self-play learning to fill its turns
 with free declarations (217 to 383 a game) and stop building: a `REWARD-HACK` through the critic's blind waiting rows.
 Use it only with `stale_wait = 1`, and count declarations in the saved games.

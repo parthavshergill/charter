@@ -61,6 +61,8 @@ structure Env where
   reach : Array Bool := #[]
   /-- The last bank trade a caller made: the turn (`turnsTaken`), the seat, what it gave and what it got. -/
   lastTrade : Option (Nat × Nat × Res × Res) := Option.none
+  /-- The goods each caller declared this turn: the turn (`turnsTaken`), the seat, the good. -/
+  declaredLog : List (Nat × Nat × Res) := []
   /-- The last `step` was refused. -/
   refused : Bool := false
   /-- Each seat's pips when setup ended. -/
@@ -367,6 +369,14 @@ def Env.start (T : Tables) (settings : Settings) (lineup : Array SeatPlan) (seed
       pointsSeen := Array.replicate seats 0, rewards := seatZeros, shareVotes }
   return (Env.settle e e.fuel).reckon
 
+/-- The goods the deciding seat has declared this turn, if `declareOncePerTurn`. -/
+def Env.declaredNow (e : Env) : List Res :=
+  if !e.settings.declareOncePerTurn then [] else
+  match e.decision with
+  | .turn seat => e.declaredLog.filterMap fun (t, q, r) =>
+      if t == e.play.state.turnsTaken && q == seat then some r else Option.none
+  | _ => []
+
 /-- The bank trade that would reverse the deciding seat's last bank trade of this turn, if `blockUndoTrades`. -/
 def Env.undo (e : Env) : Option (Res × Res) :=
   if !e.settings.blockUndoTrades then Option.none else
@@ -385,7 +395,11 @@ def Env.step (e : Env) (action : Nat) : Env :=
     let undoes := match ev, e.undo with
       | .move _ (.bankTrade g h), some u => u == (g, h)
       | _, _ => false
-    if undoes == true then bad else
+    let pruned := match ev with
+      | .move q (.declare r n) =>
+        e.settings.pruneDeclares && (!declareChanges e.play.state q r n || e.declaredNow.contains r)
+      | _ => false
+    if undoes == true || pruned == true then bad else
     match Engine.step e.G e.play.state ev with
     | .error _ => bad
     | .ok s' =>
@@ -393,19 +407,25 @@ def Env.step (e : Env) (action : Nat) : Env :=
       let lastTrade := match ev with
         | .move q (.bankTrade g h) => some (e.play.state.turnsTaken, q, g, h)
         | _ => e.lastTrade
+      let turn := e.play.state.turnsTaken
+      let declaredLog := match ev with
+        | .move q (.declare r _) => (turn, q, r) :: e.declaredLog.filter (·.1 == turn)
+        | _ => e.declaredLog
       let e' := ({ e with
         play := e.play.commit {} table ev s'
         refused := false
         decisions := e.decisions + 1
-        lastTrade } : Env).note ev
+        lastTrade, declaredLog } : Env).note ev
       (Env.settle e' e'.fuel).reckon
 
 /-- The numbers for the seat that must decide. -/
 def Env.observation (e : Env) : FloatArray :=
   observe e.T e.ep e.ctx e.settings e.base e.play.state e.decision e.places e.free e.reach e.preview e.undo
+    e.declaredNow
 
 /-- The actions on offer. -/
-def Env.legalActions (e : Env) : List (Nat × Event) := legal e.T e.ep e.places e.play.state e.decision e.undo
+def Env.legalActions (e : Env) : List (Nat × Event) :=
+  legal e.T e.ep e.places e.play.state e.decision e.undo e.settings.pruneDeclares e.declaredNow
 
 def Env.mask (e : Env) : ByteArray := maskOf e.legalActions
 
@@ -499,7 +519,7 @@ private def readBool (j : Json) (k : String) (dflt : Bool) : Except String Bool 
 def readSettings (j : Json) : Except String Settings := do
   let known := ["game", "seats", "lineup", "seed", "law_every", "vote_mode", "move_rows", "preview", "random_map",
     "slot_order", "reward_win", "reward_standing", "shaping_points", "record", "declare_always", "shaping_relative",
-    "shaping_gamma", "block_undo_trades"]
+    "shaping_gamma", "block_undo_trades", "prune_declares", "declare_once_per_turn"]
   match j.getObj? with
   | .error _ => throw "a configuration must be an object"
   | .ok kvs =>
@@ -536,7 +556,9 @@ def readSettings (j : Json) : Except String Settings := do
       declareAlways := ← readBool j "declare_always" d.declareAlways
       shapingRelative := ← readFloat j "shaping_relative" d.shapingRelative
       shapingGamma := ← readFloat j "shaping_gamma" d.shapingGamma
-      blockUndoTrades := ← readBool j "block_undo_trades" d.blockUndoTrades }
+      blockUndoTrades := ← readBool j "block_undo_trades" d.blockUndoTrades
+      pruneDeclares := ← readBool j "prune_declares" d.pruneDeclares
+      declareOncePerTurn := ← readBool j "declare_once_per_turn" d.declareOncePerTurn }
 
 /-- One seat of a lineup: `caller`, a strategy's name, or `first+then` for one thing in setup and another after. -/
 def readSeat (text : String) : Except String SeatPlan := do

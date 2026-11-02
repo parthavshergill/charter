@@ -17,7 +17,7 @@ def report (bad : IO.Ref Nat) (ok : Bool) (what : String) : IO Unit := do
 def maskLine (c : MaskCount) : String :=
   s!"decisions={c.decisions} actions={c.actions} offered={c.offered} offered_refused={c.offeredRefused} " ++
   s!"missing={c.missing} declare_not_offered={c.declareNotOffered} move_while_voting={c.moveWhileVoting} " ++
-  s!"placements={c.placements} place_overflow={c.placeOverflow} end_in_setup={c.endInSetup} undo_trade={c.undoTrade}" ++
+  s!"placements={c.placements} place_overflow={c.placeOverflow} end_in_setup={c.endInSetup} undo_trade={c.undoTrade} declare_pruned={c.declarePruned}" ++
   (if c.firstError == "" then "" else s!" first_error=\"{c.firstError}\"")
 
 def main (args : List String) : IO UInt32 := do
@@ -53,6 +53,28 @@ def main (args : List String) : IO UInt32 := do
     let c := maskTest T { policyVotes with declareAlways := true } 4 1 (·.mask) 300
     report bad (c.errors == 0 && c.declareNotOffered == 0 && c.offered > 0)
       s!"mask {id} declare_always: {maskLine c}"
+  -- prune_declares: the mask still agrees with the engine, no game repeats a declaration or declares a good no law
+  -- reads, and on Pirate Republic seats still declare ballots and take the hat.
+  for id in ["island", "not-catan", "pirate-republic", "main-pirate-republic", "ai-bubble", "main-the-pit", "pack-train"] do
+    let some T := (tablesOf? id).orElse fun _ => Pack.tables? id | report bad false s!"no game {id}"; continue
+    let seats := min 4 T.maxSeats
+    let pruned : Settings := { policyVotes with declareAlways := true, pruneDeclares := true, lawEvery := 4 }
+    let m := maskTest T pruned seats 1 (·.mask) 300
+    report bad (m.errors == 0 && m.offered > 0) s!"mask {id} prune_declares: {maskLine m}"
+    let on := declareTest T pruned seats (if quick then 6 else 20)
+    let off := declareTest T { pruned with pruneDeclares := false } seats (if quick then 6 else 20)
+    let hatOk := !id.endsWith "pirate-republic" || (on.hatGames > 0 && on.declarations > 0)
+    report bad (on.repeats == 0 && on.unread == 0 && hatOk)
+      (s!"prune_declares {id}: with it {on.declarations} declarations in {on.games} games, {on.repeats} repeats, " ++
+       s!"{on.unread} of goods no law reads, at most {on.mostInTurn} in a turn, the hat changed hands in {on.hatGames} games; " ++
+       s!"without it {off.declarations} declarations, {off.repeats} repeats, {off.unread} unread, at most " ++
+       s!"{off.mostInTurn} in a turn, the hat changed hands in {off.hatGames} games")
+    let once := declareTest T { pruned with declareOncePerTurn := true } seats (if quick then 6 else 20)
+    let mo := maskTest T { pruned with declareOncePerTurn := true } seats 1 (·.mask) 300
+    report bad (once.repeats == 0 && once.unread == 0 && once.twiceInTurn == 0 && mo.errors == 0 &&
+        (!id.endsWith "pirate-republic" || once.hatGames > 0))
+      (s!"declare_once_per_turn {id}: {once.declarations} declarations, {once.twiceInTurn} of a good twice in a turn, " ++
+       s!"at most {once.mostInTurn} in a turn, the hat changed hands in {once.hatGames} games; mask errors {mo.errors}")
   -- The held-out games, more briefly, at every seat count they allow.
   for id in allIds.filter (!trainIds.contains ·) do
     let some T := tablesOf? id | continue

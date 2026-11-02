@@ -511,7 +511,7 @@ private def writePlaces (a : FloatArray) (T : Tables) (ctx : Ctx G) (ep : Episod
 /-- The whole observation for the seat that must decide. `base` is the game's template. -/
 def observe (T : Tables) (ep : Episode) (ctx : Ctx G) (settings : Settings) (base : FloatArray) (s : State G)
     (d : Decision) (places : Array Move) (free reach : Array Bool) (pv : Option Preview)
-    (undo : Option (Res × Res) := Option.none) : FloatArray := Id.run do
+    (undo : Option (Res × Res) := Option.none) (declaredNow : List Res := []) : FloatArray := Id.run do
   let some me := d.seat? | return base
   let mut a := base
   let seats := s.turnOrder.length
@@ -667,7 +667,7 @@ def observe (T : Tables) (ep : Episode) (ctx : Ctx G) (settings : Settings) (bas
     -- The table has `maxMoveRows` rows, and a decision can have more legal actions (declarations and bank trades on
     -- worlds with many goods). So the rows come in the order that keeps what matters most: ending the turn and votes,
     -- then placements, then bank trades, then declarations. Each row names its action.
-    let acts := legal T ep places s d undo
+    let acts := legal T ep places s d undo settings.pruneDeclares declaredNow
     let rank : Event → Nat
       | .move _ (.place ..) => 1
       | .move _ (.bankTrade ..) => 2

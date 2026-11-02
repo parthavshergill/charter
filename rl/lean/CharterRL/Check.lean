@@ -57,6 +57,8 @@ structure MaskCount where
   endInSetup : Nat := 0
   /-- Not offered on purpose: a bank trade that reverses the seat's last one this turn. -/
   undoTrade : Nat := 0
+  /-- Not offered on purpose, under `pruneDeclares`: a declaration that would change nothing. -/
+  declarePruned : Nat := 0
   /-- Placements the engine accepts, checked against `places`: all of them, by trying every kind on every spot and
   link. -/
   placements : Nat := 0
@@ -104,6 +106,9 @@ def checkMask (c : MaskCount) (e : Env) (mask : ByteArray) : MaskCount := Id.run
       else if (match ev, e.undo with | .move _ (.bankTrade g h), some u => u == (g, h) | _, _ => false) then
         c := { c with undoTrade := c.undoTrade + 1 }
       else if isDeclare ev && !e.T.declares then c := { c with declareNotOffered := c.declareNotOffered + 1 }
+      else if (match ev with
+          | .move q (.declare r n) => e.settings.pruneDeclares && (!declareChanges s q r n || e.declaredNow.contains r)
+          | _ => false) then c := { c with declarePruned := c.declarePruned + 1 }
       else
         c := { c with missing := c.missing + 1
                       firstError := if c.firstError == "" then s!"action {a} is not offered and the engine accepts it" else c.firstError }
@@ -213,6 +218,60 @@ def playTest (T : Tables) (settings : Settings) (seats games : Nat) (maskChecks 
       else if e.decision.seat?.isNone then
         c := { c with stuck := c.stuck + 1
                       firstError := if c.firstError == "" then s!"stuck after {n} decisions, round {e.play.state.round}" else c.firstError }
+  return c
+
+/-! ## Pruned declarations -/
+
+/-- What playing with `pruneDeclares` found: declarations made, repeats, declarations of a good no law reads, and
+games where the hat came to a new seat (for Pirate Republic). -/
+structure DeclareCount where
+  games : Nat := 0
+  declarations : Nat := 0
+  repeats : Nat := 0
+  unread : Nat := 0
+  hatGames : Nat := 0
+  mostInTurn : Nat := 0
+  /-- A seat declared the same good twice in one turn. -/
+  twiceInTurn : Nat := 0
+  deriving Inhabited
+
+/-- Play games with random legal actions and count what the declarations did. -/
+def declareTest (T : Tables) (settings : Settings) (seats games : Nat) : DeclareCount := Id.run do
+  let mut c : DeclareCount := {}
+  for g in [0:games] do
+    let some e0 := (Env.start T settings (callers seats) (5100 + g)).toOption | continue
+    c := { c with games := c.games + 1 }
+    let mut e := e0
+    let mut r : Rng := ⟨UInt64.ofNat (5200 + g)⟩
+    let mut hat := false
+    let mut holders : List Nat := []
+    let mut started := false
+    let mut inTurn := 0
+    let mut goodsInTurn : List Res := []
+    for _ in [0:20000] do
+      if e.decision.seat?.isNone then break
+      let s := e.play.state
+      let now := s.turnOrder.filter fun q => s.balance (.player q) "hat" > 0
+      if started && now != holders && !now.isEmpty then hat := true
+      holders := now
+      started := true
+      let (a, r') := pick r e.mask
+      r := r'
+      let some a := a | break
+      match decode e.T e.ep e.places e.decision a with
+      | some (.move q (.declare res n)) =>
+        inTurn := inTurn + 1
+        if goodsInTurn.contains res then c := { c with twiceInTurn := c.twiceInTurn + 1 }
+        goodsInTurn := res :: goodsInTurn
+        c := { c with declarations := c.declarations + 1, mostInTurn := max c.mostInTurn inTurn
+                      repeats := c.repeats + (if s.declared q res == n then 1 else 0)
+                      unread := c.unread + (match declaredRead s with
+                        | some rs => if rs.contains res then 0 else 1
+                        | Option.none => 0) }
+      | some (.move _ .endTurn) => inTurn := 0; goodsInTurn := []
+      | _ => pure ()
+      e := e.step a
+    if hat then c := { c with hatGames := c.hatGames + 1 }
   return c
 
 /-- Seeded error 3: the last legal placement is left out of `places`, so it has no row. -/
