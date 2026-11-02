@@ -26,7 +26,11 @@ How they differ, each drawn from the seed:
 * **length and target:** 8 to 12 rounds in 3 worlds of 5, else 15 to 30; targets from 5 to 40, higher where points
   come from goods.
 * **dice and bank:** 1 to 3 dice of 4 to 8 sides; bank rates 2 to 5.
-* **laws:** the point-good laws are founding laws; 0 to 2 other founding laws, and a library of 8 for votes.
+* **laws:** the point-good laws are founding laws; 0 to 3 other founding laws, and a library of 10 for votes, made
+  from the law language (`langLaw`, 12 shapes): treasury dividends to each seat, harvest taxes to the bank, piece moves
+  on a roll, bank rate, points and cost changes, goods made worth points (so trades and holdings decide), declarations
+  that buy points (so declaring matters), build rewards with conditions, effects at once, and repeals.
+* **stocks:** 100 to 999 of each good.
 * **seats:** 2 to 6.
 -/
 
@@ -52,6 +56,38 @@ def patch (size : Nat) (r : Rng) : List Hex × Rng := Id.run do
     let h := ns[j]!
     if !hs.contains h then hs := hs.push h
   return (hs.toList, r)
+
+/-- A law made from the law language, of one of 12 shapes chosen by the seed, over these goods (`R`), point goods
+(`P`, or a good when there is none) and kinds (`K`). `forLibrary` allows the shapes that only make sense as a vote:
+an effect at once (`now`) and a repeal. Each shape gives some observation columns their only values in training:
+`from_treasury`, `to_each`, `to_bank`, `piece_moves`, `when`, `set_bank_rate`, `set_points`, `set_cost`,
+`set_worth`, and laws that read declarations. -/
+def langLaw (goods points kinds : Array String) (i : Nat) (forLibrary : Bool) (r : Rng) : String × Rng := Id.run do
+  let mut r := r
+  let (t, r1) := r.range 0 (if forLibrary then 11 else 9); r := r1
+  let (a, r1) := r.range 0 (goods.size - 1); r := r1
+  let (b, r1) := r.range 0 (goods.size - 1); r := r1
+  let (c, r1) := r.range 0 (kinds.size - 1); r := r1
+  let (n, r1) := r.range 1 4; r := r1
+  let (d, r1) := r.range 2 12; r := r1
+  let R := goods[a]!
+  let R2 := goods[b]!
+  let P := if points.isEmpty then R2 else points[a % points.size]!
+  let K := kinds[c]!
+  let body := match t with
+    | 0 => s!"(on-round-end (for-each-player (< (points each) {n + 2}) (transfer treasury each {R} 1)))"
+    | 1 => s!"(on-harvest (if (res-is {R}) (transfer actor bank {R} 1)))"
+    | 2 => s!"(on-roll (for-each-player (and (= rolled {d}) (< (points actor) (points each))) (move-piece each actor {K})))"
+    | 3 => s!"(set-bank-rate {n + 1})"
+    | 4 => s!"(set-points {K} {n})"
+    | 5 => s!"(set-cost {K} (bundle ({R} {n}) ({R2} 1)))"
+    | 6 => s!"(set-worth {R} 1)"
+    | 7 => s!"(on-round-end (for-each-player (<= 1 (declared each {R})) (transfer each treasury {R} (min (declared each {R}) (holding each {R}))) (transfer bank each {P} 1)))"
+    | 8 => s!"(on-build {K} (if (<= {n} (holding actor {R})) (transfer actor treasury {R} {n}) (transfer bank actor {P} 1)))"
+    | 9 => s!"(on-round-end (for-each-player (<= {n} (holding each {R})) (transfer each bank {R} 1) (transfer treasury each {P} 1)))"
+    | 10 => s!"(now (for-each-player (< (points each) {n + 1}) (transfer bank each {R} 2)))"
+    | _ => "(repeal 0)"
+  return (s!"(law \"Law {i}\" {body})", r)
 
 /-- A world of the pack, its library of laws and its spots' places. -/
 def make (seed : Nat) : Except String (GameDef × Array (Law × String) × Array (Float × Float)) := do
@@ -126,7 +162,7 @@ def make (seed : Nat) : Except String (GameDef × Array (Law × String) × Array
   let (setup2, r1) := r.range 0 3; r := r1
   let G0 : GameDef :=
     { name := s!"Pack world {seed}"
-      resources := (rs.toList.map fun n => { name := n, stock := 400 })
+      resources := (rs.toList.zipIdx.map fun (n, j) => { name := n, stock := 100 + (seed * 37 + j * 211) % 900 })
       pieces, map := { spotCount := nspots, links, regions }
       diceCount := dice, diceSides := sides, targetPoints := target, rounds, bankRate := bank
       setupPieces := if setup2 == 0 then ["hut", "hut"] else ["hut", "path", "hut", "path"] }
@@ -143,10 +179,10 @@ def make (seed : Nat) : Except String (GameDef × Array (Law × String) × Array
       | 4 => s!" (on-round-end (for-each-player (< (points each) {target / 2}) (transfer bank each {p} 1)))"
       | _ => ""
     found := found ++ [s!"(law \"{p} is worth {w}\" (set-worth {p} {w}){source})"]
-  let (nother, r1) := r.range 0 2; r := r1
+  let (nother, r1) := r.range 0 3; r := r1
   let mut i := 0
   for _ in [0:nother] do
-    let (t, r1) := lawTexts rs ks #[] i r; r := r1
+    let (t, r1) := langLaw goods.toArray pointGoods.toArray ks i false r; r := r1
     i := i + 1
     found := found ++ [t]
   let mut G := G0
@@ -155,8 +191,9 @@ def make (seed : Nat) : Except String (GameDef × Array (Law × String) × Array
     if G'.checks then G := G'
   let spotKinds := (pieces.filter fun d => match d.placement with | .spot => true | _ => false).map (·.name) |>.toArray
   let mut texts : List String := []
-  for _ in [0:8] do
-    let (t, r1) := lawTexts rs ks spotKinds i r; r := r1
+  for j in [0:10] do
+    let (t, r1) := if j % 3 == 0 then lawTexts rs ks spotKinds i r else langLaw goods.toArray pointGoods.toArray ks i true r
+    r := r1
     i := i + 1
     texts := texts ++ [t]
   let library := (parsed names texts).toArray
