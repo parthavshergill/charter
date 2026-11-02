@@ -135,14 +135,16 @@ def draw(theme_name, rows, sonnet, out_paths):
         x, y = r["steps"] / M, 100 * r["wins"] / r["games"]
         ax.plot([x, x], [100 * lo, 100 * hi], color=t["sonnet"], lw=2, alpha=0.5, zorder=5, solid_capstyle="round")
         ax.plot([x], [y], "D", ms=12, color=t["sonnet"], mec=t["bg"], mew=1.5, zorder=6, clip_on=False)
-        right = x > 0.8 * xmax
+        if x > 0.8 * xmax:
+            continue        # the label column names the last point
+        right = False
         ax.text(x - 1.5 if right else x + 1.5, y, f"{r['wins']}/{r['games']}", color=t["sonnet"], fontsize=13,
                 va="center", ha="right" if right else "left", zorder=6)
     if pts:
         r = pts[-1]
         y = 100 * r["wins"] / r["games"]
         n = sum(q["games"] for q in pts)
-        labels.append((y, f"{y:.0f}%  vs 3 Claude Sonnet seats", t["sonnet"], "bold", t["sonnet"]))
+        labels.append((y, f"{r['wins']}/{r['games']} wins vs 3 Claude Sonnet seats", t["sonnet"], "bold", t["sonnet"]))
 
     placed = []
     for y, text, color, weight, mark in sorted(labels, key=lambda l: -l[0]):
