@@ -49,12 +49,12 @@ sys.path.insert(0, os.path.join(HERE, ".."))
 TRAIN = ["island", "not-catan"]
 HELD_OUT = ["slime-parliament", "ai-bubble", "strike-the-earth", "pirate-republic"]
 SEATS = 4
-OPPONENTS = ["hand", "random", "champion"]
+OPPONENTS = ["hand", "random", "champion", "table"]
 # Step a policy's recurrent state on a zero observation each time another caller seat decides, as training does
 # (every agent's row goes through the network on every tick; a waiting agent sees zeros). Bots inside the environment
 # take no ticks, in training or here. `--wait-steps 0` turns it off.
 WAIT_STEPS = [1]
-BOTS = ["hand", "champion", "champion-closed"]   # subjects and opponents the environment plays itself
+BOTS = ["hand", "champion", "champion-closed", "table"]   # subjects and opponents the environment plays itself
 PHASES = ["whole", "setup", "play"]
 NOTE_WEAK = ("`hand` is a weak opponent on some held-out games: in the builder's run, random players beat three `hand` "
              "bots in 69% of Pirate Republic games and matched them on Strike the Earth. Read held-out results by game.")

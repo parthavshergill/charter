@@ -121,6 +121,12 @@ actions, at most 8 resources, 60 spots, 84 links, 24 tiles, 16 laws) refused lar
   library only, which the server does not import. `champion` makes offers and accepts them among bot seats (the
   policy has no action for offers); `champion-closed` makes and accepts none. It costs about 9 times as much time per
   decision as `hand`.
+- **Table.** The bot the server seats today: `main`'s `Server/BotCore.lean` (`handEvents`, called by
+  `Bots.candidatesFor`), vendored in `rl/opponents/table/` and generated into `rl/lean/CharterRL/TableBot.lean` by
+  `rl/opponents/gen_table.py`. It is `bot_policy = 6`, an eval opponent by default, and a subject. On Island, Not
+  Catan and Slime Parliament it plays exactly as `hand` (31 of 31 games identical). On games where goods count as
+  points (AI Bubble, Strike the Earth, Pirate Republic) it keeps those goods and scores far more: `hand` wins 1%, 0%
+  and 13% against three of it there. These are this branch's game definitions; `main` has since changed some games.
 - **Training against bots.** `bot_share = p`: in self-play, each game has chance `p` that agents other than 0 sit out and
   `bot_policy` bots take their seats, so agent 0 also plays against, say, `champion` (`bot_policy = 4`). The agents
   that sit out see only waiting rows, with no reward.

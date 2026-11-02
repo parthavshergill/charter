@@ -8,7 +8,8 @@
 // count sit the game out. num_agents must be the most seats `seats` names. A waiting agent sees zeros and a mask with
 // only the no-op; its observation is written once when it starts waiting, not on every tick.
 // With num_agents = 1 (the bot ladder), bots fill the other seats:
-// bot_policy 0 plays random legal actions, 1 is hand, 2 fair, 3 closed, 4 champion, 5 champion-closed. With no offers
+// bot_policy 0 plays random legal actions, 1 is hand, 2 fair, 3 closed, 4 champion, 5 champion-closed, 6 table (the
+// server's bot as main has it). With no offers
 // made, 1, 2 and 3 play the same. champion makes and accepts offers among bot seats; 5 is the same without offers.
 // bot_share: in self-play (num_agents = 4), each game has this chance that agents 1 to 3 sit out and bot_policy bots
 // take their seats, so agent 0 also trains against bots. Agents that sit out see only waiting rows, with no reward.
@@ -38,9 +39,10 @@ typedef float obs_t;
 #define ACT_SIZES {CHARTER_ACTS + 1}
 #define NUM_ATNS 1
 #define REWARD_SEATS 6
-enum { BOT_RANDOM = 0, BOT_HAND = 1, BOT_FAIR = 2, BOT_CLOSED = 3, BOT_CHAMPION = 4, BOT_CHAMPION_CLOSED = 5 };
-#define NUM_BOT_POLICIES 6
-static const char* BOT_NAMES[] = {"caller", "hand", "fair", "closed", "champion", "champion-closed"};
+enum { BOT_RANDOM = 0, BOT_HAND = 1, BOT_FAIR = 2, BOT_CLOSED = 3, BOT_CHAMPION = 4, BOT_CHAMPION_CLOSED = 5,
+       BOT_TABLE = 6 };
+#define NUM_BOT_POLICIES 7
+static const char* BOT_NAMES[] = {"caller", "hand", "fair", "closed", "champion", "champion-closed", "table"};
 
 struct Log {
     float perf, score, policy_0_score, draw_rate;

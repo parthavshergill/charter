@@ -110,6 +110,7 @@ int main(int argc, char** argv) {
     fails += run("not-catan", 1, BOT_HAND, s, "random", "0", "4");
     fails += run("island,not-catan", 1, BOT_CHAMPION, s, "bot", "0", "4");
     fails += run("island,not-catan", 1, BOT_CHAMPION_CLOSED, s, "bot", "0", "4");
+    fails += run("island,not-catan", 1, BOT_TABLE, s, "bot", "0", "2-6");
     // Half the games against champions, half in self-play. Rewards no longer sum to 1 per game.
     fails += run("island,not-catan", 4, BOT_CHAMPION, s, "bot", "0.5", "4");
     // Waiting agents keep their last observation; the mask rules are the same.

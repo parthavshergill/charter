@@ -284,7 +284,7 @@ def main(action: str = "test", run: str = "smoke", minutes: float = 10, max_doll
         total = guard(max_dollars, None, 8, 8, 3 * 3600)
         evaluate_ = evaluate.with_options(timeout=total)
         subs = subjects.split(",") if subjects else ["random", "hand"]
-        bots = ("random", "hand", "champion", "champion-closed")
+        bots = ("random", "hand", "champion", "champion-closed", "table")
         r = evaluate_.remote([s if s in bots or s.startswith("/") else f"{VOL}/{s}" for s in subs],
                             f"{VOL}/{run}/{eval_name}", games, quick, opponents, logs)
         print(r["report"])

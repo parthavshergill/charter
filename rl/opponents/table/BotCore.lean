@@ -1,0 +1,440 @@
+import Server.MoveJson
+import Server.GameFacts
+
+/-!
+# The bot's policy
+
+A bot is a function from a game state to the events it would like, best first. The engine has the final
+word on every event. This file needs only the engine and `Server/GameFacts.lean`, and it imports no pack.
+`Server/Bots.lean` joins it to the server's tables.
+
+The policy is simple. On its own turn a bot places where the dice pay most, upgrades, builds, trades with
+the bank to complete a build, and ends its turn. It votes yes on a law when the law would not cost it
+resources on the next turn change and hands no other seat the win. It signs a deal that pays it at least
+what it pays, and it accepts an offer that gives it at least what it gives. A good that counts as points
+stays out of its bank trades, and an offer that costs it points must pay for them in goods.
+
+It tests only the moves it is about to consider. It does not ask the engine for every legal move.
+-/
+
+namespace CharterServer.Bots
+open Lean Charter CharterServer.Game
+
+variable {G : GameDef}
+
+/-! ## Constants -/
+
+/-- What one pip of a spot is worth when placing. -/
+def pipValue : Int := 10
+
+/-- What each kind of resource a spot touches is worth. -/
+def resourceBonus : Int := 5
+
+/-- What each step between a road and a free site costs. -/
+def roadStepPenalty : Int := 40
+
+/-- How many goods one point is worth, when accepting an offer. -/
+def pointValue : Int := 100
+
+/-! ## The map, worked out once -/
+
+/-- How often the dice pay this number. -/
+def pips (G : GameDef) (n : Nat) : Nat := Scene.chanceOf G n
+
+/-- Facts about a game's map, so that a decision does not walk the map's lists again. -/
+structure Board (G : GameDef) where
+  /-- Every spot, in order. -/
+  spots : List Nat
+  /-- The spots one link away, by spot. -/
+  neighbours : Array (List Nat)
+  /-- The spots at most 0, 1, 2 and 3 links away, by spot. -/
+  balls : Array (Array (List Nat))
+  /-- The pips of the regions that touch each spot. -/
+  spotPips : Array Nat
+  /-- How many kinds of goods touch each spot. -/
+  spotGoods : Array Nat
+  deriving Inhabited
+
+/-- The spots at most `steps` links from a spot. -/
+def ballOf (nbrs : Array (List Nat)) (v : Nat) : Nat → List Nat
+  | 0 => [v]
+  | k + 1 => ((ballOf nbrs v k).flatMap fun w => w :: nbrs.getD w []).eraseDups
+
+/-- Work out a game's board. -/
+def Board.of (G : GameDef) : Board G :=
+  let high := G.map.links.foldl (fun m l => max m (max (l.1 + 1) (l.2 + 1))) G.map.spotCount
+  let all := List.range high
+  let links := G.map.links
+  let nbrs := (all.map fun v => links.filterMap fun l =>
+    if l.1 == v then some l.2 else if l.2 == v then some l.1 else none).toArray
+  let touching (v : Nat) := (paidRegions G).filter (·.spots.contains v)
+  { spots := List.range G.map.spotCount
+    neighbours := nbrs
+    balls := (all.map fun v => ([0, 1, 2, 3].map (ballOf nbrs v)).toArray).toArray
+    spotPips := (all.map fun v => ((touching v).map fun r => pips G r.number).sum).toArray
+    spotGoods := (all.map fun v => ((touching v).map (·.res)).eraseDups.length).toArray }
+
+/-- What the policy reads besides the state: the board, worked out once per game. -/
+structure Ctx (G : GameDef) where
+  board : Board G
+  deriving Inhabited
+
+/-- The context for a game. -/
+def Ctx.of (G : GameDef) : Ctx G := { board := Board.of G }
+
+/-! ## What a seat can see -/
+
+def bal (s : State G) (p : Nat) (r : Res) : Nat := s.balance (.player p) r
+
+/-- The points one unit of this good is worth under these rules. Most goods are worth 0. -/
+def worthIn (R : Rules) (r : Res) : Nat := ((R.worth.find? (·.1 == r)).map (·.2)).getD 0
+
+/-- The points these goods are worth under these rules. -/
+def bundleWorth (R : Rules) (b : Bundle) : Nat := (b.map fun x => x.2 * worthIn R x.1).sum
+
+/-- The points a piece of this kind is worth under the rules in force. -/
+def piecePoints (s : State G) (k : PieceKind) : Nat := ((s.rules.piece? k).map (·.points)).getD 0
+
+/-- The seat keeps all of this good when it gives `n` of it in a trade toward a build that costs `cost`
+and is worth `gain` points. That is so when the good counts as points, unless the build is worth more
+points than its cost and the `n` given together. -/
+def keeps (R : Rules) (cost : Bundle) (gain n : Nat) (r : Res) : Bool :=
+  decide (worthIn R r > 0) && !decide (gain > bundleWorth R cost + n * worthIn R r)
+
+/-- What a spot is worth: `pipValue` for each pip, and `resourceBonus` for each good it touches. -/
+def spotValue (ctx : Ctx G) (v : Nat) : Int :=
+  pipValue * (ctx.board.spotPips.getD v 0 : Int) + resourceBonus * (ctx.board.spotGoods.getD v 0 : Int)
+
+/-- Which spots hold a piece, by spot. -/
+def occupied (ctx : Ctx G) (s : State G) : Array Bool :=
+  s.pieces.foldl (fun a x => match x.loc with
+    | .spot v => a.setIfInBounds v true
+    | .link _ => a) (Array.replicate ctx.board.neighbours.size false)
+
+/-- Which spots have no piece, and none next to them, by spot. -/
+def freeMap (ctx : Ctx G) (s : State G) : Array Bool :=
+  let occ := occupied ctx s
+  ctx.board.neighbours.mapIdx fun v ns => !occ.getD v true && ns.all fun w => !occ.getD w true
+
+/-- The free sites, in order. -/
+def freeSites (ctx : Ctx G) (s : State G) : List Nat :=
+  let free := freeMap ctx s
+  ctx.board.spots.filter (free.getD · false)
+
+/-- Which spots this seat reaches with a piece or a link, by spot. -/
+def reachMap (ctx : Ctx G) (s : State G) (p : Nat) : Array Bool :=
+  s.pieces.foldl (fun a x =>
+    if x.owner == p then
+      match x.loc with
+      | .spot w => a.setIfInBounds w true
+      | .link l => (a.setIfInBounds l.1 true).setIfInBounds l.2 true
+    else a) (Array.replicate ctx.board.neighbours.size false)
+
+/-- Some spot is both free and reached. `free` is `freeMap` and `reach` is `reachMap`. -/
+def siteIn (ctx : Ctx G) (free reach : Array Bool) : Bool :=
+  ctx.board.spots.any fun v => free.getD v false && reach.getD v false
+
+/-- This seat reaches a free site. -/
+def hasFreeSite (ctx : Ctx G) (s : State G) (p : Nat) : Bool :=
+  siteIn ctx (freeMap ctx s) (reachMap ctx s p)
+
+/-- A road is worth the best free site near its ends, less for each step away. `free` is `freeMap`. -/
+def roadValue (ctx : Ctx G) (free : Array Bool) (l : Nat × Nat) : Int :=
+  let ballsA := ctx.board.balls.getD l.1 #[]
+  let ballsB := ctx.board.balls.getD l.2 #[]
+  let isFree (v : Nat) := free.getD v false
+  [0, 1, 2, 3].foldl (fun b d =>
+    match (ballsA.getD d []).filter isFree ++ (ballsB.getD d []).filter isFree with
+    | [] => b
+    | near =>
+      max b ((near.foldl (fun m v => max m (spotValue ctx v)) 0) - roadStepPenalty * (d : Int))) (-100)
+
+def bestBy {α : Type} (xs : List α) (f : α → Int) : Option α :=
+  xs.foldl (fun b x => match b with
+    | none => some x
+    | some y => if f x > f y then some x else some y) none
+
+/-! ## Which moves the engine takes -/
+
+/-- The engine accepts this move from this seat now. With no deal running, nothing that happens after the
+move can fail, because a win has nothing to refund. So in that case this leaves out the look for a winner,
+which costs more than the rest of `step`. -/
+def isLegal (s : State G) (p : Nat) (m : Move) : Bool :=
+  match m with
+  | .endTurn => (Engine.step G s (.move p m)).toOption.isSome
+  | _ =>
+    if s.deals.isEmpty && s.phase != .ended then
+      match Engine.act s p (Engine.moveBody s p m) with
+      | .ok _ => true
+      | .error _ => false
+    else (Engine.step G s (.move p m)).toOption.isSome
+
+/-- The best of these moves that `ok` allows. It tests the best first, so it seldom tests more. -/
+def bestOk (ok : Move → Bool) (xs : List (Move × Int)) : Option Move :=
+  match bestBy xs (·.2) with
+  | none => none
+  | some (m, _) => if ok m then some m else (bestBy (xs.filter (ok ·.1)) (·.2)).map (·.1)
+
+/-- The best of these moves that the engine accepts. -/
+def bestLegal (s : State G) (p : Nat) (xs : List (Move × Int)) : Option Move :=
+  bestOk (isLegal s p) xs
+
+/-- The spots where this seat has a piece of this kind. -/
+def spotsOfKind (s : State G) (p : Nat) (k : PieceKind) : List Nat :=
+  s.pieces.filterMap fun x =>
+    match x.loc with
+    | .spot v => if x.owner == p && x.kind == k then some v else none
+    | .link _ => none
+
+/-- Place moves of the kinds that `test` picks, in the order of `Engine.legalMoves`. It holds every such
+move the engine accepts in the actions phase, and maybe some that it does not: this is the cheap part of
+`canPlace`. So a pick from it still goes to `isLegal`. `free` is `freeMap` and `reach` is `reachMap`. -/
+def placesWith (ctx : Ctx G) (s : State G) (p : Nat) (free reach : Thunk (Array Bool))
+    (test : Placement → Bool) : List Move :=
+  if !(s.phase == .actions && s.isTurnOf p && decide (s.actionsThisTurn p < maxActionsPerTurn)) then [] else
+  let rules := s.rules
+  rules.pieces.flatMap fun d =>
+    match rules.piece? d.name with
+    | none => []
+    | some e =>
+      if !(test e.placement && s.affords p e.cost && decide (s.countOf p d.name < e.limit)) then [] else
+      let onSpots (ok : Nat → Bool) : List Move :=
+        ctx.board.spots.filterMap fun v =>
+          if ok v && !s.blockedByDeal p d.name (.spot v) then some (.place d.name (.spot v)) else none
+      match e.placement with
+      | .link =>
+        let reach := reach.get
+        let taken := s.pieces.filterMap fun x => match x.loc with
+          | .link l => some l
+          | .spot _ => none
+        G.map.links.filterMap fun l =>
+          if (reach.getD l.1 false || reach.getD l.2 false) && !taken.contains l
+              && !s.blockedByDeal p d.name (.link l) then
+            some (.place d.name (.link l))
+          else none
+      | .spot =>
+        let free := free.get
+        let reach := reach.get
+        onSpots fun v => free.getD v false && reach.getD v false
+      | .upgrade k =>
+        let mine := spotsOfKind s p k
+        onSpots mine.contains
+      | .attach k =>
+        let mine := spotsOfKind s p k
+        let done_ := spotsOfKind s p d.name
+        onSpots fun v => mine.contains v && !done_.contains v
+
+/-- Place moves of the kinds that `test` picks. See `placesWith`. -/
+def placesOf (ctx : Ctx G) (s : State G) (p : Nat) (test : Placement → Bool) : List Move :=
+  placesWith ctx s p (Thunk.mk fun _ => freeMap ctx s) (Thunk.mk fun _ => reachMap ctx s p) test
+
+/-- The place moves of a setup turn, in the order of `Engine.legalMoves`. As with `placesOf`, a pick still
+goes to `isLegal`. -/
+def setupPlaces (ctx : Ctx G) (s : State G) (p : Nat) : List Move :=
+  match G.setupPieces[s.actionsThisTurn p]? with
+  | none => []
+  | some k =>
+    if !s.isTurnOf p then [] else
+    let rules := s.rules
+    match rules.piece? k with
+    | none => []
+    | some e =>
+      if !(decide (s.countOf p k < e.limit)) then [] else
+      match e.placement with
+      | .link =>
+        let reach := reachMap ctx s p
+        G.map.links.filterMap fun l =>
+          if (reach.getD l.1 false || reach.getD l.2 false) && s.setupPlacementOk p e (.link l) then
+            some (.place k (.link l))
+          else none
+      | .spot =>
+        let free := freeMap ctx s
+        ctx.board.spots.filterMap fun v =>
+          if free.getD v false then some (.place k (.spot v)) else none
+      | _ =>
+        ctx.board.spots.filterMap fun v =>
+          if s.setupPlacementOk p e (.spot v) then some (.place k (.spot v)) else none
+
+/-! ## Choosing a move -/
+
+/-- The pieces that this seat's kept points can pay for: attached pieces it can still add, whose cost
+includes goods worth points, and that are worth more points than those goods. -/
+def pointBuys (s : State G) (p : Nat) : List PieceDef :=
+  let R := s.rules
+  R.pieces.filter fun d =>
+    match d.placement with
+    | .attach k =>
+      let spent := bundleWorth R d.cost
+      decide (0 < spent) && decide (spent < d.points) && decide (s.countOf p d.name < d.limit) &&
+        let done_ := spotsOfKind s p d.name
+        (spotsOfKind s p k).any fun v => !done_.contains v
+    | _ => false
+
+/-- A bank trade toward paying `cost`, if trades can cover all of it. `ok` says which moves can happen. The
+seat gives none of a good that `keep` picks. -/
+def tradeToward (s : State G) (p : Nat) (cost : Bundle) (ok : Move → Bool)
+    (keep : Res → Bool := fun _ => false) : Option Move :=
+  let rate := s.rules.bankRate
+  let need (r : Res) : Nat := ((cost.find? (·.1 == r)).map (·.2)).getD 0
+  let names := G.resources.map (·.name)
+  let surplus (r : Res) : Nat := if keep r then 0 else bal s p r - need r
+  let short := names.filter fun r => need r > bal s p r
+  let missing := (short.map fun r => need r - bal s p r).sum
+  if missing == 0 || rate == 0 then none else
+  if (names.map fun r => surplus r / rate).sum < missing then none else
+  match short.head?, bestBy (names.filter fun r => surplus r ≥ rate) (fun r => (surplus r : Int)) with
+  | some m, some g =>
+    let mv := Move.bankTrade g m
+    if ok mv then some mv else none
+  | _, _ => none
+
+/-- The setup move: the best spot, then the road toward the best site. `ok` says which moves can happen. -/
+def setupFrom (ctx : Ctx G) (s : State G) (moves : List Move) (ok : Move → Bool) : Move :=
+  let spotMoves := moves.filterMap fun m => match m with
+    | .place _ (.spot v) => some (m, spotValue ctx v)
+    | _ => none
+  match bestOk ok spotMoves with
+  | some m => m
+  | none =>
+    let free := freeMap ctx s
+    let roads := moves.filterMap fun m => match m with
+      | .place _ (.link l) => some (m, roadValue ctx free l)
+      | _ => none
+    match bestOk ok roads with
+    | some m => m
+    | none => .endTurn
+
+/-- The move on a bot's turn: an upgrade, a new piece on a spot, a law-made piece, a road if it reaches no
+free site, then a bank trade (first toward a piece that its kept points pay for, then toward its next
+build), then end. -/
+def actionMove (ctx : Ctx G) (s : State G) (p : Nat) : Move := Id.run do
+  let spotOf (m : Move) : Int := match m with
+    | .place _ (.spot v) => spotValue ctx v
+    | _ => 0
+  let scored (ms : List Move) (f : Move → Int) : List (Move × Int) := ms.map fun m => (m, f m)
+  let free : Thunk (Array Bool) := Thunk.mk fun _ => freeMap ctx s
+  let reach : Thunk (Array Bool) := Thunk.mk fun _ => reachMap ctx s p
+  let hasSite : Thunk Bool := Thunk.mk fun _ => siteIn ctx free.get reach.get
+  let places := placesWith ctx s p free reach
+  if let some m := bestLegal s p (scored (places fun | .upgrade _ => true | _ => false) spotOf) then
+    return m
+  if let some m := bestLegal s p (scored (places fun | .spot => true | _ => false) spotOf) then
+    return m
+  if let some m := (places fun | .attach _ => true | _ => false).find? (isLegal s p) then
+    return m
+  if !hasSite.get then
+    let roads := (places fun | .link => true | _ => false).filterMap fun m => match m with
+      | .place _ (.link l) => some (m, roadValue ctx free.get l)
+      | _ => none
+    if let some m := bestLegal s p roads then return m
+  let R := s.rules
+  let trade (d : PieceDef) :=
+    let cost := s.costOf d.name
+    tradeToward s p cost (isLegal s p) (keeps R cost (piecePoints s d.name) R.bankRate)
+  for d in pointBuys s p do
+    if let some m := trade d then return m
+  if let some (d, old) := upgradePiece G then
+    if s.countOf p old > 0 && (s.rules.piece? d.name).isSome then
+      if let some m := trade d then return m
+  if hasSite.get then
+    if let some d := spotPiece G then
+      if let some m := trade d then return m
+  else
+    if let some d := linkPiece G then
+      if let some m := trade d then return m
+  return .endTurn
+
+/-- The move of this seat if it is its turn, whatever the phase. -/
+def turnMove (ctx : Ctx G) (s : State G) (p : Nat) : Move :=
+  if s.phase == .setup then setupFrom ctx s (setupPlaces ctx s p) (isLegal s p)
+  else actionMove ctx s p
+
+/-! ## Reacting to others -/
+
+/-- A seat's resources, after a list of entries. -/
+def netFor (p : Nat) (es : List Entry) : Int :=
+  es.foldl (fun acc e =>
+    let gain : Int := if e.dst == .player p then e.amount else 0
+    let loss : Int := if e.src == .player p then e.amount else 0
+    acc + gain - loss) 0
+
+/-- Yes if the law costs nothing at the next turn change, over every roll, and gives no other seat
+the win now. -/
+def lawOk (s : State G) (p id : Nat) (L : Law) : Bool :=
+  let s' := s.withLaw id L
+  let rolls := Scene.rollsOf G
+  let total (x : State G) : Int :=
+    (rolls.map fun r => (pips G r : Int) * netFor p (Engine.predictNextTurn G x r)).foldl (· + ·) 0
+  let handsOthersTheWin :=
+    s.turnOrder.any fun q => q != p && decide (G.targetPoints ≤ s'.pointsOf q)
+  -- A law that ends the game now is good only for the seat that would win.
+  let endsAgainstUs := L.clauses.any Clause.isEndGame && Engine.bestSeat s' s'.turnOrder != some p
+  !handsOthersTheWin && !endsAgainstUs && decide (total s' ≥ total s)
+
+/-- Yes if each round of the deal pays this seat at least what it pays. -/
+def dealOk (p : Nat) (d : Deal) : Bool :=
+  let net (ps : List Pay) : Int := ps.foldl (fun acc x =>
+    let inn : Int := match x.dst with
+      | .seat q => if q == p then x.amount else 0
+      | .treasury => 0
+    let out : Int := if x.src == p then x.amount else 0
+    acc + inn - out) 0
+  decide (net d.allPays ≥ 0)
+
+def bundleTotal (b : Bundle) : Nat := (b.map (·.2)).sum
+
+/-- A seat takes an offer that gives it at least as many goods as it gives, counting each point that the
+goods are worth as `pointValue` goods. -/
+def offerOk (s : State G) (o : Offer) : Bool :=
+  let R := s.rules
+  let points := pointValue * ((bundleWorth R o.give : Int) - (bundleWorth R o.get : Int))
+  decide ((bundleTotal o.give : Int) - (bundleTotal o.get : Int) + points ≥ 0)
+
+/-- Votes, signatures and accepted offers from these seats. `mayVote` says which laws can be voted on now. -/
+def reactions (s : State G) (bots : List Nat) (mayVote : Nat → Bool := fun _ => true) : List Event := Id.run do
+  let mut out : Array Event := #[]
+  for p in s.openProposals do
+    for b in bots do
+      match p.body with
+      | .law L =>
+        if mayVote p.id && !(p.votes.any (·.1 == b)) then
+          out := out.push (.vote b p.id (lawOk s b p.id L))
+      | .deal d =>
+        if d.signers.contains b && !p.signed.contains b && dealOk b d then
+          out := out.push (.sign b p.id)
+  if s.phase == .actions then
+    for o in s.offers do
+      for b in bots do
+        if o.src != b && (o.to.isNone || o.to == some b) && offerOk s o then
+          out := out.push (.move b (.accept o.id))
+  return out.toList
+
+/-- This seat's move and then ending its turn, if it is its turn. -/
+def turnEvents (ctx : Ctx G) (s : State G) (seat : Nat) : List Event :=
+  if s.currentSeat != some seat then [] else
+  let m := turnMove ctx s seat
+  if m != .endTurn then [.move seat m, .move seat .endTurn] else [.move seat m]
+
+/-- The bot's candidate events for these seats, best first. -/
+def handEvents (ctx : Ctx G) (s : State G) (bots : List Nat) (mayVote : Nat → Bool := fun _ => true) :
+    List Event :=
+  if bots.isEmpty || s.phase == .ended then [] else
+  let moves := match s.currentSeat with
+    | some p => if bots.contains p then turnEvents ctx s p else []
+    | none => []
+  reactions s bots mayVote ++ moves
+
+/-! ## Events as JSON -/
+
+def moveEvent (p : Nat) (m : Move) : Json :=
+  Json.mkObj [("t", "move"), ("seat", toJson p), ("move", moveJson m)]
+
+/-- The log's form of an event a bot makes. The bot makes moves, votes and signatures only. -/
+def eventJson? : Event → Option Json
+  | .move p m => some (moveEvent p m)
+  | .vote seat id yes =>
+    some (Json.mkObj [("t", "vote"), ("seat", toJson seat), ("id", toJson id), ("yes", toJson yes)])
+  | .sign seat id => some (Json.mkObj [("t", "sign"), ("seat", toJson seat), ("id", toJson id)])
+  | _ => none
+
+end CharterServer.Bots

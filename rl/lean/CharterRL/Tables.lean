@@ -3,6 +3,7 @@ import Server.LawLibrary
 import Server.Rules
 import Evolved.Pool
 import CharterRL.Champion
+import CharterRL.TableBot
 import CharterRL.Layout
 
 /-!
@@ -187,6 +188,15 @@ structure Opponent where
   weights : Weights
   deriving Inhabited
 
+/-- The bot the server seats today: `main`'s `Server/BotCore.lean` (`handEvents`, which `Bots.candidatesFor` calls),
+copied into `CharterRL.TableBot` by `rl/opponents/gen_table.py`. It has no weights. Its board has the same fields as
+this library's, so it is built from the seat's own. -/
+def tableBot : Strategy :=
+  Strategy.ofSeat "table" fun ctx s seat =>
+    let b := ctx.board
+    Table.Bots.handEvents ({ board := ⟨b.spots, b.neighbours, b.balls, b.spotPips, b.spotGoods⟩ } : Table.Bots.Ctx _)
+      s [seat]
+
 /-- `fair` accepts an offer only if it helps its next build and counts what it pays. `closed` refuses every offer.
 Both are the hand bot's code, and the weights are those of the evolution runs.
 
@@ -200,7 +210,8 @@ def opponents : List Opponent :=
   , { name := "champion", strategy := Champion.strategy, weights := Champion.weights }
   , { name := "champion-closed", strategy := Champion.strategy, weights := Champion.closedWeights }
   -- The champion as written, slower. Only for the test that `champion` decides the same.
-  , { name := "champion-ref", strategy := ChampionRef.strategy, weights := ChampionRef.weights } ]
+  , { name := "champion-ref", strategy := ChampionRef.strategy, weights := ChampionRef.weights }
+  , { name := "table", strategy := tableBot, weights := .default } ]
 
 /-- What plays a seat. `none` is the caller. `setup` plays until the setup turns are over, and `play` after. -/
 structure SeatPlan where
