@@ -66,7 +66,8 @@ def collect(ckpt, out, games, seed, worlds, k, c, explore):
     H = meta["hidden"]
     rng = np.random.default_rng(seed)
     ws = worlds.split(",")
-    rec = {key: [] for key in ("obs", "state", "mask", "cand", "dv", "action", "value", "game", "seat", "world")}
+    rec = {key: [] for key in ("obs", "state", "mask", "cand", "dv", "action", "value", "game", "seat", "world",
+                               "table")}
     rets, nwin, ndec = [], 0, 0
     for i in range(games):
         gid = ws[i % len(ws)]
@@ -116,6 +117,8 @@ def collect(ckpt, out, games, seed, worlds, k, c, explore):
                     rec["game"].append(i)
                     rec["seat"].append(at)
                     rec["world"].append(gid)
+                    tb = g.suggest("table")   # the table bot's move here, for item 2's imitation loss
+                    rec["table"].append(tb if tb >= 0 and mask[tb] else -1)
                 ndec += 1
             else:
                 m = g.mask()
@@ -133,12 +136,13 @@ def collect(ckpt, out, games, seed, worlds, k, c, explore):
                         cand=np.stack(rec["cand"]), dv=np.stack(rec["dv"]),
                         action=np.array(rec["action"], np.int16), value=np.array(rec["value"], np.float32),
                         ret=np.array(rets, np.float32), game=np.array(rec["game"], np.int32),
-                        seat=np.array(rec["seat"], np.int8), world=np.array(rec["world"]))
+                        seat=np.array(rec["seat"], np.int8), world=np.array(rec["world"]),
+                        table=np.array(rec["table"], np.int16))
     print(f"{games} games, {nwin} won by the blend seat, {ndec} decisions, {len(rec['action'])} with a choice; "
           f"wrote {out}", flush=True)
 
 
-def distill(ckpt, out, data, epochs, lr, c, vf_coef, batch, max_rows):
+def distill(ckpt, out, data, epochs, lr, c, vf_coef, batch, max_rows, imitate=0.0):
     import torch
     import torch.nn.functional as F
     from bc_entity import EntityPolicy, ACTS
@@ -159,10 +163,15 @@ def distill(ckpt, out, data, epochs, lr, c, vf_coef, batch, max_rows):
     cat = lambda key: np.concatenate([z[key] for z in zs])
     obs, state, maskb = cat("obs"), cat("state"), cat("mask")
     cand, dv, value = cat("cand").astype(np.int64), cat("dv"), cat("value")
+    # Item 2: the table bot's move where it builds or trades (not end turn, not a declaration), else -1.
+    table = cat("table").astype(np.int64) if imitate and all("table" in z for z in zs) else -np.ones(len(cand), np.int64)
+    act_decl, act_place = layout["actions"]["declare"], layout["actions"]["place"]
+    table[(table <= 0) | ((table >= act_decl) & (table < act_place))] = -1
     game = np.concatenate([z["game"] + 1000000 * j for j, z in enumerate(zs)])
     if max_rows and len(obs) > max_rows:
         keep = np.random.default_rng(0).choice(len(obs), max_rows, replace=False)
-        obs, state, maskb, cand, dv, value, game = (x[keep] for x in (obs, state, maskb, cand, dv, value, game))
+        obs, state, maskb, cand, dv, value, game, table = (x[keep] for x in (obs, state, maskb, cand, dv, value,
+                                                                              game, table))
     held = game % 10 == 0
     tr, te = np.flatnonzero(~held), np.flatnonzero(held)
     print(f"{len(obs)} decisions ({len(tr)} train, {len(te)} held out), from {len(data)} files", flush=True)
@@ -173,10 +182,10 @@ def distill(ckpt, out, data, epochs, lr, c, vf_coef, batch, max_rows):
         m = torch.tensor(np.unpackbits(maskb[idx], axis=1)[:, :ACTS].astype(bool))
         cd = torch.tensor(cand[idx])
         d = torch.tensor(dv[idx])
-        return o, s, m, cd, d, torch.tensor(value[idx])
+        return o, s, m, cd, d, torch.tensor(value[idx]), torch.tensor(table[idx])
 
     def losses(idx):
-        o, s, m, cd, d, v0 = batch_of(idx)
+        o, s, m, cd, d, v0, tb = batch_of(idx)
         with torch.no_grad():
             tl, _ = teacher(o, s)
             tl = tl.masked_fill(~m, -1e9)
@@ -193,16 +202,21 @@ def distill(ckpt, out, data, epochs, lr, c, vf_coef, batch, max_rows):
         vloss = F.mse_loss(val, v0)
         agree = (logits.masked_fill(~m, -1e9).argmax(1) == best).float().mean()
         base_agree = (t_best == best).float().mean()
-        return ce + vf_coef * vloss, ce - ent, vloss, agree, base_agree
+        # Item 2: where the improved move ends the turn but the table bot builds or trades, imitate the table bot.
+        passes = (best == 0) & (tb >= 0)
+        imi = -(logp.gather(1, tb.clamp(min=0)[:, None])[:, 0] * passes.float()).sum() / passes.float().sum().clamp(min=1)
+        loss = ce + vf_coef * vloss + (imitate * imi if imitate else 0.0)
+        return loss, ce - ent, vloss, agree, base_agree, imi, passes.float().mean()
 
     opt = torch.optim.Adam(pol.parameters(), lr=lr)
 
     def evaluate(tag):
         with torch.no_grad():
             r = [losses(te[i:i + 2048]) for i in range(0, len(te), 2048)]
-        kl, vl, ag, bag = (float(np.mean([float(x[j]) for x in r])) for j in (1, 2, 3, 4))
+        kl, vl, ag, bag, imi, ps = (float(np.mean([float(x[j]) for x in r])) for j in (1, 2, 3, 4, 5, 6))
         print(f"{tag}: held-out KL(target || policy) {kl:.4f}, value MSE {vl:.5f}, picks the improved move "
-              f"{100 * ag:.1f}% (the recording network {100 * bag:.1f}%)", flush=True)
+              f"{100 * ag:.1f}% (the recording network {100 * bag:.1f}%); table builds or trades where the improved "
+              f"move ends the turn: {100 * ps:.1f}% of decisions, -log p(table's move) {imi:.2f}", flush=True)
 
     evaluate("start")
     rng = np.random.default_rng(1)
@@ -216,7 +230,8 @@ def distill(ckpt, out, data, epochs, lr, c, vf_coef, batch, max_rows):
         evaluate(f"epoch {ep}")
     pol.save_puffer(out)
     meta2 = dict(meta, name=os.path.basename(out), distilled_from=meta.get("name", ckpt),
-                 expert_iter={"c": c, "epochs": epochs, "lr": lr, "decisions": int(len(obs)), "data": data})
+                 expert_iter={"c": c, "epochs": epochs, "lr": lr, "decisions": int(len(obs)), "data": data,
+                              "imitate": imitate})
     meta2.pop("diag", None)
     json.dump(meta2, open(out + ".json", "w"))
     print(f"wrote {out}", flush=True)
@@ -239,11 +254,14 @@ def main():
     ap.add_argument("--vf-coef", type=float, default=1.0)
     ap.add_argument("--batch", type=int, default=256)
     ap.add_argument("--max-rows", type=int, default=0)
+    ap.add_argument("--imitate", type=float, default=0.0,
+                    help="item 2: weight of the table bot's move where the improved move ends the turn and table "
+                         "builds or trades")
     a = ap.parse_args()
     if a.mode == "collect":
         collect(a.ckpt, a.out, a.games, a.seed, a.worlds, a.k, a.c, a.explore)
     else:
-        distill(a.ckpt, a.out, a.data, a.epochs, a.lr, a.c, a.vf_coef, a.batch, a.max_rows)
+        distill(a.ckpt, a.out, a.data, a.epochs, a.lr, a.c, a.vf_coef, a.batch, a.max_rows, a.imitate)
 
 
 if __name__ == "__main__":
