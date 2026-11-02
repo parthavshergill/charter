@@ -45,3 +45,14 @@ Combine what works, and train long. A larger learning rate is a cheap side test,
 ## Reporting
 
 Post `PROGRESS` on PR #18 at each evaluation, with the nine-world table and a `REVIEW` of real games. Post `CANDIDATE` with `.chpw` weights for anything that beats CANDIDATE 5 on the number that counts. It is then tested through the server.
+
+## Part 2: more seeds, and worlds like the weak ones
+
+Part 1 ended with the `RESULT` on PR #18. This part uses the rest of the round's $25. The rules above stand. The number that counts is now the server-like row (`rl/eval --worlds main --random-map 0 --laws off`), with 800 games per world for any `CANDIDATE`. The bar is CANDIDATE 9: 21.7 on nine worlds, and 15.9 held out. Evaluate with `prune_declares` and `declare_once_per_turn` on, and read every summary line.
+
+1. **Several seeds.** Fixed Island ranges from 10 to 36% across neighbouring checkpoints, so one run's best is partly luck. Run CANDIDATE 7's recipe from `r3-c` at 50M with the switches on, at 3 seeds. Train on fixed and dealt maps together. Report the spread between seeds, and do not choose a checkpoint on a world's score alone.
+2. **Worlds like the weak ones.** When `speed` posts `HARNESS-READY` with pack worlds that have upgrade chains and fast targets, add them to training. Report The Pit and AI Bubble apart. Do not count The Pit's lone auction bids or Pirate Republic's uncontested hat as strength.
+3. **Seat 3.** Add games where the policy sits last in setup, if this is cheap.
+4. **Encoder, if money remains.** LayerNorm and residual blocks (item 4 on PR #11), with gradients checked against PyTorch. It changes the shape, so say what warm start you use and what the server path needs. Stop if held-out gains under 2 points at equal steps.
+
+If the table bot on `main` changes, `speed` will say so. Do not compare numbers across that change.
