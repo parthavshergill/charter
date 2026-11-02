@@ -15,6 +15,6 @@ modal run modal_app.py --action eval --run "$RUN" --eval-name "eval-$LABEL" --su
   --max-dollars 0.6 > "${LOGS:-/tmp}/eval-$(basename $RUN)-$LABEL.md" 2>&1
 if [ "${SERVER:-1}" = 1 ]; then   # the server-like row: each world's own map, no laws proposed (PR #11)
   modal run modal_app.py --action eval --run "$RUN" --eval-name "eval-$LABEL-srv" --subjects "$CKPT" --games ${GAMES:-400} --quick --logs 2 \
-    --opponents ${OPPS:-table,hand} --eval-args "--random-map 0 --laws off" --max-dollars 0.6 > "${LOGS:-/tmp}/eval-$(basename $RUN)-$LABEL-srv.md" 2>&1
+    --opponents ${OPPS:-table,hand} --eval-args="--random-map 0 --laws off" --max-dollars 0.6 > "${LOGS:-/tmp}/eval-$(basename $RUN)-$LABEL-srv.md" 2>&1
 fi
 echo "done $RUN $LABEL"
