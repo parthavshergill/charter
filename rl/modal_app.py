@@ -203,6 +203,22 @@ def train(run: str, train_args: str = "", seconds: int = 600, move_rows: bool = 
                 "layout": layout["version"], "obs_size": obs, "act_size": layout["act_size"] + 1,
                 "hidden": hidden, "layers": layers,
                 "settings": {"vote_mode": "bot", "move_rows": move_rows}}
+        # Env switches that change what a policy sees go into the meta, so eval plays it the same way: the defaults
+        # of charter.ini's [env], then the ones train_args sets.
+        import configparser
+        ini = configparser.ConfigParser()
+        ini.read(f"{SRC}/puffer/charter.ini")
+        for key in ("declare_always", "stale_wait"):
+            if ini.has_option("env", key):
+                meta["settings"][key] = bool(int(float(ini.get("env", key))))
+        for tok in train_args.split():
+            for key in ("vote_mode", "slot_order", "declare_always", "stale_wait", "shaping_points",
+                        "shaping_relative", "bot_share", "bot_policy", "seats"):
+                if tok.startswith(f"--env.{key}="):
+                    v = tok.split("=", 1)[1]
+                    if key in ("declare_always", "stale_wait"):
+                        v = bool(int(float(v)))
+                    meta["settings"][key] = v
         meta.update(json.loads(meta_extra) if meta_extra else {})
         json.dump(meta, open(c + ".json", "w"))
     vol.commit()
@@ -275,7 +291,7 @@ def main(action: str = "test", run: str = "smoke", minutes: float = 10, max_doll
         total = guard(max_dollars, None, 8, 8, 3 * 3600)
         evaluate_ = evaluate.with_options(timeout=total)
         subs = subjects.split(",") if subjects else ["random", "hand"]
-        bots = ("random", "hand", "champion", "champion-closed")
+        bots = ("random", "hand", "champion", "champion-closed", "table")
         r = evaluate_.remote([s if s in bots or s.startswith("/") else f"{VOL}/{s}" for s in subs],
                             f"{VOL}/{run}/{eval_name}", games, quick, opponents, logs)
         print(r["report"])

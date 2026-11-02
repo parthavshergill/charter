@@ -53,6 +53,10 @@ structure MaskCount where
   declareNotOffered : Nat := 0
   /-- Not offered on purpose: a move by the voting seat while a vote is due. -/
   moveWhileVoting : Nat := 0
+  /-- Not offered on purpose: ending a setup turn while a placement is legal. -/
+  endInSetup : Nat := 0
+  /-- Not offered on purpose: a bank trade that reverses the seat's last one this turn. -/
+  undoTrade : Nat := 0
   /-- Placements the engine accepts, checked against `places`: all of them, by trying every kind on every spot and
   link. -/
   placements : Nat := 0
@@ -96,6 +100,9 @@ def checkMask (c : MaskCount) (e : Env) (mask : ByteArray) : MaskCount := Id.run
                       firstError := if c.firstError == "" then s!"action {a} is offered and the engine refuses it" else c.firstError }
     else if let some (ev, whileVoting) := accepted.head? then
       if whileVoting then c := { c with moveWhileVoting := c.moveWhileVoting + 1 }
+      else if a == actEnd && s.phase == .setup && !e.places.isEmpty then c := { c with endInSetup := c.endInSetup + 1 }
+      else if (match ev, e.undo with | .move _ (.bankTrade g h), some u => u == (g, h) | _, _ => false) then
+        c := { c with undoTrade := c.undoTrade + 1 }
       else if isDeclare ev && !e.T.declares then c := { c with declareNotOffered := c.declareNotOffered + 1 }
       else
         c := { c with missing := c.missing + 1

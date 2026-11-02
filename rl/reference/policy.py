@@ -68,6 +68,19 @@ class Player:
     def reset(self):
         self.state = self.net.initial_state()
         self.last = None
+        self.last_obs = None
+
+    def wait(self, obs_size):
+        """One tick on which another agent decides. In training, PufferLib runs every agent's row through the network
+        on every tick. A waiting agent's observation is all zeros, or with `stale_wait` its own last observation, so
+        its recurrent state moves on those ticks too. This does the same."""
+        if getattr(self, "stale_wait", False) and getattr(self, "last_obs", None) is not None:
+            x = self.last_obs
+        else:
+            if getattr(self, "_zeros", None) is None or len(self._zeros) != obs_size:
+                self._zeros = np.zeros(obs_size, np.float32)
+            x = self._zeros
+        _, _, self.state = self.net.forward(x, self.state)
 
     def act(self, game):
         obs = game.obs()
@@ -76,6 +89,7 @@ class Player:
             # In self-play training, the zero observations of waiting ticks drive MinGRU's state to 0.5 (its fixed
             # point at zero input) before each turn. With CHARTER_TURN_RESET=1, eval does the same after end turn.
             self.state = [np.full_like(s, 0.5) for s in self.state]
+        self.last_obs = np.array(obs, np.float32)
         logits, _, self.state = self.net.forward(obs, self.state)
         logits = logits[:len(mask)].astype(np.float64)
         logits[mask == 0] = -np.inf

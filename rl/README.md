@@ -16,6 +16,8 @@ Every action goes through the Lean engine's `Engine.step`. There is no second mo
 | `rl/modal_app.py` | `test`, `train`, `eval` on Modal, each with a timeout cut to a dollar limit |
 | `rl/eval/eval.py` | One command, one report |
 | `rl/reference/policy.py` | Runs a PufferLib checkpoint in NumPy (MinGRU + linear decoder), for eval |
+| `rl/RUN_A_POLICY.md` | How a checkpoint chooses one action: observation, mask, forward pass (flat, and entity with pointer), decoding, and the recurrent state between decisions |
+| `rl/imitation/` | `collect.py` (the hand bot's decisions, with ticks and final returns), `bc.py` (behaviour cloning; `--sequences` replays whole games with waiting ticks, `--vf-coef` trains the value) |
 
 Pinned: Lean v4.35.0, PufferLib `ea7f989371270d2948f96728bda8aec5e7634a4c`.
 
@@ -119,6 +121,12 @@ actions, at most 8 resources, 60 spots, 84 links, 24 tiles, 16 laws) refused lar
   library only, which the server does not import. `champion` makes offers and accepts them among bot seats (the
   policy has no action for offers); `champion-closed` makes and accepts none. It costs about 9 times as much time per
   decision as `hand`.
+- **Table.** The bot the server seats today: `main`'s `Server/BotCore.lean` (`handEvents`, called by
+  `Bots.candidatesFor`), vendored in `rl/opponents/table/` and generated into `rl/lean/CharterRL/TableBot.lean` by
+  `rl/opponents/gen_table.py`. It is `bot_policy = 6`, an eval opponent by default, and a subject. On Island, Not
+  Catan and Slime Parliament it plays exactly as `hand` (31 of 31 games identical). On games where goods count as
+  points (AI Bubble, Strike the Earth, Pirate Republic) it keeps those goods and scores far more: `hand` wins 1%, 0%
+  and 13% against three of it there. These are this branch's game definitions; `main` has since changed some games.
 - **Training against bots.** `bot_share = p`: in self-play, each game has chance `p` that agents other than 0 sit out and
   `bot_policy` bots take their seats, so agent 0 also plays against, say, `champion` (`bot_policy = 4`). The agents
   that sit out see only waiting rows, with no reward.
@@ -126,8 +134,32 @@ actions, at most 8 resources, 60 spots, 84 links, 24 tiles, 16 laws) refused lar
 
 `[env]` keys in `charter.ini`: `games` (comma-separated ids), `seats`, `vote_mode`, `slot_order`, `move_rows`, `law_every`,
 `random_map`, `preview`, `reward_win`, `reward_standing`, `shaping_points`, `bot_policy`, `bot_share`,
-`distinct_opps`, `declare_always`. The Lean configuration also takes `record` (keep the game's events for a saved log;
+`distinct_opps`, `declare_always`, `stale_wait`, `shaping_relative`, `shaping_gamma`. The Lean configuration also takes `record` (keep the game's events for a saved log;
 eval only).
+
+- **Waiting rows** (`stale_wait`, **on by default** in `charter.ini` since `HARNESS-READY` after `dd1b711`; it was
+  off before, and checkpoint metas record which). With `stale_wait = 0` a waiting agent's observation is all zeros. PufferLib
+  still runs it through the network on every tick, so its recurrent state moves on those ticks, and with zero input
+  MinGRU pulls the state halfway to 0.5 each time; the critic also sees one constant on every waiting row. With
+  `stale_wait = 1`, an agent that has decided in this game keeps its last observation while it waits (only the mask
+  changes). Agents that sit the game out, and agents before their first decision, see zeros.
+- **Shaping** (`shaping_relative = c`, off by default): potential-based. A seat's potential is c times its points
+  less the mean of the others' points, over the target, and is 0 once the game is over. Each tick pays each seat
+  `shaping_gamma * Φ(after) - Φ(before)`. With `shaping_gamma` equal to `[train] gamma` it keeps the best play the
+  same (Ng, Harada and Russell 1999); `charter-rl-check` confirms that with gamma 1 each seat's shaped returns over a
+  game equal the unshaped ones. `shaping_points` (absolute, not potential-based) is still there. Eval always judges
+  real wins; the report prints a policy's training settings.
+- **Eval and the server run the recurrent state as training did.** `Player.wait` runs one forward pass on the
+  waiting observation (zeros, or the last one under `stale_wait`) for every decision of another caller seat;
+  `rl/eval` does it by default (`--wait-steps 0` turns it off). `rl/RUN_A_POLICY.md` says what a server must do.
+- **Bank trades:** the mask does not offer a bank trade that reverses the seat's last bank trade of the same turn
+  (`block_undo_trades`, on by default; the bank takes its rate both ways, so it only loses goods).
+- **Setup:** the mask does not offer end turn in a setup turn while a placement is legal (the engine allows it, and
+  policies gave up free opening pieces that way).
+
+**Warning:** with `declare_always = 1` and `stale_wait = 0`, `attention2` found self-play learning to fill its turns
+with free declarations (217 to 383 a game) and stop building: a `REWARD-HACK` through the critic's blind waiting rows.
+Use it only with `stale_wait = 1`, and count declarations in the saved games.
 
 `declare_always = 1` offers declarations in every game. Island and Not Catan have no law that reads one, so by
 default declarations are never legal there, their outputs are never trained, and on held-out games that do read them
@@ -136,7 +168,41 @@ engine accepts them in training games too (they change nothing there and use one
 training sees what they do. Eval keeps the default unless the policy's meta says otherwise.
 
 Games: train on `island`, `not-catan`; hold out `slime-parliament`, `ai-bubble`, `strike-the-earth`,
-`pirate-republic`. Made-up games (`rl/lean/CharterRL/Gen.lean`) have ids `gen-limits-N`, `gen-tiny-N` and
+`pirate-republic`.
+
+**`main`'s worlds** (`rl/worlds/`): the nine shipped worlds as `main` has them, with ids `main-<id>`: `main-island`,
+`main-not-catan`, `main-slime-parliament`, `main-ai-bubble`, `main-strike-the-earth`, `main-pirate-republic`, and the
+three new ones `main-the-pit`, `main-omerta`, `main-hill-and-chill`. `rl/worlds/gen_main_worlds.py` copies each
+world's file from `rl/worlds/main/` up to its `G.Valid` proof (checked again when this library builds), with its seat
+range and law library from `main`'s `Spec.lean` and `PreviewCheck.lean`. The six shared worlds play move for move as
+this branch's copies (180 of 180 games the same, with and without laws). `main` restructured the founding laws of AI
+Bubble and Pirate Republic without changing what they do, so only the law-shape columns of the observation differ;
+its Not Catan change is music only. All nine are eval worlds; `main-island` and `main-not-catan` may be trained on.
+
+**The generated pack** (`rl/lean/CharterRL/Pack.lean`), for training on worlds where goods count as points:
+`pack-train` (training) and `pack-val` (validation only) each deal a new world each game, from the game's seed, out of
+512; `pack-train-<n>` and `pack-val-<n>` name one world. Validation worlds come from seeds training never uses. Every
+world passes `G.checks`, and none is a shipped world. What varies: a hex map of 14 to 30 tiles; 3 to 7 goods; goods
+that count as points in about 4 worlds of 5 (from tiles, from a law paying per piece owned at round's end, from a law
+paying for a build, or with a piece that costs them); 2 to 5 kinds of piece (spot, link, and any of an upgrade, a
+second spot piece, an attachment); 8 to 12 rounds in 3 worlds of 5, else 15 to 30; targets 5 to 40; 1 to 3 dice of 4
+to 8 sides; bank rates 2 to 5; stocks of 100 to 999; 0 to 3 other founding laws and a library of 10, composed from the
+law language (`langLaw`, 12 shapes: treasury dividends to each seat, harvest taxes to the bank, piece moves on a roll,
+bank-rate, points and cost changes, goods made worth points so that trades and holdings decide, declarations that buy
+points so that declaring matters, conditional build rewards, effects at once, repeals); 2 to 6 seats. Over the first 64 of each set
+(`charter-rl-check`): 58 and 51 count goods as points, 42 and 44 last 12 rounds or fewer, targets 6 to 40, 45 to 97
+spots. Random players win 18% against 3 `hand` and 7 to 15% against 3 `table` there (1% against `hand` on Island), so play
+matters, and `table` plays point goods better than `hand`.
+
+**Which generated worlds are for what.** `pack-train` is for training. `pack-val` is for validation only: never
+train on it or choose settings on it. `gen-*` (`CharterRL.Gen`) stays for "can it play" only.
+
+**Coverage** (`rl/diag/coverage.py`): plays games through the real interface and lists the observation columns that
+never vary on Island and Not Catan but vary elsewhere, and whether `pack-train` and `main`'s held-out worlds make
+them vary. On Island and Not Catan 125 of 166 columns vary, on `pack-train` 150, on `main`'s held-out worlds 140, and
+no column varies on another set but never on `pack-train`. The 16 that never vary on the pack are the `real` flags,
+the overflow flags, `global.seats` (the check plays 4 seats), and laws that are never in force (`end_game`, `now`). Train with, for example,
+`--env.games=island,not-catan,pack-train`; eval with `--worlds pack` (`pack-train` as training, `pack-val` held out). Made-up games (`rl/lean/CharterRL/Gen.lean`) have ids `gen-limits-N`, `gen-tiny-N` and
 `gen-odd-N`: at the engine's limits, tiny, and odd sizes in between, each kept only if it passes `G.checks`. They are
 for "can it play", never for training or choosing settings.
 
@@ -171,6 +237,22 @@ each game its own seed, the subject at seat k mod 4 in game k; phases `whole`, `
 pieces, `hand` plays on) and `play` (`hand` places them, the subject plays on); with and without laws. It reports win
 rates with 95% Wilson intervals, by seat, and points. Subjects: `random`, `hand`, `champion`, `champion-closed`, or a
 policy file with a JSON meta (see `rl/reference/policy.py`). A custom encoder adds its forward there.
+
+**Worlds and settings.** `--worlds main` (the default) plays `main`'s nine worlds; `--worlds harness` this branch's
+six; `--worlds pack` the generated pack; sets can be joined (`main,pack`). `--random-map 0` plays each world's own map,
+as the server does; the default deals a new map each game, as training does. `--laws off` plays with no laws
+proposed, as the server's games have; `--laws on` with them (law_every 8). Saved games of `main-*` worlds name the
+world by its id on `main`, so `make spectate` on `main` replays them (this branch's converter knows only the six).
+
+Each table's games have seeds made from the world, the game number, the law setting, the phase and the opponent, so
+tables against different opponents are different games. Against `table` and against `hand` on Island and Not Catan
+the play is the same move for move (with the same seeds), so a gap between those two rows is sampling noise.
+
+**Hollow wins.** Every table also gives *target wins %* (with its interval): games the subject won by reaching the
+game's target points. Wins at the round limit go to the leader on points, often with a low score. It also gives the
+split of the subject's wins (at the target, at the round limit, other: a law ended the game), the share of games that
+ended at the limit, and the mean points of the subject and of the best other seat. The trainer's log has
+`target_win` too. The reward is unchanged.
 
 **Can it play** (`--can-play 1`, the default): a separate check from how well it plays. The subject plays the
 made-up games (2 at the engine's limits, 3 tiny, 8 odd) at every seat count from 2 to 6, at every seat, against

@@ -48,9 +48,25 @@ sys.path.insert(0, os.path.join(HERE, ".."))
 
 TRAIN = ["island", "not-catan"]
 HELD_OUT = ["slime-parliament", "ai-bubble", "strike-the-earth", "pirate-republic"]
+# World sets for --worlds: (training worlds, held-out worlds).
+WORLD_SETS = {
+    # This branch's six games.
+    "harness": (["island", "not-catan"], ["slime-parliament", "ai-bubble", "strike-the-earth", "pirate-republic"]),
+    # The nine shipped worlds as `main` has them (rl/worlds/). The six above play exactly as here.
+    "main": (["main-island", "main-not-catan"],
+             ["main-slime-parliament", "main-ai-bubble", "main-strike-the-earth", "main-pirate-republic",
+              "main-the-pit", "main-omerta", "main-hill-and-chill"]),
+    # The generated pack: a new world each game, training set and the validation set.
+    "pack": (["pack-train"], ["pack-val"]),
+}
+OVERRIDES = {}   # settings from the command line that win over a policy's meta, such as random_map
 SEATS = 4
-OPPONENTS = ["hand", "random", "champion"]
-BOTS = ["hand", "champion", "champion-closed"]   # subjects and opponents the environment plays itself
+OPPONENTS = ["hand", "random", "champion", "table"]
+# Step a policy's recurrent state on a zero observation each time another caller seat decides, as training does
+# (every agent's row goes through the network on every tick; a waiting agent sees zeros). Bots inside the environment
+# take no ticks, in training or here. `--wait-steps 0` turns it off.
+WAIT_STEPS = [1]
+BOTS = ["hand", "champion", "champion-closed", "table"]   # subjects and opponents the environment plays itself
 PHASES = ["whole", "setup", "play"]
 NOTE_WEAK = ("`hand` is a weak opponent on some held-out games: in the builder's run, random players beat three `hand` "
              "bots in 69% of Pirate Republic games and matched them on Strike the Earth. Read held-out results by game.")
@@ -105,7 +121,11 @@ def load_subject(spec):
     from reference.policy import load_policy
     net = load_policy(spec, meta)
     label = meta.get("name", os.path.basename(spec))
-    return label, (lambda seed: net.player(seed)), meta.get("settings", {})
+    settings = dict(meta.get("settings", {}))
+    # Some metas give stale_wait at the top level (rl/entity2's runs), not in settings.
+    if "stale_wait" in meta and "stale_wait" not in settings:
+        settings["stale_wait"] = bool(int(meta["stale_wait"]))
+    return label, (lambda seed: net.player(seed)), settings
 
 
 # ---- Playing -----------------------------------------------------------------------------------------------
@@ -127,6 +147,20 @@ def table_code(game_id, opponent, phase, laws, k):
     return "".join(letters[b % len(letters)] for b in h[:6])
 
 
+def how_won(info, winner):
+    """How the game was won: `target` if the winner reached the target, `limit` if the round limit ended it, `law`
+    if a law ended it, `other` if none of these (for example a stuck game)."""
+    if winner < 0:
+        return "none"
+    if info[f"points{winner}"] >= info["target"]:
+        return "target"
+    if info["round"] >= info["round_limit"]:
+        return "limit"
+    if info["law_ends"]:
+        return "law"
+    return "other"
+
+
 def play_table(task):
     """Play one table of games: one subject, one game, one opponent, one phase, one law setting."""
     from charter import Game
@@ -134,11 +168,15 @@ def play_table(task):
     label, maker, _ = load_subject(spec)
     bot = spec if spec in BOTS else None
     wins, by_seat, points, rounds, refused, decisions, ended = 0, [0] * SEATS, 0.0, 0.0, 0, 0, 0
+    win_how = {"target": 0, "limit": 0, "law": 0, "other": 0}
+    games_how = {"target": 0, "limit": 0, "law": 0, "other": 0, "none": 0}
+    best_other = 0.0
     base = {"game": game_id, "lineup": ["caller"] * SEATS, "seed": 1, "vote_mode": vote_mode,
             "law_every": 8 if laws else 0}
     for key in ("slot_order", "move_rows", "random_map", "preview", "declare_always"):
         if key in settings:
             base[key] = settings[key]
+    base.update(OVERRIDES)
     plain = Game(base)
     recorded = Game(dict(base, record=True)) if logs else None
     saved = []
@@ -152,6 +190,7 @@ def play_table(task):
         others = RandomPlayer(seed + 1)
         if subject:
             subject.reset()
+            subject.stale_wait = bool(settings.get("stale_wait"))
         while not g.over:
             seat = g.seat
             if seat == at:
@@ -164,6 +203,8 @@ def play_table(task):
                 decisions += 1
             else:
                 a = others.act(g)
+                if subject is not None and WAIT_STEPS[0] and hasattr(subject, "wait"):
+                    subject.wait(g.obs_size)
             if not g.step(a):
                 refused += 1
                 g.step(int(g.legal()[0]))
@@ -171,13 +212,18 @@ def play_table(task):
         if k < logs:
             saved.append(save_game(g, log_dir, label, game_id, opponent, phase, laws, k, at, seed, lineup, info))
         ended += int(info["over"])
+        how = how_won(info, int(info["winner"]))
+        games_how[how] += 1
         if int(info["winner"]) == at:
             wins += 1
             by_seat[at] += 1
+            win_how[how] += 1
         points += info[f"points{at}"]
+        best_other += max(info[f"points{s}"] for s in range(SEATS) if s != at)
         rounds += info["round"]
     return {"subject": label, "game": game_id, "opponent": opponent, "phase": phase, "laws": laws, "games": n,
             "wins": wins, "wins_by_seat": by_seat, "points": points / n, "rounds": rounds / n,
+            "win_how": win_how, "games_how": games_how, "best_other": best_other / n,
             "refused": refused, "decisions": decisions, "ended": ended, "saved": saved}
 
 
@@ -225,6 +271,8 @@ def can_play_task(task):
                         g.step(int(g.legal()[0]))
                 else:
                     g.step(others.act(g))
+                    if subject is not None and WAIT_STEPS[0] and hasattr(subject, "wait"):
+                        subject.wait(g.obs_size)
             out["games"] += 1
             out["ended"] += int(g.info()["over"]) and int(g.over)
         except Exception as e:  # noqa: BLE001
@@ -398,8 +446,16 @@ def table_rows(results, games, phase, laws):
         lo, hi = wilson(w, n)
         seat = [sum(r["wins_by_seat"][s] for r in sel) / (n / SEATS) for s in range(SEATS)]
         pts = sum(r["points"] * r["games"] for r in sel) / n
-        rows.append(f"| {opp} | {n} | {pct(w / n)} | {pct(lo)} to {pct(hi)} | "
-                    + " / ".join(pct(x) for x in seat) + f" | {pts:.2f} |")
+        best = sum(r["best_other"] * r["games"] for r in sel) / n
+        tw = sum(r["win_how"]["target"] for r in sel)
+        tlo, thi = wilson(tw, n)
+        limit_w = sum(r["win_how"]["limit"] for r in sel)
+        other_w = w - tw - limit_w
+        share = (f"{pct(tw / w)} / {pct(limit_w / w)} / {pct(other_w / w)}" if w else "n/a")
+        limit_games = sum(r["games_how"]["limit"] for r in sel)
+        rows.append(f"| {opp} | {n} | {pct(w / n)} | {pct(lo)} to {pct(hi)} | {pct(tw / n)} ({pct(tlo)} to {pct(thi)}) | "
+                    f"{share} | {pct(limit_games / n)} | " + " / ".join(pct(x) for x in seat) +
+                    f" | {pts:.2f} | {best:.2f} |")
     return rows
 
 
@@ -415,20 +471,30 @@ def report(subject, meta_settings, results, seconds):
                 if not rows:
                     continue
                 out += [f"**{name}, {'with' if laws else 'without'} laws, phase `{phase}`**", "",
-                        "| opponents | games | win % | 95% interval | win % by seat 0/1/2/3 | points |",
-                        "|---|---|---|---|---|---|"] + rows + [""]
-    out += [f"Refused actions: {refused}. Games that did not end: {unended}.", ""]
-    out += ["**By game, whole game, with laws** (win %, 95% interval, points)", "",
+                        "| opponents | games | win % | 95% interval | target wins % (95%) | wins at target / at round "
+                        "limit / other | games ending at the limit % | win % by seat 0/1/2/3 | points | best opponent "
+                        "points |",
+                        "|---|---|---|---|---|---|---|---|---|---|"] + rows + [""]
+    out += [f"Refused actions: {refused}. Games that did not end: {unended}.", "",
+            "*Target wins* count only games the subject won by reaching the game's target points. A win at the round "
+            "limit goes to the leader on points (ties broken by the rules), often with a low score; *other* is a win "
+            "when a law ended the game. *Best opponent points* is the mean of the highest other seat's points.", ""]
+    bylaw = any(r["laws"] for r in results)
+    out += [f"**By game, whole game, {'with' if bylaw else 'without'} laws** (win %, 95% interval, target wins %, points against the best "
+            "opponent's points)", "",
             "| game | " + " | ".join(OPPONENTS) + " |", "|---|" + "---|" * len(OPPONENTS)]
     for g in TRAIN + HELD_OUT:
         cells = []
         for opp in OPPONENTS:
-            sel = [r for r in results if r["game"] == g and r["opponent"] == opp and r["phase"] == "whole" and r["laws"]]
+            sel = [r for r in results if r["game"] == g and r["opponent"] == opp and r["phase"] == "whole"
+                   and r["laws"] == bylaw]
             w, n = sum(r["wins"] for r in sel), sum(r["games"] for r in sel)
             if n:
                 lo, hi = wilson(w, n)
                 pts = sum(r["points"] * r["games"] for r in sel) / n
-                cells.append(f"{pct(w / n)} ({pct(lo)} to {pct(hi)}), {pts:.1f}")
+                best = sum(r["best_other"] * r["games"] for r in sel) / n
+                tw = sum(r["win_how"]["target"] for r in sel)
+                cells.append(f"{pct(w / n)} ({pct(lo)} to {pct(hi)}), target {pct(tw / n)}, {pts:.1f} vs {best:.1f}")
             else:
                 cells.append("")
         out.append(f"| {g}{' (held out)' if g in HELD_OUT else ''} | " + " | ".join(cells) + " |")
@@ -446,14 +512,33 @@ def main():
     ap.add_argument("--opponents", default=",".join(OPPONENTS),
                     help="comma-separated: hand, random, champion, champion-closed")
     ap.add_argument("--logs", type=int, default=2, help="games kept per table, with logs and summaries")
+    ap.add_argument("--wait-steps", type=int, default=1,
+                    help="1: step the policy's recurrent state on zeros when another caller decides, as in training")
     ap.add_argument("--can-play", type=int, default=1, help="1 to run the can-it-play check on made-up games")
     ap.add_argument("--can-play-games", type=int, default=6, help="games per made-up game and seat count")
+    ap.add_argument("--worlds", default="main",
+                    help="comma-separated sets: main (main's nine, the default), harness (this branch's six), pack "
+                         "(generated: pack-train as training, pack-val as held out)")
+    ap.add_argument("--random-map", type=int, default=None,
+                    help="1 deals a new map each game (as training does), 0 plays each world's own map (as the server "
+                         "does); default: the policy's setting, else 1")
+    ap.add_argument("--laws", default=None, choices=["both", "on", "off"],
+                    help="laws proposed during games (law_every 8) or not; default both, or on with --quick")
     args = ap.parse_args()
     OPPONENTS[:] = args.opponents.split(",")
+    TRAIN[:], HELD_OUT[:] = [], []
+    for w in args.worlds.split(","):
+        TRAIN.extend(WORLD_SETS[w][0])
+        HELD_OUT.extend(WORLD_SETS[w][1])
+    if args.random_map is not None:
+        OVERRIDES["random_map"] = bool(args.random_map)
+    WAIT_STEPS[0] = args.wait_steps
     log_dir = os.path.join(args.out, "games")
     n = max(SEATS, args.games - args.games % SEATS)
     os.makedirs(args.out, exist_ok=True)
     text = ["# Charter eval", "", NOTE_SAME, "", NOTE_WEAK, "",
+            f"Worlds: {args.worlds} (training: {', '.join(TRAIN)}; held out: {', '.join(HELD_OUT)}). Maps: "
+            f"{'each world' + chr(39) + 's own' if OVERRIDES.get('random_map') is False else 'dealt anew each game, unless the policy says otherwise'}.", "",
             f"Each table has {n} games, with the subject at each seat in {n // SEATS} of them. "
             "Phases: `whole`, the subject plays all of it; `setup`, the subject places the opening pieces and "
             "`hand` plays on; `play`, `hand` places them and the subject plays on.", ""]
@@ -462,7 +547,7 @@ def main():
         label, _, settings = load_subject(spec)
         vote_mode = settings.get("vote_mode", "bot")
         phases = ["whole"] if args.quick else PHASES
-        lawset = [True] if args.quick else [True, False]
+        lawset = {"on": [True], "off": [False], "both": [True, False]}[args.laws or ("on" if args.quick else "both")]
         tasks = [(spec, g, o, p, l, n, vote_mode, settings, min(args.logs, n), log_dir)
                  for g in TRAIN + HELD_OUT for o in OPPONENTS for p in phases for l in lawset
                  if not (label in BOTS and p != "whole")]

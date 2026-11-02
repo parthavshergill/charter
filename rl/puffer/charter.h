@@ -8,7 +8,8 @@
 // count sit the game out. num_agents must be the most seats `seats` names. A waiting agent sees zeros and a mask with
 // only the no-op; its observation is written once when it starts waiting, not on every tick.
 // With num_agents = 1 (the bot ladder), bots fill the other seats:
-// bot_policy 0 plays random legal actions, 1 is hand, 2 fair, 3 closed, 4 champion, 5 champion-closed. With no offers
+// bot_policy 0 plays random legal actions, 1 is hand, 2 fair, 3 closed, 4 champion, 5 champion-closed, 6 table (the
+// server's bot as main has it). With no offers
 // made, 1, 2 and 3 play the same. champion makes and accepts offers among bot seats; 5 is the same without offers.
 // bot_share: in self-play (num_agents = 4), each game has this chance that agents 1 to 3 sit out and bot_policy bots
 // take their seats, so agent 0 also trains against bots. Agents that sit out see only waiting rows, with no reward.
@@ -38,15 +39,16 @@ typedef float obs_t;
 #define ACT_SIZES {CHARTER_ACTS + 1}
 #define NUM_ATNS 1
 #define REWARD_SEATS 6
-enum { BOT_RANDOM = 0, BOT_HAND = 1, BOT_FAIR = 2, BOT_CLOSED = 3, BOT_CHAMPION = 4, BOT_CHAMPION_CLOSED = 5 };
-#define NUM_BOT_POLICIES 6
-static const char* BOT_NAMES[] = {"caller", "hand", "fair", "closed", "champion", "champion-closed"};
+enum { BOT_RANDOM = 0, BOT_HAND = 1, BOT_FAIR = 2, BOT_CLOSED = 3, BOT_CHAMPION = 4, BOT_CHAMPION_CLOSED = 5,
+       BOT_TABLE = 6 };
+#define NUM_BOT_POLICIES 7
+static const char* BOT_NAMES[] = {"caller", "hand", "fair", "closed", "champion", "champion-closed", "table"};
 
 struct Log {
     float perf, score, policy_0_score, draw_rate;
     float episode_return, episode_length, win_seat0, win_seat1, win_seat2, win_seat3;
     float points, points_share, rounds, decisions, invalid_rate, laws_proposed, laws_passed;
-    float hist_score, hist_n, seats;
+    float hist_score, hist_n, seats, target_win;
     float n;
 };
 
@@ -63,8 +65,9 @@ struct Env {
     int seats;             // seats in this game
     int seat_choices[SEATS];
     int num_seat_choices;
-    int zeroed[SEATS];     // this agent's observation is all zeros already (or, with CHARTER_STALE_WAIT, its waiting row is written)
+    int zeroed[SEATS];     // this agent's waiting row is written already (zeros, or its last observation)
     int decided[SEATS];    // this agent has decided in this game
+    int stale_wait;        // a waiting agent that has decided in this game keeps its last observation
     int num_games;
     void* games[MAX_GAMES];
     int current;
@@ -130,17 +133,12 @@ static void write_outputs(Env* env) {
             env->zeroed[i] = 0;
             env->decided[i] = 1;
         } else if (!env->zeroed[i]) {
-#ifdef CHARTER_STALE_WAIT
-            // A waiting agent that has decided in this game keeps its last observation, so the critic (and the
-            // GRU) still sees its position while others move. Only the mask changes. Agents that sit the game
-            // out, or have not decided yet in this game, see zeros.
-            if (!(i < env->playing && env->decided[i])) {
+            // A waiting agent's row is written once, when it starts waiting. By default it is all zeros. With
+            // stale_wait, an agent that has decided in this game keeps its last observation and only the mask
+            // changes, so the critic and the recurrent state still see its position while others move.
+            if (!(env->stale_wait && i < env->playing && env->decided[i])) {
                 memset(a->observations, 0, OBS_SIZE * sizeof(obs_t));
             }
-#else
-            // A waiting agent's rows stay zero until it decides again, so they are written once.
-            memset(a->observations, 0, OBS_SIZE * sizeof(obs_t));
-#endif
             memset(a->action_mask, 0, CHARTER_ACTS);
             a->action_mask[NOOP_ACTION] = 1;
             env->zeroed[i] = 1;
@@ -161,7 +159,8 @@ static void add_rewards(Env* env) {
 static void finish(Env* env) {
     float info[32] = {0};
     charter_info(G(env), info, 32);
-    // info: over, winner, round, events, rejected, proposed, passed, decisions, offers, points0..5, opening0..5
+    // info: over, winner, round, events, rejected, proposed, passed, decisions, offers, points0..5, opening0..5,
+    // target, round_limit, law_ends
     int winner = (int)info[1];
     int me = env->seat_of[0];
     float won = winner == me ? 1.0f : 0.0f;
@@ -181,6 +180,7 @@ static void finish(Env* env) {
         *by_seat[me] += won;
     }
     l->seats += env->seats;
+    l->target_win += (won > 0 && info[9 + me] >= info[21]) ? 1.0f : 0.0f;
     l->points += info[9 + me];
     l->points_share += total > 0 ? info[9 + me] / total : 1.0f / env->seats;
     l->rounds += info[2];
@@ -260,10 +260,8 @@ static void start_game(Env* env) {
     env->moves = env->invalid = 0;
     for (int i = 0; i < SEATS; i++) {
         env->returns[i] = 0;
-#ifdef CHARTER_STALE_WAIT
         env->decided[i] = 0;
-        env->zeroed[i] = 0;
-#endif
+        env->zeroed[i] = 0;    // a new game: every waiting row is written again
     }
     run_random_bots(env);
     add_rewards(env);
@@ -380,6 +378,7 @@ void puf_init(Env* env, Dict* kwargs) {
         env->zeroed[i] = 0;
         env->decided[i] = 0;
     }
+    env->stale_wait = (int)opt_num(kwargs, "stale_wait", 0);
     int move_rows = (int)opt_num(kwargs, "move_rows", 0);
 #ifdef CHARTER_MOVE_ROWS
     assert(move_rows && "built with CHARTER_MOVE_ROWS: set env.move_rows = 1");
@@ -406,11 +405,12 @@ void puf_init(Env* env, Dict* kwargs) {
             snprintf(cfg, sizeof(cfg),
                 "{\"game\": \"%s\", \"lineup\": [%s], \"seed\": %u, "
                 "\"vote_mode\": \"%s\", \"slot_order\": \"%s\", \"move_rows\": %s, \"law_every\": %d, "
-                "\"random_map\": %s, \"preview\": %s, \"reward_win\": %g, \"reward_standing\": %g, \"shaping_points\": %g, \"declare_always\": %s}",
+                "\"random_map\": %s, \"preview\": %s, \"reward_win\": %g, \"reward_standing\": %g, \"shaping_points\": %g, \"declare_always\": %s, \"shaping_relative\": %g, \"shaping_gamma\": %g}",
                 id, lineup, env->rng, vote, slots, move_rows ? "true" : "false", (int)opt_num(kwargs, "law_every", 8),
                 opt_num(kwargs, "random_map", 1) ? "true" : "false", opt_num(kwargs, "preview", 1) ? "true" : "false",
                 opt_num(kwargs, "reward_win", 1.0), opt_num(kwargs, "reward_standing", 0.25),
-                opt_num(kwargs, "shaping_points", 0.0), opt_num(kwargs, "declare_always", 0) ? "true" : "false");
+                opt_num(kwargs, "shaping_points", 0.0), opt_num(kwargs, "declare_always", 0) ? "true" : "false",
+                opt_num(kwargs, "shaping_relative", 0.0), opt_num(kwargs, "shaping_gamma", 0.995));
             if (!charter_error(cfg, err, sizeof(err))) {
                 break;
             }
@@ -449,4 +449,5 @@ void puf_log(Log* log, Dict* out) {
     dict_set(out, "hist_score", log->hist_score);
     dict_set(out, "hist_n", log->hist_n);
     dict_set(out, "seats", log->seats);
+    dict_set(out, "target_win", log->target_win);
 }

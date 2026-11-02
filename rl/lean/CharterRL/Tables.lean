@@ -3,6 +3,8 @@ import Server.LawLibrary
 import Server.Rules
 import Evolved.Pool
 import CharterRL.Champion
+import CharterRL.TableBot
+import CharterRL.MainWorlds
 import CharterRL.Layout
 
 /-!
@@ -165,8 +167,19 @@ def Tables.ofSpec (spec : GameSpec) : Tables :=
 /-- Every game's tables. -/
 def allTables : Array Tables := gameSpecs.toArray.map Tables.ofSpec
 
-/-- The training games and the held-out games, in `rl/games.json`. -/
-def tablesOf? (id : String) : Option Tables := allTables.find? (·.id == id)
+/-- The nine shipped worlds as `main` has them (`rl/worlds/gen_main_worlds.py`), with ids `main-<id>`. -/
+def mainTables : Array Tables :=
+  MainWorlds.worlds.toArray.map fun w =>
+    let names := w.G.resources.map (·.name)
+    let library := (w.laws.filterMap fun text =>
+      match Rules.parseProposal text names with
+      | .ok (.law L) => some (L, text)
+      | _ => none).toArray
+    Tables.make w.id w.G w.minSeats w.maxSeats library (normalised (w.spots.map (·.toPixel 1.0)))
+
+/-- This branch's games, then `main`'s, by id. -/
+def tablesOf? (id : String) : Option Tables :=
+  (allTables.find? (·.id == id)).orElse fun _ => mainTables.find? (·.id == id)
 
 /-- Why this game does not fit the layout, if it does not. The layout's limits are the engine's, so a game that
 passes `G.Valid` always fits; this says why a game that does not pass would fail here. -/
@@ -187,6 +200,15 @@ structure Opponent where
   weights : Weights
   deriving Inhabited
 
+/-- The bot the server seats today: `main`'s `Server/BotCore.lean` (`handEvents`, which `Bots.candidatesFor` calls),
+copied into `CharterRL.TableBot` by `rl/opponents/gen_table.py`. It has no weights. Its board has the same fields as
+this library's, so it is built from the seat's own. -/
+def tableBot : Strategy :=
+  Strategy.ofSeat "table" fun ctx s seat =>
+    let b := ctx.board
+    Table.Bots.handEvents ({ board := ⟨b.spots, b.neighbours, b.balls, b.spotPips, b.spotGoods⟩ } : Table.Bots.Ctx _)
+      s [seat]
+
 /-- `fair` accepts an offer only if it helps its next build and counts what it pays. `closed` refuses every offer.
 Both are the hand bot's code, and the weights are those of the evolution runs.
 
@@ -200,7 +222,8 @@ def opponents : List Opponent :=
   , { name := "champion", strategy := Champion.strategy, weights := Champion.weights }
   , { name := "champion-closed", strategy := Champion.strategy, weights := Champion.closedWeights }
   -- The champion as written, slower. Only for the test that `champion` decides the same.
-  , { name := "champion-ref", strategy := ChampionRef.strategy, weights := ChampionRef.weights } ]
+  , { name := "champion-ref", strategy := ChampionRef.strategy, weights := ChampionRef.weights }
+  , { name := "table", strategy := tableBot, weights := .default } ]
 
 /-- What plays a seat. `none` is the caller. `setup` plays until the setup turns are over, and `play` after. -/
 structure SeatPlan where
@@ -244,13 +267,22 @@ structure Settings where
   rewardWin : Float := 1.0
   /-- The reward for final standing: this much for first, minus this much for last, even steps between. -/
   rewardStanding : Float := 0.25
-  /-- A small reward for each point gained, as a share of the target. Off by default. -/
+  /-- A small reward for each point gained, as a share of the target. Off by default. It is not potential-based,
+  so it can change which play is best; `shapingRelative` is. -/
   shapingPoints : Float := 0.0
+  /-- Potential-based shaping, off by default (0). The potential of a seat is this much times its points less the
+  mean of the other seats' points, over the target. Each step pays each seat `shapingGamma * Φ(after) - Φ(before)`,
+  with Φ = 0 once the game is over, which keeps the best play the same (Ng, Harada and Russell, 1999) when
+  `shapingGamma` is the trainer's gamma per tick. Results are judged on real wins only. -/
+  shapingRelative : Float := 0.0
+  shapingGamma : Float := 0.995
   /-- Keep every event of the game, in the server's log format, for `Env.savedLog`. Off in training. -/
   record : Bool := false
   /-- Offer declarations in every game, also where no law reads them (the engine accepts them there and they change
   nothing). Off by default. On, a policy trained on such games still learns what its declaration outputs do. -/
   declareAlways : Bool := false
+  /-- Do not offer a bank trade that reverses the seat's last bank trade of the same turn. On by default. -/
+  blockUndoTrades : Bool := true
   deriving Inhabited
 
 /-! ## One game's rows -/

@@ -1,6 +1,7 @@
 import Lean.Data.Json
 import CharterRL.Obs
 import CharterRL.Gen
+import CharterRL.Pack
 
 /-!
 # The environment
@@ -58,11 +59,15 @@ structure Env where
   /-- The decision's free spots, and the spots its seat reaches: `freeMap` and `reachMap`, worked out once. -/
   free : Array Bool := #[]
   reach : Array Bool := #[]
+  /-- The last bank trade a caller made: the turn (`turnsTaken`), the seat, what it gave and what it got. -/
+  lastTrade : Option (Nat × Nat × Res × Res) := Option.none
   /-- The last `step` was refused. -/
   refused : Bool := false
   /-- Each seat's pips when setup ended. -/
   opening : Array Nat := #[]
   pointsSeen : Array Nat := #[]
+  /-- Each seat's potential at the last step, for `shapingRelative`. Empty before the first. -/
+  phiSeen : Array Float := #[]
   rewards : FloatArray
   proposed : Nat := 0
   passed : Nat := 0
@@ -318,6 +323,17 @@ private def Env.reckon (e : Env) : Env := Id.run do
       let gained := Float.ofNat now[q]! - Float.ofNat (e.pointsSeen.getD q 0)
       rewards := rewards.set! q (e.settings.shapingPoints * gained / Float.ofNat (max 1 e.G.targetPoints))
     e := { e with pointsSeen := now }
+  if e.settings.shapingRelative != 0 then
+    let n := s.turnOrder.length
+    let pts := (List.range n).toArray.map fun q => Float.ofNat (s.pointsOf q)
+    let total := pts.foldl (· + ·) 0
+    let target := Float.ofNat (max 1 e.G.targetPoints)
+    let phi : Array Float := if s.phase == .ended then Array.replicate n 0 else
+      pts.map fun p => e.settings.shapingRelative * (p - (total - p) / Float.ofNat (max 1 (n - 1))) / target
+    if e.phiSeen.size == n then
+      for q in [0:n] do
+        rewards := rewards.set! q (rewards.get! q + e.settings.shapingGamma * phi[q]! - e.phiSeen[q]!)
+    e := { e with phiSeen := phi }
   if s.phase == .ended then
     let final := e.finalRewards
     for q in [0:maxSeats] do
@@ -327,6 +343,7 @@ private def Env.reckon (e : Env) : Env := Id.run do
 /-- Start a game with this seed. The map, the dice, the row order and the laws all follow from the seed. -/
 def Env.start (T : Tables) (settings : Settings) (lineup : Array SeatPlan) (seed : Nat) (shareVotes : Bool := true) :
     Except String Env := do
+  let T := Pack.dealt T seed
   let T := if settings.declareAlways then { T with declares := true } else T
   let seats := lineup.size
   let G := if settings.randomMap then randomMap T.G seed else T.G
@@ -350,6 +367,14 @@ def Env.start (T : Tables) (settings : Settings) (lineup : Array SeatPlan) (seed
       pointsSeen := Array.replicate seats 0, rewards := seatZeros, shareVotes }
   return (Env.settle e e.fuel).reckon
 
+/-- The bank trade that would reverse the deciding seat's last bank trade of this turn, if `blockUndoTrades`. -/
+def Env.undo (e : Env) : Option (Res × Res) :=
+  if !e.settings.blockUndoTrades then Option.none else
+  match e.decision, e.lastTrade with
+  | .turn seat, some (turn, q, g, h) =>
+    if q == seat && turn == e.play.state.turnsTaken then some (h, g) else Option.none
+  | _, _ => Option.none
+
 /-- Apply an action for the seat that must decide. An action not on offer, or one the engine refuses, changes nothing
 and sets `refused`. -/
 def Env.step (e : Env) (action : Nat) : Env :=
@@ -357,14 +382,22 @@ def Env.step (e : Env) (action : Nat) : Env :=
   match decode e.T e.ep e.places e.decision action with
   | Option.none => bad
   | some ev =>
+    let undoes := match ev, e.undo with
+      | .move _ (.bankTrade g h), some u => u == (g, h)
+      | _, _ => false
+    if undoes == true then bad else
     match Engine.step e.G e.play.state ev with
     | .error _ => bad
     | .ok s' =>
       let table := if e.play.state.phase == .setup then e.setupTable else e.playTable
+      let lastTrade := match ev with
+        | .move q (.bankTrade g h) => some (e.play.state.turnsTaken, q, g, h)
+        | _ => e.lastTrade
       let e' := ({ e with
         play := e.play.commit {} table ev s'
         refused := false
-        decisions := e.decisions + 1 } : Env).note ev
+        decisions := e.decisions + 1
+        lastTrade } : Env).note ev
       (Env.settle e' e'.fuel).reckon
 
 /-- The numbers for the seat that must decide. -/
@@ -372,7 +405,7 @@ def Env.observation (e : Env) : FloatArray :=
   observe e.T e.ep e.ctx e.settings e.base e.play.state e.decision e.places e.free e.reach e.preview
 
 /-- The actions on offer. -/
-def Env.legalActions (e : Env) : List (Nat × Event) := legal e.T e.ep e.places e.play.state e.decision
+def Env.legalActions (e : Env) : List (Nat × Event) := legal e.T e.ep e.places e.play.state e.decision e.undo
 
 def Env.mask (e : Env) : ByteArray := maskOf e.legalActions
 
@@ -407,7 +440,8 @@ def Env.savedLog (e : Env) (code : String) (names : List String) : Except String
   let seats := e.lineup.size
   let deal := e.G.map.regions.map fun r => (r.res, r.number)
   let create := Json.mkObj
-    [ ("t", "create"), ("code", code), ("seats", toJson seats), ("game", e.T.id)
+    -- A `main-` world is saved under its id on `main`, where `make spectate` knows it.
+    [ ("t", "create"), ("code", code), ("seats", toJson seats), ("game", (e.T.id.dropPrefix? "main-").map (·.toString) |>.getD e.T.id)
     , ("_serverSeed", toJson (Arena.derive e.seed 0)), ("_map", toJson deal), ("_rlSeed", toJson e.seed) ]
   let joins := (List.range seats).map fun i =>
     Json.mkObj
@@ -425,6 +459,7 @@ def Env.savedState (e : Env) : String :=
 def infoNames : List String :=
   [ "over", "winner", "round", "events", "rejected", "proposed", "passed", "decisions", "offers" ]
   ++ (List.range maxSeats).map (s!"points{·}") ++ (List.range maxSeats).map (s!"opening{·}")
+  ++ [ "target", "round_limit", "law_ends" ]
 
 def Env.info (e : Env) : FloatArray :=
   let s := e.play.state
@@ -436,7 +471,9 @@ def Env.info (e : Env) : FloatArray :=
     , Float.ofNat s.round, Float.ofNat e.play.events, Float.ofNat e.play.rejected
     , Float.ofNat e.proposed, Float.ofNat e.passed, Float.ofNat e.decisions
     , Float.ofNat (e.play.offersMade.foldl (· + ·) 0) ]
-  (first ++ seat s.pointsOf ++ seat (e.opening.getD · 0)).foldl FloatArray.push FloatArray.empty
+  let last : List Float :=
+    [ Float.ofNat e.G.targetPoints, Float.ofNat e.G.rounds, if s.lawEnds then 1 else 0 ]
+  (first ++ seat s.pointsOf ++ seat (e.opening.getD · 0) ++ last).foldl FloatArray.push FloatArray.empty
 
 /-! ## Reading a configuration -/
 
@@ -461,7 +498,8 @@ private def readBool (j : Json) (k : String) (dflt : Bool) : Except String Bool 
 /-- The settings of a configuration. An unknown key is an error, so a misspelt switch cannot pass unnoticed. -/
 def readSettings (j : Json) : Except String Settings := do
   let known := ["game", "seats", "lineup", "seed", "law_every", "vote_mode", "move_rows", "preview", "random_map",
-    "slot_order", "reward_win", "reward_standing", "shaping_points", "record", "declare_always"]
+    "slot_order", "reward_win", "reward_standing", "shaping_points", "record", "declare_always", "shaping_relative",
+    "shaping_gamma", "block_undo_trades"]
   match j.getObj? with
   | .error _ => throw "a configuration must be an object"
   | .ok kvs =>
@@ -495,7 +533,10 @@ def readSettings (j : Json) : Except String Settings := do
       rewardStanding := ← readFloat j "reward_standing" d.rewardStanding
       shapingPoints := ← readFloat j "shaping_points" d.shapingPoints
       record := ← readBool j "record" d.record
-      declareAlways := ← readBool j "declare_always" d.declareAlways }
+      declareAlways := ← readBool j "declare_always" d.declareAlways
+      shapingRelative := ← readFloat j "shaping_relative" d.shapingRelative
+      shapingGamma := ← readFloat j "shaping_gamma" d.shapingGamma
+      blockUndoTrades := ← readBool j "block_undo_trades" d.blockUndoTrades }
 
 /-- One seat of a lineup: `caller`, a strategy's name, or `first+then` for one thing in setup and another after. -/
 def readSeat (text : String) : Except String SeatPlan := do
@@ -515,10 +556,11 @@ def readSeat (text : String) : Except String SeatPlan := do
 def Env.ofJson (j : Json) : Except String Env := do
   let settings ← readSettings j
   let id ← j.getObjValAs? String "game"
-  let T ← match tablesOf? id, Gen.tables? id with
-    | some T, _ => pure T
-    | none, some made => made
-    | none, none => throw s!"there is no game called {id}"
+  let T ← match tablesOf? id, Gen.tables? id, Pack.tables? id with
+    | some T, _, _ => pure T
+    | none, some made, _ => made
+    | none, none, some T => pure T
+    | none, none, none => throw s!"there is no game called {id}"
   let lineup ← j.getObjValAs? (List String) "lineup"
   let seats := lineup.length
   if seats < T.minSeats || T.maxSeats < seats then
