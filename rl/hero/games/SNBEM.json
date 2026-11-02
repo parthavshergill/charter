@@ -1,0 +1,7526 @@
+{
+ "result": {
+  "code": "SNBEM",
+  "world": "island",
+  "mode": "restricted",
+  "ended": true,
+  "winner": 1,
+  "how": "target reached",
+  "round": 22,
+  "rounds": 24,
+  "target": 10,
+  "points": {
+   "0": 8,
+   "1": 10,
+   "2": 4,
+   "3": 9
+  },
+  "policy_seat": 1,
+  "weights_label": "v2fix-0",
+  "policy_won": true
+ },
+ "settings": {
+  "code": "SNBEM",
+  "server": "http://127.0.0.1:8791",
+  "world": "island",
+  "seats": 4,
+  "mode": "restricted",
+  "policy_seat": 1,
+  "weights_label": "v2fix-0",
+  "created": 1793574591.56286
+ },
+ "final_view": {
+  "actionsLeft": 0,
+  "bank": {
+   "brick": 28,
+   "grain": 24,
+   "ore": 23,
+   "timber": 22,
+   "wool": 22
+  },
+  "bankRate": 4,
+  "board": {
+   "links": [
+    [
+     0,
+     1
+    ],
+    [
+     1,
+     2
+    ],
+    [
+     2,
+     3
+    ],
+    [
+     4,
+     3
+    ],
+    [
+     5,
+     4
+    ],
+    [
+     0,
+     5
+    ],
+    [
+     6,
+     7
+    ],
+    [
+     7,
+     8
+    ],
+    [
+     8,
+     9
+    ],
+    [
+     2,
+     9
+    ],
+    [
+     6,
+     1
+    ],
+    [
+     10,
+     11
+    ],
+    [
+     11,
+     6
+    ],
+    [
+     12,
+     0
+    ],
+    [
+     10,
+     12
+    ],
+    [
+     13,
+     12
+    ],
+    [
+     14,
+     5
+    ],
+    [
+     15,
+     14
+    ],
+    [
+     13,
+     15
+    ],
+    [
+     4,
+     16
+    ],
+    [
+     17,
+     16
+    ],
+    [
+     18,
+     17
+    ],
+    [
+     14,
+     18
+    ],
+    [
+     3,
+     19
+    ],
+    [
+     19,
+     20
+    ],
+    [
+     21,
+     20
+    ],
+    [
+     16,
+     21
+    ],
+    [
+     9,
+     22
+    ],
+    [
+     22,
+     23
+    ],
+    [
+     19,
+     23
+    ],
+    [
+     24,
+     25
+    ],
+    [
+     25,
+     26
+    ],
+    [
+     26,
+     27
+    ],
+    [
+     8,
+     27
+    ],
+    [
+     24,
+     7
+    ],
+    [
+     28,
+     29
+    ],
+    [
+     29,
+     24
+    ],
+    [
+     28,
+     11
+    ],
+    [
+     30,
+     31
+    ],
+    [
+     31,
+     28
+    ],
+    [
+     32,
+     10
+    ],
+    [
+     30,
+     32
+    ],
+    [
+     33,
+     32
+    ],
+    [
+     34,
+     13
+    ],
+    [
+     33,
+     34
+    ],
+    [
+     35,
+     34
+    ],
+    [
+     36,
+     15
+    ],
+    [
+     37,
+     36
+    ],
+    [
+     35,
+     37
+    ],
+    [
+     38,
+     18
+    ],
+    [
+     39,
+     38
+    ],
+    [
+     36,
+     39
+    ],
+    [
+     17,
+     40
+    ],
+    [
+     41,
+     40
+    ],
+    [
+     42,
+     41
+    ],
+    [
+     38,
+     42
+    ],
+    [
+     21,
+     43
+    ],
+    [
+     44,
+     43
+    ],
+    [
+     40,
+     44
+    ],
+    [
+     20,
+     45
+    ],
+    [
+     45,
+     46
+    ],
+    [
+     47,
+     46
+    ],
+    [
+     43,
+     47
+    ],
+    [
+     23,
+     48
+    ],
+    [
+     48,
+     49
+    ],
+    [
+     45,
+     49
+    ],
+    [
+     22,
+     50
+    ],
+    [
+     50,
+     51
+    ],
+    [
+     51,
+     52
+    ],
+    [
+     48,
+     52
+    ],
+    [
+     27,
+     53
+    ],
+    [
+     53,
+     50
+    ]
+   ],
+   "spots": [
+    {
+     "x": 0,
+     "y": -1
+    },
+    {
+     "x": 0.866025,
+     "y": -0.5
+    },
+    {
+     "x": 0.866025,
+     "y": 0.5
+    },
+    {
+     "x": 0,
+     "y": 1
+    },
+    {
+     "x": -0.866025,
+     "y": 0.5
+    },
+    {
+     "x": -0.866025,
+     "y": -0.5
+    },
+    {
+     "x": 1.732051,
+     "y": -1
+    },
+    {
+     "x": 2.598076,
+     "y": -0.5
+    },
+    {
+     "x": 2.598076,
+     "y": 0.5
+    },
+    {
+     "x": 1.732051,
+     "y": 1
+    },
+    {
+     "x": 0.866025,
+     "y": -2.5
+    },
+    {
+     "x": 1.732051,
+     "y": -2
+    },
+    {
+     "x": 0,
+     "y": -2
+    },
+    {
+     "x": -0.866025,
+     "y": -2.5
+    },
+    {
+     "x": -1.732051,
+     "y": -1
+    },
+    {
+     "x": -1.732051,
+     "y": -2
+    },
+    {
+     "x": -1.732051,
+     "y": 1
+    },
+    {
+     "x": -2.598076,
+     "y": 0.5
+    },
+    {
+     "x": -2.598076,
+     "y": -0.5
+    },
+    {
+     "x": 0,
+     "y": 2
+    },
+    {
+     "x": -0.866025,
+     "y": 2.5
+    },
+    {
+     "x": -1.732051,
+     "y": 2
+    },
+    {
+     "x": 1.732051,
+     "y": 2
+    },
+    {
+     "x": 0.866025,
+     "y": 2.5
+    },
+    {
+     "x": 3.464102,
+     "y": -1
+    },
+    {
+     "x": 4.330127,
+     "y": -0.5
+    },
+    {
+     "x": 4.330127,
+     "y": 0.5
+    },
+    {
+     "x": 3.464102,
+     "y": 1
+    },
+    {
+     "x": 2.598076,
+     "y": -2.5
+    },
+    {
+     "x": 3.464102,
+     "y": -2
+    },
+    {
+     "x": 1.732051,
+     "y": -4
+    },
+    {
+     "x": 2.598076,
+     "y": -3.5
+    },
+    {
+     "x": 0.866025,
+     "y": -3.5
+    },
+    {
+     "x": 0,
+     "y": -4
+    },
+    {
+     "x": -0.866025,
+     "y": -3.5
+    },
+    {
+     "x": -1.732051,
+     "y": -4
+    },
+    {
+     "x": -2.598076,
+     "y": -2.5
+    },
+    {
+     "x": -2.598076,
+     "y": -3.5
+    },
+    {
+     "x": -3.464102,
+     "y": -1
+    },
+    {
+     "x": -3.464102,
+     "y": -2
+    },
+    {
+     "x": -3.464102,
+     "y": 1
+    },
+    {
+     "x": -4.330127,
+     "y": 0.5
+    },
+    {
+     "x": -4.330127,
+     "y": -0.5
+    },
+    {
+     "x": -2.598076,
+     "y": 2.5
+    },
+    {
+     "x": -3.464102,
+     "y": 2
+    },
+    {
+     "x": -0.866025,
+     "y": 3.5
+    },
+    {
+     "x": -1.732051,
+     "y": 4
+    },
+    {
+     "x": -2.598076,
+     "y": 3.5
+    },
+    {
+     "x": 0.866025,
+     "y": 3.5
+    },
+    {
+     "x": 0,
+     "y": 4
+    },
+    {
+     "x": 2.598076,
+     "y": 2.5
+    },
+    {
+     "x": 2.598076,
+     "y": 3.5
+    },
+    {
+     "x": 1.732051,
+     "y": 4
+    },
+    {
+     "x": 3.464102,
+     "y": 2
+    }
+   ],
+   "tiles": [
+    {
+     "color": "#f0d9a0",
+     "number": null,
+     "pips": 0,
+     "res": null,
+     "x": 0,
+     "y": 0
+    },
+    {
+     "color": "#2f9e44",
+     "number": 9,
+     "pips": 4,
+     "res": "timber",
+     "x": 1.732051,
+     "y": 0
+    },
+    {
+     "color": "#f5c518",
+     "number": 4,
+     "pips": 3,
+     "res": "grain",
+     "x": 0.866025,
+     "y": -1.5
+    },
+    {
+     "color": "#8fa3c4",
+     "number": 5,
+     "pips": 4,
+     "res": "ore",
+     "x": -0.866025,
+     "y": -1.5
+    },
+    {
+     "color": "#2f9e44",
+     "number": 6,
+     "pips": 5,
+     "res": "timber",
+     "x": -1.732051,
+     "y": 0
+    },
+    {
+     "color": "#9be15d",
+     "number": 3,
+     "pips": 2,
+     "res": "wool",
+     "x": -0.866025,
+     "y": 1.5
+    },
+    {
+     "color": "#e0612a",
+     "number": 11,
+     "pips": 2,
+     "res": "brick",
+     "x": 0.866025,
+     "y": 1.5
+    },
+    {
+     "color": "#8fa3c4",
+     "number": 5,
+     "pips": 4,
+     "res": "ore",
+     "x": 3.464102,
+     "y": 0
+    },
+    {
+     "color": "#9be15d",
+     "number": 2,
+     "pips": 1,
+     "res": "wool",
+     "x": 2.598076,
+     "y": -1.5
+    },
+    {
+     "color": "#f5c518",
+     "number": 6,
+     "pips": 5,
+     "res": "grain",
+     "x": 1.732051,
+     "y": -3
+    },
+    {
+     "color": "#2f9e44",
+     "number": 3,
+     "pips": 2,
+     "res": "timber",
+     "x": 0,
+     "y": -3
+    },
+    {
+     "color": "#e0612a",
+     "number": 8,
+     "pips": 5,
+     "res": "brick",
+     "x": -1.732051,
+     "y": -3
+    },
+    {
+     "color": "#9be15d",
+     "number": 10,
+     "pips": 3,
+     "res": "wool",
+     "x": -2.598076,
+     "y": -1.5
+    },
+    {
+     "color": "#f5c518",
+     "number": 9,
+     "pips": 4,
+     "res": "grain",
+     "x": -3.464102,
+     "y": 0
+    },
+    {
+     "color": "#8fa3c4",
+     "number": 12,
+     "pips": 1,
+     "res": "ore",
+     "x": -2.598076,
+     "y": 1.5
+    },
+    {
+     "color": "#2f9e44",
+     "number": 11,
+     "pips": 2,
+     "res": "timber",
+     "x": -1.732051,
+     "y": 3
+    },
+    {
+     "color": "#e0612a",
+     "number": 4,
+     "pips": 3,
+     "res": "brick",
+     "x": 0,
+     "y": 3
+    },
+    {
+     "color": "#f5c518",
+     "number": 8,
+     "pips": 5,
+     "res": "grain",
+     "x": 1.732051,
+     "y": 3
+    },
+    {
+     "color": "#9be15d",
+     "number": 10,
+     "pips": 3,
+     "res": "wool",
+     "x": 2.598076,
+     "y": 1.5
+    }
+   ]
+  },
+  "chronicle": [
+   {
+    "actor": null,
+    "event": 5,
+    "kind": "turn",
+    "major": true,
+    "round": 0,
+    "text": "The game began with Seat 0, Bot Ada, Seat 2, Seat 3."
+   },
+   {
+    "actor": 0,
+    "event": 6,
+    "kind": "build",
+    "major": true,
+    "round": 0,
+    "text": "Seat 0 founded a settlement."
+   },
+   {
+    "actor": 0,
+    "event": 7,
+    "kind": "build",
+    "major": false,
+    "round": 0,
+    "text": "Seat 0 laid a road."
+   },
+   {
+    "actor": 0,
+    "event": 8,
+    "kind": "turn",
+    "major": false,
+    "round": 0,
+    "text": "Seat 0 ended their turn."
+   },
+   {
+    "actor": 1,
+    "event": 9,
+    "kind": "build",
+    "major": true,
+    "round": 0,
+    "text": "Bot Ada founded a settlement."
+   },
+   {
+    "actor": 1,
+    "event": 10,
+    "kind": "build",
+    "major": false,
+    "round": 0,
+    "text": "Bot Ada laid a road."
+   },
+   {
+    "actor": 1,
+    "event": 11,
+    "kind": "turn",
+    "major": false,
+    "round": 0,
+    "text": "Bot Ada ended their turn."
+   },
+   {
+    "actor": 2,
+    "event": 12,
+    "kind": "build",
+    "major": true,
+    "round": 0,
+    "text": "Seat 2 founded a settlement."
+   },
+   {
+    "actor": 2,
+    "event": 13,
+    "kind": "build",
+    "major": false,
+    "round": 0,
+    "text": "Seat 2 laid a road."
+   },
+   {
+    "actor": 2,
+    "event": 14,
+    "kind": "turn",
+    "major": false,
+    "round": 0,
+    "text": "Seat 2 ended their turn."
+   },
+   {
+    "actor": 3,
+    "event": 15,
+    "kind": "build",
+    "major": true,
+    "round": 0,
+    "text": "Seat 3 founded a settlement."
+   },
+   {
+    "actor": 3,
+    "event": 16,
+    "kind": "build",
+    "major": false,
+    "round": 0,
+    "text": "Seat 3 laid a road."
+   },
+   {
+    "actor": 3,
+    "event": 17,
+    "kind": "turn",
+    "major": false,
+    "round": 0,
+    "text": "Seat 3 ended their turn."
+   },
+   {
+    "actor": 3,
+    "event": 18,
+    "kind": "build",
+    "major": true,
+    "round": 0,
+    "text": "Seat 3 founded a settlement."
+   },
+   {
+    "actor": 3,
+    "event": 19,
+    "kind": "build",
+    "major": false,
+    "round": 0,
+    "text": "Seat 3 laid a road."
+   },
+   {
+    "actor": 3,
+    "event": 20,
+    "kind": "turn",
+    "major": false,
+    "round": 0,
+    "text": "Seat 3 ended their turn."
+   },
+   {
+    "actor": 2,
+    "event": 21,
+    "kind": "build",
+    "major": true,
+    "round": 0,
+    "text": "Seat 2 founded a settlement."
+   },
+   {
+    "actor": 2,
+    "event": 22,
+    "kind": "build",
+    "major": false,
+    "round": 0,
+    "text": "Seat 2 laid a road."
+   },
+   {
+    "actor": 2,
+    "event": 23,
+    "kind": "turn",
+    "major": false,
+    "round": 0,
+    "text": "Seat 2 ended their turn."
+   },
+   {
+    "actor": 1,
+    "event": 24,
+    "kind": "build",
+    "major": true,
+    "round": 0,
+    "text": "Bot Ada founded a settlement."
+   },
+   {
+    "actor": 1,
+    "event": 25,
+    "kind": "build",
+    "major": false,
+    "round": 0,
+    "text": "Bot Ada laid a road."
+   },
+   {
+    "actor": 1,
+    "event": 26,
+    "kind": "turn",
+    "major": false,
+    "round": 0,
+    "text": "Bot Ada ended their turn."
+   },
+   {
+    "actor": 0,
+    "event": 27,
+    "kind": "build",
+    "major": true,
+    "round": 0,
+    "text": "Seat 0 founded a settlement."
+   },
+   {
+    "actor": 0,
+    "event": 28,
+    "kind": "build",
+    "major": false,
+    "round": 0,
+    "text": "Seat 0 laid a road."
+   },
+   {
+    "actor": 0,
+    "event": 29,
+    "kind": "turn",
+    "major": false,
+    "round": 0,
+    "text": "Seat 0 ended their turn."
+   },
+   {
+    "actor": 0,
+    "event": 29,
+    "kind": "roll",
+    "major": false,
+    "round": 0,
+    "text": "Seat 0 rolled 7."
+   },
+   {
+    "actor": 0,
+    "event": 30,
+    "kind": "turn",
+    "major": false,
+    "round": 1,
+    "text": "Seat 0 ended their turn."
+   },
+   {
+    "actor": 1,
+    "event": 30,
+    "kind": "roll",
+    "major": false,
+    "round": 1,
+    "text": "Bot Ada rolled 7."
+   },
+   {
+    "actor": 1,
+    "event": 31,
+    "kind": "turn",
+    "major": false,
+    "round": 1,
+    "text": "Bot Ada ended their turn."
+   },
+   {
+    "actor": 2,
+    "event": 31,
+    "kind": "roll",
+    "major": false,
+    "round": 1,
+    "text": "Seat 2 rolled 7."
+   },
+   {
+    "actor": 2,
+    "event": 32,
+    "kind": "turn",
+    "major": false,
+    "round": 1,
+    "text": "Seat 2 ended their turn."
+   },
+   {
+    "actor": 3,
+    "event": 32,
+    "kind": "roll",
+    "major": false,
+    "round": 1,
+    "text": "Seat 3 rolled 5."
+   },
+   {
+    "actor": null,
+    "event": 32,
+    "kind": "money",
+    "major": false,
+    "round": 1,
+    "text": "Bot Ada collected 1 ore."
+   },
+   {
+    "actor": null,
+    "event": 32,
+    "kind": "money",
+    "major": false,
+    "round": 1,
+    "text": "Seat 3 collected 1 ore."
+   },
+   {
+    "actor": null,
+    "event": 32,
+    "kind": "money",
+    "major": false,
+    "round": 1,
+    "text": "Seat 2 collected 1 ore."
+   },
+   {
+    "actor": 3,
+    "event": 33,
+    "kind": "turn",
+    "major": false,
+    "round": 1,
+    "text": "Seat 3 ended their turn."
+   },
+   {
+    "actor": null,
+    "event": 33,
+    "kind": "turn",
+    "major": false,
+    "round": 1,
+    "text": "Round 2 began."
+   },
+   {
+    "actor": 0,
+    "event": 33,
+    "kind": "roll",
+    "major": false,
+    "round": 1,
+    "text": "Seat 0 rolled 10."
+   },
+   {
+    "actor": null,
+    "event": 33,
+    "kind": "money",
+    "major": false,
+    "round": 1,
+    "text": "Seat 0 collected 1 wool."
+   },
+   {
+    "actor": null,
+    "event": 33,
+    "kind": "money",
+    "major": false,
+    "round": 1,
+    "text": "Bot Ada collected 1 wool."
+   },
+   {
+    "actor": null,
+    "event": 33,
+    "kind": "money",
+    "major": false,
+    "round": 1,
+    "text": "Seat 2 collected 1 wool."
+   },
+   {
+    "actor": null,
+    "event": 33,
+    "kind": "money",
+    "major": false,
+    "round": 1,
+    "text": "Seat 3 collected 1 wool."
+   },
+   {
+    "actor": 0,
+    "event": 34,
+    "kind": "turn",
+    "major": false,
+    "round": 2,
+    "text": "Seat 0 ended their turn."
+   },
+   {
+    "actor": 1,
+    "event": 34,
+    "kind": "roll",
+    "major": false,
+    "round": 2,
+    "text": "Bot Ada rolled 11."
+   },
+   {
+    "actor": null,
+    "event": 34,
+    "kind": "money",
+    "major": false,
+    "round": 2,
+    "text": "Seat 3 collected 1 brick."
+   },
+   {
+    "actor": 1,
+    "event": 35,
+    "kind": "turn",
+    "major": false,
+    "round": 2,
+    "text": "Bot Ada ended their turn."
+   },
+   {
+    "actor": 2,
+    "event": 35,
+    "kind": "roll",
+    "major": false,
+    "round": 2,
+    "text": "Seat 2 rolled 11."
+   },
+   {
+    "actor": null,
+    "event": 35,
+    "kind": "money",
+    "major": false,
+    "round": 2,
+    "text": "Seat 3 collected 1 brick."
+   },
+   {
+    "actor": 2,
+    "event": 36,
+    "kind": "turn",
+    "major": false,
+    "round": 2,
+    "text": "Seat 2 ended their turn."
+   },
+   {
+    "actor": 3,
+    "event": 36,
+    "kind": "roll",
+    "major": false,
+    "round": 2,
+    "text": "Seat 3 rolled 6."
+   },
+   {
+    "actor": null,
+    "event": 36,
+    "kind": "money",
+    "major": false,
+    "round": 2,
+    "text": "Seat 0 collected 1 timber."
+   },
+   {
+    "actor": null,
+    "event": 36,
+    "kind": "money",
+    "major": false,
+    "round": 2,
+    "text": "Seat 3 collected 1 timber."
+   },
+   {
+    "actor": null,
+    "event": 36,
+    "kind": "money",
+    "major": false,
+    "round": 2,
+    "text": "Seat 2 collected 1 grain."
+   },
+   {
+    "actor": 3,
+    "event": 37,
+    "kind": "build",
+    "major": false,
+    "round": 2,
+    "text": "Seat 3 laid a road."
+   },
+   {
+    "actor": 3,
+    "event": 38,
+    "kind": "turn",
+    "major": false,
+    "round": 2,
+    "text": "Seat 3 ended their turn."
+   },
+   {
+    "actor": null,
+    "event": 38,
+    "kind": "turn",
+    "major": false,
+    "round": 2,
+    "text": "Round 3 began."
+   },
+   {
+    "actor": 0,
+    "event": 38,
+    "kind": "roll",
+    "major": false,
+    "round": 2,
+    "text": "Seat 0 rolled 5."
+   },
+   {
+    "actor": null,
+    "event": 38,
+    "kind": "money",
+    "major": false,
+    "round": 2,
+    "text": "Bot Ada collected 1 ore."
+   },
+   {
+    "actor": null,
+    "event": 38,
+    "kind": "money",
+    "major": false,
+    "round": 2,
+    "text": "Seat 3 collected 1 ore."
+   },
+   {
+    "actor": null,
+    "event": 38,
+    "kind": "money",
+    "major": false,
+    "round": 2,
+    "text": "Seat 2 collected 1 ore."
+   },
+   {
+    "actor": 0,
+    "event": 39,
+    "kind": "turn",
+    "major": false,
+    "round": 3,
+    "text": "Seat 0 ended their turn."
+   },
+   {
+    "actor": 1,
+    "event": 39,
+    "kind": "roll",
+    "major": false,
+    "round": 3,
+    "text": "Bot Ada rolled 12."
+   },
+   {
+    "actor": 1,
+    "event": 40,
+    "kind": "turn",
+    "major": false,
+    "round": 3,
+    "text": "Bot Ada ended their turn."
+   },
+   {
+    "actor": 2,
+    "event": 40,
+    "kind": "roll",
+    "major": false,
+    "round": 3,
+    "text": "Seat 2 rolled 10."
+   },
+   {
+    "actor": null,
+    "event": 40,
+    "kind": "money",
+    "major": false,
+    "round": 3,
+    "text": "Seat 0 collected 1 wool."
+   },
+   {
+    "actor": null,
+    "event": 40,
+    "kind": "money",
+    "major": false,
+    "round": 3,
+    "text": "Bot Ada collected 1 wool."
+   },
+   {
+    "actor": null,
+    "event": 40,
+    "kind": "money",
+    "major": false,
+    "round": 3,
+    "text": "Seat 2 collected 1 wool."
+   },
+   {
+    "actor": null,
+    "event": 40,
+    "kind": "money",
+    "major": false,
+    "round": 3,
+    "text": "Seat 3 collected 1 wool."
+   },
+   {
+    "actor": 2,
+    "event": 41,
+    "kind": "turn",
+    "major": false,
+    "round": 3,
+    "text": "Seat 2 ended their turn."
+   },
+   {
+    "actor": 3,
+    "event": 41,
+    "kind": "roll",
+    "major": false,
+    "round": 3,
+    "text": "Seat 3 rolled 6."
+   },
+   {
+    "actor": null,
+    "event": 41,
+    "kind": "money",
+    "major": false,
+    "round": 3,
+    "text": "Seat 0 collected 1 timber."
+   },
+   {
+    "actor": null,
+    "event": 41,
+    "kind": "money",
+    "major": false,
+    "round": 3,
+    "text": "Seat 3 collected 1 timber."
+   },
+   {
+    "actor": null,
+    "event": 41,
+    "kind": "money",
+    "major": false,
+    "round": 3,
+    "text": "Seat 2 collected 1 grain."
+   },
+   {
+    "actor": 3,
+    "event": 42,
+    "kind": "build",
+    "major": false,
+    "round": 3,
+    "text": "Seat 3 laid a road."
+   },
+   {
+    "actor": 3,
+    "event": 43,
+    "kind": "turn",
+    "major": false,
+    "round": 3,
+    "text": "Seat 3 ended their turn."
+   },
+   {
+    "actor": null,
+    "event": 43,
+    "kind": "turn",
+    "major": false,
+    "round": 3,
+    "text": "Round 4 began."
+   },
+   {
+    "actor": 0,
+    "event": 43,
+    "kind": "roll",
+    "major": false,
+    "round": 3,
+    "text": "Seat 0 rolled 7."
+   },
+   {
+    "actor": 0,
+    "event": 44,
+    "kind": "turn",
+    "major": false,
+    "round": 4,
+    "text": "Seat 0 ended their turn."
+   },
+   {
+    "actor": 1,
+    "event": 44,
+    "kind": "roll",
+    "major": false,
+    "round": 4,
+    "text": "Bot Ada rolled 6."
+   },
+   {
+    "actor": null,
+    "event": 44,
+    "kind": "money",
+    "major": false,
+    "round": 4,
+    "text": "Seat 0 collected 1 timber."
+   },
+   {
+    "actor": null,
+    "event": 44,
+    "kind": "money",
+    "major": false,
+    "round": 4,
+    "text": "Seat 3 collected 1 timber."
+   },
+   {
+    "actor": null,
+    "event": 44,
+    "kind": "money",
+    "major": false,
+    "round": 4,
+    "text": "Seat 2 collected 1 grain."
+   },
+   {
+    "actor": 1,
+    "event": 45,
+    "kind": "turn",
+    "major": false,
+    "round": 4,
+    "text": "Bot Ada ended their turn."
+   },
+   {
+    "actor": 2,
+    "event": 45,
+    "kind": "roll",
+    "major": false,
+    "round": 4,
+    "text": "Seat 2 rolled 12."
+   },
+   {
+    "actor": 2,
+    "event": 46,
+    "kind": "turn",
+    "major": false,
+    "round": 4,
+    "text": "Seat 2 ended their turn."
+   },
+   {
+    "actor": 3,
+    "event": 46,
+    "kind": "roll",
+    "major": false,
+    "round": 4,
+    "text": "Seat 3 rolled 4."
+   },
+   {
+    "actor": null,
+    "event": 46,
+    "kind": "money",
+    "major": false,
+    "round": 4,
+    "text": "Seat 2 collected 1 grain."
+   },
+   {
+    "actor": null,
+    "event": 46,
+    "kind": "money",
+    "major": false,
+    "round": 4,
+    "text": "Bot Ada collected 1 grain."
+   },
+   {
+    "actor": null,
+    "event": 46,
+    "kind": "money",
+    "major": false,
+    "round": 4,
+    "text": "Seat 0 collected 1 brick."
+   },
+   {
+    "actor": 3,
+    "event": 47,
+    "kind": "turn",
+    "major": false,
+    "round": 4,
+    "text": "Seat 3 ended their turn."
+   },
+   {
+    "actor": null,
+    "event": 47,
+    "kind": "turn",
+    "major": false,
+    "round": 4,
+    "text": "Round 5 began."
+   },
+   {
+    "actor": 0,
+    "event": 47,
+    "kind": "roll",
+    "major": false,
+    "round": 4,
+    "text": "Seat 0 rolled 9."
+   },
+   {
+    "actor": null,
+    "event": 47,
+    "kind": "money",
+    "major": false,
+    "round": 4,
+    "text": "Seat 2 collected 1 timber."
+   },
+   {
+    "actor": null,
+    "event": 47,
+    "kind": "money",
+    "major": false,
+    "round": 4,
+    "text": "Bot Ada collected 1 timber."
+   },
+   {
+    "actor": null,
+    "event": 47,
+    "kind": "money",
+    "major": false,
+    "round": 4,
+    "text": "Seat 0 collected 1 grain."
+   },
+   {
+    "actor": 0,
+    "event": 48,
+    "kind": "build",
+    "major": false,
+    "round": 5,
+    "text": "Seat 0 laid a road."
+   },
+   {
+    "actor": 0,
+    "event": 49,
+    "kind": "turn",
+    "major": false,
+    "round": 5,
+    "text": "Seat 0 ended their turn."
+   },
+   {
+    "actor": 1,
+    "event": 49,
+    "kind": "roll",
+    "major": false,
+    "round": 5,
+    "text": "Bot Ada rolled 7."
+   },
+   {
+    "actor": 1,
+    "event": 50,
+    "kind": "turn",
+    "major": false,
+    "round": 5,
+    "text": "Bot Ada ended their turn."
+   },
+   {
+    "actor": 2,
+    "event": 50,
+    "kind": "roll",
+    "major": false,
+    "round": 5,
+    "text": "Seat 2 rolled 10."
+   },
+   {
+    "actor": null,
+    "event": 50,
+    "kind": "money",
+    "major": false,
+    "round": 5,
+    "text": "Seat 0 collected 1 wool."
+   },
+   {
+    "actor": null,
+    "event": 50,
+    "kind": "money",
+    "major": false,
+    "round": 5,
+    "text": "Bot Ada collected 1 wool."
+   },
+   {
+    "actor": null,
+    "event": 50,
+    "kind": "money",
+    "major": false,
+    "round": 5,
+    "text": "Seat 2 collected 1 wool."
+   },
+   {
+    "actor": null,
+    "event": 50,
+    "kind": "money",
+    "major": false,
+    "round": 5,
+    "text": "Seat 3 collected 1 wool."
+   },
+   {
+    "actor": 2,
+    "event": 51,
+    "kind": "trade",
+    "major": false,
+    "round": 5,
+    "text": "Seat 2 traded 4 grain to the bank for 1 timber."
+   },
+   {
+    "actor": 2,
+    "event": 52,
+    "kind": "turn",
+    "major": false,
+    "round": 5,
+    "text": "Seat 2 ended their turn."
+   },
+   {
+    "actor": 3,
+    "event": 52,
+    "kind": "roll",
+    "major": false,
+    "round": 5,
+    "text": "Seat 3 rolled 10."
+   },
+   {
+    "actor": null,
+    "event": 52,
+    "kind": "money",
+    "major": false,
+    "round": 5,
+    "text": "Seat 0 collected 1 wool."
+   },
+   {
+    "actor": null,
+    "event": 52,
+    "kind": "money",
+    "major": false,
+    "round": 5,
+    "text": "Bot Ada collected 1 wool."
+   },
+   {
+    "actor": null,
+    "event": 52,
+    "kind": "money",
+    "major": false,
+    "round": 5,
+    "text": "Seat 2 collected 1 wool."
+   },
+   {
+    "actor": null,
+    "event": 52,
+    "kind": "money",
+    "major": false,
+    "round": 5,
+    "text": "Seat 3 collected 1 wool."
+   },
+   {
+    "actor": 3,
+    "event": 53,
+    "kind": "trade",
+    "major": false,
+    "round": 5,
+    "text": "Seat 3 traded 4 wool to the bank for 1 brick."
+   },
+   {
+    "actor": 3,
+    "event": 54,
+    "kind": "turn",
+    "major": false,
+    "round": 5,
+    "text": "Seat 3 ended their turn."
+   },
+   {
+    "actor": null,
+    "event": 54,
+    "kind": "turn",
+    "major": false,
+    "round": 5,
+    "text": "Round 6 began."
+   },
+   {
+    "actor": 0,
+    "event": 54,
+    "kind": "roll",
+    "major": false,
+    "round": 5,
+    "text": "Seat 0 rolled 6."
+   },
+   {
+    "actor": null,
+    "event": 54,
+    "kind": "money",
+    "major": false,
+    "round": 5,
+    "text": "Seat 0 collected 1 timber."
+   },
+   {
+    "actor": null,
+    "event": 54,
+    "kind": "money",
+    "major": false,
+    "round": 5,
+    "text": "Seat 3 collected 1 timber."
+   },
+   {
+    "actor": null,
+    "event": 54,
+    "kind": "money",
+    "major": false,
+    "round": 5,
+    "text": "Seat 2 collected 1 grain."
+   },
+   {
+    "actor": 0,
+    "event": 55,
+    "kind": "turn",
+    "major": false,
+    "round": 6,
+    "text": "Seat 0 ended their turn."
+   },
+   {
+    "actor": 1,
+    "event": 55,
+    "kind": "roll",
+    "major": false,
+    "round": 6,
+    "text": "Bot Ada rolled 6."
+   },
+   {
+    "actor": null,
+    "event": 55,
+    "kind": "money",
+    "major": false,
+    "round": 6,
+    "text": "Seat 0 collected 1 timber."
+   },
+   {
+    "actor": null,
+    "event": 55,
+    "kind": "money",
+    "major": false,
+    "round": 6,
+    "text": "Seat 3 collected 1 timber."
+   },
+   {
+    "actor": null,
+    "event": 55,
+    "kind": "money",
+    "major": false,
+    "round": 6,
+    "text": "Seat 2 collected 1 grain."
+   },
+   {
+    "actor": 1,
+    "event": 56,
+    "kind": "turn",
+    "major": false,
+    "round": 6,
+    "text": "Bot Ada ended their turn."
+   },
+   {
+    "actor": 2,
+    "event": 56,
+    "kind": "roll",
+    "major": false,
+    "round": 6,
+    "text": "Seat 2 rolled 12."
+   },
+   {
+    "actor": 2,
+    "event": 57,
+    "kind": "trade",
+    "major": false,
+    "round": 6,
+    "text": "Seat 2 traded 4 wool to the bank for 1 brick."
+   },
+   {
+    "actor": 2,
+    "event": 58,
+    "kind": "build",
+    "major": false,
+    "round": 6,
+    "text": "Seat 2 laid a road."
+   },
+   {
+    "actor": 2,
+    "event": 59,
+    "kind": "turn",
+    "major": false,
+    "round": 6,
+    "text": "Seat 2 ended their turn."
+   },
+   {
+    "actor": 3,
+    "event": 59,
+    "kind": "roll",
+    "major": false,
+    "round": 6,
+    "text": "Seat 3 rolled 11."
+   },
+   {
+    "actor": null,
+    "event": 59,
+    "kind": "money",
+    "major": false,
+    "round": 6,
+    "text": "Seat 3 collected 1 brick."
+   },
+   {
+    "actor": 3,
+    "event": 60,
+    "kind": "turn",
+    "major": false,
+    "round": 6,
+    "text": "Seat 3 ended their turn."
+   },
+   {
+    "actor": null,
+    "event": 60,
+    "kind": "turn",
+    "major": false,
+    "round": 6,
+    "text": "Round 7 began."
+   },
+   {
+    "actor": 0,
+    "event": 60,
+    "kind": "roll",
+    "major": false,
+    "round": 6,
+    "text": "Seat 0 rolled 5."
+   },
+   {
+    "actor": null,
+    "event": 60,
+    "kind": "money",
+    "major": false,
+    "round": 6,
+    "text": "Bot Ada collected 1 ore."
+   },
+   {
+    "actor": null,
+    "event": 60,
+    "kind": "money",
+    "major": false,
+    "round": 6,
+    "text": "Seat 3 collected 1 ore."
+   },
+   {
+    "actor": null,
+    "event": 60,
+    "kind": "money",
+    "major": false,
+    "round": 6,
+    "text": "Seat 2 collected 1 ore."
+   },
+   {
+    "actor": 0,
+    "event": 61,
+    "kind": "trade",
+    "major": false,
+    "round": 7,
+    "text": "Seat 0 traded 4 timber to the bank for 1 brick."
+   },
+   {
+    "actor": 0,
+    "event": 62,
+    "kind": "turn",
+    "major": false,
+    "round": 7,
+    "text": "Seat 0 ended their turn."
+   },
+   {
+    "actor": 1,
+    "event": 62,
+    "kind": "roll",
+    "major": false,
+    "round": 7,
+    "text": "Bot Ada rolled 8."
+   },
+   {
+    "actor": null,
+    "event": 62,
+    "kind": "money",
+    "major": false,
+    "round": 7,
+    "text": "Bot Ada collected 1 brick."
+   },
+   {
+    "actor": null,
+    "event": 62,
+    "kind": "money",
+    "major": false,
+    "round": 7,
+    "text": "Seat 3 collected 1 grain."
+   },
+   {
+    "actor": null,
+    "event": 62,
+    "kind": "money",
+    "major": false,
+    "round": 7,
+    "text": "Seat 0 collected 1 grain."
+   },
+   {
+    "actor": 1,
+    "event": 63,
+    "kind": "build",
+    "major": true,
+    "round": 7,
+    "text": "Bot Ada founded a settlement."
+   },
+   {
+    "actor": 1,
+    "event": 64,
+    "kind": "turn",
+    "major": false,
+    "round": 7,
+    "text": "Bot Ada ended their turn."
+   },
+   {
+    "actor": 2,
+    "event": 64,
+    "kind": "roll",
+    "major": false,
+    "round": 7,
+    "text": "Seat 2 rolled 4."
+   },
+   {
+    "actor": null,
+    "event": 64,
+    "kind": "money",
+    "major": false,
+    "round": 7,
+    "text": "Seat 2 collected 1 grain."
+   },
+   {
+    "actor": null,
+    "event": 64,
+    "kind": "money",
+    "major": false,
+    "round": 7,
+    "text": "Bot Ada collected 1 grain."
+   },
+   {
+    "actor": null,
+    "event": 64,
+    "kind": "money",
+    "major": false,
+    "round": 7,
+    "text": "Seat 0 collected 1 brick."
+   },
+   {
+    "actor": 2,
+    "event": 65,
+    "kind": "build",
+    "major": true,
+    "round": 7,
+    "text": "Seat 2 raised a city from a settlement, the first on the island."
+   },
+   {
+    "actor": 2,
+    "event": 66,
+    "kind": "trade",
+    "major": true,
+    "round": 7,
+    "text": "Seat 2 declared 0 grain."
+   },
+   {
+    "actor": 2,
+    "event": 67,
+    "kind": "turn",
+    "major": false,
+    "round": 7,
+    "text": "Seat 2 ended their turn."
+   },
+   {
+    "actor": 3,
+    "event": 67,
+    "kind": "roll",
+    "major": false,
+    "round": 7,
+    "text": "Seat 3 rolled 7."
+   },
+   {
+    "actor": 3,
+    "event": 68,
+    "kind": "turn",
+    "major": false,
+    "round": 7,
+    "text": "Seat 3 ended their turn."
+   },
+   {
+    "actor": null,
+    "event": 68,
+    "kind": "turn",
+    "major": false,
+    "round": 7,
+    "text": "Round 8 began."
+   },
+   {
+    "actor": 0,
+    "event": 68,
+    "kind": "roll",
+    "major": false,
+    "round": 7,
+    "text": "Seat 0 rolled 4."
+   },
+   {
+    "actor": null,
+    "event": 68,
+    "kind": "money",
+    "major": false,
+    "round": 7,
+    "text": "Bot Ada collected 1 grain."
+   },
+   {
+    "actor": null,
+    "event": 68,
+    "kind": "money",
+    "major": false,
+    "round": 7,
+    "text": "Seat 2 collected 2 grain."
+   },
+   {
+    "actor": null,
+    "event": 68,
+    "kind": "money",
+    "major": false,
+    "round": 7,
+    "text": "Seat 0 collected 1 brick."
+   },
+   {
+    "actor": 0,
+    "event": 69,
+    "kind": "turn",
+    "major": false,
+    "round": 8,
+    "text": "Seat 0 ended their turn."
+   },
+   {
+    "actor": 1,
+    "event": 69,
+    "kind": "roll",
+    "major": false,
+    "round": 8,
+    "text": "Bot Ada rolled 3."
+   },
+   {
+    "actor": null,
+    "event": 69,
+    "kind": "money",
+    "major": false,
+    "round": 8,
+    "text": "Bot Ada collected 1 timber."
+   },
+   {
+    "actor": null,
+    "event": 69,
+    "kind": "money",
+    "major": false,
+    "round": 8,
+    "text": "Seat 2 collected 2 timber."
+   },
+   {
+    "actor": 1,
+    "event": 70,
+    "kind": "build",
+    "major": true,
+    "round": 8,
+    "text": "Bot Ada raised a city from a settlement."
+   },
+   {
+    "actor": 1,
+    "event": 71,
+    "kind": "turn",
+    "major": false,
+    "round": 8,
+    "text": "Bot Ada ended their turn."
+   },
+   {
+    "actor": 2,
+    "event": 71,
+    "kind": "roll",
+    "major": false,
+    "round": 8,
+    "text": "Seat 2 rolled 9."
+   },
+   {
+    "actor": null,
+    "event": 71,
+    "kind": "money",
+    "major": false,
+    "round": 8,
+    "text": "Seat 2 collected 1 timber."
+   },
+   {
+    "actor": null,
+    "event": 71,
+    "kind": "money",
+    "major": false,
+    "round": 8,
+    "text": "Bot Ada collected 1 timber."
+   },
+   {
+    "actor": null,
+    "event": 71,
+    "kind": "money",
+    "major": false,
+    "round": 8,
+    "text": "Seat 0 collected 1 grain."
+   },
+   {
+    "actor": 2,
+    "event": 72,
+    "kind": "trade",
+    "major": false,
+    "round": 8,
+    "text": "Seat 2 traded 4 timber to the bank for 1 ore."
+   },
+   {
+    "actor": 2,
+    "event": 73,
+    "kind": "turn",
+    "major": false,
+    "round": 8,
+    "text": "Seat 2 ended their turn."
+   },
+   {
+    "actor": 3,
+    "event": 73,
+    "kind": "roll",
+    "major": false,
+    "round": 8,
+    "text": "Seat 3 rolled 7."
+   },
+   {
+    "actor": 3,
+    "event": 74,
+    "kind": "turn",
+    "major": false,
+    "round": 8,
+    "text": "Seat 3 ended their turn."
+   },
+   {
+    "actor": null,
+    "event": 74,
+    "kind": "turn",
+    "major": false,
+    "round": 8,
+    "text": "Round 9 began."
+   },
+   {
+    "actor": 0,
+    "event": 74,
+    "kind": "roll",
+    "major": false,
+    "round": 8,
+    "text": "Seat 0 rolled 7."
+   },
+   {
+    "actor": 0,
+    "event": 75,
+    "kind": "turn",
+    "major": false,
+    "round": 9,
+    "text": "Seat 0 ended their turn."
+   },
+   {
+    "actor": 1,
+    "event": 75,
+    "kind": "roll",
+    "major": false,
+    "round": 9,
+    "text": "Bot Ada rolled 6."
+   },
+   {
+    "actor": null,
+    "event": 75,
+    "kind": "money",
+    "major": false,
+    "round": 9,
+    "text": "Seat 0 collected 1 timber."
+   },
+   {
+    "actor": null,
+    "event": 75,
+    "kind": "money",
+    "major": false,
+    "round": 9,
+    "text": "Seat 3 collected 1 timber."
+   },
+   {
+    "actor": null,
+    "event": 75,
+    "kind": "money",
+    "major": false,
+    "round": 9,
+    "text": "Seat 2 collected 2 grain."
+   },
+   {
+    "actor": 1,
+    "event": 76,
+    "kind": "turn",
+    "major": false,
+    "round": 9,
+    "text": "Bot Ada ended their turn."
+   },
+   {
+    "actor": 2,
+    "event": 76,
+    "kind": "roll",
+    "major": false,
+    "round": 9,
+    "text": "Seat 2 rolled 8."
+   },
+   {
+    "actor": null,
+    "event": 76,
+    "kind": "money",
+    "major": false,
+    "round": 9,
+    "text": "Bot Ada collected 3 brick."
+   },
+   {
+    "actor": null,
+    "event": 76,
+    "kind": "money",
+    "major": false,
+    "round": 9,
+    "text": "Seat 3 collected 1 grain."
+   },
+   {
+    "actor": null,
+    "event": 76,
+    "kind": "money",
+    "major": false,
+    "round": 9,
+    "text": "Seat 0 collected 1 grain."
+   },
+   {
+    "actor": 2,
+    "event": 77,
+    "kind": "trade",
+    "major": false,
+    "round": 9,
+    "text": "Seat 2 traded 4 grain to the bank for 1 ore."
+   },
+   {
+    "actor": 2,
+    "event": 78,
+    "kind": "turn",
+    "major": false,
+    "round": 9,
+    "text": "Seat 2 ended their turn."
+   },
+   {
+    "actor": 3,
+    "event": 78,
+    "kind": "roll",
+    "major": false,
+    "round": 9,
+    "text": "Seat 3 rolled 5."
+   },
+   {
+    "actor": null,
+    "event": 78,
+    "kind": "money",
+    "major": false,
+    "round": 9,
+    "text": "Seat 3 collected 1 ore."
+   },
+   {
+    "actor": null,
+    "event": 78,
+    "kind": "money",
+    "major": false,
+    "round": 9,
+    "text": "Bot Ada collected 2 ore."
+   },
+   {
+    "actor": null,
+    "event": 78,
+    "kind": "money",
+    "major": false,
+    "round": 9,
+    "text": "Seat 2 collected 1 ore."
+   },
+   {
+    "actor": 3,
+    "event": 79,
+    "kind": "build",
+    "major": true,
+    "round": 9,
+    "text": "Seat 3 raised a city from a settlement."
+   },
+   {
+    "actor": 3,
+    "event": 80,
+    "kind": "turn",
+    "major": false,
+    "round": 9,
+    "text": "Seat 3 ended their turn."
+   },
+   {
+    "actor": null,
+    "event": 80,
+    "kind": "turn",
+    "major": false,
+    "round": 9,
+    "text": "Round 10 began."
+   },
+   {
+    "actor": 0,
+    "event": 80,
+    "kind": "roll",
+    "major": false,
+    "round": 9,
+    "text": "Seat 0 rolled 10."
+   },
+   {
+    "actor": null,
+    "event": 80,
+    "kind": "money",
+    "major": false,
+    "round": 9,
+    "text": "Seat 0 collected 1 wool."
+   },
+   {
+    "actor": null,
+    "event": 80,
+    "kind": "money",
+    "major": false,
+    "round": 9,
+    "text": "Bot Ada collected 2 wool."
+   },
+   {
+    "actor": null,
+    "event": 80,
+    "kind": "money",
+    "major": false,
+    "round": 9,
+    "text": "Seat 2 collected 1 wool."
+   },
+   {
+    "actor": null,
+    "event": 80,
+    "kind": "money",
+    "major": false,
+    "round": 9,
+    "text": "Seat 3 collected 2 wool."
+   },
+   {
+    "actor": 0,
+    "event": 81,
+    "kind": "build",
+    "major": true,
+    "round": 10,
+    "text": "Seat 0 founded a settlement."
+   },
+   {
+    "actor": 0,
+    "event": 82,
+    "kind": "turn",
+    "major": false,
+    "round": 10,
+    "text": "Seat 0 ended their turn."
+   },
+   {
+    "actor": 1,
+    "event": 82,
+    "kind": "roll",
+    "major": false,
+    "round": 10,
+    "text": "Bot Ada rolled 6."
+   },
+   {
+    "actor": null,
+    "event": 82,
+    "kind": "money",
+    "major": false,
+    "round": 10,
+    "text": "Seat 0 collected 1 timber."
+   },
+   {
+    "actor": null,
+    "event": 82,
+    "kind": "money",
+    "major": false,
+    "round": 10,
+    "text": "Seat 3 collected 1 timber."
+   },
+   {
+    "actor": null,
+    "event": 82,
+    "kind": "money",
+    "major": false,
+    "round": 10,
+    "text": "Seat 2 collected 2 grain."
+   },
+   {
+    "actor": 1,
+    "event": 83,
+    "kind": "build",
+    "major": false,
+    "round": 10,
+    "text": "Bot Ada laid a road."
+   },
+   {
+    "actor": 1,
+    "event": 84,
+    "kind": "build",
+    "major": false,
+    "round": 10,
+    "text": "Bot Ada laid a road."
+   },
+   {
+    "actor": 1,
+    "event": 85,
+    "kind": "turn",
+    "major": false,
+    "round": 10,
+    "text": "Bot Ada ended their turn."
+   },
+   {
+    "actor": 2,
+    "event": 85,
+    "kind": "roll",
+    "major": false,
+    "round": 10,
+    "text": "Seat 2 rolled 7."
+   },
+   {
+    "actor": 2,
+    "event": 86,
+    "kind": "build",
+    "major": true,
+    "round": 10,
+    "text": "Seat 2 raised a city from a settlement."
+   },
+   {
+    "actor": 2,
+    "event": 87,
+    "kind": "turn",
+    "major": false,
+    "round": 10,
+    "text": "Seat 2 ended their turn."
+   },
+   {
+    "actor": 3,
+    "event": 87,
+    "kind": "roll",
+    "major": false,
+    "round": 10,
+    "text": "Seat 3 rolled 2."
+   },
+   {
+    "actor": null,
+    "event": 87,
+    "kind": "money",
+    "major": false,
+    "round": 10,
+    "text": "Bot Ada collected 1 wool."
+   },
+   {
+    "actor": 3,
+    "event": 88,
+    "kind": "trade",
+    "major": false,
+    "round": 10,
+    "text": "Seat 3 traded 4 timber to the bank for 1 grain."
+   },
+   {
+    "actor": 3,
+    "event": 89,
+    "kind": "build",
+    "major": true,
+    "round": 10,
+    "text": "Seat 3 founded a settlement."
+   },
+   {
+    "actor": 3,
+    "event": 90,
+    "kind": "turn",
+    "major": false,
+    "round": 10,
+    "text": "Seat 3 ended their turn."
+   },
+   {
+    "actor": null,
+    "event": 90,
+    "kind": "turn",
+    "major": false,
+    "round": 10,
+    "text": "Round 11 began."
+   },
+   {
+    "actor": 0,
+    "event": 90,
+    "kind": "roll",
+    "major": false,
+    "round": 10,
+    "text": "Seat 0 rolled 10."
+   },
+   {
+    "actor": null,
+    "event": 90,
+    "kind": "money",
+    "major": false,
+    "round": 10,
+    "text": "Seat 0 collected 1 wool."
+   },
+   {
+    "actor": null,
+    "event": 90,
+    "kind": "money",
+    "major": false,
+    "round": 10,
+    "text": "Bot Ada collected 2 wool."
+   },
+   {
+    "actor": null,
+    "event": 90,
+    "kind": "money",
+    "major": false,
+    "round": 10,
+    "text": "Seat 3 collected 2 wool."
+   },
+   {
+    "actor": null,
+    "event": 90,
+    "kind": "money",
+    "major": false,
+    "round": 10,
+    "text": "Seat 2 collected 2 wool."
+   },
+   {
+    "actor": 0,
+    "event": 91,
+    "kind": "build",
+    "major": false,
+    "round": 11,
+    "text": "Seat 0 laid a road."
+   },
+   {
+    "actor": 0,
+    "event": 92,
+    "kind": "trade",
+    "major": false,
+    "round": 11,
+    "text": "Seat 0 traded 4 wool to the bank for 1 timber."
+   },
+   {
+    "actor": 0,
+    "event": 93,
+    "kind": "build",
+    "major": false,
+    "round": 11,
+    "text": "Seat 0 laid a road."
+   },
+   {
+    "actor": 0,
+    "event": 94,
+    "kind": "turn",
+    "major": false,
+    "round": 11,
+    "text": "Seat 0 ended their turn."
+   },
+   {
+    "actor": 1,
+    "event": 94,
+    "kind": "roll",
+    "major": false,
+    "round": 11,
+    "text": "Bot Ada rolled 7."
+   },
+   {
+    "actor": 1,
+    "event": 95,
+    "kind": "trade",
+    "major": false,
+    "round": 11,
+    "text": "Bot Ada traded 4 wool to the bank for 1 timber."
+   },
+   {
+    "actor": 1,
+    "event": 96,
+    "kind": "build",
+    "major": false,
+    "round": 11,
+    "text": "Bot Ada laid a road."
+   },
+   {
+    "actor": 1,
+    "event": 97,
+    "kind": "turn",
+    "major": false,
+    "round": 11,
+    "text": "Bot Ada ended their turn."
+   },
+   {
+    "actor": 2,
+    "event": 97,
+    "kind": "roll",
+    "major": false,
+    "round": 11,
+    "text": "Seat 2 rolled 6."
+   },
+   {
+    "actor": null,
+    "event": 97,
+    "kind": "money",
+    "major": false,
+    "round": 11,
+    "text": "Seat 0 collected 1 timber."
+   },
+   {
+    "actor": null,
+    "event": 97,
+    "kind": "money",
+    "major": false,
+    "round": 11,
+    "text": "Seat 3 collected 1 timber."
+   },
+   {
+    "actor": null,
+    "event": 97,
+    "kind": "money",
+    "major": false,
+    "round": 11,
+    "text": "Seat 2 collected 2 grain."
+   },
+   {
+    "actor": 2,
+    "event": 98,
+    "kind": "turn",
+    "major": false,
+    "round": 11,
+    "text": "Seat 2 ended their turn."
+   },
+   {
+    "actor": 3,
+    "event": 98,
+    "kind": "roll",
+    "major": false,
+    "round": 11,
+    "text": "Seat 3 rolled 4."
+   },
+   {
+    "actor": null,
+    "event": 98,
+    "kind": "money",
+    "major": false,
+    "round": 11,
+    "text": "Bot Ada collected 1 grain."
+   },
+   {
+    "actor": null,
+    "event": 98,
+    "kind": "money",
+    "major": false,
+    "round": 11,
+    "text": "Seat 2 collected 2 grain."
+   },
+   {
+    "actor": null,
+    "event": 98,
+    "kind": "money",
+    "major": false,
+    "round": 11,
+    "text": "Seat 0 collected 2 brick."
+   },
+   {
+    "actor": 3,
+    "event": 99,
+    "kind": "turn",
+    "major": false,
+    "round": 11,
+    "text": "Seat 3 ended their turn."
+   },
+   {
+    "actor": null,
+    "event": 99,
+    "kind": "turn",
+    "major": false,
+    "round": 11,
+    "text": "Round 12 began."
+   },
+   {
+    "actor": 0,
+    "event": 99,
+    "kind": "roll",
+    "major": false,
+    "round": 11,
+    "text": "Seat 0 rolled 6."
+   },
+   {
+    "actor": null,
+    "event": 99,
+    "kind": "money",
+    "major": false,
+    "round": 11,
+    "text": "Seat 0 collected 1 timber."
+   },
+   {
+    "actor": null,
+    "event": 99,
+    "kind": "money",
+    "major": false,
+    "round": 11,
+    "text": "Seat 3 collected 1 timber."
+   },
+   {
+    "actor": null,
+    "event": 99,
+    "kind": "money",
+    "major": false,
+    "round": 11,
+    "text": "Seat 2 collected 2 grain."
+   },
+   {
+    "actor": 0,
+    "event": 100,
+    "kind": "build",
+    "major": true,
+    "round": 12,
+    "text": "Seat 0 founded a settlement."
+   },
+   {
+    "actor": 0,
+    "event": 101,
+    "kind": "turn",
+    "major": false,
+    "round": 12,
+    "text": "Seat 0 ended their turn."
+   },
+   {
+    "actor": 1,
+    "event": 101,
+    "kind": "roll",
+    "major": false,
+    "round": 12,
+    "text": "Bot Ada rolled 9."
+   },
+   {
+    "actor": null,
+    "event": 101,
+    "kind": "money",
+    "major": false,
+    "round": 12,
+    "text": "Bot Ada collected 1 timber."
+   },
+   {
+    "actor": null,
+    "event": 101,
+    "kind": "money",
+    "major": false,
+    "round": 12,
+    "text": "Seat 2 collected 2 timber."
+   },
+   {
+    "actor": null,
+    "event": 101,
+    "kind": "money",
+    "major": false,
+    "round": 12,
+    "text": "Seat 3 collected 1 timber."
+   },
+   {
+    "actor": null,
+    "event": 101,
+    "kind": "money",
+    "major": false,
+    "round": 12,
+    "text": "Seat 0 collected 1 grain."
+   },
+   {
+    "actor": 1,
+    "event": 102,
+    "kind": "turn",
+    "major": false,
+    "round": 12,
+    "text": "Bot Ada ended their turn."
+   },
+   {
+    "actor": 2,
+    "event": 102,
+    "kind": "roll",
+    "major": false,
+    "round": 12,
+    "text": "Seat 2 rolled 8."
+   },
+   {
+    "actor": null,
+    "event": 102,
+    "kind": "money",
+    "major": false,
+    "round": 12,
+    "text": "Bot Ada collected 3 brick."
+   },
+   {
+    "actor": null,
+    "event": 102,
+    "kind": "money",
+    "major": false,
+    "round": 12,
+    "text": "Seat 0 collected 1 grain."
+   },
+   {
+    "actor": null,
+    "event": 102,
+    "kind": "money",
+    "major": false,
+    "round": 12,
+    "text": "Seat 3 collected 2 grain."
+   },
+   {
+    "actor": 2,
+    "event": 103,
+    "kind": "trade",
+    "major": false,
+    "round": 12,
+    "text": "Seat 2 traded 4 grain to the bank for 1 brick."
+   },
+   {
+    "actor": 2,
+    "event": 104,
+    "kind": "build",
+    "major": false,
+    "round": 12,
+    "text": "Seat 2 laid a road."
+   },
+   {
+    "actor": 2,
+    "event": 105,
+    "kind": "trade",
+    "major": true,
+    "round": 12,
+    "text": "Seat 2 declared 1 grain."
+   },
+   {
+    "actor": 2,
+    "event": 106,
+    "kind": "turn",
+    "major": false,
+    "round": 12,
+    "text": "Seat 2 ended their turn."
+   },
+   {
+    "actor": 3,
+    "event": 106,
+    "kind": "roll",
+    "major": false,
+    "round": 12,
+    "text": "Seat 3 rolled 10."
+   },
+   {
+    "actor": null,
+    "event": 106,
+    "kind": "money",
+    "major": false,
+    "round": 12,
+    "text": "Seat 0 collected 1 wool."
+   },
+   {
+    "actor": null,
+    "event": 106,
+    "kind": "money",
+    "major": false,
+    "round": 12,
+    "text": "Bot Ada collected 2 wool."
+   },
+   {
+    "actor": null,
+    "event": 106,
+    "kind": "money",
+    "major": false,
+    "round": 12,
+    "text": "Seat 3 collected 2 wool."
+   },
+   {
+    "actor": null,
+    "event": 106,
+    "kind": "money",
+    "major": false,
+    "round": 12,
+    "text": "Seat 2 collected 2 wool."
+   },
+   {
+    "actor": 3,
+    "event": 107,
+    "kind": "trade",
+    "major": false,
+    "round": 12,
+    "text": "Seat 3 traded 4 wool to the bank for 1 ore."
+   },
+   {
+    "actor": 3,
+    "event": 108,
+    "kind": "turn",
+    "major": false,
+    "round": 12,
+    "text": "Seat 3 ended their turn."
+   },
+   {
+    "actor": null,
+    "event": 108,
+    "kind": "turn",
+    "major": false,
+    "round": 12,
+    "text": "Round 13 began."
+   },
+   {
+    "actor": 0,
+    "event": 108,
+    "kind": "roll",
+    "major": false,
+    "round": 12,
+    "text": "Seat 0 rolled 4."
+   },
+   {
+    "actor": null,
+    "event": 108,
+    "kind": "money",
+    "major": false,
+    "round": 12,
+    "text": "Bot Ada collected 1 grain."
+   },
+   {
+    "actor": null,
+    "event": 108,
+    "kind": "money",
+    "major": false,
+    "round": 12,
+    "text": "Seat 2 collected 2 grain."
+   },
+   {
+    "actor": null,
+    "event": 108,
+    "kind": "money",
+    "major": false,
+    "round": 12,
+    "text": "Seat 0 collected 2 brick."
+   },
+   {
+    "actor": 0,
+    "event": 109,
+    "kind": "build",
+    "major": false,
+    "round": 13,
+    "text": "Seat 0 laid a road."
+   },
+   {
+    "actor": 0,
+    "event": 110,
+    "kind": "turn",
+    "major": false,
+    "round": 13,
+    "text": "Seat 0 ended their turn."
+   },
+   {
+    "actor": 1,
+    "event": 110,
+    "kind": "roll",
+    "major": false,
+    "round": 13,
+    "text": "Bot Ada rolled 6."
+   },
+   {
+    "actor": null,
+    "event": 110,
+    "kind": "money",
+    "major": false,
+    "round": 13,
+    "text": "Seat 0 collected 2 timber."
+   },
+   {
+    "actor": null,
+    "event": 110,
+    "kind": "money",
+    "major": false,
+    "round": 13,
+    "text": "Seat 3 collected 1 timber."
+   },
+   {
+    "actor": null,
+    "event": 110,
+    "kind": "money",
+    "major": false,
+    "round": 13,
+    "text": "Seat 2 collected 2 grain."
+   },
+   {
+    "actor": 1,
+    "event": 111,
+    "kind": "build",
+    "major": true,
+    "round": 13,
+    "text": "Bot Ada founded a settlement."
+   },
+   {
+    "actor": 1,
+    "event": 112,
+    "kind": "trade",
+    "major": false,
+    "round": 13,
+    "text": "Bot Ada traded 4 wool to the bank for 1 timber."
+   },
+   {
+    "actor": 1,
+    "event": 113,
+    "kind": "build",
+    "major": false,
+    "round": 13,
+    "text": "Bot Ada laid a road."
+   },
+   {
+    "actor": 1,
+    "event": 114,
+    "kind": "turn",
+    "major": false,
+    "round": 13,
+    "text": "Bot Ada ended their turn."
+   },
+   {
+    "actor": 2,
+    "event": 114,
+    "kind": "roll",
+    "major": false,
+    "round": 13,
+    "text": "Seat 2 rolled 8."
+   },
+   {
+    "actor": null,
+    "event": 114,
+    "kind": "money",
+    "major": false,
+    "round": 13,
+    "text": "Bot Ada collected 3 brick."
+   },
+   {
+    "actor": null,
+    "event": 114,
+    "kind": "money",
+    "major": false,
+    "round": 13,
+    "text": "Seat 0 collected 1 grain."
+   },
+   {
+    "actor": null,
+    "event": 114,
+    "kind": "money",
+    "major": false,
+    "round": 13,
+    "text": "Seat 3 collected 2 grain."
+   },
+   {
+    "actor": 2,
+    "event": 115,
+    "kind": "trade",
+    "major": false,
+    "round": 13,
+    "text": "Seat 2 traded 4 grain to the bank for 1 brick."
+   },
+   {
+    "actor": 2,
+    "event": 116,
+    "kind": "build",
+    "major": false,
+    "round": 13,
+    "text": "Seat 2 laid a road."
+   },
+   {
+    "actor": 2,
+    "event": 117,
+    "kind": "turn",
+    "major": false,
+    "round": 13,
+    "text": "Seat 2 ended their turn."
+   },
+   {
+    "actor": 3,
+    "event": 117,
+    "kind": "roll",
+    "major": false,
+    "round": 13,
+    "text": "Seat 3 rolled 4."
+   },
+   {
+    "actor": null,
+    "event": 117,
+    "kind": "money",
+    "major": false,
+    "round": 13,
+    "text": "Bot Ada collected 1 grain."
+   },
+   {
+    "actor": null,
+    "event": 117,
+    "kind": "money",
+    "major": false,
+    "round": 13,
+    "text": "Seat 2 collected 2 grain."
+   },
+   {
+    "actor": null,
+    "event": 117,
+    "kind": "money",
+    "major": false,
+    "round": 13,
+    "text": "Seat 0 collected 2 brick."
+   },
+   {
+    "actor": 3,
+    "event": 118,
+    "kind": "trade",
+    "major": false,
+    "round": 13,
+    "text": "Seat 3 traded 4 timber to the bank for 1 ore."
+   },
+   {
+    "actor": 3,
+    "event": 119,
+    "kind": "build",
+    "major": true,
+    "round": 13,
+    "text": "Seat 3 raised a city from a settlement."
+   },
+   {
+    "actor": 3,
+    "event": 120,
+    "kind": "turn",
+    "major": false,
+    "round": 13,
+    "text": "Seat 3 ended their turn."
+   },
+   {
+    "actor": null,
+    "event": 120,
+    "kind": "turn",
+    "major": false,
+    "round": 13,
+    "text": "Round 14 began."
+   },
+   {
+    "actor": 0,
+    "event": 120,
+    "kind": "roll",
+    "major": false,
+    "round": 13,
+    "text": "Seat 0 rolled 6."
+   },
+   {
+    "actor": null,
+    "event": 120,
+    "kind": "money",
+    "major": false,
+    "round": 13,
+    "text": "Seat 0 collected 2 timber."
+   },
+   {
+    "actor": null,
+    "event": 120,
+    "kind": "money",
+    "major": false,
+    "round": 13,
+    "text": "Seat 3 collected 2 timber."
+   },
+   {
+    "actor": null,
+    "event": 120,
+    "kind": "money",
+    "major": false,
+    "round": 13,
+    "text": "Seat 2 collected 2 grain."
+   },
+   {
+    "actor": 0,
+    "event": 121,
+    "kind": "build",
+    "major": true,
+    "round": 14,
+    "text": "Seat 0 founded a settlement."
+   },
+   {
+    "actor": 0,
+    "event": 122,
+    "kind": "build",
+    "major": false,
+    "round": 14,
+    "text": "Seat 0 laid a road."
+   },
+   {
+    "actor": 0,
+    "event": 123,
+    "kind": "build",
+    "major": false,
+    "round": 14,
+    "text": "Seat 0 laid a road."
+   },
+   {
+    "actor": 0,
+    "event": 124,
+    "kind": "trade",
+    "major": false,
+    "round": 14,
+    "text": "Seat 0 traded 4 grain to the bank for 1 ore."
+   },
+   {
+    "actor": 0,
+    "event": 125,
+    "kind": "turn",
+    "major": false,
+    "round": 14,
+    "text": "Seat 0 ended their turn."
+   },
+   {
+    "actor": 1,
+    "event": 125,
+    "kind": "roll",
+    "major": false,
+    "round": 14,
+    "text": "Bot Ada rolled 7."
+   },
+   {
+    "actor": 1,
+    "event": 126,
+    "kind": "trade",
+    "major": false,
+    "round": 14,
+    "text": "Bot Ada traded 4 brick to the bank for 1 timber."
+   },
+   {
+    "actor": 1,
+    "event": 127,
+    "kind": "turn",
+    "major": false,
+    "round": 14,
+    "text": "Bot Ada ended their turn."
+   },
+   {
+    "actor": 2,
+    "event": 127,
+    "kind": "roll",
+    "major": false,
+    "round": 14,
+    "text": "Seat 2 rolled 6."
+   },
+   {
+    "actor": null,
+    "event": 127,
+    "kind": "money",
+    "major": false,
+    "round": 14,
+    "text": "Seat 0 collected 2 timber."
+   },
+   {
+    "actor": null,
+    "event": 127,
+    "kind": "money",
+    "major": false,
+    "round": 14,
+    "text": "Seat 3 collected 2 timber."
+   },
+   {
+    "actor": null,
+    "event": 127,
+    "kind": "money",
+    "major": false,
+    "round": 14,
+    "text": "Seat 2 collected 2 grain."
+   },
+   {
+    "actor": 2,
+    "event": 128,
+    "kind": "trade",
+    "major": false,
+    "round": 14,
+    "text": "Seat 2 traded 4 grain to the bank for 1 brick."
+   },
+   {
+    "actor": 2,
+    "event": 129,
+    "kind": "trade",
+    "major": false,
+    "round": 14,
+    "text": "Seat 2 traded 4 grain to the bank for 1 timber."
+   },
+   {
+    "actor": 2,
+    "event": 130,
+    "kind": "build",
+    "major": false,
+    "round": 14,
+    "text": "Seat 2 laid a road."
+   },
+   {
+    "actor": 2,
+    "event": 131,
+    "kind": "trade",
+    "major": false,
+    "round": 14,
+    "text": "Seat 2 traded 4 wool to the bank for 1 brick."
+   },
+   {
+    "actor": 2,
+    "event": 132,
+    "kind": "turn",
+    "major": false,
+    "round": 14,
+    "text": "Seat 2 ended their turn."
+   },
+   {
+    "actor": 3,
+    "event": 132,
+    "kind": "roll",
+    "major": false,
+    "round": 14,
+    "text": "Seat 3 rolled 8."
+   },
+   {
+    "actor": null,
+    "event": 132,
+    "kind": "money",
+    "major": false,
+    "round": 14,
+    "text": "Bot Ada collected 3 brick."
+   },
+   {
+    "actor": null,
+    "event": 132,
+    "kind": "money",
+    "major": false,
+    "round": 14,
+    "text": "Seat 0 collected 1 grain."
+   },
+   {
+    "actor": null,
+    "event": 132,
+    "kind": "money",
+    "major": false,
+    "round": 14,
+    "text": "Seat 3 collected 2 grain."
+   },
+   {
+    "actor": 3,
+    "event": 133,
+    "kind": "trade",
+    "major": false,
+    "round": 14,
+    "text": "Seat 3 traded 4 timber to the bank for 1 ore."
+   },
+   {
+    "actor": 3,
+    "event": 134,
+    "kind": "turn",
+    "major": false,
+    "round": 14,
+    "text": "Seat 3 ended their turn."
+   },
+   {
+    "actor": null,
+    "event": 134,
+    "kind": "turn",
+    "major": false,
+    "round": 14,
+    "text": "Round 15 began."
+   },
+   {
+    "actor": 0,
+    "event": 134,
+    "kind": "roll",
+    "major": false,
+    "round": 14,
+    "text": "Seat 0 rolled 5."
+   },
+   {
+    "actor": null,
+    "event": 134,
+    "kind": "money",
+    "major": false,
+    "round": 14,
+    "text": "Bot Ada collected 3 ore."
+   },
+   {
+    "actor": null,
+    "event": 134,
+    "kind": "money",
+    "major": false,
+    "round": 14,
+    "text": "Seat 3 collected 2 ore."
+   },
+   {
+    "actor": null,
+    "event": 134,
+    "kind": "money",
+    "major": false,
+    "round": 14,
+    "text": "Seat 2 collected 2 ore."
+   },
+   {
+    "actor": 0,
+    "event": 135,
+    "kind": "turn",
+    "major": false,
+    "round": 15,
+    "text": "Seat 0 ended their turn."
+   },
+   {
+    "actor": 1,
+    "event": 135,
+    "kind": "roll",
+    "major": false,
+    "round": 15,
+    "text": "Bot Ada rolled 6."
+   },
+   {
+    "actor": null,
+    "event": 135,
+    "kind": "money",
+    "major": false,
+    "round": 15,
+    "text": "Seat 0 collected 2 timber."
+   },
+   {
+    "actor": null,
+    "event": 135,
+    "kind": "money",
+    "major": false,
+    "round": 15,
+    "text": "Seat 3 collected 2 timber."
+   },
+   {
+    "actor": null,
+    "event": 135,
+    "kind": "money",
+    "major": false,
+    "round": 15,
+    "text": "Seat 2 collected 2 grain."
+   },
+   {
+    "actor": 1,
+    "event": 136,
+    "kind": "build",
+    "major": true,
+    "round": 15,
+    "text": "Bot Ada raised a city from a settlement."
+   },
+   {
+    "actor": 1,
+    "event": 137,
+    "kind": "build",
+    "major": false,
+    "round": 15,
+    "text": "Bot Ada laid a road."
+   },
+   {
+    "actor": 1,
+    "event": 138,
+    "kind": "turn",
+    "major": false,
+    "round": 15,
+    "text": "Bot Ada ended their turn."
+   },
+   {
+    "actor": 2,
+    "event": 138,
+    "kind": "roll",
+    "major": false,
+    "round": 15,
+    "text": "Seat 2 rolled 8."
+   },
+   {
+    "actor": null,
+    "event": 138,
+    "kind": "money",
+    "major": false,
+    "round": 15,
+    "text": "Bot Ada collected 3 brick."
+   },
+   {
+    "actor": null,
+    "event": 138,
+    "kind": "money",
+    "major": false,
+    "round": 15,
+    "text": "Seat 0 collected 1 grain."
+   },
+   {
+    "actor": null,
+    "event": 138,
+    "kind": "money",
+    "major": false,
+    "round": 15,
+    "text": "Seat 3 collected 2 grain."
+   },
+   {
+    "actor": 2,
+    "event": 139,
+    "kind": "turn",
+    "major": false,
+    "round": 15,
+    "text": "Seat 2 ended their turn."
+   },
+   {
+    "actor": 3,
+    "event": 139,
+    "kind": "roll",
+    "major": false,
+    "round": 15,
+    "text": "Seat 3 rolled 7."
+   },
+   {
+    "actor": 3,
+    "event": 140,
+    "kind": "build",
+    "major": true,
+    "round": 15,
+    "text": "Seat 3 raised a city from a settlement."
+   },
+   {
+    "actor": 3,
+    "event": 141,
+    "kind": "build",
+    "major": false,
+    "round": 15,
+    "text": "Seat 3 laid a road."
+   },
+   {
+    "actor": 3,
+    "event": 142,
+    "kind": "trade",
+    "major": false,
+    "round": 15,
+    "text": "Seat 3 traded 4 grain to the bank for 1 brick."
+   },
+   {
+    "actor": 3,
+    "event": 143,
+    "kind": "build",
+    "major": false,
+    "round": 15,
+    "text": "Seat 3 laid a road."
+   },
+   {
+    "actor": 3,
+    "event": 144,
+    "kind": "turn",
+    "major": false,
+    "round": 15,
+    "text": "Seat 3 ended their turn."
+   },
+   {
+    "actor": null,
+    "event": 144,
+    "kind": "turn",
+    "major": false,
+    "round": 15,
+    "text": "Round 16 began."
+   },
+   {
+    "actor": 0,
+    "event": 144,
+    "kind": "roll",
+    "major": false,
+    "round": 15,
+    "text": "Seat 0 rolled 8."
+   },
+   {
+    "actor": null,
+    "event": 144,
+    "kind": "money",
+    "major": false,
+    "round": 15,
+    "text": "Bot Ada collected 3 brick."
+   },
+   {
+    "actor": null,
+    "event": 144,
+    "kind": "money",
+    "major": false,
+    "round": 15,
+    "text": "Seat 0 collected 1 grain."
+   },
+   {
+    "actor": null,
+    "event": 144,
+    "kind": "money",
+    "major": false,
+    "round": 15,
+    "text": "Seat 3 collected 2 grain."
+   },
+   {
+    "actor": 0,
+    "event": 145,
+    "kind": "trade",
+    "major": false,
+    "round": 16,
+    "text": "Seat 0 traded 4 timber to the bank for 1 wool."
+   },
+   {
+    "actor": 0,
+    "event": 146,
+    "kind": "turn",
+    "major": false,
+    "round": 16,
+    "text": "Seat 0 ended their turn."
+   },
+   {
+    "actor": 1,
+    "event": 146,
+    "kind": "roll",
+    "major": false,
+    "round": 16,
+    "text": "Bot Ada rolled 9."
+   },
+   {
+    "actor": null,
+    "event": 146,
+    "kind": "money",
+    "major": false,
+    "round": 16,
+    "text": "Seat 2 collected 2 timber."
+   },
+   {
+    "actor": null,
+    "event": 146,
+    "kind": "money",
+    "major": false,
+    "round": 16,
+    "text": "Bot Ada collected 2 timber."
+   },
+   {
+    "actor": null,
+    "event": 146,
+    "kind": "money",
+    "major": false,
+    "round": 16,
+    "text": "Seat 3 collected 2 timber."
+   },
+   {
+    "actor": null,
+    "event": 146,
+    "kind": "money",
+    "major": false,
+    "round": 16,
+    "text": "Seat 0 collected 2 grain."
+   },
+   {
+    "actor": 1,
+    "event": 147,
+    "kind": "trade",
+    "major": false,
+    "round": 16,
+    "text": "Bot Ada traded 4 brick to the bank for 1 grain."
+   },
+   {
+    "actor": 1,
+    "event": 148,
+    "kind": "build",
+    "major": true,
+    "round": 16,
+    "text": "Bot Ada founded a settlement."
+   },
+   {
+    "actor": 1,
+    "event": 149,
+    "kind": "build",
+    "major": false,
+    "round": 16,
+    "text": "Bot Ada laid a road."
+   },
+   {
+    "actor": 1,
+    "event": 150,
+    "kind": "turn",
+    "major": false,
+    "round": 16,
+    "text": "Bot Ada ended their turn."
+   },
+   {
+    "actor": 2,
+    "event": 150,
+    "kind": "roll",
+    "major": false,
+    "round": 16,
+    "text": "Seat 2 rolled 7."
+   },
+   {
+    "actor": 2,
+    "event": 151,
+    "kind": "build",
+    "major": false,
+    "round": 16,
+    "text": "Seat 2 laid a road."
+   },
+   {
+    "actor": 2,
+    "event": 152,
+    "kind": "turn",
+    "major": false,
+    "round": 16,
+    "text": "Seat 2 ended their turn."
+   },
+   {
+    "actor": 3,
+    "event": 152,
+    "kind": "roll",
+    "major": false,
+    "round": 16,
+    "text": "Seat 3 rolled 6."
+   },
+   {
+    "actor": null,
+    "event": 152,
+    "kind": "money",
+    "major": false,
+    "round": 16,
+    "text": "Seat 0 collected 2 timber."
+   },
+   {
+    "actor": null,
+    "event": 152,
+    "kind": "money",
+    "major": false,
+    "round": 16,
+    "text": "Seat 3 collected 2 timber."
+   },
+   {
+    "actor": null,
+    "event": 152,
+    "kind": "money",
+    "major": false,
+    "round": 16,
+    "text": "Seat 2 collected 2 grain."
+   },
+   {
+    "actor": null,
+    "event": 152,
+    "kind": "money",
+    "major": false,
+    "round": 16,
+    "text": "Bot Ada collected 1 grain."
+   },
+   {
+    "actor": 3,
+    "event": 153,
+    "kind": "trade",
+    "major": false,
+    "round": 16,
+    "text": "Seat 3 traded 4 timber to the bank for 1 brick."
+   },
+   {
+    "actor": 3,
+    "event": 154,
+    "kind": "turn",
+    "major": false,
+    "round": 16,
+    "text": "Seat 3 ended their turn."
+   },
+   {
+    "actor": null,
+    "event": 154,
+    "kind": "turn",
+    "major": false,
+    "round": 16,
+    "text": "Round 17 began."
+   },
+   {
+    "actor": 0,
+    "event": 154,
+    "kind": "roll",
+    "major": false,
+    "round": 16,
+    "text": "Seat 0 rolled 4."
+   },
+   {
+    "actor": null,
+    "event": 154,
+    "kind": "money",
+    "major": false,
+    "round": 16,
+    "text": "Seat 2 collected 2 grain."
+   },
+   {
+    "actor": null,
+    "event": 154,
+    "kind": "money",
+    "major": false,
+    "round": 16,
+    "text": "Bot Ada collected 2 grain."
+   },
+   {
+    "actor": null,
+    "event": 154,
+    "kind": "money",
+    "major": false,
+    "round": 16,
+    "text": "Seat 0 collected 2 brick."
+   },
+   {
+    "actor": 0,
+    "event": 155,
+    "kind": "trade",
+    "major": false,
+    "round": 17,
+    "text": "Seat 0 traded 4 grain to the bank for 1 ore."
+   },
+   {
+    "actor": 0,
+    "event": 156,
+    "kind": "turn",
+    "major": false,
+    "round": 17,
+    "text": "Seat 0 ended their turn."
+   },
+   {
+    "actor": 1,
+    "event": 156,
+    "kind": "roll",
+    "major": false,
+    "round": 17,
+    "text": "Bot Ada rolled 9."
+   },
+   {
+    "actor": null,
+    "event": 156,
+    "kind": "money",
+    "major": false,
+    "round": 17,
+    "text": "Seat 2 collected 2 timber."
+   },
+   {
+    "actor": null,
+    "event": 156,
+    "kind": "money",
+    "major": false,
+    "round": 17,
+    "text": "Bot Ada collected 2 timber."
+   },
+   {
+    "actor": null,
+    "event": 156,
+    "kind": "money",
+    "major": false,
+    "round": 17,
+    "text": "Seat 3 collected 2 timber."
+   },
+   {
+    "actor": null,
+    "event": 156,
+    "kind": "money",
+    "major": false,
+    "round": 17,
+    "text": "Seat 0 collected 2 grain."
+   },
+   {
+    "actor": 1,
+    "event": 157,
+    "kind": "build",
+    "major": false,
+    "round": 17,
+    "text": "Bot Ada laid a road."
+   },
+   {
+    "actor": 1,
+    "event": 158,
+    "kind": "build",
+    "major": false,
+    "round": 17,
+    "text": "Bot Ada laid a road."
+   },
+   {
+    "actor": 1,
+    "event": 159,
+    "kind": "turn",
+    "major": false,
+    "round": 17,
+    "text": "Bot Ada ended their turn."
+   },
+   {
+    "actor": 2,
+    "event": 159,
+    "kind": "roll",
+    "major": false,
+    "round": 17,
+    "text": "Seat 2 rolled 6."
+   },
+   {
+    "actor": null,
+    "event": 159,
+    "kind": "money",
+    "major": false,
+    "round": 17,
+    "text": "Seat 0 collected 2 timber."
+   },
+   {
+    "actor": null,
+    "event": 159,
+    "kind": "money",
+    "major": false,
+    "round": 17,
+    "text": "Seat 3 collected 2 timber."
+   },
+   {
+    "actor": null,
+    "event": 159,
+    "kind": "money",
+    "major": false,
+    "round": 17,
+    "text": "Seat 2 collected 2 grain."
+   },
+   {
+    "actor": null,
+    "event": 159,
+    "kind": "money",
+    "major": false,
+    "round": 17,
+    "text": "Bot Ada collected 1 grain."
+   },
+   {
+    "actor": 2,
+    "event": 160,
+    "kind": "trade",
+    "major": false,
+    "round": 17,
+    "text": "Seat 2 traded 4 grain to the bank for 1 brick."
+   },
+   {
+    "actor": 2,
+    "event": 161,
+    "kind": "build",
+    "major": false,
+    "round": 17,
+    "text": "Seat 2 laid a road."
+   },
+   {
+    "actor": 2,
+    "event": 162,
+    "kind": "trade",
+    "major": false,
+    "round": 17,
+    "text": "Seat 2 traded 4 grain to the bank for 1 wool."
+   },
+   {
+    "actor": 2,
+    "event": 163,
+    "kind": "trade",
+    "major": true,
+    "round": 17,
+    "text": "Seat 2 declared 3 grain."
+   },
+   {
+    "actor": 2,
+    "event": 164,
+    "kind": "turn",
+    "major": false,
+    "round": 17,
+    "text": "Seat 2 ended their turn."
+   },
+   {
+    "actor": 3,
+    "event": 164,
+    "kind": "roll",
+    "major": false,
+    "round": 17,
+    "text": "Seat 3 rolled 5."
+   },
+   {
+    "actor": null,
+    "event": 164,
+    "kind": "money",
+    "major": false,
+    "round": 17,
+    "text": "Bot Ada collected 3 ore."
+   },
+   {
+    "actor": null,
+    "event": 164,
+    "kind": "money",
+    "major": false,
+    "round": 17,
+    "text": "Seat 3 collected 2 ore."
+   },
+   {
+    "actor": null,
+    "event": 164,
+    "kind": "money",
+    "major": false,
+    "round": 17,
+    "text": "Seat 2 collected 2 ore."
+   },
+   {
+    "actor": 3,
+    "event": 165,
+    "kind": "build",
+    "major": true,
+    "round": 17,
+    "text": "Seat 3 founded a settlement."
+   },
+   {
+    "actor": 3,
+    "event": 166,
+    "kind": "turn",
+    "major": false,
+    "round": 17,
+    "text": "Seat 3 ended their turn."
+   },
+   {
+    "actor": null,
+    "event": 166,
+    "kind": "turn",
+    "major": false,
+    "round": 17,
+    "text": "Round 18 began."
+   },
+   {
+    "actor": 0,
+    "event": 166,
+    "kind": "roll",
+    "major": false,
+    "round": 17,
+    "text": "Seat 0 rolled 8."
+   },
+   {
+    "actor": null,
+    "event": 166,
+    "kind": "money",
+    "major": false,
+    "round": 17,
+    "text": "Bot Ada collected 3 brick."
+   },
+   {
+    "actor": null,
+    "event": 166,
+    "kind": "money",
+    "major": false,
+    "round": 17,
+    "text": "Seat 0 collected 1 grain."
+   },
+   {
+    "actor": null,
+    "event": 166,
+    "kind": "money",
+    "major": false,
+    "round": 17,
+    "text": "Seat 3 collected 3 grain."
+   },
+   {
+    "actor": 0,
+    "event": 167,
+    "kind": "trade",
+    "major": false,
+    "round": 18,
+    "text": "Seat 0 traded 4 timber to the bank for 1 ore."
+   },
+   {
+    "actor": 0,
+    "event": 168,
+    "kind": "build",
+    "major": true,
+    "round": 18,
+    "text": "Seat 0 raised a city from a settlement."
+   },
+   {
+    "actor": 0,
+    "event": 169,
+    "kind": "build",
+    "major": true,
+    "round": 18,
+    "text": "Seat 0 founded a settlement."
+   },
+   {
+    "actor": 0,
+    "event": 170,
+    "kind": "turn",
+    "major": false,
+    "round": 18,
+    "text": "Seat 0 ended their turn."
+   },
+   {
+    "actor": 1,
+    "event": 170,
+    "kind": "roll",
+    "major": false,
+    "round": 18,
+    "text": "Bot Ada rolled 6."
+   },
+   {
+    "actor": null,
+    "event": 170,
+    "kind": "money",
+    "major": false,
+    "round": 18,
+    "text": "Seat 0 collected 3 timber."
+   },
+   {
+    "actor": null,
+    "event": 170,
+    "kind": "money",
+    "major": false,
+    "round": 18,
+    "text": "Seat 3 collected 2 timber."
+   },
+   {
+    "actor": null,
+    "event": 170,
+    "kind": "money",
+    "major": false,
+    "round": 18,
+    "text": "Seat 2 collected 2 grain."
+   },
+   {
+    "actor": null,
+    "event": 170,
+    "kind": "money",
+    "major": false,
+    "round": 18,
+    "text": "Bot Ada collected 1 grain."
+   },
+   {
+    "actor": 1,
+    "event": 171,
+    "kind": "build",
+    "major": true,
+    "round": 18,
+    "text": "Bot Ada raised a city from a settlement."
+   },
+   {
+    "actor": 1,
+    "event": 172,
+    "kind": "turn",
+    "major": false,
+    "round": 18,
+    "text": "Bot Ada ended their turn."
+   },
+   {
+    "actor": 2,
+    "event": 172,
+    "kind": "roll",
+    "major": false,
+    "round": 18,
+    "text": "Seat 2 rolled 11."
+   },
+   {
+    "actor": null,
+    "event": 172,
+    "kind": "money",
+    "major": false,
+    "round": 18,
+    "text": "Seat 3 collected 4 brick."
+   },
+   {
+    "actor": null,
+    "event": 172,
+    "kind": "money",
+    "major": false,
+    "round": 18,
+    "text": "Seat 0 collected 1 brick."
+   },
+   {
+    "actor": null,
+    "event": 172,
+    "kind": "money",
+    "major": false,
+    "round": 18,
+    "text": "Seat 0 collected 1 timber."
+   },
+   {
+    "actor": 2,
+    "event": 173,
+    "kind": "trade",
+    "major": false,
+    "round": 18,
+    "text": "Seat 2 traded 4 ore to the bank for 1 brick."
+   },
+   {
+    "actor": 2,
+    "event": 174,
+    "kind": "build",
+    "major": false,
+    "round": 18,
+    "text": "Seat 2 laid a road."
+   },
+   {
+    "actor": 2,
+    "event": 175,
+    "kind": "turn",
+    "major": false,
+    "round": 18,
+    "text": "Seat 2 ended their turn."
+   },
+   {
+    "actor": 3,
+    "event": 175,
+    "kind": "roll",
+    "major": false,
+    "round": 18,
+    "text": "Seat 3 rolled 8."
+   },
+   {
+    "actor": null,
+    "event": 175,
+    "kind": "money",
+    "major": false,
+    "round": 18,
+    "text": "Bot Ada collected 4 brick."
+   },
+   {
+    "actor": null,
+    "event": 175,
+    "kind": "money",
+    "major": false,
+    "round": 18,
+    "text": "Seat 0 collected 1 grain."
+   },
+   {
+    "actor": null,
+    "event": 175,
+    "kind": "money",
+    "major": false,
+    "round": 18,
+    "text": "Seat 3 collected 3 grain."
+   },
+   {
+    "actor": 3,
+    "event": 176,
+    "kind": "trade",
+    "major": false,
+    "round": 18,
+    "text": "Seat 3 traded 4 grain to the bank for 1 ore."
+   },
+   {
+    "actor": 3,
+    "event": 177,
+    "kind": "build",
+    "major": true,
+    "round": 18,
+    "text": "Seat 3 raised a city from a settlement."
+   },
+   {
+    "actor": 3,
+    "event": 178,
+    "kind": "build",
+    "major": false,
+    "round": 18,
+    "text": "Seat 3 laid a road."
+   },
+   {
+    "actor": 3,
+    "event": 179,
+    "kind": "trade",
+    "major": false,
+    "round": 18,
+    "text": "Seat 3 traded 4 timber to the bank for 1 wool."
+   },
+   {
+    "actor": 3,
+    "event": 180,
+    "kind": "turn",
+    "major": false,
+    "round": 18,
+    "text": "Seat 3 ended their turn."
+   },
+   {
+    "actor": null,
+    "event": 180,
+    "kind": "turn",
+    "major": false,
+    "round": 18,
+    "text": "Round 19 began."
+   },
+   {
+    "actor": 0,
+    "event": 180,
+    "kind": "roll",
+    "major": false,
+    "round": 18,
+    "text": "Seat 0 rolled 9."
+   },
+   {
+    "actor": null,
+    "event": 180,
+    "kind": "money",
+    "major": false,
+    "round": 18,
+    "text": "Seat 2 collected 2 timber."
+   },
+   {
+    "actor": null,
+    "event": 180,
+    "kind": "money",
+    "major": false,
+    "round": 18,
+    "text": "Bot Ada collected 2 timber."
+   },
+   {
+    "actor": null,
+    "event": 180,
+    "kind": "money",
+    "major": false,
+    "round": 18,
+    "text": "Seat 3 collected 2 timber."
+   },
+   {
+    "actor": null,
+    "event": 180,
+    "kind": "money",
+    "major": false,
+    "round": 18,
+    "text": "Seat 0 collected 3 grain."
+   },
+   {
+    "actor": 0,
+    "event": 181,
+    "kind": "trade",
+    "major": false,
+    "round": 19,
+    "text": "Seat 0 traded 4 timber to the bank for 1 ore."
+   },
+   {
+    "actor": 0,
+    "event": 182,
+    "kind": "trade",
+    "major": false,
+    "round": 19,
+    "text": "Seat 0 traded 4 grain to the bank for 1 ore."
+   },
+   {
+    "actor": 0,
+    "event": 183,
+    "kind": "turn",
+    "major": false,
+    "round": 19,
+    "text": "Seat 0 ended their turn."
+   },
+   {
+    "actor": 1,
+    "event": 183,
+    "kind": "roll",
+    "major": false,
+    "round": 19,
+    "text": "Bot Ada rolled 3."
+   },
+   {
+    "actor": null,
+    "event": 183,
+    "kind": "money",
+    "major": false,
+    "round": 19,
+    "text": "Seat 0 collected 2 wool."
+   },
+   {
+    "actor": null,
+    "event": 183,
+    "kind": "money",
+    "major": false,
+    "round": 19,
+    "text": "Seat 2 collected 2 timber."
+   },
+   {
+    "actor": null,
+    "event": 183,
+    "kind": "money",
+    "major": false,
+    "round": 19,
+    "text": "Bot Ada collected 2 timber."
+   },
+   {
+    "actor": 1,
+    "event": 184,
+    "kind": "trade",
+    "major": false,
+    "round": 19,
+    "text": "Bot Ada traded 4 brick to the bank for 1 wool."
+   },
+   {
+    "actor": 1,
+    "event": 185,
+    "kind": "build",
+    "major": false,
+    "round": 19,
+    "text": "Bot Ada laid a road."
+   },
+   {
+    "actor": 1,
+    "event": 186,
+    "kind": "build",
+    "major": false,
+    "round": 19,
+    "text": "Bot Ada laid a road."
+   },
+   {
+    "actor": 1,
+    "event": 187,
+    "kind": "build",
+    "major": false,
+    "round": 19,
+    "text": "Bot Ada laid a road."
+   },
+   {
+    "actor": 1,
+    "event": 188,
+    "kind": "turn",
+    "major": false,
+    "round": 19,
+    "text": "Bot Ada ended their turn."
+   },
+   {
+    "actor": 2,
+    "event": 188,
+    "kind": "roll",
+    "major": false,
+    "round": 19,
+    "text": "Seat 2 rolled 9."
+   },
+   {
+    "actor": null,
+    "event": 188,
+    "kind": "money",
+    "major": false,
+    "round": 19,
+    "text": "Seat 2 collected 2 timber."
+   },
+   {
+    "actor": null,
+    "event": 188,
+    "kind": "money",
+    "major": false,
+    "round": 19,
+    "text": "Bot Ada collected 2 timber."
+   },
+   {
+    "actor": null,
+    "event": 188,
+    "kind": "money",
+    "major": false,
+    "round": 19,
+    "text": "Seat 3 collected 2 timber."
+   },
+   {
+    "actor": null,
+    "event": 188,
+    "kind": "money",
+    "major": false,
+    "round": 19,
+    "text": "Seat 0 collected 3 grain."
+   },
+   {
+    "actor": 2,
+    "event": 189,
+    "kind": "trade",
+    "major": false,
+    "round": 19,
+    "text": "Seat 2 traded 4 timber to the bank for 1 brick."
+   },
+   {
+    "actor": 2,
+    "event": 190,
+    "kind": "build",
+    "major": false,
+    "round": 19,
+    "text": "Seat 2 laid a road."
+   },
+   {
+    "actor": 2,
+    "event": 191,
+    "kind": "trade",
+    "major": true,
+    "round": 19,
+    "text": "Seat 2 declared 4 grain."
+   },
+   {
+    "actor": 2,
+    "event": 192,
+    "kind": "turn",
+    "major": false,
+    "round": 19,
+    "text": "Seat 2 ended their turn."
+   },
+   {
+    "actor": 3,
+    "event": 192,
+    "kind": "roll",
+    "major": false,
+    "round": 19,
+    "text": "Seat 3 rolled 8."
+   },
+   {
+    "actor": null,
+    "event": 192,
+    "kind": "money",
+    "major": false,
+    "round": 19,
+    "text": "Bot Ada collected 4 brick."
+   },
+   {
+    "actor": null,
+    "event": 192,
+    "kind": "money",
+    "major": false,
+    "round": 19,
+    "text": "Seat 0 collected 1 grain."
+   },
+   {
+    "actor": null,
+    "event": 192,
+    "kind": "money",
+    "major": false,
+    "round": 19,
+    "text": "Seat 3 collected 4 grain."
+   },
+   {
+    "actor": 3,
+    "event": 193,
+    "kind": "build",
+    "major": true,
+    "round": 19,
+    "text": "Seat 3 founded a settlement."
+   },
+   {
+    "actor": 3,
+    "event": 194,
+    "kind": "turn",
+    "major": false,
+    "round": 19,
+    "text": "Seat 3 ended their turn."
+   },
+   {
+    "actor": null,
+    "event": 194,
+    "kind": "turn",
+    "major": false,
+    "round": 19,
+    "text": "Round 20 began."
+   },
+   {
+    "actor": 0,
+    "event": 194,
+    "kind": "roll",
+    "major": false,
+    "round": 19,
+    "text": "Seat 0 rolled 7."
+   },
+   {
+    "actor": 0,
+    "event": 195,
+    "kind": "trade",
+    "major": false,
+    "round": 20,
+    "text": "Seat 0 traded 4 grain to the bank for 1 ore."
+   },
+   {
+    "actor": 0,
+    "event": 196,
+    "kind": "turn",
+    "major": false,
+    "round": 20,
+    "text": "Seat 0 ended their turn."
+   },
+   {
+    "actor": 1,
+    "event": 196,
+    "kind": "roll",
+    "major": false,
+    "round": 20,
+    "text": "Bot Ada rolled 7."
+   },
+   {
+    "actor": 1,
+    "event": 197,
+    "kind": "build",
+    "major": true,
+    "round": 20,
+    "text": "Bot Ada founded a settlement."
+   },
+   {
+    "actor": 1,
+    "event": 198,
+    "kind": "turn",
+    "major": false,
+    "round": 20,
+    "text": "Bot Ada ended their turn."
+   },
+   {
+    "actor": 2,
+    "event": 198,
+    "kind": "roll",
+    "major": false,
+    "round": 20,
+    "text": "Seat 2 rolled 6."
+   },
+   {
+    "actor": null,
+    "event": 198,
+    "kind": "money",
+    "major": false,
+    "round": 20,
+    "text": "Seat 0 collected 3 timber."
+   },
+   {
+    "actor": null,
+    "event": 198,
+    "kind": "money",
+    "major": false,
+    "round": 20,
+    "text": "Seat 3 collected 2 timber."
+   },
+   {
+    "actor": null,
+    "event": 198,
+    "kind": "money",
+    "major": false,
+    "round": 20,
+    "text": "Seat 2 collected 2 grain."
+   },
+   {
+    "actor": null,
+    "event": 198,
+    "kind": "money",
+    "major": false,
+    "round": 20,
+    "text": "Bot Ada collected 1 grain."
+   },
+   {
+    "actor": 2,
+    "event": 199,
+    "kind": "trade",
+    "major": false,
+    "round": 20,
+    "text": "Seat 2 traded 4 grain to the bank for 1 brick."
+   },
+   {
+    "actor": 2,
+    "event": 200,
+    "kind": "trade",
+    "major": true,
+    "round": 20,
+    "text": "Seat 2 declared 0 grain."
+   },
+   {
+    "actor": 2,
+    "event": 201,
+    "kind": "turn",
+    "major": false,
+    "round": 20,
+    "text": "Seat 2 ended their turn."
+   },
+   {
+    "actor": 3,
+    "event": 201,
+    "kind": "roll",
+    "major": false,
+    "round": 20,
+    "text": "Seat 3 rolled 8."
+   },
+   {
+    "actor": null,
+    "event": 201,
+    "kind": "money",
+    "major": false,
+    "round": 20,
+    "text": "Bot Ada collected 4 brick."
+   },
+   {
+    "actor": null,
+    "event": 201,
+    "kind": "money",
+    "major": false,
+    "round": 20,
+    "text": "Seat 0 collected 1 grain."
+   },
+   {
+    "actor": null,
+    "event": 201,
+    "kind": "money",
+    "major": false,
+    "round": 20,
+    "text": "Seat 3 collected 4 grain."
+   },
+   {
+    "actor": 3,
+    "event": 202,
+    "kind": "trade",
+    "major": false,
+    "round": 20,
+    "text": "Seat 3 traded 4 grain to the bank for 1 ore."
+   },
+   {
+    "actor": 3,
+    "event": 203,
+    "kind": "trade",
+    "major": false,
+    "round": 20,
+    "text": "Seat 3 traded 4 timber to the bank for 1 ore."
+   },
+   {
+    "actor": 3,
+    "event": 204,
+    "kind": "turn",
+    "major": false,
+    "round": 20,
+    "text": "Seat 3 ended their turn."
+   },
+   {
+    "actor": null,
+    "event": 204,
+    "kind": "turn",
+    "major": false,
+    "round": 20,
+    "text": "Round 21 began."
+   },
+   {
+    "actor": 0,
+    "event": 204,
+    "kind": "roll",
+    "major": false,
+    "round": 20,
+    "text": "Seat 0 rolled 11."
+   },
+   {
+    "actor": null,
+    "event": 204,
+    "kind": "money",
+    "major": false,
+    "round": 20,
+    "text": "Seat 3 collected 4 brick."
+   },
+   {
+    "actor": null,
+    "event": 204,
+    "kind": "money",
+    "major": false,
+    "round": 20,
+    "text": "Seat 0 collected 1 brick."
+   },
+   {
+    "actor": null,
+    "event": 204,
+    "kind": "money",
+    "major": false,
+    "round": 20,
+    "text": "Seat 0 collected 1 timber."
+   },
+   {
+    "actor": 0,
+    "event": 205,
+    "kind": "build",
+    "major": true,
+    "round": 21,
+    "text": "Seat 0 raised a city from a settlement."
+   },
+   {
+    "actor": 0,
+    "event": 206,
+    "kind": "trade",
+    "major": false,
+    "round": 21,
+    "text": "Seat 0 traded 4 timber to the bank for 1 ore."
+   },
+   {
+    "actor": 0,
+    "event": 207,
+    "kind": "trade",
+    "major": false,
+    "round": 21,
+    "text": "Seat 0 traded 4 brick to the bank for 1 ore."
+   },
+   {
+    "actor": 0,
+    "event": 208,
+    "kind": "turn",
+    "major": false,
+    "round": 21,
+    "text": "Seat 0 ended their turn."
+   },
+   {
+    "actor": 1,
+    "event": 208,
+    "kind": "roll",
+    "major": false,
+    "round": 21,
+    "text": "Bot Ada rolled 7."
+   },
+   {
+    "actor": 1,
+    "event": 209,
+    "kind": "trade",
+    "major": false,
+    "round": 21,
+    "text": "Bot Ada traded 4 brick to the bank for 1 wool."
+   },
+   {
+    "actor": 1,
+    "event": 210,
+    "kind": "build",
+    "major": false,
+    "round": 21,
+    "text": "Bot Ada laid a road."
+   },
+   {
+    "actor": 1,
+    "event": 211,
+    "kind": "build",
+    "major": false,
+    "round": 21,
+    "text": "Bot Ada laid a road."
+   },
+   {
+    "actor": 1,
+    "event": 212,
+    "kind": "turn",
+    "major": false,
+    "round": 21,
+    "text": "Bot Ada ended their turn."
+   },
+   {
+    "actor": 2,
+    "event": 212,
+    "kind": "roll",
+    "major": false,
+    "round": 21,
+    "text": "Seat 2 rolled 7."
+   },
+   {
+    "actor": 2,
+    "event": 213,
+    "kind": "turn",
+    "major": false,
+    "round": 21,
+    "text": "Seat 2 ended their turn."
+   },
+   {
+    "actor": 3,
+    "event": 213,
+    "kind": "roll",
+    "major": false,
+    "round": 21,
+    "text": "Seat 3 rolled 7."
+   },
+   {
+    "actor": 3,
+    "event": 214,
+    "kind": "trade",
+    "major": false,
+    "round": 21,
+    "text": "Seat 3 traded 4 brick to the bank for 1 ore."
+   },
+   {
+    "actor": 3,
+    "event": 215,
+    "kind": "build",
+    "major": false,
+    "round": 21,
+    "text": "Seat 3 laid a road."
+   },
+   {
+    "actor": 3,
+    "event": 216,
+    "kind": "trade",
+    "major": false,
+    "round": 21,
+    "text": "Seat 3 traded 4 grain to the bank for 1 timber."
+   },
+   {
+    "actor": 3,
+    "event": 217,
+    "kind": "turn",
+    "major": false,
+    "round": 21,
+    "text": "Seat 3 ended their turn."
+   },
+   {
+    "actor": null,
+    "event": 217,
+    "kind": "turn",
+    "major": false,
+    "round": 21,
+    "text": "Round 22 began."
+   },
+   {
+    "actor": 0,
+    "event": 217,
+    "kind": "roll",
+    "major": false,
+    "round": 21,
+    "text": "Seat 0 rolled 2."
+   },
+   {
+    "actor": null,
+    "event": 217,
+    "kind": "money",
+    "major": false,
+    "round": 21,
+    "text": "Bot Ada collected 4 wool."
+   },
+   {
+    "actor": 0,
+    "event": 218,
+    "kind": "turn",
+    "major": false,
+    "round": 22,
+    "text": "Seat 0 ended their turn."
+   },
+   {
+    "actor": 1,
+    "event": 218,
+    "kind": "roll",
+    "major": false,
+    "round": 22,
+    "text": "Bot Ada rolled 9."
+   },
+   {
+    "actor": null,
+    "event": 218,
+    "kind": "money",
+    "major": false,
+    "round": 22,
+    "text": "Seat 2 collected 2 timber."
+   },
+   {
+    "actor": null,
+    "event": 218,
+    "kind": "money",
+    "major": false,
+    "round": 22,
+    "text": "Bot Ada collected 2 timber."
+   },
+   {
+    "actor": null,
+    "event": 218,
+    "kind": "money",
+    "major": false,
+    "round": 22,
+    "text": "Seat 3 collected 2 timber."
+   },
+   {
+    "actor": null,
+    "event": 218,
+    "kind": "money",
+    "major": false,
+    "round": 22,
+    "text": "Seat 0 collected 3 grain."
+   },
+   {
+    "actor": 1,
+    "event": 219,
+    "kind": "build",
+    "major": true,
+    "round": 22,
+    "text": "Bot Ada founded a settlement."
+   },
+   {
+    "actor": null,
+    "event": 219,
+    "kind": "end",
+    "major": true,
+    "round": 22,
+    "text": "The game ended. Bot Ada won with 10 points."
+   }
+  ],
+  "code": "SNBEM",
+  "deals": [],
+  "decisions": [],
+  "declarations": {
+   "can": false,
+   "inUse": false,
+   "max": 2000,
+   "rows": []
+  },
+  "described": 0,
+  "drafting": [],
+  "endedBy": null,
+  "filled": 4,
+  "fingerprint": "12d55315bf6b352f828f6dc7ecf641164761400cd50106cd1bc2bf6f49879ef9",
+  "game": {
+   "blurb": "The base game: settle an island, then change its rules.",
+   "id": "island",
+   "name": "Tutorial Island",
+   "word": "the island"
+  },
+  "lastRoll": 9,
+  "laws": [],
+  "legalMoves": [],
+  "look": {
+   "bodyFont": "",
+   "displayFont": "",
+   "icons": {},
+   "marks": {
+    "brick": "brick",
+    "city": "city",
+    "grain": "grain",
+    "ore": "ore",
+    "road": "road",
+    "settlement": "settlement",
+    "timber": "timber",
+    "wool": "wool"
+   },
+   "quietPieces": [
+    "road"
+   ],
+   "tagline": "Settle an island. Rewrite its rules. The constitution holds.",
+   "tokens": {}
+  },
+  "maxGoodsPerSide": 4,
+  "maxSeats": 4,
+  "minSeats": 2,
+  "nonces": [
+   44286699152552,
+   12826489563460716202,
+   3512833235833177,
+   2317277859102873
+  ],
+  "offers": [],
+  "paused": false,
+  "phase": "ended",
+  "pieceDefs": [
+   {
+    "cost": [
+     {
+      "n": 1,
+      "res": "timber"
+     },
+     {
+      "n": 1,
+      "res": "brick"
+     }
+    ],
+    "limit": 15,
+    "made": false,
+    "name": "road",
+    "owned": 0,
+    "placement": "link",
+    "points": 0,
+    "short": [],
+    "spots": 0,
+    "yield": 0
+   },
+   {
+    "cost": [
+     {
+      "n": 1,
+      "res": "timber"
+     },
+     {
+      "n": 1,
+      "res": "brick"
+     },
+     {
+      "n": 1,
+      "res": "grain"
+     },
+     {
+      "n": 1,
+      "res": "wool"
+     }
+    ],
+    "limit": 5,
+    "made": false,
+    "name": "settlement",
+    "owned": 0,
+    "placement": "spot",
+    "points": 1,
+    "short": [],
+    "spots": 0,
+    "yield": 1
+   },
+   {
+    "cost": [
+     {
+      "n": 2,
+      "res": "grain"
+     },
+     {
+      "n": 3,
+      "res": "ore"
+     }
+    ],
+    "limit": 4,
+    "made": false,
+    "name": "city",
+    "owned": 0,
+    "placement": "upgrade",
+    "points": 2,
+    "short": [],
+    "spots": 0,
+    "yield": 2
+   }
+  ],
+  "pieces": [
+   {
+    "kind": "road",
+    "link": [
+     14,
+     18
+    ],
+    "owner": 0
+   },
+   {
+    "kind": "road",
+    "link": [
+     13,
+     15
+    ],
+    "owner": 1
+   },
+   {
+    "kind": "road",
+    "link": [
+     8,
+     9
+    ],
+    "owner": 2
+   },
+   {
+    "kind": "road",
+    "link": [
+     22,
+     23
+    ],
+    "owner": 3
+   },
+   {
+    "kind": "road",
+    "link": [
+     0,
+     5
+    ],
+    "owner": 3
+   },
+   {
+    "kind": "road",
+    "link": [
+     10,
+     12
+    ],
+    "owner": 2
+   },
+   {
+    "kind": "road",
+    "link": [
+     34,
+     13
+    ],
+    "owner": 1
+   },
+   {
+    "kind": "settlement",
+    "owner": 0,
+    "spot": 48
+   },
+   {
+    "kind": "road",
+    "link": [
+     23,
+     48
+    ],
+    "owner": 0
+   },
+   {
+    "kind": "road",
+    "link": [
+     0,
+     1
+    ],
+    "owner": 3
+   },
+   {
+    "kind": "road",
+    "link": [
+     1,
+     2
+    ],
+    "owner": 3
+   },
+   {
+    "kind": "road",
+    "link": [
+     19,
+     23
+    ],
+    "owner": 0
+   },
+   {
+    "kind": "road",
+    "link": [
+     13,
+     12
+    ],
+    "owner": 2
+   },
+   {
+    "kind": "city",
+    "owner": 2,
+    "spot": 10
+   },
+   {
+    "kind": "city",
+    "owner": 1,
+    "spot": 15
+   },
+   {
+    "kind": "city",
+    "owner": 3,
+    "spot": 22
+   },
+   {
+    "kind": "settlement",
+    "owner": 0,
+    "spot": 19
+   },
+   {
+    "kind": "road",
+    "link": [
+     6,
+     1
+    ],
+    "owner": 1
+   },
+   {
+    "kind": "road",
+    "link": [
+     6,
+     7
+    ],
+    "owner": 1
+   },
+   {
+    "kind": "city",
+    "owner": 2,
+    "spot": 8
+   },
+   {
+    "kind": "road",
+    "link": [
+     18,
+     17
+    ],
+    "owner": 0
+   },
+   {
+    "kind": "road",
+    "link": [
+     17,
+     16
+    ],
+    "owner": 0
+   },
+   {
+    "kind": "road",
+    "link": [
+     24,
+     7
+    ],
+    "owner": 1
+   },
+   {
+    "kind": "road",
+    "link": [
+     12,
+     0
+    ],
+    "owner": 2
+   },
+   {
+    "kind": "road",
+    "link": [
+     17,
+     40
+    ],
+    "owner": 0
+   },
+   {
+    "kind": "settlement",
+    "owner": 1,
+    "spot": 24
+   },
+   {
+    "kind": "road",
+    "link": [
+     11,
+     6
+    ],
+    "owner": 1
+   },
+   {
+    "kind": "road",
+    "link": [
+     9,
+     22
+    ],
+    "owner": 2
+   },
+   {
+    "kind": "city",
+    "owner": 3,
+    "spot": 5
+   },
+   {
+    "kind": "settlement",
+    "owner": 0,
+    "spot": 40
+   },
+   {
+    "kind": "road",
+    "link": [
+     19,
+     20
+    ],
+    "owner": 0
+   },
+   {
+    "kind": "road",
+    "link": [
+     20,
+     45
+    ],
+    "owner": 0
+   },
+   {
+    "kind": "road",
+    "link": [
+     2,
+     9
+    ],
+    "owner": 2
+   },
+   {
+    "kind": "city",
+    "owner": 1,
+    "spot": 6
+   },
+   {
+    "kind": "road",
+    "link": [
+     28,
+     11
+    ],
+    "owner": 1
+   },
+   {
+    "kind": "city",
+    "owner": 3,
+    "spot": 2
+   },
+   {
+    "kind": "road",
+    "link": [
+     22,
+     50
+    ],
+    "owner": 3
+   },
+   {
+    "kind": "road",
+    "link": [
+     50,
+     51
+    ],
+    "owner": 3
+   },
+   {
+    "kind": "settlement",
+    "owner": 1,
+    "spot": 28
+   },
+   {
+    "kind": "road",
+    "link": [
+     7,
+     8
+    ],
+    "owner": 1
+   },
+   {
+    "kind": "road",
+    "link": [
+     2,
+     3
+    ],
+    "owner": 2
+   },
+   {
+    "kind": "road",
+    "link": [
+     29,
+     24
+    ],
+    "owner": 1
+   },
+   {
+    "kind": "road",
+    "link": [
+     28,
+     29
+    ],
+    "owner": 1
+   },
+   {
+    "kind": "road",
+    "link": [
+     8,
+     27
+    ],
+    "owner": 2
+   },
+   {
+    "kind": "city",
+    "owner": 0,
+    "spot": 18
+   },
+   {
+    "kind": "settlement",
+    "owner": 0,
+    "spot": 45
+   },
+   {
+    "kind": "city",
+    "owner": 1,
+    "spot": 34
+   },
+   {
+    "kind": "road",
+    "link": [
+     26,
+     27
+    ],
+    "owner": 2
+   },
+   {
+    "kind": "city",
+    "owner": 3,
+    "spot": 51
+   },
+   {
+    "kind": "road",
+    "link": [
+     53,
+     50
+    ],
+    "owner": 3
+   },
+   {
+    "kind": "road",
+    "link": [
+     10,
+     11
+    ],
+    "owner": 1
+   },
+   {
+    "kind": "road",
+    "link": [
+     24,
+     25
+    ],
+    "owner": 1
+   },
+   {
+    "kind": "road",
+    "link": [
+     25,
+     26
+    ],
+    "owner": 1
+   },
+   {
+    "kind": "road",
+    "link": [
+     27,
+     53
+    ],
+    "owner": 2
+   },
+   {
+    "kind": "settlement",
+    "owner": 3,
+    "spot": 53
+   },
+   {
+    "kind": "settlement",
+    "owner": 1,
+    "spot": 26
+   },
+   {
+    "kind": "city",
+    "owner": 0,
+    "spot": 16
+   },
+   {
+    "kind": "road",
+    "link": [
+     31,
+     28
+    ],
+    "owner": 1
+   },
+   {
+    "kind": "road",
+    "link": [
+     30,
+     31
+    ],
+    "owner": 1
+   },
+   {
+    "kind": "road",
+    "link": [
+     51,
+     52
+    ],
+    "owner": 3
+   },
+   {
+    "kind": "settlement",
+    "owner": 1,
+    "spot": 30
+   }
+  ],
+  "prompt": null,
+  "proposals": [],
+  "realTokens": null,
+  "resources": [
+   "grain",
+   "timber",
+   "ore",
+   "wool",
+   "brick"
+  ],
+  "resting": null,
+  "rollsMade": 86,
+  "round": 22,
+  "rounds": 24,
+  "samples": [
+   {
+    "id": "cheap-cities",
+    "text": "(law \"Cheaper cities\" (set-cost city (bundle (grain 2) (ore 2))))",
+    "title": "Cheaper cities"
+   },
+   {
+    "id": "cheap-roads",
+    "text": "(law \"Free timber roads\" (set-cost road (bundle (brick 1))))",
+    "title": "Free timber roads"
+   },
+   {
+    "id": "bank-rate",
+    "text": "(law \"A fairer bank\" (set-bank-rate 3))",
+    "title": "A fairer bank"
+   },
+   {
+    "id": "seven-penalty",
+    "text": "(law \"Seven penalty\" (on-roll (for-each-player (and (= rolled 7) (< 7 (+ (holding each grain) (+ (holding each timber) (+ (holding each ore) (+ (holding each wool) (holding each brick))))))) (transfer each bank grain (/ (holding each grain) 2)) (transfer each bank timber (/ (holding each timber) 2)) (transfer each bank ore (/ (holding each ore) 2)) (transfer each bank wool (/ (holding each wool) 2)) (transfer each bank brick (/ (holding each brick) 2)))))",
+    "title": "Seven penalty"
+   },
+   {
+    "id": "harvest-tithe",
+    "text": "(law \"Harvest tithe\" (on-harvest (transfer actor treasury res (/ amount 2))))",
+    "title": "Harvest tithe"
+   },
+   {
+    "id": "poor-relief",
+    "text": "(law \"Poor relief\" (on-round-end (for-each-player (<= (points each) 2) (transfer treasury each grain 1) (transfer treasury each wool 1))))",
+    "title": "Poor relief"
+   },
+   {
+    "id": "build-gift",
+    "text": "(law \"City gift\" (on-build city (for-each-player true (transfer each actor grain 1))))",
+    "title": "City gift"
+   },
+   {
+    "id": "road-toll",
+    "text": "(law \"Road toll\" (on-build road (transfer actor treasury timber 1)))",
+    "title": "Road toll"
+   },
+   {
+    "id": "settlement-worth",
+    "text": "(law \"Founders' honour\" (set-points settlement 2))",
+    "title": "Founders' honour"
+   },
+   {
+    "id": "lighthouse",
+    "text": "(law \"Lighthouses\" (new-piece lighthouse (bundle (ore 2) (brick 2)) (points 2) (attach settlement) (yield 1) (limit 2)))",
+    "title": "Lighthouses"
+   }
+  ],
+  "seatColors": [
+   "#b5281f",
+   "#2257ae",
+   "#e39a1b",
+   "#1c8560",
+   "#6f42a8",
+   "#c4507f"
+  ],
+  "seats": [
+   {
+    "hand": {
+     "brick": 0,
+     "grain": 3,
+     "ore": 2,
+     "timber": 0,
+     "wool": 2
+    },
+    "kind": "human",
+    "name": "Seat 0",
+    "pieces": {
+     "city": 2,
+     "road": 8,
+     "settlement": 4
+    },
+    "points": 8,
+    "seat": 0,
+    "tokenPoints": 0
+   },
+   {
+    "hand": {
+     "brick": 0,
+     "grain": 2,
+     "ore": 2,
+     "timber": 1,
+     "wool": 4
+    },
+    "kind": "bot",
+    "name": "Bot Ada",
+    "pieces": {
+     "city": 3,
+     "road": 15,
+     "settlement": 4
+    },
+    "points": 10,
+    "seat": 1,
+    "tokenPoints": 0
+   },
+   {
+    "hand": {
+     "brick": 1,
+     "grain": 1,
+     "ore": 0,
+     "timber": 4,
+     "wool": 2
+    },
+    "kind": "human",
+    "name": "Seat 2",
+    "pieces": {
+     "city": 2,
+     "road": 10,
+     "settlement": 0
+    },
+    "points": 4,
+    "seat": 2,
+    "tokenPoints": 0
+   },
+   {
+    "hand": {
+     "brick": 1,
+     "grain": 0,
+     "ore": 3,
+     "timber": 3,
+     "wool": 0
+    },
+    "kind": "human",
+    "name": "Seat 3",
+    "pieces": {
+     "city": 4,
+     "road": 8,
+     "settlement": 1
+    },
+    "points": 9,
+    "seat": 3,
+    "tokenPoints": 0
+   }
+  ],
+  "serverSeed": 11900489173637814772,
+  "started": true,
+  "talkCount": 0,
+  "target": 10,
+  "treasury": {
+   "brick": 0,
+   "grain": 0,
+   "ore": 0,
+   "timber": 0,
+   "wool": 0
+  },
+  "turn": 1,
+  "turnLeftMs": null,
+  "version": 220,
+  "winner": 1,
+  "worth": [],
+  "you": null
+ },
+ "events": [
+  {
+   "code": "SNBEM",
+   "game": "island",
+   "seats": 4,
+   "t": "create"
+  },
+  {
+   "kind": "human",
+   "name": "Seat 0",
+   "nonce": 44286699152552,
+   "t": "join"
+  },
+  {
+   "kind": "bot",
+   "name": "Bot Ada",
+   "nonce": 12826489563460716202,
+   "t": "join"
+  },
+  {
+   "kind": "human",
+   "name": "Seat 2",
+   "nonce": 3512833235833177,
+   "t": "join"
+  },
+  {
+   "kind": "human",
+   "name": "Seat 3",
+   "nonce": 2317277859102873,
+   "t": "join"
+  },
+  {
+   "t": "start"
+  },
+  {
+   "move": {
+    "kind": "settlement",
+    "spot": 18,
+    "t": "place"
+   },
+   "seat": 0,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "road",
+    "link": [
+     14,
+     18
+    ],
+    "t": "place"
+   },
+   "seat": 0,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 0,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "settlement",
+    "spot": 15,
+    "t": "place"
+   },
+   "seat": 1,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "road",
+    "link": [
+     13,
+     15
+    ],
+    "t": "place"
+   },
+   "seat": 1,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 1,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "settlement",
+    "spot": 8,
+    "t": "place"
+   },
+   "seat": 2,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "road",
+    "link": [
+     8,
+     9
+    ],
+    "t": "place"
+   },
+   "seat": 2,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 2,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "settlement",
+    "spot": 22,
+    "t": "place"
+   },
+   "seat": 3,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "road",
+    "link": [
+     22,
+     23
+    ],
+    "t": "place"
+   },
+   "seat": 3,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 3,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "settlement",
+    "spot": 5,
+    "t": "place"
+   },
+   "seat": 3,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "road",
+    "link": [
+     0,
+     5
+    ],
+    "t": "place"
+   },
+   "seat": 3,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 3,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "settlement",
+    "spot": 10,
+    "t": "place"
+   },
+   "seat": 2,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "road",
+    "link": [
+     10,
+     12
+    ],
+    "t": "place"
+   },
+   "seat": 2,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 2,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "settlement",
+    "spot": 6,
+    "t": "place"
+   },
+   "seat": 1,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "road",
+    "link": [
+     34,
+     13
+    ],
+    "t": "place"
+   },
+   "seat": 1,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 1,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "settlement",
+    "spot": 48,
+    "t": "place"
+   },
+   "seat": 0,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "road",
+    "link": [
+     23,
+     48
+    ],
+    "t": "place"
+   },
+   "seat": 0,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 0,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 0,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 1,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 2,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 3,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 0,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 1,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 2,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "road",
+    "link": [
+     0,
+     1
+    ],
+    "t": "place"
+   },
+   "seat": 3,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 3,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 0,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 1,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 2,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "road",
+    "link": [
+     1,
+     2
+    ],
+    "t": "place"
+   },
+   "seat": 3,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 3,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 0,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 1,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 2,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 3,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "road",
+    "link": [
+     19,
+     23
+    ],
+    "t": "place"
+   },
+   "seat": 0,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 0,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 1,
+   "t": "move"
+  },
+  {
+   "move": {
+    "get": "timber",
+    "give": "grain",
+    "t": "bankTrade"
+   },
+   "seat": 2,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 2,
+   "t": "move"
+  },
+  {
+   "move": {
+    "get": "brick",
+    "give": "wool",
+    "t": "bankTrade"
+   },
+   "seat": 3,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 3,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 0,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 1,
+   "t": "move"
+  },
+  {
+   "move": {
+    "get": "brick",
+    "give": "wool",
+    "t": "bankTrade"
+   },
+   "seat": 2,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "road",
+    "link": [
+     13,
+     12
+    ],
+    "t": "place"
+   },
+   "seat": 2,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 2,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 3,
+   "t": "move"
+  },
+  {
+   "move": {
+    "get": "brick",
+    "give": "timber",
+    "t": "bankTrade"
+   },
+   "seat": 0,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 0,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "settlement",
+    "spot": 34,
+    "t": "place"
+   },
+   "seat": 1,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 1,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "city",
+    "spot": 10,
+    "t": "place"
+   },
+   "seat": 2,
+   "t": "move"
+  },
+  {
+   "move": {
+    "n": 0,
+    "res": "grain",
+    "t": "declare"
+   },
+   "seat": 2,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 2,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 3,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 0,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "city",
+    "spot": 15,
+    "t": "place"
+   },
+   "seat": 1,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 1,
+   "t": "move"
+  },
+  {
+   "move": {
+    "get": "ore",
+    "give": "timber",
+    "t": "bankTrade"
+   },
+   "seat": 2,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 2,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 3,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 0,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 1,
+   "t": "move"
+  },
+  {
+   "move": {
+    "get": "ore",
+    "give": "grain",
+    "t": "bankTrade"
+   },
+   "seat": 2,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 2,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "city",
+    "spot": 22,
+    "t": "place"
+   },
+   "seat": 3,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 3,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "settlement",
+    "spot": 19,
+    "t": "place"
+   },
+   "seat": 0,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 0,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "road",
+    "link": [
+     6,
+     1
+    ],
+    "t": "place"
+   },
+   "seat": 1,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "road",
+    "link": [
+     6,
+     7
+    ],
+    "t": "place"
+   },
+   "seat": 1,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 1,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "city",
+    "spot": 8,
+    "t": "place"
+   },
+   "seat": 2,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 2,
+   "t": "move"
+  },
+  {
+   "move": {
+    "get": "grain",
+    "give": "timber",
+    "t": "bankTrade"
+   },
+   "seat": 3,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "settlement",
+    "spot": 2,
+    "t": "place"
+   },
+   "seat": 3,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 3,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "road",
+    "link": [
+     18,
+     17
+    ],
+    "t": "place"
+   },
+   "seat": 0,
+   "t": "move"
+  },
+  {
+   "move": {
+    "get": "timber",
+    "give": "wool",
+    "t": "bankTrade"
+   },
+   "seat": 0,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "road",
+    "link": [
+     17,
+     16
+    ],
+    "t": "place"
+   },
+   "seat": 0,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 0,
+   "t": "move"
+  },
+  {
+   "move": {
+    "get": "timber",
+    "give": "wool",
+    "t": "bankTrade"
+   },
+   "seat": 1,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "road",
+    "link": [
+     24,
+     7
+    ],
+    "t": "place"
+   },
+   "seat": 1,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 1,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 2,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 3,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "settlement",
+    "spot": 16,
+    "t": "place"
+   },
+   "seat": 0,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 0,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 1,
+   "t": "move"
+  },
+  {
+   "move": {
+    "get": "brick",
+    "give": "grain",
+    "t": "bankTrade"
+   },
+   "seat": 2,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "road",
+    "link": [
+     12,
+     0
+    ],
+    "t": "place"
+   },
+   "seat": 2,
+   "t": "move"
+  },
+  {
+   "move": {
+    "n": 1,
+    "res": "grain",
+    "t": "declare"
+   },
+   "seat": 2,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 2,
+   "t": "move"
+  },
+  {
+   "move": {
+    "get": "ore",
+    "give": "wool",
+    "t": "bankTrade"
+   },
+   "seat": 3,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 3,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "road",
+    "link": [
+     17,
+     40
+    ],
+    "t": "place"
+   },
+   "seat": 0,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 0,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "settlement",
+    "spot": 24,
+    "t": "place"
+   },
+   "seat": 1,
+   "t": "move"
+  },
+  {
+   "move": {
+    "get": "timber",
+    "give": "wool",
+    "t": "bankTrade"
+   },
+   "seat": 1,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "road",
+    "link": [
+     11,
+     6
+    ],
+    "t": "place"
+   },
+   "seat": 1,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 1,
+   "t": "move"
+  },
+  {
+   "move": {
+    "get": "brick",
+    "give": "grain",
+    "t": "bankTrade"
+   },
+   "seat": 2,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "road",
+    "link": [
+     9,
+     22
+    ],
+    "t": "place"
+   },
+   "seat": 2,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 2,
+   "t": "move"
+  },
+  {
+   "move": {
+    "get": "ore",
+    "give": "timber",
+    "t": "bankTrade"
+   },
+   "seat": 3,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "city",
+    "spot": 5,
+    "t": "place"
+   },
+   "seat": 3,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 3,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "settlement",
+    "spot": 40,
+    "t": "place"
+   },
+   "seat": 0,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "road",
+    "link": [
+     19,
+     20
+    ],
+    "t": "place"
+   },
+   "seat": 0,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "road",
+    "link": [
+     20,
+     45
+    ],
+    "t": "place"
+   },
+   "seat": 0,
+   "t": "move"
+  },
+  {
+   "move": {
+    "get": "ore",
+    "give": "grain",
+    "t": "bankTrade"
+   },
+   "seat": 0,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 0,
+   "t": "move"
+  },
+  {
+   "move": {
+    "get": "timber",
+    "give": "brick",
+    "t": "bankTrade"
+   },
+   "seat": 1,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 1,
+   "t": "move"
+  },
+  {
+   "move": {
+    "get": "brick",
+    "give": "grain",
+    "t": "bankTrade"
+   },
+   "seat": 2,
+   "t": "move"
+  },
+  {
+   "move": {
+    "get": "timber",
+    "give": "grain",
+    "t": "bankTrade"
+   },
+   "seat": 2,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "road",
+    "link": [
+     2,
+     9
+    ],
+    "t": "place"
+   },
+   "seat": 2,
+   "t": "move"
+  },
+  {
+   "move": {
+    "get": "brick",
+    "give": "wool",
+    "t": "bankTrade"
+   },
+   "seat": 2,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 2,
+   "t": "move"
+  },
+  {
+   "move": {
+    "get": "ore",
+    "give": "timber",
+    "t": "bankTrade"
+   },
+   "seat": 3,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 3,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 0,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "city",
+    "spot": 6,
+    "t": "place"
+   },
+   "seat": 1,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "road",
+    "link": [
+     28,
+     11
+    ],
+    "t": "place"
+   },
+   "seat": 1,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 1,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 2,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "city",
+    "spot": 2,
+    "t": "place"
+   },
+   "seat": 3,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "road",
+    "link": [
+     22,
+     50
+    ],
+    "t": "place"
+   },
+   "seat": 3,
+   "t": "move"
+  },
+  {
+   "move": {
+    "get": "brick",
+    "give": "grain",
+    "t": "bankTrade"
+   },
+   "seat": 3,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "road",
+    "link": [
+     50,
+     51
+    ],
+    "t": "place"
+   },
+   "seat": 3,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 3,
+   "t": "move"
+  },
+  {
+   "move": {
+    "get": "wool",
+    "give": "timber",
+    "t": "bankTrade"
+   },
+   "seat": 0,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 0,
+   "t": "move"
+  },
+  {
+   "move": {
+    "get": "grain",
+    "give": "brick",
+    "t": "bankTrade"
+   },
+   "seat": 1,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "settlement",
+    "spot": 28,
+    "t": "place"
+   },
+   "seat": 1,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "road",
+    "link": [
+     7,
+     8
+    ],
+    "t": "place"
+   },
+   "seat": 1,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 1,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "road",
+    "link": [
+     2,
+     3
+    ],
+    "t": "place"
+   },
+   "seat": 2,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 2,
+   "t": "move"
+  },
+  {
+   "move": {
+    "get": "brick",
+    "give": "timber",
+    "t": "bankTrade"
+   },
+   "seat": 3,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 3,
+   "t": "move"
+  },
+  {
+   "move": {
+    "get": "ore",
+    "give": "grain",
+    "t": "bankTrade"
+   },
+   "seat": 0,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 0,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "road",
+    "link": [
+     29,
+     24
+    ],
+    "t": "place"
+   },
+   "seat": 1,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "road",
+    "link": [
+     28,
+     29
+    ],
+    "t": "place"
+   },
+   "seat": 1,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 1,
+   "t": "move"
+  },
+  {
+   "move": {
+    "get": "brick",
+    "give": "grain",
+    "t": "bankTrade"
+   },
+   "seat": 2,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "road",
+    "link": [
+     8,
+     27
+    ],
+    "t": "place"
+   },
+   "seat": 2,
+   "t": "move"
+  },
+  {
+   "move": {
+    "get": "wool",
+    "give": "grain",
+    "t": "bankTrade"
+   },
+   "seat": 2,
+   "t": "move"
+  },
+  {
+   "move": {
+    "n": 3,
+    "res": "grain",
+    "t": "declare"
+   },
+   "seat": 2,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 2,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "settlement",
+    "spot": 51,
+    "t": "place"
+   },
+   "seat": 3,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 3,
+   "t": "move"
+  },
+  {
+   "move": {
+    "get": "ore",
+    "give": "timber",
+    "t": "bankTrade"
+   },
+   "seat": 0,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "city",
+    "spot": 18,
+    "t": "place"
+   },
+   "seat": 0,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "settlement",
+    "spot": 45,
+    "t": "place"
+   },
+   "seat": 0,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 0,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "city",
+    "spot": 34,
+    "t": "place"
+   },
+   "seat": 1,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 1,
+   "t": "move"
+  },
+  {
+   "move": {
+    "get": "brick",
+    "give": "ore",
+    "t": "bankTrade"
+   },
+   "seat": 2,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "road",
+    "link": [
+     26,
+     27
+    ],
+    "t": "place"
+   },
+   "seat": 2,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 2,
+   "t": "move"
+  },
+  {
+   "move": {
+    "get": "ore",
+    "give": "grain",
+    "t": "bankTrade"
+   },
+   "seat": 3,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "city",
+    "spot": 51,
+    "t": "place"
+   },
+   "seat": 3,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "road",
+    "link": [
+     53,
+     50
+    ],
+    "t": "place"
+   },
+   "seat": 3,
+   "t": "move"
+  },
+  {
+   "move": {
+    "get": "wool",
+    "give": "timber",
+    "t": "bankTrade"
+   },
+   "seat": 3,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 3,
+   "t": "move"
+  },
+  {
+   "move": {
+    "get": "ore",
+    "give": "timber",
+    "t": "bankTrade"
+   },
+   "seat": 0,
+   "t": "move"
+  },
+  {
+   "move": {
+    "get": "ore",
+    "give": "grain",
+    "t": "bankTrade"
+   },
+   "seat": 0,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 0,
+   "t": "move"
+  },
+  {
+   "move": {
+    "get": "wool",
+    "give": "brick",
+    "t": "bankTrade"
+   },
+   "seat": 1,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "road",
+    "link": [
+     10,
+     11
+    ],
+    "t": "place"
+   },
+   "seat": 1,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "road",
+    "link": [
+     24,
+     25
+    ],
+    "t": "place"
+   },
+   "seat": 1,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "road",
+    "link": [
+     25,
+     26
+    ],
+    "t": "place"
+   },
+   "seat": 1,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 1,
+   "t": "move"
+  },
+  {
+   "move": {
+    "get": "brick",
+    "give": "timber",
+    "t": "bankTrade"
+   },
+   "seat": 2,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "road",
+    "link": [
+     27,
+     53
+    ],
+    "t": "place"
+   },
+   "seat": 2,
+   "t": "move"
+  },
+  {
+   "move": {
+    "n": 4,
+    "res": "grain",
+    "t": "declare"
+   },
+   "seat": 2,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 2,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "settlement",
+    "spot": 53,
+    "t": "place"
+   },
+   "seat": 3,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 3,
+   "t": "move"
+  },
+  {
+   "move": {
+    "get": "ore",
+    "give": "grain",
+    "t": "bankTrade"
+   },
+   "seat": 0,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 0,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "settlement",
+    "spot": 26,
+    "t": "place"
+   },
+   "seat": 1,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 1,
+   "t": "move"
+  },
+  {
+   "move": {
+    "get": "brick",
+    "give": "grain",
+    "t": "bankTrade"
+   },
+   "seat": 2,
+   "t": "move"
+  },
+  {
+   "move": {
+    "n": 0,
+    "res": "grain",
+    "t": "declare"
+   },
+   "seat": 2,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 2,
+   "t": "move"
+  },
+  {
+   "move": {
+    "get": "ore",
+    "give": "grain",
+    "t": "bankTrade"
+   },
+   "seat": 3,
+   "t": "move"
+  },
+  {
+   "move": {
+    "get": "ore",
+    "give": "timber",
+    "t": "bankTrade"
+   },
+   "seat": 3,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 3,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "city",
+    "spot": 16,
+    "t": "place"
+   },
+   "seat": 0,
+   "t": "move"
+  },
+  {
+   "move": {
+    "get": "ore",
+    "give": "timber",
+    "t": "bankTrade"
+   },
+   "seat": 0,
+   "t": "move"
+  },
+  {
+   "move": {
+    "get": "ore",
+    "give": "brick",
+    "t": "bankTrade"
+   },
+   "seat": 0,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 0,
+   "t": "move"
+  },
+  {
+   "move": {
+    "get": "wool",
+    "give": "brick",
+    "t": "bankTrade"
+   },
+   "seat": 1,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "road",
+    "link": [
+     31,
+     28
+    ],
+    "t": "place"
+   },
+   "seat": 1,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "road",
+    "link": [
+     30,
+     31
+    ],
+    "t": "place"
+   },
+   "seat": 1,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 1,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 2,
+   "t": "move"
+  },
+  {
+   "move": {
+    "get": "ore",
+    "give": "brick",
+    "t": "bankTrade"
+   },
+   "seat": 3,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "road",
+    "link": [
+     51,
+     52
+    ],
+    "t": "place"
+   },
+   "seat": 3,
+   "t": "move"
+  },
+  {
+   "move": {
+    "get": "timber",
+    "give": "grain",
+    "t": "bankTrade"
+   },
+   "seat": 3,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 3,
+   "t": "move"
+  },
+  {
+   "move": {
+    "t": "endTurn"
+   },
+   "seat": 0,
+   "t": "move"
+  },
+  {
+   "move": {
+    "kind": "settlement",
+    "spot": 30,
+    "t": "place"
+   },
+   "seat": 1,
+   "t": "move"
+  }
+ ]
+}
