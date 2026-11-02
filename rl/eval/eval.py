@@ -177,6 +177,7 @@ def play_table(task):
     games_how = {"target": 0, "limit": 0, "law": 0, "other": 0, "none": 0}
     best_other = 0.0
     declares, most_in_turn = 0, 0
+    wins_no_declare = 0   # wins in games where the subject declared nothing (the table bot never declares)
     base = {"game": game_id, "lineup": ["caller"] * SEATS, "seed": 1, "vote_mode": vote_mode,
             "law_every": 8 if laws else 0}
     for key in SETTING_KEYS:
@@ -198,6 +199,7 @@ def play_table(task):
             subject.reset()
             subject.stale_wait = bool(settings.get("stale_wait"))
         in_turn = 0
+        game_declares = 0
         while not g.over:
             seat = g.seat
             if seat == at:
@@ -210,6 +212,7 @@ def play_table(task):
                 decisions += 1
                 if ACT_DECLARE <= a < ACT_PLACE:
                     declares += 1
+                    game_declares += 1
                     in_turn += 1
                     most_in_turn = max(most_in_turn, in_turn)
                 elif a == 0:
@@ -231,13 +234,14 @@ def play_table(task):
             wins += 1
             by_seat[at] += 1
             win_how[how] += 1
+            wins_no_declare += int(game_declares == 0)
         points += info[f"points{at}"]
         best_other += max(info[f"points{s}"] for s in range(SEATS) if s != at)
         rounds += info["round"]
     return {"subject": label, "game": game_id, "opponent": opponent, "phase": phase, "laws": laws, "games": n,
             "wins": wins, "wins_by_seat": by_seat, "points": points / n, "rounds": rounds / n,
             "win_how": win_how, "games_how": games_how, "best_other": best_other / n,
-            "declares": declares, "most_declares_in_turn": most_in_turn,
+            "declares": declares, "most_declares_in_turn": most_in_turn, "wins_no_declare": wins_no_declare,
             "refused": refused, "decisions": decisions, "ended": ended, "saved": saved}
 
 
