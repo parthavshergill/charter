@@ -264,16 +264,18 @@ def candidates (mem : Memory) (g : Game) (seat : Nat) (mayVote : Nat → Bool :=
   | .ok evs => evs
   | .error e => dbgTrace s!"policy bot bug: {e}" fun _ => []
 
-/-- The memory after `ev` went through in game `g` (the game before it): if `ev` is the move the network chose for
-the seat whose turn it was, that seat's state moves on. Votes and other reactions leave it alone, as in training,
-where the network never voted. -/
+/-- The memory after `ev` went through in game `g` (the game before it): if `ev` is one of the moves on offer to the
+policy seat whose turn it was (the driver commits only the policy's own choice there), that seat's state moves on.
+Votes and other reactions leave it alone, as in training, where the network never voted. -/
 def Memory.after (mem : Memory) (net : Net) (g : Game) (ev : Json) : Memory := Id.run do
   let some s := g.state | return mem
   let some seat := s.currentSeat | return mem
   if !g.isBot seat || isReactionJson ev then return mem
-  match turnEventFrom net (mem.stateOf net s seat) g s seat (mem.rulesFor net s seat) with
-  | .ok (some (mine, _, st)) =>
-    if (eventJson? mine).map (·.compress) != some ev.compress then return mem
+  -- The new state needs only the observation and one forward pass: the blend changes the move, not the state.
+  let (obs, acts) := decisionFor g s seat (mem.rulesFor net s seat)
+  let some (_, mine) := acts.find? fun (_, e) => (eventJson? e).map (·.compress) == some ev.compress | return mem
+  match net.forwardV obs (mem.stateOf net s seat) with
+  | .ok (_, _, st) =>
     let lastTrade := match mine with
       | .move _ (.bankTrade give get) => some (s.turnsTaken, give, get)
       | _ => (mem.get? seat).bind (·.lastTrade)
@@ -283,7 +285,7 @@ def Memory.after (mem : Memory) (net : Net) (g : Game) (ev : Json) : Memory := I
        | .move _ (.declare r _) => [(s.turnsTaken, r)]
        | _ => [])
     return mem.insert seat { turn := s.turnsTaken, state := st, lastTrade, declared }
-  | _ => return mem
+  | .error _ => return mem
 
 /-- Every table's memory, by table code. It lives as long as the server process: after a restart, a seat's
 state starts again from zero. -/
