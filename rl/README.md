@@ -168,7 +168,28 @@ engine accepts them in training games too (they change nothing there and use one
 training sees what they do. Eval keeps the default unless the policy's meta says otherwise.
 
 Games: train on `island`, `not-catan`; hold out `slime-parliament`, `ai-bubble`, `strike-the-earth`,
-`pirate-republic`. Made-up games (`rl/lean/CharterRL/Gen.lean`) have ids `gen-limits-N`, `gen-tiny-N` and
+`pirate-republic`.
+
+**`main`'s worlds** (`rl/worlds/`): the nine shipped worlds as `main` has them, with ids `main-<id>`: `main-island`,
+`main-not-catan`, `main-slime-parliament`, `main-ai-bubble`, `main-strike-the-earth`, `main-pirate-republic`, and the
+three new ones `main-the-pit`, `main-omerta`, `main-hill-and-chill`. `rl/worlds/gen_main_worlds.py` copies each
+world's file from `rl/worlds/main/` up to its `G.Valid` proof (checked again when this library builds), with its seat
+range and law library from `main`'s `Spec.lean` and `PreviewCheck.lean`. The six shared worlds play move for move as
+this branch's copies (180 of 180 games the same, with and without laws). `main` restructured the founding laws of AI
+Bubble and Pirate Republic without changing what they do, so only the law-shape columns of the observation differ;
+its Not Catan change is music only. All nine are eval worlds; `main-island` and `main-not-catan` may be trained on.
+
+**The generated pack** (`rl/lean/CharterRL/Pack.lean`), for training on worlds where goods count as points:
+`pack-train` (training) and `pack-val` (validation only) each deal a new world each game, from the game's seed, out of
+512; `pack-train-<n>` and `pack-val-<n>` name one world. Validation worlds come from seeds training never uses. Every
+world passes `G.checks`, and none is a shipped world. What varies: a hex map of 14 to 30 tiles; 3 to 7 goods; goods
+that count as points in about 4 worlds of 5 (from tiles, from a law paying per piece owned at round's end, from a law
+paying for a build, or with a piece that costs them); 2 to 5 kinds of piece (spot, link, and any of an upgrade, a
+second spot piece, an attachment); 8 to 12 rounds in 3 worlds of 5, else 15 to 30; targets 5 to 40; 1 to 3 dice of 4
+to 8 sides; bank rates 2 to 5; 0 to 2 other founding laws; 2 to 6 seats. Over the first 64 of each set
+(`charter-rl-check`): 58 and 51 count goods as points, 42 and 44 last 12 rounds or fewer, targets 6 to 40, 45 to 97
+spots. Random players win 9% against 3 `hand` there (1% on Island), so play matters. Train with, for example,
+`--env.games=island,not-catan,pack-train`; eval with `--worlds pack` (`pack-train` as training, `pack-val` held out). Made-up games (`rl/lean/CharterRL/Gen.lean`) have ids `gen-limits-N`, `gen-tiny-N` and
 `gen-odd-N`: at the engine's limits, tiny, and odd sizes in between, each kept only if it passes `G.checks`. They are
 for "can it play", never for training or choosing settings.
 
@@ -203,6 +224,12 @@ each game its own seed, the subject at seat k mod 4 in game k; phases `whole`, `
 pieces, `hand` plays on) and `play` (`hand` places them, the subject plays on); with and without laws. It reports win
 rates with 95% Wilson intervals, by seat, and points. Subjects: `random`, `hand`, `champion`, `champion-closed`, or a
 policy file with a JSON meta (see `rl/reference/policy.py`). A custom encoder adds its forward there.
+
+**Worlds and settings.** `--worlds main` (the default) plays `main`'s nine worlds; `--worlds harness` this branch's
+six; `--worlds pack` the generated pack; sets can be joined (`main,pack`). `--random-map 0` plays each world's own map,
+as the server does; the default deals a new map each game, as training does. `--laws off` plays with no laws
+proposed, as the server's games have; `--laws on` with them (law_every 8). Saved games of `main-*` worlds name the
+world by its id on `main`, so `make spectate` on `main` replays them (this branch's converter knows only the six).
 
 **Hollow wins.** Every table also gives *target wins %* (with its interval): games the subject won by reaching the
 game's target points. Wins at the round limit go to the leader on points, often with a low score. It also gives the

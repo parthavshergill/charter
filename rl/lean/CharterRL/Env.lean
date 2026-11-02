@@ -1,6 +1,7 @@
 import Lean.Data.Json
 import CharterRL.Obs
 import CharterRL.Gen
+import CharterRL.Pack
 
 /-!
 # The environment
@@ -342,6 +343,7 @@ private def Env.reckon (e : Env) : Env := Id.run do
 /-- Start a game with this seed. The map, the dice, the row order and the laws all follow from the seed. -/
 def Env.start (T : Tables) (settings : Settings) (lineup : Array SeatPlan) (seed : Nat) (shareVotes : Bool := true) :
     Except String Env := do
+  let T := Pack.dealt T seed
   let T := if settings.declareAlways then { T with declares := true } else T
   let seats := lineup.size
   let G := if settings.randomMap then randomMap T.G seed else T.G
@@ -438,7 +440,8 @@ def Env.savedLog (e : Env) (code : String) (names : List String) : Except String
   let seats := e.lineup.size
   let deal := e.G.map.regions.map fun r => (r.res, r.number)
   let create := Json.mkObj
-    [ ("t", "create"), ("code", code), ("seats", toJson seats), ("game", e.T.id)
+    -- A `main-` world is saved under its id on `main`, where `make spectate` knows it.
+    [ ("t", "create"), ("code", code), ("seats", toJson seats), ("game", (e.T.id.dropPrefix? "main-").map (·.toString) |>.getD e.T.id)
     , ("_serverSeed", toJson (Arena.derive e.seed 0)), ("_map", toJson deal), ("_rlSeed", toJson e.seed) ]
   let joins := (List.range seats).map fun i =>
     Json.mkObj
@@ -553,10 +556,11 @@ def readSeat (text : String) : Except String SeatPlan := do
 def Env.ofJson (j : Json) : Except String Env := do
   let settings ← readSettings j
   let id ← j.getObjValAs? String "game"
-  let T ← match tablesOf? id, Gen.tables? id with
-    | some T, _ => pure T
-    | none, some made => made
-    | none, none => throw s!"there is no game called {id}"
+  let T ← match tablesOf? id, Gen.tables? id, Pack.tables? id with
+    | some T, _, _ => pure T
+    | none, some made, _ => made
+    | none, none, some T => pure T
+    | none, none, none => throw s!"there is no game called {id}"
   let lineup ← j.getObjValAs? (List String) "lineup"
   let seats := lineup.length
   if seats < T.minSeats || T.maxSeats < seats then

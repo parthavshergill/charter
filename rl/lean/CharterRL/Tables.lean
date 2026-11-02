@@ -4,6 +4,7 @@ import Server.Rules
 import Evolved.Pool
 import CharterRL.Champion
 import CharterRL.TableBot
+import CharterRL.MainWorlds
 import CharterRL.Layout
 
 /-!
@@ -166,8 +167,19 @@ def Tables.ofSpec (spec : GameSpec) : Tables :=
 /-- Every game's tables. -/
 def allTables : Array Tables := gameSpecs.toArray.map Tables.ofSpec
 
-/-- The training games and the held-out games, in `rl/games.json`. -/
-def tablesOf? (id : String) : Option Tables := allTables.find? (·.id == id)
+/-- The nine shipped worlds as `main` has them (`rl/worlds/gen_main_worlds.py`), with ids `main-<id>`. -/
+def mainTables : Array Tables :=
+  MainWorlds.worlds.toArray.map fun w =>
+    let names := w.G.resources.map (·.name)
+    let library := (w.laws.filterMap fun text =>
+      match Rules.parseProposal text names with
+      | .ok (.law L) => some (L, text)
+      | _ => none).toArray
+    Tables.make w.id w.G w.minSeats w.maxSeats library (normalised (w.spots.map (·.toPixel 1.0)))
+
+/-- This branch's games, then `main`'s, by id. -/
+def tablesOf? (id : String) : Option Tables :=
+  (allTables.find? (·.id == id)).orElse fun _ => mainTables.find? (·.id == id)
 
 /-- Why this game does not fit the layout, if it does not. The layout's limits are the engine's, so a game that
 passes `G.Valid` always fits; this says why a game that does not pass would fail here. -/

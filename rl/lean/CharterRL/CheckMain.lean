@@ -59,16 +59,46 @@ def main (args : List String) : IO UInt32 := do
     for seats in (List.range (T.maxSeats + 1)).filter (T.minSeats ≤ ·) do
       let c := maskTest T policyVotes seats 1 (·.mask) 100
       report bad (c.errors == 0 && c.offered > 0) s!"mask {id} (held out), {seats} seats: {maskLine c}"
+  -- The generated pack: every world passes the checks, training and validation worlds never coincide, and what
+  -- varies, over the first worlds of each set.
+  for set in ["train", "val"] do
+    let n := if quick then 64 else Pack.packSize
+    let ws := (List.range n).map (Pack.world set)
+    let ok := ws.all fun T => T.G.checks && T.id != ""
+    let worthOf (T : Tables) : List String := T.G.foundingLaws.flatMap fun L => L.clauses.filterMap fun
+      | .setWorth r _ => some r | _ => none
+    let pointWorlds := (ws.filter fun T => !(worthOf T).isEmpty).length
+    let short := (ws.filter fun T => T.G.rounds ≤ 12).length
+    let kinds := ws.foldl (fun (acc : List (Nat × Nat)) T =>
+      let k := T.G.pieces.length
+      match acc.find? (·.1 == k) with
+      | some _ => acc.map fun (a, c) => if a == k then (a, c + 1) else (a, c)
+      | none => acc ++ [(k, 1)]) []
+    let banks := (List.range 6).map fun b => (b, (ws.filter (·.G.bankRate == b)).length)
+    let targets := ws.map (·.G.targetPoints)
+    let spots := ws.map (·.G.map.spotCount)
+    report bad ok
+      (s!"pack {set}: {n} worlds pass G.checks; {pointWorlds} count goods as points; {short} have 12 rounds or fewer; " ++
+       s!"kinds of piece {kinds}; bank rates {banks.filter (·.2 > 0)}; targets {targets.foldl min 1000} to " ++
+       s!"{targets.foldl max 0}; spots {spots.foldl min 1000} to {spots.foldl max 0}")
+  let trainGs := (List.range 64).map fun i => (Pack.world "train" i).G
+  let valGs := (List.range 64).map fun i => (Pack.world "val" i).G
+  let same := valGs.filter fun g => trainGs.any fun h =>
+    h.map.regions.map (fun r => (r.res, r.number)) == g.map.regions.map (fun r => (r.res, r.number)) &&
+    h.map.spotCount == g.map.spotCount && h.targetPoints == g.targetPoints
+  report bad same.isEmpty s!"pack: none of 64 validation worlds is one of 64 training worlds ({same.length} are)"
   -- Can it play: every game, and made-up games at the engine's limits and at odd small sizes, at every seat count,
   -- to the end, with random legal actions.
   let made : List String := ["gen-limits-1", "gen-limits-2", "gen-tiny-1", "gen-tiny-2", "gen-tiny-3"] ++
-    (List.range (if quick then 4 else 12)).map (s!"gen-odd-{·}")
+    (List.range (if quick then 4 else 12)).map (s!"gen-odd-{·}") ++
+    (mainTables.toList.map (·.id)) ++ ["pack-train-0", "pack-train-1", "pack-train-2", "pack-val-0", "pack-val-1"]
   for id in allIds ++ made do
-    let T ← match tablesOf? id, Gen.tables? id with
-      | some T, _ => pure T
-      | none, some (.ok T) => pure T
-      | none, some (.error err) => report bad false s!"play {id}: {err}"; continue
-      | none, none => report bad false s!"play {id}: no such game"; continue
+    let T ← match tablesOf? id, Gen.tables? id, Pack.tables? id with
+      | some T, _, _ => pure T
+      | none, some (.ok T), _ => pure T
+      | none, some (.error err), _ => report bad false s!"play {id}: {err}"; continue
+      | none, none, some T => pure T
+      | none, none, none => report bad false s!"play {id}: no such game"; continue
     report bad T.problems.isEmpty s!"layout {id} fits {T.problems}"
     for seats in (List.range (T.maxSeats + 1)).filter (T.minSeats ≤ ·) do
       let c := playTest T policyVotes seats (if quick then 1 else 2) (if id.startsWith "gen-limits" then 8 else 30)
