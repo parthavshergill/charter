@@ -31,6 +31,8 @@ All numbers are little-endian.
    2 `zero`. It must match how the checkpoint was trained.
    Format version 3 adds two more: the table number of the table of moves
    (2^32-1 for none), and the column holding each moves row's action number.
+   Format version 4 adds one more: flags, 1 `prune_declares`, 2
+   `declare_once_per_turn`, 4 the ranked order of the table of moves.
 6. The weights: 32-bit floats, exactly as in the PufferLib `.bin` file.
    Each block is padded with zeros up to a multiple of 8 floats. Blocks, in
    order, all row-major:
@@ -113,6 +115,13 @@ structure Net where
   that action. -/
   movesIdx : Option Nat := none
   movesActionCol : Nat := 1
+  /-- The checkpoint trained with `prune_declares`: no declaration that would change nothing is offered. -/
+  pruneDeclares : Bool := false
+  /-- The checkpoint trained with `declare_once_per_turn`: each good's declaration at most once a turn. -/
+  declareOncePerTurn : Bool := false
+  /-- The checkpoint's table of moves lists actions in the ranked order of harness `5fde545` (end turn and votes,
+  placements, trades, declarations, without the actions the mask hides), not in `legal`'s order. -/
+  rankedMoves : Bool := false
   /-- One input block per table, `E x width`. -/
   wIn : Array FloatArray
   /-- Mixes the pooled tables into one hidden vector, `hidden x (ntables*E)`. -/
@@ -160,13 +169,13 @@ def Net.read (b : ByteArray) : Except String Net := do
   if b.extract 0 4 != "CHPW".toUTF8 then
     throw "weights file: missing magic bytes CHPW"
   let h (k : Nat) : Nat := (u32At b (4 + 4 * k)).toNat
-  if h 0 != 2 && h 0 != 3 then
-    throw s!"weights file: format version {h 0}, expected 2 or 3 (version 3 adds the table of moves)"
+  if h 0 < 2 || h 0 > 4 then
+    throw s!"weights file: format version {h 0}, expected 2 to 4 (3 adds the table of moves, 4 the mask rules)"
   let e := h 2; let hid := h 3; let layers := h 4; let act := h 5
   let pointer := h 6; let nt := h 10
   if pointer > 4 then throw s!"weights file: pointer must be 0 to 4, got {pointer}"
   if e == 0 || hid == 0 || nt == 0 then throw "weights file: E, hidden and ntables must be positive"
-  let headerBytes := 4 + 4 * (11 + 3 * nt + (if h 0 == 3 then 7 else 5))
+  let headerBytes := 4 + 4 * (11 + 3 * nt + (if h 0 == 4 then 8 else if h 0 == 3 then 7 else 5))
   if b.size < headerBytes then
     throw s!"weights file: header needs {headerBytes} bytes, got {b.size}"
   let mut tables : Array NetTable := #[]
@@ -175,8 +184,11 @@ def Net.read (b : ByteArray) : Except String Net := do
   let idx (k : Nat) := h (11 + 3 * nt + k)
   let kinds := idx 0; let spots := idx 1; let links := idx 2; let res := idx 3
   -- Version 3: the table of moves (its number, or 2^32-1 for none) and the column of each row's action number.
-  let movesIdx : Option Nat := if h 0 == 3 && idx 5 < nt then some (idx 5) else none
-  let movesActionCol := if h 0 == 3 then idx 6 else 0
+  let movesIdx : Option Nat := if h 0 ≥ 3 && idx 5 < nt then some (idx 5) else none
+  let movesActionCol := if h 0 ≥ 3 then idx 6 else 0
+  -- Version 4: flags for the mask and the table of moves the checkpoint trained with.
+  let flags := if h 0 == 4 then idx 7 else 0
+  if flags ≥ 8 then throw s!"weights file: unknown flags {flags}"
   if pointer == 4 && movesIdx.isNone then throw "weights file: pointer 4 needs a table of moves"
   if let some mi := movesIdx then
     if movesActionCol ≥ tables[mi]!.width then throw "weights file: the moves action column is past the table's width"
@@ -224,7 +236,8 @@ def Net.read (b : ByteArray) : Except String Net := do
   return { layoutVersion := h 1, E := e, hidden := hid, layers, actSize := act, pointer,
            actSpot := h 7, actLink := h 8, actBank := h 9, tables,
            kindsIdx := kinds, spotsIdx := spots, linksIdx := links, resourcesIdx := res,
-           stateRule, movesIdx, movesActionCol, wIn, wOut, decoder := dec, ptr, grus }
+           stateRule, movesIdx, movesActionCol, pruneDeclares := flags % 2 == 1,
+           declareOncePerTurn := flags / 2 % 2 == 1, rankedMoves := flags / 4 % 2 == 1, wIn, wOut, decoder := dec, ptr, grus }
 
 /-- The recurrent state at the start of a game: zeros, one vector per layer. -/
 def Net.initState (n : Net) : Array FloatArray :=

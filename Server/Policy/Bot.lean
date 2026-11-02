@@ -73,12 +73,23 @@ def problems (g : Game) : List String :=
   (if G.map.spotCount ≤ maxSpots then [] else [s!"{G.map.spotCount} spots, and the limit is {maxSpots}"]) ++
   (if G.foundingLaws.length ≤ maxLaws then [] else [s!"{G.foundingLaws.length} founding laws, and the limit is {maxLaws}"])
 
-/-- Everything one turn decision needs: the observation, and the legal actions with their events. `moveRows` adds
-the table of moves, for a network that reads it. `undo` is the bank trade that would reverse the seat's last bank
-trade of this turn, which is not offered (as in the harness since `223416e`). The table of moves lists the legal
-actions without that rule, as the harness's does. -/
-def decisionFor (g : Game) (s : State g.spec.G) (seat : Nat) (moveRows : Bool := false)
-    (undo : Option (Res × Res) := none) : FloatArray × List (Nat × Event) :=
+/-- What the mask and the table of moves need besides the state, by the checkpoint's training settings. -/
+structure MaskRules where
+  /-- The table of moves is in the network's input. -/
+  moveRows : Bool := false
+  /-- The table of moves is in the ranked order of harness `5fde545`. -/
+  rankedMoves : Bool := false
+  /-- `prune_declares`: no declaration that would change nothing. -/
+  prune : Bool := false
+  /-- The bank trade that would reverse the seat's last bank trade this turn, which is never offered. -/
+  undo : Option (Res × Res) := none
+  /-- With `declare_once_per_turn`, the goods the seat has already declared this turn. -/
+  declaredNow : List Res := []
+
+/-- Everything one turn decision needs: the observation, and the legal actions with their events, under the mask
+rules the checkpoint trained with. A person at the table is not bound by these rules; only the policy is. -/
+def decisionFor (g : Game) (s : State g.spec.G) (seat : Nat) (m : MaskRules := {}) :
+    FloatArray × List (Nat × Event) :=
   let G := g.spec.G
   let T := tablesOf g
   let ep := (Episode.make G).seat s.rules.pieces
@@ -87,19 +98,20 @@ def decisionFor (g : Game) (s : State g.spec.G) (seat : Nat) (moveRows : Bool :=
   let free := freeMap ctx s
   let reach := reachMap ctx s seat
   let places := placeList ctx ep s seat free reach
-  let obs := observe T ep ctx moveRows (template T ep G s.turnOrder.length moveRows) s d places free reach none
-  (obs, legal T ep places s d undo)
+  let obs := observe T ep ctx m.moveRows (template T ep G s.turnOrder.length m.moveRows) s d places free reach none
+    m.undo m.declaredNow m.prune m.rankedMoves
+  (obs, legal T ep places s d m.undo m.prune m.declaredNow)
 
 /-- The observation this seat sees on its turn, as the network reads it. -/
-def observationFor (g : Game) (s : State g.spec.G) (seat : Nat) (moveRows : Bool := false) : FloatArray :=
-  (decisionFor g s seat moveRows).1
+def observationFor (g : Game) (s : State g.spec.G) (seat : Nat) (m : MaskRules := {}) : FloatArray :=
+  (decisionFor g s seat m).1
 
 /-- The network's move for this seat on its turn, starting from recurrent state `state`: the event, how many
 actions were legal, and the new state. `none` when it is not this seat's turn. -/
 def turnEventFrom (net : Net) (state : Array FloatArray) (g : Game) (s : State g.spec.G) (seat : Nat)
-    (undo : Option (Res × Res) := none) : Except String (Option (Event × Nat × Array FloatArray)) := do
+    (m : MaskRules := {}) : Except String (Option (Event × Nat × Array FloatArray)) := do
   if s.currentSeat != some seat || s.phase == .ended then return none
-  let (obs, acts) := decisionFor g s seat net.movesIdx.isSome undo
+  let (obs, acts) := decisionFor g s seat m
   if acts.isEmpty then
     throw s!"seat {seat} has its turn and no legal action has a number in the layout"
   let (logits, state') ← net.forward obs state
@@ -110,9 +122,9 @@ def turnEventFrom (net : Net) (state : Array FloatArray) (g : Game) (s : State g
   | none => throw s!"action {a} has no event"
 
 /-- The network's move for this seat on its turn, from a zero recurrent state, as the server plays it. -/
-def turnEvent (net : Net) (g : Game) (s : State g.spec.G) (seat : Nat) (undo : Option (Res × Res) := none) :
+def turnEvent (net : Net) (g : Game) (s : State g.spec.G) (seat : Nat) (m : MaskRules := {}) :
     Except String (Option (Event × Nat)) := do
-  return (← turnEventFrom net net.initState g s seat undo).map fun (ev, n, _) => (ev, n)
+  return (← turnEventFrom net net.initState g s seat m).map fun (ev, n, _) => (ev, n)
 
 /-- Is this event a reaction (a vote, a signature or an accepted offer), not a move on the seat's turn? -/
 def isReactionJson (ev : Json) : Bool :=
@@ -129,6 +141,8 @@ structure SeatMemory where
   state : Array FloatArray
   /-- The seat's last bank trade, as (turn, give, get). -/
   lastTrade : Option (Nat × Res × Res) := none
+  /-- The goods the seat declared, with the turn of each. -/
+  declared : List (Nat × Res) := []
 
 /-- Each policy seat's memory. A seat not here starts from zero. -/
 abbrev Memory := Std.HashMap Nat SeatMemory
@@ -139,6 +153,15 @@ def Memory.stateOf (mem : Memory) (net : Net) (s : State G) (seat : Nat) : Array
     | some m => if m.turn == s.turnsTaken then m.state else net.atTurnStart m.state
     | none => net.atTurnStart net.initState
   net.atDecision st
+
+/-- The mask rules for this seat now: the checkpoint's settings, and what this seat did earlier this turn. -/
+def Memory.rulesFor (mem : Memory) (net : Net) (s : State G) (seat : Nat) : MaskRules :=
+  let undo := match (mem.get? seat).bind (·.lastTrade) with
+    | some (turn, give, get) => if turn == s.turnsTaken then some (get, give) else none
+    | none => none
+  let declaredNow := if !net.declareOncePerTurn then [] else
+    ((mem.get? seat).map (·.declared)).getD [] |>.filterMap fun (t, r) => if t == s.turnsTaken then some r else none
+  { moveRows := net.movesIdx.isSome, rankedMoves := net.rankedMoves, prune := net.pruneDeclares, undo, declaredNow }
 
 /-- The bank trade that would undo this seat's last bank trade of this turn, which is not offered. -/
 def Memory.undoFor (mem : Memory) (s : State G) (seat : Nat) : Option (Res × Res) :=
@@ -153,7 +176,7 @@ def candidatesWith (net : Net) (mem : Memory) (g : Game) (seat : Nat) (mayVote :
   let some s := g.state | return []
   let reactions := if s.openProposals.isEmpty && s.offers.isEmpty then [] else
     ((handEvents (Ctx.of g.spec.G) s [seat] mayVote).filterMap eventJson?).filter isReactionJson
-  let move ← turnEventFrom net (mem.stateOf net s seat) g s seat (mem.undoFor s seat)
+  let move ← turnEventFrom net (mem.stateOf net s seat) g s seat (mem.rulesFor net s seat)
   return reactions ++ ((move.map (·.1)).toList.filterMap eventJson?)
 
 /-- The policy bot's events for this seat. If the network did not load, or a decision fails, the error is
@@ -170,13 +193,18 @@ def Memory.after (mem : Memory) (net : Net) (g : Game) (ev : Json) : Memory := I
   let some s := g.state | return mem
   let some seat := s.currentSeat | return mem
   if !g.isBot seat || isReactionJson ev then return mem
-  match turnEventFrom net (mem.stateOf net s seat) g s seat (mem.undoFor s seat) with
+  match turnEventFrom net (mem.stateOf net s seat) g s seat (mem.rulesFor net s seat) with
   | .ok (some (mine, _, st)) =>
     if (eventJson? mine).map (·.compress) != some ev.compress then return mem
     let lastTrade := match mine with
       | .move _ (.bankTrade give get) => some (s.turnsTaken, give, get)
       | _ => (mem.get? seat).bind (·.lastTrade)
-    return mem.insert seat { turn := s.turnsTaken, state := st, lastTrade }
+    -- Only this turn's declarations are needed.
+    let declared := (((mem.get? seat).map (·.declared)).getD []).filter (·.1 == s.turnsTaken) ++
+      (match mine with
+       | .move _ (.declare r _) => [(s.turnsTaken, r)]
+       | _ => [])
+    return mem.insert seat { turn := s.turnsTaken, state := st, lastTrade, declared }
   | _ => return mem
 
 /-- Every table's memory, by table code. It lives as long as the server process: after a restart, a seat's

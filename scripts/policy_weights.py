@@ -26,6 +26,10 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("ckpt")
     ap.add_argument("--out", required=True)
+    ap.add_argument("--moves-order", choices=["legal", "ranked"],
+                    help="for a checkpoint with per-move rows, if the meta has no moves_order: the order of the table "
+                         "of moves it trained with. legal: before harness 5fde545 (end turn, trades, declarations, "
+                         "placements); ranked: 5fde545 and later (end turn and votes, placements, trades, declarations)")
     ap.add_argument("--gru-state", choices=sorted(STATE_RULES),
                     help="how the recurrent state moves between a seat's decisions, if the meta has no gru_state: "
                          "carry (eval, games against bots), turn (0.5 at each turn start, as self-play waiting ticks "
@@ -65,9 +69,25 @@ def main():
         sys.exit("the meta has no gru_state: say how the checkpoint was trained with --gru-state carry|turn|zero")
     if meta.get("gru_state") and a.gru_state and a.gru_state != meta["gru_state"]:
         sys.exit("--gru-state %s, but the meta says %s" % (a.gru_state, meta["gru_state"]))
-    out = header_bytes(layout, E, hidden, layers, pointer, rule, act) + data
+    flags = None
+    if moves:
+        settings = meta.get("settings") or {}
+        order = meta.get("moves_order") or a.moves_order
+        if order not in ("legal", "ranked"):
+            sys.exit("the meta has no moves_order: say which table of moves the checkpoint trained with, "
+                     "--moves-order legal (harness before 5fde545) or ranked (5fde545 and later)")
+        if meta.get("moves_order") and a.moves_order and a.moves_order != meta["moves_order"]:
+            sys.exit("--moves-order %s, but the meta says %s" % (a.moves_order, meta["moves_order"]))
+        prune = bool(settings.get("prune_declares", meta.get("prune_declares", False)))
+        once = bool(settings.get("declare_once_per_turn", meta.get("declare_once_per_turn", False)))
+        if once and not prune:
+            sys.exit("declare_once_per_turn works only with prune_declares, and the meta has one without the other")
+        flags = (1 if prune else 0) + (2 if once else 0) + (4 if order == "ranked" else 0)
+    out = header_bytes(layout, E, hidden, layers, pointer, rule, act, flags) + data
     open(a.out, "wb").write(out)
-    print("wrote %s (%d bytes, %d params, state rule %s)" % (a.out, len(out), sum(r * c for r, c in shapes), rule))
+    extra = "" if flags is None else ", moves order %s, prune_declares %s, declare_once_per_turn %s" % (
+        "ranked" if flags & 4 else "legal", bool(flags & 1), bool(flags & 2))
+    print("wrote %s (%d bytes, %d params, state rule %s%s)" % (a.out, len(out), sum(r * c for r, c in shapes), rule, extra))
 
 
 if __name__ == "__main__":

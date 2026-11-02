@@ -4,7 +4,7 @@ import Server.Policy.Layout
 /-!
 # Observations and actions for the trained policy
 
-The observation builder and the action decoding of the training harness (`rl/lean/CharterRL/` at commit `52ce36e`
+The observation builder and the action decoding of the training harness (`rl/lean/CharterRL/` at commit `3b98ee8`
 on branch `rl-harness`, layout version 2), brought across with only what one decision needs:
 
 - `Tables`, `Episode`: what is fixed for a game. Rows of `resources` and `kinds` are in the game's own order
@@ -12,8 +12,10 @@ on branch `rl-harness`, layout version 2), brought across with only what one dec
 - `placeList`, `legal`, `decode`: the actions on offer, each asked of the engine, and the event for an action.
 - `template`, `observe`: the numbers the network reads, for one seat.
 
-Kept: the optional table of moves (`move_rows`), for checkpoints trained with it, and the harness's legality rules at
-`52ce36e` (no early end turn in setup while a placement is legal; no bank trade that undoes the last one).
+Kept: the optional table of moves (`move_rows`), in both orders the harness has used (`rankedMoves`: off for
+checkpoints trained before `5fde545`), and the harness's mask rules: no early end turn in setup while a placement is
+legal, no bank trade that undoes the last one, and, when the checkpoint trained with them, `prune_declares` and
+`declare_once_per_turn`.
 Removed: the environment's law library, rewards, opponents, random maps.
 The code that is kept is the harness's, line for line. `scripts/policy_obs_compare.sh` checks that it writes the
 same numbers as the harness on the same games: on 470 decisions over every world they match, except the law-shape
@@ -61,6 +63,41 @@ end
 /-- This law reads what a seat declared. -/
 def Law.readsDeclared (L : Law) : Bool :=
   L.clauses.any fun c => readsDeclaredAll c.effects
+
+mutual
+  /-- The goods whose declarations this number reads. `.harvested` stands for "a good not named here". -/
+  def declaredRefsE : Expr → List ResRef
+    | .declared _ r => [r]
+    | .add a b | .sub a b | .mul a b | .min a b | .max a b | .divBy a b => declaredRefsE a ++ declaredRefsE b
+    | .div a _ => declaredRefsE a
+    | .totalOver c a | .mostOver c a | .leastOver c a => declaredRefsC c ++ declaredRefsE a
+    | _ => []
+
+  def declaredRefsC : Cond → List ResRef
+    | .lt a b | .le a b | .eq a b => declaredRefsE a ++ declaredRefsE b
+    | .and a b | .or a b => declaredRefsC a ++ declaredRefsC b
+    | .not c => declaredRefsC c
+    | _ => []
+end
+
+mutual
+  def declaredRefsF : Effect → List ResRef
+    | .transfer _ _ _ amount => declaredRefsE amount
+    | .movePiece .. => []
+    | .forEach c body | .when c body => declaredRefsC c ++ declaredRefsAll body
+
+  def declaredRefsAll : List Effect → List ResRef
+    | [] => []
+    | e :: es => declaredRefsF e ++ declaredRefsAll es
+end
+
+/-- The goods whose declarations this law reads, or `none` if it reads one it does not name (`harvested`), so it
+could read any. -/
+def Law.declaredGoods (L : Law) : Option (List Res) :=
+  let refs := L.clauses.flatMap fun c => declaredRefsAll c.effects
+  refs.foldl (fun acc r => match acc, r with
+    | some xs, .lit x => some (if xs.contains x then xs else xs ++ [x])
+    | _, _ => none) (some [])
 
 /-- A law's columns of `lawShape`, in that order. -/
 structure LawCounts where
@@ -286,11 +323,30 @@ def decode (T : Tables) (ep : Episode) (places : Array Move) (d : Decision) (a :
     else if a < actSize then (places[a - actPlace]?).map (.move seat ·)
     else Option.none
 
+/-- The goods whose declarations some law in force or open law proposal reads, or `none` if one of them could read
+any good. -/
+def declaredRead (s : State G) : Option (List Res) :=
+  let laws := s.laws.map (·.2) ++ s.openProposals.filterMap fun p => match p.body with
+    | .law L => some L
+    | .deal _ => Option.none
+  laws.foldl (fun acc L => match acc, Policy.Law.declaredGoods L with
+    | some xs, some ys => some (xs ++ ys.filter (!xs.contains ·))
+    | _, _ => Option.none) (some [])
+
+/-- A declaration changes something: it is not the number this seat has already declared of this good, and some law
+reads that good's declarations. For `pruneDeclares`. -/
+def declareChanges (s : State G) (seat : Nat) (r : Res) (n : Nat) : Bool :=
+  s.declared seat r != n &&
+    match declaredRead s with
+    | some rs => rs.contains r
+    | Option.none => true
+
 /-- Every action on offer now, with its event, by asking the engine. Ending the turn needs no asking: the rules
 accept it on a seat's own turn, and theorem `endTurnNow_some` says that it cannot fail. Placements come from
 `places`, which `placeList` made by asking the engine about each. -/
 def legal (T : Tables) (ep : Episode) (places : Array Move) (s : State G) (d : Decision)
-    (undo : Option (Res × Res) := Option.none) : List (Nat × Event) :=
+    (undo : Option (Res × Res) := Option.none) (prune : Bool := false) (declaredNow : List Res := []) :
+    List (Nat × Event) :=
   match d with
   | .none => []
   | .vote seat id _ =>
@@ -307,7 +363,9 @@ def legal (T : Tables) (ep : Episode) (places : Array Move) (s : State G) (d : D
     -- bank takes its rate both ways, so it is not offered (the engine would accept it).
     let trades := names.flatMap fun g => names.filterMap fun h =>
       if g == h || undo == some (g, h) then Option.none else some (Move.bankTrade g h)
-    let declares := if T.declares then names.flatMap fun r => declareLevels.toList.map (Move.declare r) else []
+    let declares := if T.declares then names.flatMap fun r => declareLevels.toList.filterMap fun n =>
+        if prune && (!declareChanges s seat r n || declaredNow.contains r) then Option.none
+        else some (Move.declare r n) else []
     let others := (trades ++ declares).filterMap fun m =>
       if isLegal s seat m then (encodeMove ep places m).map (·, .move seat m) else Option.none
     end_ ++ others ++ rows
@@ -810,7 +868,9 @@ private def writePlaces (a : FloatArray) (T : Tables) (ctx : Ctx G) (ep : Episod
 
 /-- The whole observation for the seat that must decide. `base` is the game's template. -/
 def observe (T : Tables) (ep : Episode) (ctx : Ctx G) (moveRows : Bool) (base : FloatArray) (s : State G)
-    (d : Decision) (places : Array Move) (free reach : Array Bool) (pv : Option Preview) : FloatArray := Id.run do
+    (d : Decision) (places : Array Move) (free reach : Array Bool) (pv : Option Preview)
+    (undo : Option (Res × Res) := Option.none) (declaredNow : List Res := []) (prune : Bool := false)
+    (rankedMoves : Bool := true) : FloatArray := Id.run do
   let some me := d.seat? | return base
   let mut a := base
   let seats := s.turnOrder.length
@@ -962,8 +1022,22 @@ def observe (T : Tables) (ep : Episode) (ctx : Ctx G) (moveRows : Bool) (base : 
   -- The legal placements.
   if let .turn _ := d then
     a := writePlaces a T ctx ep rules s me places free reach demand held income
-  if moveRows then
+  if moveRows && !rankedMoves then
+    -- The table of moves as the harness built it before `5fde545`: the legal actions in `legal`'s order (end turn,
+    -- trades, declarations, placements), without the undo rule. Checkpoints trained before that commit read this.
     a := writeMoves a ep rules s me seats (legal T ep places s d) held income
+  else if moveRows then
+    -- The table has `maxMoveRows` rows, and a decision can have more legal actions (declarations and bank trades on
+    -- worlds with many goods). So the rows come in the order that keeps what matters most: ending the turn and votes,
+    -- then placements, then bank trades, then declarations. Each row names its action.
+    let acts := legal T ep places s d undo prune declaredNow
+    let rank : Event → Nat
+      | .move _ (.place ..) => 1
+      | .move _ (.bankTrade ..) => 2
+      | .move _ (.declare ..) => 3
+      | _ => 0
+    let ordered := (List.range 4).flatMap fun k => acts.filter (rank ·.2 == k)
+    a := writeMoves a ep rules s me seats ordered held income
   return a
 
 end CharterServer.Policy
