@@ -175,6 +175,9 @@ structure PlayCount where
   mostPlaces : Nat := 0
   overflow : Nat := 0
   mask : MaskCount := {}
+  /-- Laws that passed and laws that lapsed (were repealed), over all games. -/
+  passed : Nat := 0
+  lapsed : Nat := 0
   firstError : String := ""
   deriving Inhabited
 
@@ -214,6 +217,7 @@ def playTest (T : Tables) (settings : Settings) (seats games : Nat) (maskChecks 
                           firstError := if c.firstError == "" then s!"action {a} was refused" else c.firstError }
             break
           e := e'
+      c := { c with passed := c.passed + e.passed, lapsed := c.lapsed + e.lapsed }
       if e.play.state.phase == .ended then c := { c with ended := c.ended + 1 }
       else if e.decision.seat?.isNone then
         c := { c with stuck := c.stuck + 1

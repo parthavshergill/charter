@@ -58,6 +58,8 @@ WORLD_SETS = {
               "main-the-pit", "main-omerta", "main-hill-and-chill"]),
     # The generated pack: a new world each game, training set and the validation set.
     "pack": (["pack-train"], ["pack-val"]),
+    # The wild worlds (rl/lean/CharterRL/Wild.lean): a new accepted world each game, training and validation sets.
+    "wild": (["pack-wild"], ["pack-wild-val"]),
 }
 OVERRIDES = {}   # settings from the command line that win over a policy's meta, such as random_map
 # The settings a policy's meta can give that change what it sees or may do.
@@ -549,7 +551,7 @@ def main():
     ap.add_argument("--can-play-games", type=int, default=6, help="games per made-up game and seat count")
     ap.add_argument("--worlds", default="main",
                     help="comma-separated sets: main (main's nine, the default), harness (this branch's six), pack "
-                         "(generated: pack-train as training, pack-val as held out)")
+                         "(generated: pack-train as training, pack-val as held out), wild (pack-wild and pack-wild-val)")
     ap.add_argument("--random-map", type=int, default=None,
                     help="1 deals a new map each game (as training does), 0 plays each world's own map (as the server "
                          "does); default: the policy's setting, else 1")

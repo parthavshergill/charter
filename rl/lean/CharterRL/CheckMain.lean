@@ -5,6 +5,7 @@ import CharterRL.Check
 
 Runs the tests of `CharterRL.Check` and prints one line per result. Exits 1 if any test fails, including a seeded
 error that is not caught. `--quick` plays fewer games. `--layout PATH` writes `rl/layout.json` and stops.
+`--show ID...` prints worlds in words (`Wild.describe`) and stops.
 -/
 
 open Lean CharterRL CharterRL.Check
@@ -24,6 +25,12 @@ def main (args : List String) : IO UInt32 := do
   match args with
   | ["--layout", path] =>
     IO.FS.writeFile path (layoutJson.pretty ++ "\n")
+    return 0
+  | "--show" :: ids =>
+    for id in ids do
+      match tablesOf? id, (Pack.tables? id).orElse fun _ => Wild.tables? id with
+      | some T, _ | none, some T => IO.println (Wild.describe T ++ "\n")
+      | none, none => IO.println s!"{id}: there is no such world"
     return 0
   | _ => pure ()
   let quick := args.contains "--quick"
@@ -109,13 +116,72 @@ def main (args : List String) : IO UInt32 := do
     h.map.regions.map (fun r => (r.res, r.number)) == g.map.regions.map (fun r => (r.res, r.number)) &&
     h.map.spotCount == g.map.spotCount && h.targetPoints == g.targetPoints
   report bad same.isEmpty s!"pack: none of 64 validation worlds is one of 64 training worlds ({same.length} are)"
+  -- Wild worlds: every world passes the checks and fits the layout, and what varies, over the first worlds of each
+  -- set; validation and training worlds never coincide.
+  for set in ["train", "val"] do
+    let n := if quick then 64 else 1024
+    let ws := (List.range n).map fun i => Wild.worldTried set i
+    let ok := ws.all fun (T, k) => T.G.checks && T.problems.isEmpty && T.id != "" && k < 64
+    let skipped := (ws.map (·.2)).foldl (· + ·) 0
+    let range (f : Tables → Nat) : String :=
+      let xs := ws.map fun (T, _) => f T
+      s!"{xs.foldl min 100000} to {xs.foldl max 0}"
+    let chain (T : Tables) : Nat :=
+      let up (k : String) : Option String := (T.G.pieces.find? (·.name == k)).bind fun d => match d.placement with
+        | .upgrade j => some j | _ => none
+      T.G.pieces.foldl (fun m d => Id.run do
+        let mut k := d.name
+        let mut steps := 1
+        for _ in [0:16] do
+          match up k with
+          | some j => k := j; steps := steps + 1
+          | none => break
+        return max m steps) 0
+    let byStyle := Wild.styleNames.toList.zipIdx.map fun (s, i) =>
+      (s, ((List.range n).filter fun (j : Nat) => j % 4 == i).length)
+    report bad ok
+      (s!"wild {set}: {n} worlds pass G.checks and fit the layout ({skipped} seeds skipped); styles {byStyle}; " ++
+       s!"goods {range (·.G.resources.length)}; kinds {range (·.G.pieces.length)}; longest upgrade chain " ++
+       s!"{range chain}; spots {range (·.G.map.spotCount)}; rounds {range (·.G.rounds)}; targets " ++
+       s!"{range (·.G.targetPoints)}; bank rates {range (·.G.bankRate)}; dice {range (·.G.diceCount)}; " ++
+       s!"founding laws {range (·.G.foundingLaws.length)}; vote library {range (·.library.size)}")
+  let wTrain := (List.range 64).map fun i => (Wild.world "train" i).G
+  let wVal := (List.range 64).map fun i => (Wild.world "val" i).G
+  let wSame := wVal.filter fun g => wTrain.any fun h =>
+    h.map.regions.map (fun r => (r.res, r.number)) == g.map.regions.map (fun r => (r.res, r.number)) &&
+    h.targetPoints == g.targetPoints && h.pieces.map (·.cost) == g.pieces.map (·.cost)
+  report bad wSame.isEmpty s!"wild: none of 64 validation worlds is one of 64 training worlds ({wSame.length} are)"
+  -- Laws pass and lapse during play, and the mask agrees with the engine while they do.
+  let changing : Settings := { policyVotes with lawEvery := 3, repealEvery := 2 }
+  for id in ["island", "not-catan", "pack-wild-0", "pack-wild-1", "pack-wild-2", "pack-wild-3", "pack-wild-val-1"] do
+    let some T := (tablesOf? id).orElse fun _ => Wild.tables? id | report bad false s!"no game {id}"; continue
+    let seats := min 4 T.maxSeats
+    let c := playTest T changing seats (if quick then 2 else 6) 200
+    let off := playTest T { changing with repealEvery := 0 } seats (if quick then 2 else 6) 0
+    report bad (c.errors == 0 && c.lapsed > 0 && off.lapsed ≤ c.lapsed)
+      (s!"laws change {id}: with repeal_every 2, {c.passed} laws passed and {c.lapsed} lapsed in {c.games} games, " ++
+       s!"mask errors {c.mask.errors}, refused {c.refused}; without it {off.passed} passed and {off.lapsed} lapsed")
+  -- The dealt wild world follows the seed, and is always one the filter accepted.
+  for (set, id, size) in [("train", "pack-wild", Wild.wildSize), ("val", "pack-wild-val", Wild.valSize)] do
+    let seeds := List.range (if quick then 60 else 200)
+    let dealtNs := seeds.map fun sd => WildOk.dealtOf set sd size
+    let starts := seeds.filterMap fun sd =>
+      match Env.start (Wild.tables? id).get! policyVotes (callers 4) sd with
+      | .ok e => some e.G.name
+      | .error _ => none
+    let named := dealtNs.map fun n => (Wild.world set n).G.name
+    let distinct := (named.eraseDups).length
+    report bad (starts == named && dealtNs.all (WildOk.ok set ·) && distinct == seeds.length)
+      (s!"wild dealing {id}: {seeds.length} seeds deal {distinct} different worlds, all accepted, as `dealtOf` says, " ++
+       s!"out of {WildOk.acceptedCount set size} accepted")
   -- Can it play: every game, and made-up games at the engine's limits and at odd small sizes, at every seat count,
   -- to the end, with random legal actions.
   let made : List String := ["gen-limits-1", "gen-limits-2", "gen-tiny-1", "gen-tiny-2", "gen-tiny-3"] ++
     (List.range (if quick then 4 else 12)).map (s!"gen-odd-{·}") ++
-    (mainTables.toList.map (·.id)) ++ ["pack-train-0", "pack-train-1", "pack-train-2", "pack-val-0", "pack-val-1"]
+    (mainTables.toList.map (·.id)) ++ ["pack-train-0", "pack-train-1", "pack-train-2", "pack-val-0", "pack-val-1"] ++
+    (List.range (if quick then 4 else 8)).map (s!"pack-wild-{·}") ++ ["pack-wild-val-0", "pack-wild-val-3"]
   for id in allIds ++ made do
-    let T ← match tablesOf? id, Gen.tables? id, Pack.tables? id with
+    let T ← match tablesOf? id, Gen.tables? id, (Pack.tables? id).orElse fun _ => Wild.tables? id with
       | some T, _, _ => pure T
       | none, some (.ok T), _ => pure T
       | none, some (.error err), _ => report bad false s!"play {id}: {err}"; continue

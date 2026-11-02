@@ -240,8 +240,68 @@ A passive seat (it places in setup, then ends every turn) wins at most 1 of 80; 
 by building and trading. The table bot makes 4.7 to 5.5 bank trades a game here, fewer than the 8 to 22 seen on The
 Pit: it trades only toward its first upgrade, its spot piece and what its point goods buy.
 
-**Which generated worlds are for what.** `pack-train` is for training. `pack-val` is for validation only: never
-train on it or choose settings on it. `gen-*` (`CharterRL.Gen`) stays for "can it play" only.
+**Wild worlds** (`rl/lean/CharterRL/Wild.lean`), for a policy that reads the rules instead of remembering worlds.
+`pack-wild` deals a new world each game out of 65536, and `pack-wild-val` (validation only) out of 8192 from seeds
+training never uses; `pack-wild-<n>` and `pack-wild-val-<n>` name one world. The style is `n % 4`:
+- **0, economy:** a random build tree: 2 to 12 goods (0 to 3 worth points), spot and link pieces, upgrade chains up to
+  6 pieces long, attachments, costs of 1 to 4 of up to 4 goods, points 0 to 6, yields 0 to 3, limits 1 to 20; rich or
+  starved boards and banks; 1 to 4 dice; bank rates 2 to 8; 5 to 60 rounds; a target well above what setup gives.
+- **1, laws:** a smaller tree and 4 to 14 founding laws.
+- **2, island** and **3, not-catan:** Island or Not Catan with costs, points, yields, limits, target (100% to 170%),
+  rounds (60% to 150%) and bank rate changed, and up to 6 founding laws added. These are the only shipped worlds
+  used; nothing comes from a held-out world.
+
+Laws come from `wildLaw`, 26 shapes over the whole law language: harvest and wealth taxes, treasury dividends, help
+for the last seat, a tax on the leader, an auction by declaration (the highest declarer pays and gains a point good),
+declarations that pay when they are honest, piece moves on a roll, bank-rate, cost, points and worth changes, build
+rewards with conditions, goods that convert into each other, upkeep, early help, and, as votes only, windfalls at
+once, repeals of founding laws and new pieces. A founding law never pays a seat for its setup pieces, and never makes
+a plain good count as points, so setup cannot decide a game. Every world passes `G.checks` and fits layout 2 (a
+world that did not would be rejected; none was).
+
+**Rules change during play.** `repeal_every = n` (default 3 in `charter.ini`, 0 in the Lean settings, so older runs
+and eval play as before): when the environment puts a law to a vote, 1 time in `n` it proposes instead to repeal a
+law in force, chosen at random. With `law_every = 8`, about 8 laws pass and 2 to 3 lapse in a wild game. `info`
+counts `lapsed` (laws repealed) beside `passed`, and `place_over` (decisions with more placements than rows).
+
+**The honesty filter** (`rl/worlds/wild_filter.py`, run on Modal with `modal run rl/modal_app.py --action wild`)
+plays each world at 4 seats with the training settings, 8 games of `idle` against 3 `table` and 8 of a random seat
+against 3 `table`. `idle` (a new opponent) places its setup pieces as `table` does, then only votes and ends its
+turns. A world is rejected if `idle` wins any game (so neither setup nor luck decides it), if the random seat wins 2
+of 8 or more (a `table` seat's share), if a game ends before round 3, if most games have no winner, if a decision has
+more placements than `places` has rows, or if a game takes more than 6000 events. The accepted worlds are bits in
+`CharterRL.WildOk`, and `pack-wild` deals only those, each equally often (`WildOk.dealtOf`). `wild_filter.py
+check` fails when `WildOk` was made for another generator (it hashes `Wild.lean` up to its dealing section); any
+change to the generator needs the filter run again (about $1.4). Island and Not Catan pass it (`idle` and the random
+seat win 0 of 8 each, in 24 runs with different random seats). Of `pack-train`'s worlds it rejects 8 of 16 general,
+8 of 16 chain and 1 of 16 fast ones (`idle` wins some), so prefer `pack-wild` to `pack-train`.
+
+Results over all 73,728 worlds (Modal, about $1.4):
+
+| set | style | accepted | rejected: `idle` won | random won 2+ | ended before round 3 |
+|---|---|---|---|---|---|
+| train | economy | 6,644 of 16,384 (41%) | 42% | 25% | 17% |
+| train | laws | 4,816 (29%) | 45% | 40% | 23% |
+| train | island | 8,839 (54%) | 40% | 15% | 10% |
+| train | not-catan | 9,513 (58%) | 31% | 23% | 9% |
+| **train** | **all** | **29,812 of 65,536 (45%)** | 39% | 26% | 15% |
+| val | all | 3,726 of 8,192 (45%) | 39% | 26% | 15% |
+
+A world can fail for several reasons. No world was rejected for the layout, for having no winner, or for length.
+In the accepted worlds a game lasts 16 rounds on average (limit 25), 59% of games end at the target, and about 8 laws
+are proposed, 7 pass and 2.6 lapse per game. A verdict is the same on any machine (60 of 60 judged again locally).
+
+**Coverage by style** (`rl/diag/coverage.py`, 24 worlds of each style, 2 games each): on the economy and laws styles
+150 of 166 columns vary, on the island style 144 and not-catan 147, against 119 on Island and Not Catan, 122 on
+`pack-train` and 134 on `main`'s held-out worlds. No column varies on another set but never on the economy style. The
+16 that never vary are the `real` flags, the two overflow flags, `global.seats` (the check plays 4 seats), and laws
+that are never in force (`now`, and `end_game`, which no wild law has).
+
+`charter-rl-check --show ID ...` prints any world in words: numbers, goods, pieces, setup, founding laws and the vote
+library. `rl/worlds/wild_samples.txt` has eight accepted worlds printed this way, two of each style. Train with, for example, `--env.games=island,not-catan,pack-wild`; eval with `--worlds wild`.
+
+**Which generated worlds are for what.** `pack-train` and `pack-wild` are for training. `pack-val` and `pack-wild-val`
+are for validation only: never train on them or choose settings on them. `gen-*` (`CharterRL.Gen`) stays for "can it play" only.
 
 **Coverage** (`rl/diag/coverage.py`): plays games through the real interface and lists the observation columns that
 never vary on Island and Not Catan but vary elsewhere, and whether `pack-train` and `main`'s held-out worlds make
@@ -255,6 +315,10 @@ for "can it play", never for training or choosing settings.
 ## What is tested
 
 `charter-rl-check` (all pass; see the PR for numbers):
+- **wild worlds:** the first 64 (1024 in a full run) of each set pass `G.checks` and fit the layout, with the range
+  of each size; no validation world is a training world; 200 seeds deal 200 different accepted worlds; with
+  `repeal_every = 2`, laws pass and lapse on Island, Not Catan and wild worlds while the mask agrees with the engine;
+  wild worlds play to the end at every seat count.
 - **mask:** for every one of the 515 actions at every decision of random games, the mask is 1 exactly when
   `Engine.step` accepts the action's event. Also every kind on every spot and every link is tried, and each placement
   the engine accepts must have a row of `places` (or be counted past the last row). Two kinds are counted apart, not

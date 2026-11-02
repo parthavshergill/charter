@@ -13,6 +13,7 @@ static double now(void) {
 static int stale = 0;
 static const char* map_share = "1";   // random_map
 static const char* last_share = "0";  // last_seat_share
+static const char* repeal = "0";      // repeal_every
 
 static int run(const char* games, int num_agents, int bot, double seconds, const char* vote, const char* share,
                const char* seats) {
@@ -29,6 +30,7 @@ static int run(const char* games, int num_agents, int bot, double seconds, const
     puf_ini_set(&kw, "stale_wait", stale ? "1" : "0");
     puf_ini_set(&kw, "random_map", map_share);
     puf_ini_set(&kw, "last_seat_share", last_share);
+    puf_ini_set(&kw, "repeal_every", repeal);
 #ifdef CHARTER_MOVE_ROWS
     puf_ini_set(&kw, "move_rows", "1");
 #endif
@@ -139,6 +141,11 @@ int main(int argc, char** argv) {
     // The generated pack: a new world each game, mixed with Island.
     fails += run("pack-train,island", 6, 0, s, "bot", "0", "2-6");
     fails += run("pack-train", 1, BOT_TABLE, s, "bot", "0", "2-6");
+    // Wild worlds, with laws that lapse as well as pass.
+    repeal = "3";
+    fails += run("pack-wild,island,not-catan", 6, 0, s, "bot", "0", "2-6");
+    fails += run("pack-wild", 1, BOT_TABLE, s, "bot", "0", "2-6");
+    repeal = "0";
     // Made-up games at the engine's limits and at odd sizes.
     fails += run("gen-limits-1,gen-odd-2,gen-odd-3,gen-tiny-3", 6, 0, s * 8 > 20 ? s * 8 : 20, "policy", "0", "2-6");
     printf(fails ? "FAIL\n" : "PASS\n");
