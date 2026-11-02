@@ -77,7 +77,8 @@ NOTE_SAME = ("`fair`, `closed` and `hand` play identically when nobody makes off
 
 def seed_of(game, k, laws, phase, opponent):
     """Game k's seed. The same for every subject; different for every game of a table."""
-    text = f"{game}/{k}/{laws}/{phase}/{opponent}".encode()
+    salt = os.environ.get("CHARTER_SEED_SALT", "")  # --seed-salt: a fresh seed set, the same for every subject
+    text = (f"{game}/{k}/{laws}/{phase}/{opponent}" + (f"/{salt}" if salt else "")).encode()
     return int.from_bytes(hashlib.sha256(text).digest()[:6], "little")
 
 
@@ -522,6 +523,7 @@ def main():
                     help="1: step the policy's recurrent state on zeros when another caller decides, as in training")
     ap.add_argument("--can-play", type=int, default=1, help="1 to run the can-it-play check on made-up games")
     ap.add_argument("--can-play-games", type=int, default=6, help="games per made-up game and seat count")
+    ap.add_argument("--seed-salt", default="", help="a word that gives a fresh set of seeds (same for every subject)")
     ap.add_argument("--worlds", default="main",
                     help="comma-separated sets: main (main's nine, the default), harness (this branch's six), pack "
                          "(generated: pack-train as training, pack-val as held out)")
@@ -531,6 +533,8 @@ def main():
     ap.add_argument("--laws", default=None, choices=["both", "on", "off"],
                     help="laws proposed during games (law_every 8) or not; default both, or on with --quick")
     args = ap.parse_args()
+    if args.seed_salt:
+        os.environ["CHARTER_SEED_SALT"] = args.seed_salt
     OPPONENTS[:] = args.opponents.split(",")
     TRAIN[:], HELD_OUT[:] = [], []
     for w in args.worlds.split(","):

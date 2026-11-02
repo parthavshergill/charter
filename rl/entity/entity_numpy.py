@@ -76,7 +76,9 @@ class EntityNet(FlatNet):
         self.look = next((d for d in self.diag if d.startswith("look")), None)
         # `mixKcC`, for example `mix4c0.5`: among the policy's K best actions, pick by logit + C * (V(after) - V(now)).
         mix = next((d for d in self.diag if d.startswith("mix")), None)
-        self.mix = (int(mix[3:].split("c")[0]), float(mix.split("c")[1])) if mix else None
+        # `mixpKcC`: the same, and end turn and the policy's best bank trade are always candidates too.
+        self.mix_plus = bool(mix) and mix.startswith("mixp")
+        self.mix = (int(mix[4 if self.mix_plus else 3:].split("c")[0]), float(mix.split("c")[1])) if mix else None
         self.timing = "time" in self.diag
         self.t_sum, self.t_n, self.t_steps, self.diag_name = 0.0, 0, 0, diag
         self.rng = np.random.default_rng(12345)
@@ -139,7 +141,16 @@ class EntityNet(FlatNet):
         legal = np.flatnonzero(mask[:len(logits)])
         if len(legal) <= 1 or game.voting:
             return None
-        cand = legal[np.argsort(-logits[legal])][:k]
+        cand = list(legal[np.argsort(-logits[legal])][:k])
+        if self.mix_plus:
+            B, D = self.acts["bank"], self.acts["declare"]
+            if mask[0] and 0 not in cand:
+                cand.append(0)
+            bank = legal[(legal >= B) & (legal < D)]
+            if len(bank):
+                b = int(bank[np.argmax(logits[bank])])
+                if b not in cand:
+                    cand.append(b)
         seat, v_now, state = game.seat, self._v, player.state
         best, best_s = None, -np.inf
         for a in cand:
