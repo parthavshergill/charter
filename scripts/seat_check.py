@@ -24,8 +24,8 @@ END = answer([{"action": "end_turn"}])
 
 
 class StandIn(http.server.BaseHTTPRequestHandler):
-    """Seat requests take the next item of `seat_replies`. An item is the model's text, or a dict with
-    an HTTP status. Clerk requests get `clerk_reply`."""
+    """Seat requests take the next item of `seat_replies`. An item is the model's text, a dict with
+    an HTTP status, or a function from the request to the model's text. Clerk requests get `clerk_reply`."""
     seat_requests = []
     clerk_requests = []
     seat_replies = []
@@ -52,6 +52,8 @@ class StandIn(http.server.BaseHTTPRequestHandler):
             else:
                 (StandIn.seat_requests if is_seat else StandIn.clerk_requests).append(body)
                 item = (StandIn.seat_replies.pop(0) if StandIn.seat_replies else StandIn.default) if is_seat else StandIn.clerk_reply
+            if callable(item):
+                item = item(body)
             delay = StandIn.delay if is_seat else 0
         if delay:
             time.sleep(delay)
@@ -157,6 +159,19 @@ def user_text(req):
     return req["messages"][0]["content"]
 
 
+def place_first(req):
+    """An answer that places the first free piece the seat's list shows, or ends the turn if there is none."""
+    board = user_text(req).split("<what_you_can_do_on_the_board>")[1].split("</what_you_can_do_on_the_board>")[0]
+    for line in board.splitlines():
+        m = re.match(r"- (\w+) \(free\) at spot: (\d+)", line)
+        if m:
+            return answer([{"action": "place", "kind": m[1], "spot": int(m[2])}])
+        m = re.match(r"- (\w+) \(free\) on link: (\d+)-(\d+)", line)
+        if m:
+            return answer([{"action": "place_link", "kind": m[1], "from_spot": int(m[2]), "to_spot": int(m[3])}])
+    return END
+
+
 def main():
     data = tempfile.mkdtemp(prefix="charter-seats-")
     api_port = free_port()
@@ -175,6 +190,36 @@ def main():
         check("road" in user_text(StandIn.seat_requests[1]) and any(e.get("t") == "move" and e["move"].get("t") == "place" for e in q.srv.get(f"/api/games/{q.code}/events")),
               "a seat that places and ends its turn in one setup answer is asked again, and can place its next piece")
         wait_for(lambda: q.view()["turn"] == q.human, "that seat to finish its turn", 30)
+        # A seat cannot end a setup turn while a free piece can still be placed. It is told why and asked again.
+        # The person places first, so the Claude seat is last, and takes both its setup turns in a row.
+        reset()
+        q = Table(srv)
+        StandIn.seat_replies.extend([END, place_first, place_first, place_first, END, place_first, place_first, place_first])
+        q.my_setup_turn()
+        wait_for(lambda: q.view()["turn"] == q.human, "the seat's two setup turns to end", 30)
+        reqs = list(StandIn.seat_requests)
+        check(len(reqs) == 8, f"a seat that ends a setup turn early is asked again, and the rest takes one call per piece ({len(reqs)} calls)")
+        check("Not done: end_turn" in user_text(reqs[1]) and "free piece" in user_text(reqs[1]),
+              "the seat is told it still has a free piece to place")
+        check("first setup turn" in user_text(reqs[0]) and "second setup turn" in user_text(reqs[4]),
+              "the setup prompt says which of the 2 setup turns this is")
+        check("2 setup turns" in user_text(reqs[4]) and "even though you already own some" in user_text(reqs[4]),
+              "the setup prompt says a second setup turn brings new free pieces")
+        owned = q.view()["seats"][q.claude].get("points")
+        pieces = q.view()["seats"][q.claude]["pieces"]
+        check(owned == 2 and sorted(n for n in pieces.values() if n) == [2, 2],
+              f"the seat places every free piece after ending early on both setup turns ({owned} points, {pieces})")
+        # The fourth answer ended the first turn with nothing left to place, so the fifth call is a new turn and holds no refusal.
+        check("Not done" not in user_text(reqs[4]), "an end with nothing left to place ends the turn at once")
+        # A seat that only ever ends its turn is not trapped: the limit on calls places for it and ends the turn.
+        reset()
+        q = Table(srv)
+        q.my_setup_turn()
+        wait_for(lambda: q.view()["turn"] == q.human, "a seat that only ends its turn to finish setup", 30)
+        check(len(StandIn.seat_requests) == 8, f"a seat that keeps ending early is asked up to its limit on each setup turn ({len(StandIn.seat_requests)} calls)")
+        owned = q.view()["seats"][q.claude].get("points")
+        check(owned == 2, f"the fallback places a free piece for it on each setup turn ({owned})")
+
         # What a seat's request looks like, and what it sees.
         reset()
         t = Table(srv)

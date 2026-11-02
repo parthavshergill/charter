@@ -180,7 +180,7 @@ def gameFacts (spec : GameSpec) : String :=
     s!"{v}: {spotPays G v}; next to {", ".intercalate (near.map toString)}")
   let guide := if spec.guide.isEmpty then "" else s!"\n\n{spec.guide}"
   s!"## This game: {spec.name}
-The first seat to {G.targetPoints} points wins, within {G.rounds} rounds. Dice: {G.diceCount} dice with {G.diceSides} sides. The resources are {res}. The bank trades {G.bankRate} of a resource for 1 of another. Proposing a law costs nothing. In setup each seat places, free: {", ".intercalate G.setupPieces}.{guide}
+The first seat to {G.targetPoints} points wins, within {G.rounds} rounds. Dice: {G.diceCount} dice with {G.diceSides} sides. The resources are {res}. The bank trades {G.bankRate} of a resource for 1 of another. Proposing a law costs nothing. Setup has 2 rounds, in snake order: first seat to last, then last seat to first, so the last seat takes two setup turns in a row. On each of its 2 setup turns, a seat places, free: {", ".intercalate G.setupPieces}.{guide}
 
 Pieces:
 {pieces}
@@ -371,7 +371,9 @@ def userMessage (sit : Situation) (book : Describe.Book) (talk : Array Talk.Line
     (sit.offers.get.map fun o => s!"accept offer {o.id}, if you want it")
   let task :=
     if sit.myTurn then
-      if s.phase == .setup then "It is your turn in setup. Place your free pieces, then end your turn."
+      if s.phase == .setup then
+        let which := if s.turnsTaken < s.turnOrder.length then "first" else "second"
+        s!"It is your turn in setup. Setup has 2 rounds, so each seat has 2 setup turns. This is your {which} setup turn. Each setup turn gives you new free pieces: {", ".intercalate g.spec.G.setupPieces}. You get them on your second setup turn too, even though you already own some. Place each free piece you can, one at a time, then end your turn. You cannot end this turn while a free piece can still be placed."
       else
         let hurry := if callsLeft ≤ 2 then s!" You have {callsLeft} more answers this turn, so finish up." else ""
         s!"It is your turn. Do what you want, then end your turn.{hurry} You have {maxActionsPerTurn - s.actionsThisTurn sit.seat} actions left this turn."
@@ -636,9 +638,20 @@ def claudePlayer (ctx : Ctx) (code : String) (seat : Nat) : Player :=
             -- A later setup piece's places show only after the earlier piece stands. So an answer that places a
             -- piece in setup cannot also end the turn: the seat is asked again, and it sees where the next one goes.
             let placesHere := events.any fun ev => ((jField ev "move").bind (jStr · "t")) == some "place"
-            let events := if sit.state.phase == .setup && placesHere then
+            -- Nor can a seat end a setup turn while a free piece can still be placed: that piece is lost for the
+            -- whole game. The seat is told why and asked again. If it keeps ending, the limit on calls in a turn
+            -- places a piece for it and ends the turn, and the turn timer still runs.
+            let endsHere := events.any fun ev => ((jField ev "move").bind (jStr · "t")) == some "endTurn"
+            let canPlace := sit.legal.get.any fun | .place _ _ => true | _ => false
+            let endsEarly := sit.state.phase == .setup && endsHere && !placesHere && canPlace
+            let events := if sit.state.phase == .setup && (placesHere || canPlace) then
                 events.filter fun ev => ((jField ev "move").bind (jStr · "t")) != some "endTurn"
               else events
+            if endsEarly then
+              let why := "You still have a free piece to place on this setup turn. Each of your 2 setup turns gives you free pieces, even when you already own some. Place it first: it is in the list of what you can do on the board."
+              modifyMind ctx code seat fun m => { m with results := m.results ++ [s!"Not done: end_turn. Why: {why}"] }
+              seatNote ctx code <| Json.mkObj
+                [("k", "refused"), ("seat", toJson seat), ("event", toJson g.events), ("action", "end_turn"), ("why", why)]
             if formal.isNone && before.any (fun | .proposeDraft => true | _ => false) then
               modifyMind ctx code seat fun m =>
                 { m with results := m.results ++ ["You have no draft to propose. Use draft first."] }
