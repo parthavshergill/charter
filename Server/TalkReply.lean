@@ -28,8 +28,10 @@ the game is over. A table makes at most `talkCallsPerRound` reply calls in one r
 through `Seat.request`, so spending, the rate limit and the shared slots apply as for a game decision. A
 failed reply is quiet: no line, and the writing sign clears.
 
-What a reply prompt holds is in `Seat.talkMessage`: the persona, a short public summary of the game, the
-public talk and this seat's own private lines. It never holds another seat's private lines.
+What a reply prompt holds: the talk rules and the map (`Seat.talkFacts`), the persona, and in
+`Seat.talkMessage` the public board as a game decision shows it (round, last roll, each seat's points, hand
+and pieces, where the pieces are, laws, deals and proposals), the public talk and this seat's own private
+lines. It never holds another seat's private lines, a seat's memory or a private goal.
 -/
 
 namespace CharterServer.TalkReply
@@ -80,8 +82,9 @@ def askReply (ctx : Ctx) (code : String) (seat idx : Nat) : IO (Option String) :
   if rules.trimAscii.isEmpty then return none
   let st := { ctx.seat with maxTokens := ctx.seat.talkMaxTokens, effort := ctx.seat.talkEffort }
   let model := ctx.seat.talkModel.getD ctx.seat.model
-  let user := Seat.talkMessage (situation g s seat) e.talk l
-  let body := Seat.requestBody st model rules (Seat.personaText persona seat) user Seat.talkSchema
+  let user := Seat.talkMessage (situation g s seat) (← bookOf ctx code) e.talk l
+  -- The rules and the map are the same for every seat at the table, so they share one cached block.
+  let body := Seat.requestBody st model (rules ++ "\n\n" ++ Seat.talkFacts g.spec) (Seat.personaText persona seat) user Seat.talkSchema
   markSeen ctx code seat e.talk.size
   -- The same context, with the shorter time limits of a talk reply.
   let limit := min ctx.seat.timeoutS ctx.seat.talkTimeoutS

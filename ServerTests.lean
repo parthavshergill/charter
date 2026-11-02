@@ -595,8 +595,14 @@ def line (kind : String) (to : Option Nat := none) : Talk.Line := { event := 0, 
 -- A reply prompt reads public talk and this seat's own private lines, and nothing else.
 def talkMsg (seat : Nat) : String :=
   match game1.state with
-  | some s => Seat.talkMessage (Player.situation game1 s seat) tableTalk.toArray (sgLine "public" 1 none "x")
+  | some s => Seat.talkMessage (Player.situation game1 s seat) {} tableTalk.toArray (sgLine "public" 1 none "x")
   | none => ""
+-- A reply prompt shows the public board: the phase, each seat's hand, where the pieces are, and the laws.
+#guard ["You are seat 0, with", "Seats, with their points, hands and pieces:", "Where the pieces are, by corner:", "Laws in force:"].all (contains (talkMsg 0))
+-- The fixed part names every hex that pays by its resource and number, with its corners.
+#guard (paidRegions game1.spec.G).all fun r =>
+  contains (Seat.talkFacts game1.spec) s!"- {r.res} {r.number}: odds" &&
+  contains (Seat.talkFacts game1.spec) s!"corners {", ".intercalate (r.spots.map toString)}"
 #guard ["PUBLIC-LINE", "MY-WHISPER", "WHISPER-TO-ME"].all (contains (talkMsg 0))
 #guard ["THEIR-WHISPER", "THEIR-CONFESSION", "A-CONFESSION", "THEIR-INTERVIEW"].all (fun x => !contains (talkMsg 0) x)
 #guard contains (talkMsg 2) "THEIR-WHISPER" && !contains (talkMsg 2) "MY-WHISPER"
