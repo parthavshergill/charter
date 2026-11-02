@@ -126,7 +126,7 @@ def ei_collect(ckpt: str, out_dir: str, games: int, seed0: int, procs: int, extr
     return {"exit": code, "tail": text[-4000:]}
 
 
-@app.function(cpu=16, memory=65536, timeout=7200, volumes={m.VOL: m.vol})
+@app.function(cpu=16, memory=131072, timeout=7200, volumes={m.VOL: m.vol})
 def ei_distill(args: str):
     """rl/entity/expert_iter.py distill with these arguments (paths on the volume)."""
     m.vol.reload()
