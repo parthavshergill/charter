@@ -6,6 +6,9 @@ import Charter.Games.AIBubbleWords
 import Charter.Games.StrikeTheEarthWords
 import Charter.Games.PirateRepublicWords
 import Charter.Games.HillAndChillWords
+import Charter.Games.ThePitWords
+import Charter.Games.Omerta.Look
+import Charter.Games.OmertaWords
 import Charter.Scene.OfState
 import Charter.Scene.LookCheck
 import Server.GameFacts
@@ -167,11 +170,39 @@ def hillSpec : GameSpec :=
     meshFolder := "packs/hill-and-chill/meshes"
     foundingWords := Games.HillAndChill.foundingWords
     guide := "You live with friends in a house on a hill, and every round you all try to go out to dinner. Gas, cash, boba and takeout are the goods. A chat costs gas and boba. A booth costs takeout, boba and cash. A potluck replaces a booth and costs 2 takeout and 2 cash. Lore and clout are the score: each is worth 1 point while you hold it. Everyone holds one down card, which is only there so you can declare it. To commit to dinner, use declare on your turn with res down and n 1. Not declaring is saying you could be down. At each round's end: everyone who is not down gets 1 clout, whatever happens. Each seat that is down pays the ride and its share of the bill, 1 gas and 1 cash, as far as it can, whether or not dinner happens. The cash goes to the treasury, and if too few came it is the no-show fee. If more than half the table is down, but not everyone, dinner happens, and the diners share 3 lore for each seat that was needed, rounded down. If everyone is down, nobody can agree on a place, and dinner falls through like a no-show. So at a table of four, dinner needs exactly three: they get 3 lore each, and the fourth must stay home. Declarations are public and clear each round, and seats declare in turn order, so later seats see who has already committed. Building a potluck gives every seat 1 lore. The treasury holds the lore and the clout, so the bank does not sell them. Any law can change this: for example a law can repeal the clout, or refund the no-show fees from the treasury. The first to 20 points wins, or the most points after round 8." }
+def pitSpec : GameSpec :=
+  { id := "the-pit"
+    name := "The Pit"
+    blurb := "Chicago, 1886. Sell wheat, sign futures and bid for seats on the Board. Every future is fully funded."
+    G := Games.ThePit.game
+    valid := Games.ThePit.game_valid
+    layout :=
+      { tiles := Games.ThePit.tiles, spots := Games.ThePit.spots, edges := Games.ThePit.edges
+        links := Games.ThePit.links, theme := Games.ThePit.theme, word := "the prairie" }
+    minSeats := 3
+    maxSeats := 4
+    meshFolder := "packs/the-pit/meshes"
+    foundingWords := Games.ThePit.foundingWords
+    guide := "You run a grain firm in Chicago, 1886. Wheat, lumber and iron come from the map. Gold comes from selling wheat. Memberships of the Board of Trade are the prize: each one in your own hand is worth 3 points. The founding laws bind, and they say all of this. The opening bell: on the first roll, every seat gets 8 gold and 4 wheat. The spot market: at each round's end, customers buy all the wheat in every seat's hand, and pay a pot of 4 gold plus 2 for each round so far (6 in round 1, 24 in round 10), split by share. If you sell half the wheat, you get half the pot, rounded down. If nobody holds wheat, nobody is paid. Wheat in a deal's deposit is not in your hand, so it is not sold that round. The auction: each round one membership is for sale. To bid, declare gold on your turn: declare with res gold and n your bid. Everyone sees it, and you can change it on your turns until the round ends. At the round's end the highest bid wins, and pays 1 gold more than the next-highest bid. The sale and the auction happen at the same moment, so a bid counts only up to the gold in your own hand before this round's wheat is sold, after deals pay. Gold locked in a deal's deposit cannot bid. A tie at the top sells nothing, and that membership is added to the next round's sale, so a tie makes the next lot bigger. In round 10 all that are left are sold. The declaration clears each round, so declare again each round you want to bid. A farm costs 1 lumber, 1 iron, 1 wheat and 1 gold. An elevator replaces a farm, and costs 2 iron, 2 wheat and 2 gold. Futures are deals. Example, where seat 0 sells seat 1 one wheat a round for 4 rounds at 3 gold each: (deal \"Wheat future\" (signers 0 1) (rounds 4) (exit-notice 4) (deposits (0 wheat 4) (1 gold 12)) (every-round (pay 0 1 wheat 1) (pay 1 0 gold 3))). Each payer must put up everything it could owe, in deposit, when the deal starts. So the seller needs the wheat in hand to sign, and the buyer needs all the gold. Nobody can sell what they do not have, and nobody can default. A deal pays at each round's end before the wheat is sold, so wheat delivered is sold that same round. Why trade futures: wheat in hand is always sold at the round's end, even into a glut. In round 1 every seat holds 4 wheat from the bell, so the first pot of 6 pays about 1 gold for 4 wheat, while the pot grows to 24 by round 10. Only a deposit can hold wheat past a round's end. Two seats can even swap futures to store each other's wheat. A seller gets gold every round, which can bid at once. The catch: every gold you lock in a deposit is gold you cannot bid or build with until the deal pays it out. A rival whose gold is locked cannot outbid you. The vault fee: at each round's end, every seat pays the bank a quarter of the gold in its hand, rounded down, after this round's auction price and before this round's sale pays. Gold in a deposit pays no fee, and laws read only what is in hands, so no law can tax, cap or seize what is in a deposit either. So gold you will not bid this round is safer in a deal: a future, or a swap where two seats pay each other the same gold each round, such as (deal \"Vault swap\" (signers 0 1) (rounds 3) (exit-notice 3) (deposits (0 gold 9) (1 gold 9)) (every-round (pay 0 1 gold 3) (pay 1 0 gold 3))). But sheltered gold cannot bid until it comes back. Memberships, gold and goods can be traded with offers too. The bank trades 3 of one good for 1 of another, but it never sells memberships. The game lasts 10 rounds, and most points wins. 24 points wins at once." }
+def omertaSpec : GameSpec :=
+  { id := "omerta"
+    name := "Omertà"
+    blurb := "A crime family runs rackets and swears to keep quiet. The first to talk takes the reward."
+    G := Games.Omerta.game
+    valid := Games.Omerta.game_valid
+    layout :=
+      { tiles := Games.Omerta.tiles, spots := Games.Omerta.spots, edges := Games.Omerta.edges
+        links := Games.Omerta.links, theme := Games.Omerta.theme, word := "the city" }
+    minSeats := 3
+    maxSeats := 4
+    meshFolder := "packs/omerta/meshes"
+    foundingWords := Games.Omerta.foundingWords
+    guide := "You are in a crime family that shares one city. Wine, cement and fish come from the map. Cash is worth 1 point each, and it pays for a club. A front stands on a corner. A racket goes in the back room of one of your fronts, one per front. In setup you place a front, a street and a racket, twice, all free. A club replaces a front, and costs cement, cash and 1 dirt. At each round's end each racket pays its owner 2 cash, and each seat that runs a racket and holds no dirt gets 1 dirt, so nobody holds more than 1. That is the only way to get dirt: the bank never sells it, so a racket built this round gives no dirt until the round ends. The reward is the cash in the treasury. On every roll it grows by 1 for every 6 rackets running in the city, and from round 5 by twice that. To talk, declare dirt on your turn, any number from 1, while you hold some dirt. At the next roll you take the whole reward. If you are the last seat of the round, you are paid at the round's end instead, and you get only half. When you talk you give up all your dirt, all your rackets close, and you get no take or dirt at that round's end. Every other seat that runs a racket loses its newest one. A declaration cannot be taken back after your turn, so later seats in the round see it. Talking is legal at any time, and promises not to talk bind nobody: swear, bargain, pay for silence with a deal, or threaten. A law cannot name a seat, but the table can pass laws about the situation, such as who holds no dirt." }
 
 instance : Inhabited GameSpec := ⟨islandSpec⟩
 
 /-- Every game this server can run. The first is the default. -/
-def gameSpecs : List GameSpec := [islandSpec, notCatanSpec, slimeSpec, bubbleSpec, strikeSpec, pirateSpec, hillSpec]
+def gameSpecs : List GameSpec := [islandSpec, notCatanSpec, slimeSpec, bubbleSpec, strikeSpec, pirateSpec, hillSpec, pitSpec, omertaSpec]
 
 /-- The game with this id. A log entry with no id is from before there was a choice: it is the Island. -/
 def specOf? (id : Option String) : Option GameSpec :=

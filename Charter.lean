@@ -23,6 +23,12 @@ import Charter.Games.PirateRepublicWords
 import Charter.Games.HillAndChill
 import Charter.Games.HillAndChillTests
 import Charter.Games.HillAndChillWords
+import Charter.Games.ThePit
+import Charter.Games.ThePitWords
+import Charter.Games.ThePitTests
+import Charter.Games.Omerta
+import Charter.Games.OmertaTests
+import Charter.Games.OmertaWords
 import Charter.Games.Witnesses
 import Charter.Proofs.IslandWitness
 import Charter.Scene.OfState
