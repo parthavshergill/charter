@@ -502,6 +502,9 @@ const G = {
   seenProposals: null, stampsSeen: new Set(), seenDecisions: null, moment: null,
   prev: null, holdScene: false, draft: null, draftPolling: null, errTimer: null, captionTimer: null,
   talk: [], talkCount: -1, talkSeen: 0, talkAll: false,
+  talkTick: -1,         // changes on the server when a seen sign or the writing sign changes
+  talking: null,        // the seat writing a reply in table talk now
+  talkFetching: false, talkAgain: false,
   inFlight: {},         // cards of each good on their way to the hand, not yet counted there
   replay: null,         // {at, total, playing, marks, timer}: watching a game from its log
 };
@@ -848,7 +851,8 @@ async function poll() {
     G.quiet = v?.unchanged ? G.quiet + 1 : 0;
     if (G.sceneFailed) refreshScene();
     if (G.lost) { G.lost = false; caption(""); }
-    if (v && v.talkCount != null && v.talkCount !== G.talkCount) fetchTalk();
+    if (v && ((v.talkCount != null && v.talkCount !== G.talkCount) || (v.talkTick != null && v.talkTick !== G.talkTick))) fetchTalk();
+    if (v && "talking" in v && !G.replay && v.talking !== G.talking) { G.talking = v.talking; if (G.view) renderHouses(); if (G.dock?.t === "talk") renderTalk(); }
     if (v && "turnLeftMs" in v) { G.turnEnd = v.turnLeftMs == null ? null : performance.now() + v.turnLeftMs; renderClock(); }
     if (v && "resting" in v && v.resting !== G.resting) { G.resting = v.resting; if (v.resting) caption(v.resting, false, 10000); }
     // Only someone watching can see a paused table. A player who comes back has already ended the pause.
@@ -903,6 +907,7 @@ document.addEventListener("visibilitychange", () => {
   if (!G.code || G.replay) return;
   poke();
   if (G.draft && !G.draft.outcome && !G.draft.optimistic) pollDraft();
+  if (G.dock?.t === "talk" && G.token) fetchTalk();
 });
 
 /** Everything that follows a new view. */
@@ -972,9 +977,11 @@ function renderHouses() {
     const held = Object.entries(s.hand || {}).filter(([r, n]) => n > 0 && v.resources.includes(r));
     const built = Object.entries(s.pieces || {}).filter(([, n]) => n > 0);
     const drafting = (v.drafting || []).includes(s.seat);
+    const talking = G.talking === s.seat && !G.replay;
     return h("div", { "data-key": s.seat, class: "banner" + (v.turn === s.seat && v.phase !== "ended" ? " turn" : "") + (v.winner === s.seat ? " won" : "") + (s.seat === v.you ? " you" : "") + (G.openBanner === s.seat ? " open" : ""), tabindex: 0, "aria-label": `${s.name}, ${plural(s.points, "point")}` },
       cloth,
       drafting ? h("span", { class: "quillmark", title: "Drafting a rule" }, uiIcon("quill")) : null,
+      talking ? h("span", { class: "talkmark", title: "Writing in table talk", "aria-label": `${s.name} is writing in table talk` }, uiIcon("talk"), h("i", {}), h("i", {}), h("i", {})) : null,
       h("span", { class: "name" }, s.seat === v.you ? "You" : s.name.replace(/^Bot /, "")),
       h("div", { class: "card-tip vellum" },
         h("div", {}, h("strong", {}, s.name), ` · ${plural(s.points, "point")} of ${v.target}`),
@@ -1221,6 +1228,8 @@ function openDock(d) {
   G.menu = false; renderMenu();
   renderDock(); renderRail(); renderPrompt(); renderLedge(); updateInsets();
   if (d.t === "draft" && !touch()) setTimeout(() => G.ui.words.focus(), 60);
+  // Opening the talk panel shows the player every line, so the server hears that they have seen them.
+  if (d.t === "talk" && G.token && !G.replay) fetchTalk();
 }
 function toggleDock(d) {
   play("page");
@@ -1478,27 +1487,46 @@ function renderChronicle() {
 
 // ---------------------------------------------------------------- table talk
 // What the server sends is what this viewer may read: the filter is on the server.
+// With the panel open, the fetch tells the server that this person has seen the lines it gets back. One fetch
+// runs at a time; a call while one runs asks for one more after it.
 async function fetchTalk() {
+  if (G.talkFetching) { G.talkAgain = true; return; }
+  G.talkFetching = true;
+  try {
+    do {
+      G.talkAgain = false;
+      await fetchTalkOnce();
+    } while (G.talkAgain);
+  } finally { G.talkFetching = false; }
+}
+async function fetchTalkOnce() {
   const q = new URLSearchParams();
   if (G.replay) q.set("at", G.replay.at);
+  else if (G.dock?.t === "talk" && G.token && !document.hidden) q.set("open", "1");
   let r;
   try { r = await api(`/api/games/${G.code}/talk?${q}`); } catch { return; }
   if (!r?.ok) return;
   const before = G.talk.length, first = G.talkCount < 0;
   G.talk = r.lines; G.talkCount = r.count;
+  if (r.talkTick != null) G.talkTick = r.talkTick;
   if (first) G.talkSeen = G.replay ? 0 : r.lines.length;
-  const fresh = r.lines.slice(before).filter(l => l.kind === "public" && l.by !== you());
+  // Public lines, and private lines to this player, show in a caption while the panel is closed.
+  const fresh = r.lines.slice(before).filter(l => l.by !== you() && (l.kind === "public" || (l.kind === "private" && l.to === you() && you() != null)));
   if (fresh.length && !first) play("talk", { table: watchingTable() });
-  if (fresh.length && G.dock?.t !== "talk" && !G.moment) caption(`${seat(fresh[fresh.length - 1].by)?.name}: ${fresh[fresh.length - 1].text}`);
+  const last = fresh[fresh.length - 1];
+  if (last && G.dock?.t !== "talk" && !G.moment) caption(last.kind === "private" ? `${seat(last.by)?.name}, to you privately: ${last.text}` : `${seat(last.by)?.name}: ${last.text}`);
   if (G.dock?.t === "talk") renderTalk();
   renderRail();
 }
 function renderTalk() {
   const U = G.ui, v = G.view, sheet = U.sheet;
   const box = sheet.querySelector(".talkinput input");
-  const typed = box?.value || "", focused = box && document.activeElement === box;
-  const toWas = sheet.querySelector(".talkinput select")?.value ?? "";
-  const atEnd = !sheet.querySelector(".talk") || sheet.scrollTop + sheet.clientHeight >= sheet.scrollHeight - 24;
+  const typed = box?.value ?? G.talkDraft ?? "", focused = box && document.activeElement === box;
+  const sel = focused ? [box.selectionStart, box.selectionEnd] : null;
+  const toWas = sheet.querySelector(".talkinput select")?.value ?? G.talkTo ?? "";
+  const wasTalk = !!sheet.querySelector(".talk"), top = sheet.scrollTop;
+  const atEnd = !wasTalk || sheet.scrollTop + sheet.clientHeight >= sheet.scrollHeight - 24;
+  const sending = !!sheet.querySelector(".talkinput.sending");
   G.talkSeen = G.talk.length;
   const secret = G.talk.some(l => l.kind === "confession" || l.kind === "interview");
   const lines = G.talk.filter(l => G.talkAll || !secret || l.kind === "public" || l.kind === "private");
@@ -1508,25 +1536,48 @@ function renderTalk() {
     if (l.kind === "private") return h("p", { class: "aside" }, shield(l.by, seatColor(l.by)), h("b", {}, who), ` to ${nameOf(l.to)}: `, l.text);
     return h("p", { class: "inner" }, shield(l.by, seatColor(l.by)), h("span", { class: "smallcaps" }, l.kind === "interview" ? "After the game" : "Confessional"), " ", h("b", {}, who), " ", l.text);
   };
+  // Only under this player's own newest line: who has seen it. The server names only seats that may read it.
+  const mine = [...lines].reverse().find(l => l.by === v.you && v.you != null);
+  const seenBy = mine?.seenBy?.length ? mine.seenBy.map(nameOf) : [];
+  const seenNote = seenBy.length ? h("p", { class: "seen" }, `Seen by ${seenBy.join(", ")}`) : null;
+  const lineOf = l => l === mine && seenNote ? [line(l), seenNote] : line(l);
+  const writer = G.talking != null && G.talking !== v.you && !G.replay ? seat(G.talking) : null;
+  const writing = writer ? h("p", { class: "writing", "aria-live": "polite" }, `${writer.name} is writing`, h("span", { class: "dots" }, h("i", {}, "."), h("i", {}, "."), h("i", {}, "."))) : null;
   const seated = v.you != null && v.phase !== "ended" && !G.replay;
-  const input = seated ? h("form", { class: "talkinput", onsubmit: e => { e.preventDefault(); sendTalk(e.currentTarget); } },
-    h("input", { class: "input", "aria-label": "Say something", placeholder: "Say something", maxlength: 500, value: typed }),
+  const input = seated ? h("form", { class: "talkinput" + (sending ? " sending" : ""), onsubmit: e => { e.preventDefault(); sendTalk(e.currentTarget); } },
+    h("input", { class: "input", "aria-label": "Say something", placeholder: "Say something", maxlength: 500, value: typed, oninput: e => { G.talkDraft = e.target.value; } }),
     h("select", { "aria-label": "To" }, h("option", { value: "" }, "All"), v.seats.filter(x => x.seat !== v.you).map(x => h("option", { value: x.seat, selected: String(x.seat) === toWas ? true : null }, x.name))),
     h("button", { class: "act" }, "Say")) : null;
   fill(sheet, h("div", { class: "talk" },
     h("h2", {}, "Table talk"),
     secret ? h("button", { class: "link toggleline", onclick: () => { G.talkAll = !G.talkAll; renderTalk(); } }, G.talkAll ? "Only what was said at the table" : "With confessionals") : null,
-    h("div", { class: "talklines" }, !lines.length ? h("p", { class: "empty" }, "Nobody has said anything yet.") : null, lines.map(line)),
+    h("div", { class: "talklines" }, !lines.length && !writing ? h("p", { class: "empty" }, "Nobody has said anything yet.") : null, lines.map(lineOf), writing),
     input));
-  if (atEnd) sheet.scrollTop = sheet.scrollHeight;
-  if (focused) sheet.querySelector(".talkinput input").focus();
+  sheet.scrollTop = atEnd ? sheet.scrollHeight : top;
+  if (focused) {
+    const b = sheet.querySelector(".talkinput input");
+    b.focus({ preventScroll: true });
+    if (sel) b.setSelectionRange(sel[0], sel[1]);
+  }
 }
 async function sendTalk(form) {
-  const box = form.querySelector("input"), to = form.querySelector("select").value;
+  const box = form.querySelector("input"), pick = form.querySelector("select"), to = pick.value;
   const text = box.value.trim();
-  if (!text) return;
-  box.value = "";
-  await post("talk", to === "" ? { text } : { text, to: Number(to) });
+  if (!text || form.classList.contains("sending")) return;
+  G.talkTo = to;
+  box.value = ""; G.talkDraft = "";
+  form.classList.add("sending");
+  const r = await post("talk", to === "" ? { text } : { text, to: Number(to) });
+  // The panel may have been drawn again while the line was on its way: use the box that is there now.
+  const now = G.ui.sheet.querySelector(".talkinput");
+  now?.classList.remove("sending");
+  if (!r?.ok) {
+    // Nothing was said. Put the words back, so that the player can try again.
+    const b = now?.querySelector("input");
+    if (b && !b.value) { b.value = text; G.talkDraft = text; b.focus({ preventScroll: true }); }
+    say(`Not sent: ${r?.error || "the server cannot be reached."} Your words are back in the box.`);
+    return;
+  }
   fetchTalk();
 }
 
@@ -1541,7 +1592,7 @@ async function startReplay(fromStart) {
   G.replay = { at: total, total, playing: false, marks, timer: null };
   G.token = null;
   seatToken = null;
-  G.talk = []; G.talkCount = -1;
+  G.talk = []; G.talkCount = -1; G.talkTick = -1; G.talking = null;
   gotoEvent(fromStart ? (marks[0] || 1) : total, false);
 }
 async function gotoEvent(n, smooth) {

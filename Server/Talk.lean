@@ -63,6 +63,31 @@ def clean (s : String) : String :=
 def logPath (dataDir : System.FilePath) (code : String) : System.FilePath :=
   dataDir / s!"{code}.talk"
 
+/-! ## Replies and the seen sign
+
+These are pure, so `ServerTests.lean` can check them. `Server/TalkReply.lean` uses them. -/
+
+/-- The words of a text, in lower case, without punctuation. -/
+def words (s : String) : List String :=
+  let (out, cur) := s.toLower.toList.foldl (init := ((#[] : Array String), "")) fun (out, cur) c =>
+    if c.isAlphanum then (out, cur.push c)
+    else if cur.isEmpty then (out, cur) else (out.push cur, "")
+  (if cur.isEmpty then out else out.push cur).toList
+
+/-- Does this text name this player? It looks for the first word of the name, as a whole word, in any case. -/
+def names (text name : String) : Bool :=
+  match words name with
+  | first :: _ => (words text).contains first
+  | [] => false
+
+/-- The seats in `readers` that have seen line `i` of the talk. `seen s` is how many lines of the talk seat
+`s` has seen, counted from the start. The writer is not in the list, and nor is a seat that cannot read the
+line: a private line can be seen only by the seat it was sent to. -/
+def seenBy (talk : Array Line) (i : Nat) (readers : List Nat) (seen : Nat → Nat) : List Nat :=
+  match talk[i]? with
+  | none => []
+  | some l => readers.filter fun s => s != l.by_ && canSee false (some s) l && i < seen s
+
 /-- Every line of a table. A line that does not read is skipped: talk must not stop a game loading. -/
 def readAll (log : EventLog.Log String) : IO (Array Line) := do
   let lines ← log.readFrom 0

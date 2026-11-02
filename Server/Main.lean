@@ -8,6 +8,7 @@ import Server.Bots
 import Server.View
 import Server.Table
 import Server.Driver
+import Server.TalkReply
 import Server.Mirror
 import Server.Spend
 
@@ -234,12 +235,17 @@ def route (ctx : Ctx) (start : StartInfo) (req : Req) : ContextAsync Resp := do
         let seenDescriptions := match (q.get "described").bind String.toNat? with
           | some n => n == Describe.finished book
           | none => true
+        -- The writing sign, and a number that changes when a seen sign or the writing sign changes. Neither is
+        -- in a replay.
+        let talking := toJson (← talkingSeat ctx code (seatOf e token))
+        let talkTick := toJson (← talkTickOf ctx code)
         if since == some e.game.events && seenDescriptions then
           respondJson (Json.mkObj [("unchanged", toJson true), ("version", toJson e.game.events),
-            ("talkCount", toJson e.talk.size), ("turnLeftMs", toJson left), ("drafting", toJson (← draftingSeats ctx code)),
-            ("resting", resting), ("paused", paused)])
+            ("talkCount", toJson e.talk.size), ("talkTick", talkTick), ("talking", talking), ("turnLeftMs", toJson left),
+            ("drafting", toJson (← draftingSeats ctx code)), ("resting", resting), ("paused", paused)])
         else
           let v := View.withTalkCount (View.view e.game code (seatOf e token) (← draftingSeats ctx code) book) e.talk.size
+          let v := View.withField (View.withField v "talkTick" talkTick) "talking" talking
           respondJson (View.withField (View.withField (View.withField (View.withField v "turnLeftMs" (toJson left)) "resting" resting) "paused" paused) "realTokens" (← realTokens ctx code e.game))
     | "talk", false =>
       let some e ← findEntry ctx code | respondErr s!"no game {code}" .notFound
@@ -248,9 +254,20 @@ def route (ctx : Ctx) (start : StartInfo) (req : Req) : ContextAsync Resp := do
       let upTo (l : Talk.Line) : Bool := match at_ with
         | some n => l.event ≤ n
         | none => true
-      let seen := e.talk.toList.filter fun l =>
-        upTo l && Talk.canSee e.game.openToSpectators viewer l
-      respondJson (okJson [("lines", Json.arr (seen.map Talk.lineJson).toArray), ("count", toJson e.talk.size)])
+      -- A person whose talk panel is open has seen every line this answer holds.
+      if let some v := viewer then
+        if e.game.isHuman v && q.get "open" == some "1" then markSeen ctx code v e.talk.size
+      -- Who has seen each of the viewer's own lines. Only a seated viewer gets this, never a spectator or a
+      -- replay, and it names only seats that may read the line.
+      let mut out : Array Json := #[]
+      for (l, i) in e.talk.toList.zipIdx do
+        if upTo l && Talk.canSee e.game.openToSpectators viewer l then
+          let j := Talk.lineJson l
+          if viewer == some l.by_ && (l.kind == "public" || l.kind == "private") then
+            out := out.push (View.withField j "seenBy" (toJson (← seenByAt ctx e i)))
+          else out := out.push j
+      respondJson (okJson [("lines", Json.arr out), ("count", toJson e.talk.size),
+        ("talkTick", toJson (← talkTickOf ctx code))])
     | "talk", true =>
       let body ← readBody req
       let some e ← findEntry ctx code | respondErr s!"no game {code}" .notFound
@@ -260,7 +277,9 @@ def route (ctx : Ctx) (start : StartInfo) (req : Req) : ContextAsync Resp := do
       let to := jNat body "to"
       if let some t := to then
         if t == seat || t ≥ e.game.room.filled then return ← respondErr "There is nobody in that seat to tell."
-      addTalk ctx code (if to.isSome then "private" else "public") seat to text
+      if let some idx ← addTalkAt ctx code (if to.isSome then "private" else "public") seat to text then
+        -- The Claude seats may answer. This only queues them: the talk worker asks them on its own thread.
+        TalkReply.onLine ctx code idx
       respondJson (okJson [])
     | "scene", false =>
       let some e ← findEntry ctx code | respondErr s!"no game {code}" .notFound
@@ -394,7 +413,7 @@ def handler (ctx : Ctx) (start : StartInfo) (req : Req) : ContextAsync Resp := d
 /-- Files the server reads while it runs, under its root. Some are read only when a Claude seat or the
 clerk first needs them, and a missing one would then look like an empty prompt. So check them at start. -/
 def requiredFiles : List String :=
-  ["Server/formalizer.md", "Server/describer.md", "Server/player_rules.md", "web/index.html", "web/app.js", "web/app.css",
+  ["Server/formalizer.md", "Server/describer.md", "Server/player_rules.md", "Server/talk_rules.md", "web/index.html", "web/app.js", "web/app.css",
    "web/board2d.js", "web/icons.js", "web/look.js", "web/vendor/player.js", "web/vendor/meshfile.js"]
 
 /-- Stop now, and say why. -/
