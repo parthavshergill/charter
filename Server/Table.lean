@@ -83,6 +83,34 @@ structure SeatSettings where
   concurrency : Nat := 4
   /-- The most times a seat is asked in one turn. After this its turn ends. -/
   callsPerTurn : Nat := 8
+  /-- The model for replies in table talk. None means `model`. -/
+  talkModel : Option String := none
+  /-- A reply in table talk is short and must come quickly, so it gets low effort and few tokens. -/
+  talkEffort : String := "low"
+  talkMaxTokens : Nat := 1024
+  /-- The longest one talk reply can take, with its retries. -/
+  talkTimeoutS : Nat := 30
+  /-- The most talk reply calls at one table in one round. After this the seats stay quiet until the next
+  round, and they still read the talk at their next game decision. -/
+  talkCallsPerRound : Nat := 12
+
+/-- Who is answering table talk at one table. It is in memory only, and a restart loses it. Only
+`Server/TalkReply.lean` changes it. -/
+structure TalkWork where
+  /-- The talk line that the seats in `pending` answer: its place in the talk log. -/
+  line : Nat := 0
+  /-- The Claude seats still to ask about that line, in order. -/
+  pending : List Nat := []
+  /-- A talk worker thread runs for this table. -/
+  running : Bool := false
+  /-- The seat writing a reply now. -/
+  talking : Option Nat := none
+  /-- For a private reply: the seat it goes to. Only that seat sees the writing sign. -/
+  talkingTo : Option Nat := none
+  /-- The round that `calls` counts, and the reply calls made in it. -/
+  round : Nat := 0
+  calls : Nat := 0
+  deriving Inhabited
 
 structure Ctx where
   table : Std.Mutex (Std.HashMap String Entry)
@@ -137,6 +165,15 @@ structure Ctx where
   lastHuman : IO.Ref (Std.HashMap String Nat)
   /-- A table with people pauses after this long with none of them there. 0 turns this off. -/
   awayMs : Nat := 180000
+  /-- Who is answering table talk at each table. -/
+  talkWork : IO.Ref (Std.HashMap String TalkWork)
+  /-- For each table and seat: how many talk lines that seat has seen, counted from the start. For a Claude
+  seat, it is the talk that its newest prompt held. For a person, it is the talk their panel showed while
+  open. In memory only: after a restart nobody has seen anything, so the screen shows nothing false. -/
+  talkSeen : IO.Ref (Std.HashMap (String × Nat) Nat)
+  /-- For each table: a number that changes when `talkSeen` or the writing seat changes, so the screen
+  knows to fetch the talk again. -/
+  talkTick : IO.Ref (Std.HashMap String Nat)
 
 /-- A new context. -/
 def Ctx.new (tbl : Std.HashMap String Entry) (root dataDir : System.FilePath) (botDelayMs voteHoldMs : Nat)
@@ -167,7 +204,10 @@ def Ctx.new (tbl : Std.HashMap String Entry) (root dataDir : System.FilePath) (b
     turnClock := ← IO.mkRef {}
     running := ← IO.mkRef {}
     lastHuman := ← IO.mkRef {}
-    awayMs := ((← IO.getEnv "CHARTER_TABLE_AWAY_MS").bind String.toNat?).getD 180000 }
+    awayMs := ((← IO.getEnv "CHARTER_TABLE_AWAY_MS").bind String.toNat?).getD 180000
+    talkWork := ← IO.mkRef {}
+    talkSeen := ← IO.mkRef {}
+    talkTick := ← IO.mkRef {} }
 
 /-- Seat settings from the environment. -/
 def seatSettingsFromEnv : IO SeatSettings := do
@@ -179,7 +219,9 @@ def seatSettingsFromEnv : IO SeatSettings := do
     timeoutS := ← num "CHARTER_SEAT_TIMEOUT_S" 120
     budgetS := ← num "CHARTER_SEAT_BUDGET_S" 300
     concurrency := ← num "CHARTER_SEAT_CONCURRENCY" 4
-    callsPerTurn := ← num "CHARTER_SEAT_CALLS_PER_TURN" 8 }
+    callsPerTurn := ← num "CHARTER_SEAT_CALLS_PER_TURN" 8
+    talkModel := (← IO.getEnv "CHARTER_TALK_MODEL").filter (!·.isEmpty)
+    talkCallsPerRound := ← num "CHARTER_TALK_CALLS_PER_ROUND" 12 }
 
 /-- Validate one event and store it. -/
 def commitRaw (ctx : Ctx) (code : String) (mk : Entry → Except String Json) : IO (Except String Entry) :=
@@ -278,16 +320,49 @@ def addGame (ctx : Ctx) (ev : Json) : IO (Except String Entry) := do
 
 /-! ## Table talk -/
 
-/-- Add a line of talk to a table's log. Talk touches nothing in the game. -/
-def addTalk (ctx : Ctx) (code kind : String) (by_ : Nat) (to : Option Nat) (text : String) : IO Unit := do
+/-- Add a line of talk to a table's log, and give its place in the log. Talk touches nothing in the game. -/
+def addTalkAt (ctx : Ctx) (code kind : String) (by_ : Nat) (to : Option Nat) (text : String) : IO (Option Nat) := do
   let text := Talk.clean text
-  if text.isEmpty then return
+  if text.isEmpty then return none
   ctx.table.atomically do
     let tbl ← get
-    let some e := tbl.get? code | return
+    let some e := tbl.get? code | return none
     let l : Talk.Line := { event := e.game.events, kind, by_, to, text }
     discard <| e.talkLog.append (Talk.lineJson l).compress
     set (tbl.insert code { e with talk := e.talk.push l })
+    return some e.talk.size
+
+/-- Add a line of talk to a table's log. -/
+def addTalk (ctx : Ctx) (code kind : String) (by_ : Nat) (to : Option Nat) (text : String) : IO Unit :=
+  discard <| addTalkAt ctx code kind by_ to text
+
+/-- Tell the screens that the seen or writing sign of a table changed. -/
+def bumpTalkTick (ctx : Ctx) (code : String) : IO Unit :=
+  ctx.talkTick.modify fun m => m.insert code (m.getD code 0 + 1)
+
+def talkTickOf (ctx : Ctx) (code : String) : IO Nat :=
+  return (← ctx.talkTick.get).getD code 0
+
+/-- This seat has seen the first `n` lines of the talk. A count only grows. -/
+def markSeen (ctx : Ctx) (code : String) (seat n : Nat) : IO Unit := do
+  let changed ← ctx.talkSeen.modifyGet fun m =>
+    if n > m.getD (code, seat) 0 then (true, m.insert (code, seat) n) else (false, m)
+  if changed then bumpTalkTick ctx code
+
+/-- The seat writing a talk reply at this table now, as this viewer may see it. A private reply shows only
+to the seat it goes to, so the sign cannot tell anyone else that a private message was sent. -/
+def talkingSeat (ctx : Ctx) (code : String) (viewer : Option Nat) : IO (Option Nat) := do
+  let some w := (← ctx.talkWork.get).get? code | return none
+  match w.talkingTo with
+  | some p => return if viewer == some p then w.talking else none
+  | none => return w.talking
+
+/-- The seats that have seen line `i` of this table's talk. Only people and Claude seats read talk. -/
+def seenByAt (ctx : Ctx) (e : Entry) (i : Nat) : IO (List Nat) := do
+  let counts ← ctx.talkSeen.get
+  let g := e.game
+  let readers := (List.range g.kinds.size).filter fun s => g.isHuman s || g.isClaude s
+  return Talk.seenBy e.talk i readers fun s => counts.getD (e.code, s) 0
 
 /-! ## A table's seat log -/
 

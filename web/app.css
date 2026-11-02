@@ -108,6 +108,17 @@ svg.shield { width: 16px; height: 19px; flex: none; vertical-align: -4px; clip-p
 .banner .quillmark { position: absolute; right: -2px; top: 52px; color: var(--gold-2); animation: scratch 1.1s ease-in-out infinite; filter: drop-shadow(0 1px 1px #000); }
 .banner .quillmark svg { width: 18px; height: 18px; }
 @keyframes scratch { 50% { transform: translate(-2px, 2px) rotate(-8deg); } }
+/* A seat writing in table talk: a speech mark on the other side of the banner from the quill, with three dots. */
+.banner .talkmark { position: absolute; left: -2px; top: 52px; color: var(--pale-2); filter: drop-shadow(0 1px 1px #000); }
+.banner .talkmark svg { width: 18px; height: 18px; }
+.banner .talkmark i { position: absolute; top: 6px; width: 2px; height: 2px; border-radius: 50%; background: currentColor; }
+.banner .talkmark i:nth-of-type(1) { left: 6px; } .banner .talkmark i:nth-of-type(2) { left: 9px; } .banner .talkmark i:nth-of-type(3) { left: 12px; }
+@media (prefers-reduced-motion: no-preference) {
+  .banner .talkmark i, .talklines .writing .dots i { animation: typing 1.2s ease-in-out infinite; }
+  .banner .talkmark i:nth-of-type(2), .talklines .writing .dots i:nth-of-type(2) { animation-delay: .2s; }
+  .banner .talkmark i:nth-of-type(3), .talklines .writing .dots i:nth-of-type(3) { animation-delay: .4s; }
+}
+@keyframes typing { 0%, 60%, 100% { opacity: .25; } 30% { opacity: 1; } }
 .card-tip { position: absolute; top: calc(100% + 6px); left: 0; width: 200px; padding: var(--s3); text-align: left; z-index: 3; }
 .banner .card-tip { visibility: hidden; opacity: 0; transition: opacity .1s; }
 .banner:focus-within .card-tip, .banner.open .card-tip { visibility: visible; opacity: 1; }
@@ -381,6 +392,10 @@ svg.wax { width: 96px; height: 96px; filter: drop-shadow(0 3px 2px rgba(0,0,0,.3
 .talklines p.aside { color: var(--ink-2); font-style: italic; }
 .talklines p.inner { color: var(--ink-3); font-size: 12px; padding-left: var(--s3); border-left: 1px solid var(--vellum-3); }
 .talklines p.inner .smallcaps { font-size: 12px; margin-right: 4px; }
+.talklines p.seen { margin: -4px 0 var(--s2); color: var(--ink-3); font-size: 12px; text-align: right; }
+.talklines p.writing { color: var(--ink-3); font-size: 13px; font-style: italic; }
+.talklines .writing .dots i { font-style: normal; }
+.talkinput.sending .act { opacity: .6; }
 .talkinput { position: sticky; bottom: calc(0px - var(--s4)); display: flex; gap: var(--s1); padding: var(--s2) 0; background: var(--vellum); }
 .talkinput .input { flex: 1; min-width: 0; }
 
@@ -704,7 +719,7 @@ svg.seal { position: absolute; left: 50%; top: 100%; width: 52px; height: 52px; 
   .banner .worn { top: 28px; }
   .banner .cloth .worn svg { width: 24px; height: 24px; }
   .banner .name { font-size: 11px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-  .banner .quillmark { top: 36px; }
+  .banner .quillmark, .banner .talkmark { top: 36px; }
   .banner:nth-child(n+3) .card-tip { left: auto; right: 0; }
   .card-tip { max-width: calc(100vw - 16px); }
   .heraldry { flex: 1 1 auto; }
@@ -787,7 +802,7 @@ svg.seal { position: absolute; left: 50%; top: 100%; width: 52px; height: 52px; 
   .banner.won .cloth { height: 64px; }
   .banner .score { top: 4px; font-size: 20px; }
   .banner .name { font-size: 11px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-  .banner .quillmark { top: 26px; }
+  .banner .quillmark, .banner .talkmark { top: 26px; }
   .herald .tab { padding: 4px var(--s2) 6px; font-size: 12px; }
   .herald .die { min-width: 34px; padding: 0 var(--s2) 4px; font-size: 20px; }
   /* The dock lies over the board at the right, over the ledge too, and it can be as tall as the screen. */

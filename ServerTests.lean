@@ -581,6 +581,37 @@ def line (kind : String) (to : Option Nat := none) : Talk.Line := { event := 0, 
 #guard Talk.canSee true none (line "confession")
 #guard !Talk.canSee true (some 1) (line "interview")
 
+-- Replies in table talk. A line names a player by the first word of their name, as a whole word.
+#guard Talk.names "What do you think, VESNA?" "Vesna"
+#guard Talk.names "ines: hello" "Ines Prado"
+#guard !Talk.names "Vesnaland is far away" "Vesna"
+#guard !Talk.names "hello" ""
+-- The seen sign names only seats that may read the line, and never its writer.
+#guard Talk.seenBy tableTalk.toArray 0 [0, 1, 2] (fun _ => 1) == [0, 2]
+#guard Talk.seenBy tableTalk.toArray 0 [0, 1, 2] (fun s => if s == 0 then 1 else 0) == [0]
+#guard Talk.seenBy tableTalk.toArray 3 [0, 1, 2] (fun _ => 9) == [2]
+#guard Talk.seenBy tableTalk.toArray 0 [0, 1, 2] (fun _ => 0) == []
+#guard Talk.seenBy tableTalk.toArray 99 [0, 1, 2] (fun _ => 200) == []
+-- A reply prompt reads public talk and this seat's own private lines, and nothing else.
+def talkMsg (seat : Nat) : String :=
+  match game1.state with
+  | some s => Seat.talkMessage (Player.situation game1 s seat) {} tableTalk.toArray (sgLine "public" 1 none "x")
+  | none => ""
+-- A reply prompt shows the public board: the phase, each seat's hand, where the pieces are, and the laws.
+#guard ["You are seat 0, with", "Seats, with their points, hands and pieces:", "Where the pieces are, by corner:", "Laws in force:"].all (contains (talkMsg 0))
+-- The fixed part names every hex that pays by its resource and number, with its corners.
+#guard (paidRegions game1.spec.G).all fun r =>
+  contains (Seat.talkFacts game1.spec) s!"- {r.res} {r.number}: odds" &&
+  contains (Seat.talkFacts game1.spec) s!"corners {", ".intercalate (r.spots.map toString)}"
+#guard ["PUBLIC-LINE", "MY-WHISPER", "WHISPER-TO-ME"].all (contains (talkMsg 0))
+#guard ["THEIR-WHISPER", "THEIR-CONFESSION", "A-CONFESSION", "THEIR-INTERVIEW"].all (fun x => !contains (talkMsg 0) x)
+#guard contains (talkMsg 2) "THEIR-WHISPER" && !contains (talkMsg 2) "MY-WHISPER"
+-- A reply is only words, or nothing.
+#guard match Seat.parseSay "{\"say\":null}" with | .ok none => true | _ => false
+#guard match Seat.parseSay "{\"say\":\"Aye.\"}" with | .ok (some "Aye.") => true | _ => false
+#guard match Seat.parseSay "{\"say\":\"  \"}" with | .ok none => true | _ => false
+#guard (Seat.parseSay "{\"actions\":[]}").toOption.isNone
+
 -- A persona comes from a seed, and a table has no repeats.
 #guard Persona.pick 7 4 == Persona.pick 7 4
 #guard ((Persona.pick 7 4).map (·.name)).eraseDups.length == 4

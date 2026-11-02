@@ -50,6 +50,8 @@ The first five are under `vars` in `cloudflare/wrangler.jsonc`. The preview has 
 | `CHARTER_SEAT_MODEL` | `claude-sonnet-5-5` | The model that plays a Claude seat. |
 | `CHARTER_SEAT_EFFORT` | `medium` | The effort of that call. |
 | `CHARTER_SEAT_CONCURRENCY` | 4 | How many Claude seat requests run at once. |
+| `CHARTER_TALK_MODEL` | the seat model | The model that writes a Claude seat's reply in table talk. The reply uses low effort and at most 1024 tokens. |
+| `CHARTER_TALK_CALLS_PER_ROUND` | 12 | The most table talk replies one table can ask for in one round. After this the seats stay quiet until the next round. |
 | `CHARTER_DESCRIBE_MODEL` | `claude-sonnet-5-5` | The model that writes a law's description. |
 | `CHARTER_DESCRIBE_EFFORT` | `low` | The effort of that call. |
 | `CHARTER_PRICE_INPUT_USD` | 4 | Dollars per million input tokens, for Opus and for any model with no prices of its own. |

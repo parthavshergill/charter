@@ -71,6 +71,9 @@ def replySchema : Json :=
         action "propose_draft",
         action "end_turn" ])])]) ]
 
+/-- The answer to a line of table talk. It has no actions, so it cannot reach the engine. -/
+def talkSchema : Json := schemaObj [("say", nullable "string")]
+
 /-- The answer to the questions after a game. -/
 def interviewSchema : Json :=
   schemaObj
@@ -106,6 +109,14 @@ def parseReply (text : String) : Except String Reply := do
     | none => []
   return { say := nonEmpty (jStr j "say"), whispers, confess := nonEmpty (jStr j "confess")
            remember := nonEmpty (jStr j "remember"), actions := actions.toList }
+
+/-- Read an answer to table talk: what the seat says, or none if it stays quiet. -/
+def parseSay (text : String) : Except String (Option String) := do
+  let j ← Json.parse text.trimAscii.toString
+  match j.getObjVal? "say" with
+  | .ok .null => return none
+  | .ok (.str t) => return nonEmpty (some t)
+  | _ => throw "the answer has no say field"
 
 /-- What one action of an answer asks for. -/
 inductive Act where
@@ -279,14 +290,36 @@ def legalBlock (sit : Situation) : String :=
     else "draft is always available, even when this list is short, and offer is available on your turn"
   s!"{board}\n- {always}"
 
+/-- Each seat, its name, points, hand and pieces, one line each. All of it is on every player's screen. -/
+def seatsBlock (sit : Situation) : String :=
+  let g := sit.game
+  let s := sit.state
+  "\n".intercalate (s.turnOrder.map fun p =>
+    let you := if p == sit.seat then " (you)" else ""
+    s!"- seat {p}: {Clerk.oneLine (g.nameOf p)}{you}: {Formalize.seatFacts s p}")
+
+/-- The pieces under the rules in force, and how many of each this seat owns. -/
+def piecesBlock (sit : Situation) : String :=
+  let s := sit.state
+  "\n".intercalate (s.rules.pieces.map fun d =>
+    s!"- {d.name}: costs {Text.bundleText d.cost}; {d.points} points; goes on {Formalize.placementS d.placement}; collects {d.yield}; limit {d.limit}; you own {s.countOf sit.seat d.name}")
+
+/-- Where each seat's pieces are on the map, by corner and by link. -/
+def boardBlock (sit : Situation) : String :=
+  let s := sit.state
+  "\n".intercalate (s.turnOrder.map fun p =>
+    let mine := s.pieces.filter (·.owner == p)
+    let at_ (x : Piece) : String := match x.loc with
+      | .spot v => s!"{x.kind} at {v}"
+      | .link l => s!"{x.kind} on {l.1}-{l.2}"
+    s!"- seat {p}: {if mine.isEmpty then "nothing" else ", ".intercalate (mine.map at_)}")
+
 /-- The game as it is now. All of it is public. -/
 def gameBlock (sit : Situation) (book : Describe.Book) : String :=
   let g := sit.game
   let G := g.spec.G
   let s := sit.state
-  let seats := "\n".intercalate (s.turnOrder.map fun p =>
-    let you := if p == sit.seat then " (you)" else ""
-    s!"- seat {p}: {Clerk.oneLine (g.nameOf p)}{you}: {Formalize.seatFacts s p}")
+  let seats := seatsBlock sit
   let held (a : Account) : String :=
     let xs := (G.resources.map (·.name)).filterMap fun r =>
       let n := s.balance a r
@@ -296,14 +329,8 @@ def gameBlock (sit : Situation) (book : Describe.Book) : String :=
     | some p => s!"It is seat {p}'s turn."
     | none => ""
   let phase := if s.phase == .setup then "Setup." else s!"Round {s.round} of {G.rounds}."
-  let pieces := "\n".intercalate (s.rules.pieces.map fun d =>
-    s!"- {d.name}: costs {Text.bundleText d.cost}; {d.points} points; goes on {Formalize.placementS d.placement}; collects {d.yield}; limit {d.limit}; you own {s.countOf sit.seat d.name}")
-  let board := "\n".intercalate (s.turnOrder.map fun p =>
-    let mine := s.pieces.filter (·.owner == p)
-    let at_ (x : Piece) : String := match x.loc with
-      | .spot v => s!"{x.kind} at {v}"
-      | .link l => s!"{x.kind} on {l.1}-{l.2}"
-    s!"- seat {p}: {if mine.isEmpty then "nothing" else ", ".intercalate (mine.map at_)}")
+  let pieces := piecesBlock sit
+  let board := boardBlock sit
   let laws := if s.laws.isEmpty then "none" else "\n".intercalate (s.laws.map fun x =>
     s!"- Law {x.1}, titled \"{x.2.title}\". {lawForSeat book x.2}")
   let declaredRows := s.turnOrder.flatMap fun p =>
@@ -345,23 +372,36 @@ Proposals before the table:
 Open offers:
 {offers}"
 
+/-- A seat, as a prompt names it. The name is a player's words, so it cannot open a marker. -/
+def whoText (g : Game) (seat : Nat) : String := s!"seat {seat} ({Clerk.oneLine (g.nameOf seat)})"
+
+/-- The talk this seat may read, for its prompt: the newest public lines, and the newest private lines to
+or from this seat. Never another seat's private lines, a confessional or an interview. Each line is a
+player's words, so it cannot close or open a marker. -/
+def talkLinesFor (g : Game) (seat : Nat) (talk : Array Talk.Line) : List String × List String :=
+  let who := whoText g
+  let publicLines := ((talk.toList.filter (·.kind == "public")).reverse.take 40).reverse.map fun l =>
+    Clerk.oneLine s!"{who l.by_}: {l.text}"
+  let privateLines := ((talk.toList.filter fun l =>
+      l.kind == "private" && (l.by_ == seat || l.to == some seat)).reverse.take 20).reverse.map fun l =>
+    if l.by_ == seat then Clerk.oneLine s!"you to {who (l.to.getD 0)}: {l.text}"
+    else Clerk.oneLine s!"{who l.by_} to you: {l.text}"
+  (publicLines, privateLines)
+
+/-- A section of a prompt between markers, or nothing if it has no lines. -/
+def markedBlock (tag : String) (lines : List String) : String :=
+  if lines.isEmpty then "" else s!"<{tag}>\n{"\n".intercalate lines}\n</{tag}>\n\n"
+
 /-- Everything the seat reads, in one message. Player words are between markers and cannot close them. -/
 def userMessage (sit : Situation) (book : Describe.Book) (talk : Array Talk.Line) (mind : Mind) (callsLeft : Nat)
     (retry : Option (String × String)) : String :=
   let g := sit.game
   let s := sit.state
-  let who (seat : Nat) : String := s!"seat {seat} ({Clerk.oneLine (g.nameOf seat)})"
   let events := ((g.chronicle.toList.drop mind.chronicleSeen).reverse.take 60).reverse.map fun l =>
     Clerk.oneLine l.text
-  let publicLines := ((talk.toList.filter (·.kind == "public")).reverse.take 40).reverse.map fun l =>
-    Clerk.oneLine s!"{who l.by_}: {l.text}"
-  let privateLines := ((talk.toList.filter fun l =>
-      l.kind == "private" && (l.by_ == sit.seat || l.to == some sit.seat)).reverse.take 20).reverse.map fun l =>
-    if l.by_ == sit.seat then Clerk.oneLine s!"you to {who (l.to.getD 0)}: {l.text}"
-    else Clerk.oneLine s!"{who l.by_} to you: {l.text}"
+  let (publicLines, privateLines) := talkLinesFor g sit.seat talk
   let notes := Clerk.fitNewest Clerk.maxMemoryChars (mind.notes.toList.map Clerk.oneLine)
-  let block (tag : String) (lines : List String) : String :=
-    if lines.isEmpty then "" else s!"<{tag}>\n{"\n".intercalate lines}\n</{tag}>\n\n"
+  let block := markedBlock
   let draft :=
     if mind.draftWords.isEmpty then "" else
     s!"<your_draft>\nYou asked the clerk: {Clerk.oneLine mind.draftWords}\n{Clerk.neutralize mind.draftResult}\n</your_draft>\n\n"
@@ -391,6 +431,86 @@ def userMessage (sit : Situation) (book : Describe.Book) (talk : Array Talk.Line
 </what_you_can_do_on_the_board>
 
 {task}{open_}{again}"
+
+/-! ## Answering table talk -/
+
+/-- The fixed facts a talk reply needs: how to win, the dice, and every hex with its number, its odds and
+its corners. They are the same for every seat at every moment, so they go in the cached system message.
+A person sees a hex by its resource and its number, so the map is given that way. -/
+def talkFacts (spec : GameSpec) : String :=
+  let G := spec.G
+  let total := G.diceSides ^ G.diceCount
+  let hexes := "\n".intercalate ((paidRegions G).map fun r =>
+    s!"- {r.res} {r.number}: odds {Scene.chanceOf G r.number} in {total}; corners {", ".intercalate (r.spots.map toString)}")
+  s!"## This game: {spec.name}
+The first seat to {G.targetPoints} points wins, within {G.rounds} rounds. Dice: {G.diceCount} dice with {G.diceSides} sides. The resources are {", ".intercalate (G.resources.map (·.name))}. When the dice show a hex's number, each piece on a corner of that hex collects that hex's resource.
+
+The map. Each hex, by its resource and number, the odds that a roll shows its number, and its corners:
+{hexes}"
+
+/-- A law, for a talk reply: its title, and its description if it has one, or else its source. -/
+def lawForTalk (book : Describe.Book) (id : Nat) (L : Law) : String :=
+  match Describe.textOf book L with
+  | some (_, text) => s!"- Law {id}, \"{L.title}\": {Clerk.oneLine text}"
+  | none => s!"- Law {id}, \"{L.title}\": {Rules.printProposal (.law L)}"
+
+/-- The game as it is now, for a talk reply: the round and phase, the last roll, each seat's points and
+hand, the pieces, where every piece is, the laws in force, the deals and the proposals. It is built from
+the same parts as a game decision's `gameBlock`, and all of it is public. It has no offers, no votes and
+no list of moves, which a reply does not need. -/
+def talkSummary (sit : Situation) (book : Describe.Book) : String :=
+  let g := sit.game
+  let G := g.spec.G
+  let s := sit.state
+  let phase := if s.phase == .setup then "Setup." else if s.phase == .ended then "The game is over."
+    else s!"Round {s.round} of {G.rounds}."
+  let turn := match s.currentSeat with
+    | some p => s!" It is seat {p}'s turn."
+    | none => ""
+  let roll := match s.lastRoll with
+    | some r => s!" The last roll was {r}."
+    | none => ""
+  let laws := if s.laws.isEmpty then "none" else "\n".intercalate (s.laws.map fun x => lawForTalk book x.1 x.2)
+  let deals := if s.deals.isEmpty then "none" else "\n".intercalate (s.deals.map fun d =>
+    s!"- Deal {d.id}, until round {d.lastRound}: {Text.dealLine g.nameOf d.deal}")
+  let open_ := if s.openProposals.isEmpty then "none" else "\n".intercalate (s.openProposals.map fun p =>
+    match p.body with
+    | .law L => s!"- Law proposal {p.id}, by seat {p.by_}: \"{L.title}\""
+    | .deal d => s!"- Deal proposal {p.id}, by seat {p.by_}: {Text.dealLine g.nameOf d}")
+  s!"{phase}{turn}{roll} You are seat {sit.seat}, with {s.pointsOf sit.seat} points. First to {G.targetPoints} points wins.
+
+Seats, with their points, hands and pieces:
+{seatsBlock sit}
+
+Pieces under the rules in force:
+{piecesBlock sit}
+
+Where the pieces are, by corner:
+{boardBlock sit}
+
+Laws in force:
+{laws}
+
+Deals running:
+{deals}
+
+Proposals before the table:
+{open_}"
+
+/-- What a seat reads when it is asked to answer a line of talk `l`. The talk is the current talk. -/
+def talkMessage (sit : Situation) (book : Describe.Book) (talk : Array Talk.Line) (l : Talk.Line) : String :=
+  let g := sit.game
+  let (publicLines, privateLines) := talkLinesFor g sit.seat talk
+  let task :=
+    if l.kind == "private" then
+      s!"{whoText g l.by_} has just sent you a private message: their newest line in <private_messages>. Only they will read your answer."
+    else
+      s!"{whoText g l.by_} has just spoken to the table: their newest line in <table_talk>. Everyone at the table will read your answer."
+  s!"<game>
+{Clerk.neutralize (talkSummary sit book)}
+</game>
+
+{markedBlock "table_talk" publicLines}{markedBlock "private_messages" privateLines}{task} Answer in `say`, or give null to stay quiet."
 
 /-! ## Calling the API -/
 
@@ -434,8 +554,10 @@ private def addUsage (ctx : Ctx) (code : String) (f : Usage → Usage) : IO Unit
   ctx.usage.modify fun m => m.insert code (f (m.getD code {}))
 
 /-- One request with its retries. It returns the model's text, or why there is none. Each request is
-written to the table's seat log with what it cost. -/
-def request (ctx : Ctx) (code : String) (seat : Nat) (what : String) (body : Json) : IO (Except String Answer) := do
+written to the table's seat log with what it cost. A request that is not a game decision passes
+`track := false`, so that the turn timer leaves it alone. -/
+def request (ctx : Ctx) (code : String) (seat : Nat) (what : String) (body : Json) (track : Bool := true) :
+    IO (Except String Answer) := do
   let cfg ← Formalize.settings ctx.root
   let some key := cfg.key | return .error "this server has no API key"
   let start ← IO.monoMsNow
@@ -447,9 +569,11 @@ def request (ctx : Ctx) (code : String) (seat : Nat) (what : String) (body : Jso
     let job ← freshJob code seat
     let sentAt ← IO.monoMsNow
     let outcome ← withSlot ctx do
-      ctx.running.modify (·.insert (code, seat) job)
+      -- The turn timer stops the request in `running`. A talk reply is not tracked there, so that it cannot
+      -- take the place of the seat's game decision.
+      if track then ctx.running.modify (·.insert (code, seat) job)
       try Formalize.runRequest job (Formalize.curlConfig cfg key body ctx.seat.timeoutS) ((jStr body "model").getD "")
-      finally ctx.running.modify (·.erase (code, seat))
+      finally if track then ctx.running.modify (·.erase (code, seat))
     let st ← job.state.get
     let ms := (← IO.monoMsNow) - sentAt
     let failure := Formalize.failureOf outcome
@@ -609,6 +733,9 @@ def claudePlayer (ctx : Ctx) (code : String) (seat : Nat) : Player :=
       let callsLeft := ctx.seat.callsPerTurn - mind0.callsThisTurn
       let book ← bookOf ctx code
       let mut retry : Option (String × String) := none
+      -- The seen sign: a prompt that holds the talk up to here goes to this seat. A prompt holds only the
+      -- newest lines, so the screen shows the seen sign only on a person's newest line.
+      markSeen ctx code seat talk.size
       for _ in [0:3] do
         let user := userMessage sit book talk mind0 callsLeft retry
         let body := requestBody ctx.seat ctx.seat.model rules (personaText persona seat) user replySchema

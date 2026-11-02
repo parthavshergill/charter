@@ -265,7 +265,7 @@ def static_files(api, root):
     shutil.copytree(os.path.join(ROOT, "web"), os.path.join(site, "web"))
     shutil.copytree(os.path.join(ROOT, "packs"), os.path.join(site, "packs"))
     os.makedirs(os.path.join(site, "Server"))
-    for f in ("formalizer.md", "describer.md", "player_rules.md"):
+    for f in ("formalizer.md", "describer.md", "player_rules.md", "talk_rules.md"):
         shutil.copy(os.path.join(ROOT, "Server", f), os.path.join(site, "Server", f))
     with open(os.path.join(site, "web", ".hidden"), "w") as f:
         f.write("not for anyone")
