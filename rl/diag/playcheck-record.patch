@@ -1,0 +1,29 @@
+diff --git a/Server/Policy/PlayCheck.lean b/Server/Policy/PlayCheck.lean
+index c5d4bef..cf961e3 100644
+--- a/Server/Policy/PlayCheck.lean
++++ b/Server/Policy/PlayCheck.lean
+@@ -74,6 +74,15 @@ def playOne (net : Net) (spec : GameSpec) (seats seed : Nat) (policySeats : List
+                 if lastTurn != some s.turnsTaken then h.putStrLn "turn"
+                 lastTurn := some s.turnsTaken
+                 h.putStrLn (" ".intercalate ((observationFor g s seat).toList.map toString))
++                -- Diagnostics: the legal actions, the policy's move and the current bot's move, as action numbers.
++                let (_, acts) := decisionFor g s seat
++                h.putStrLn ("legal " ++ " ".intercalate (acts.map (toString ·.1)))
++                let idxOf (j : Json) : Nat :=
++                  ((acts.find? fun (_, e) => (Bots.eventJson? e).map (·.compress) == some j.compress).map (·.1)).getD 9999
++                let ok (j : Json) : Bool := (apply g j).toOption.isSome
++                h.putStrLn s!"chosen {((evs.find? ok).map idxOf).getD 9999}"
++                h.putStrLn s!"table {(((Bots.candidatesFor g [seat]).find? ok).map idxOf).getD 9999}"
++                h.putStrLn s!"round {s.round} points {(List.range seats).map s.pointsOf}"
+             decisions := decisions + 1
+             ns := ns + (t1 - t0)
+             -- The move it plays carries the state; count where a zero state would have chosen another move.
+@@ -191,7 +200,7 @@ def main (args : List String) : IO UInt32 := do
+       let mut rs : List Result := []
+       for i in [0:games] do
+         let keep := logDir.isSome && i < logCount
+-        let r ← playOne net spec seats (5000 + i) [i % seats] none keep
++        let r ← playOne net spec seats (5000 + i) [i % seats] record keep
+         if keep then
+           if let some d := logDir then
+             IO.FS.createDirAll d
