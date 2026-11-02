@@ -19,27 +19,37 @@ import torch.nn.functional as F
 HERE = os.path.dirname(os.path.abspath(__file__))
 RL = os.path.dirname(HERE)
 sys.path[:0] = [HERE, RL, os.path.join(RL, "reference"), os.path.join(RL, "env")]
-from entity_torch import encode, pointer_logits  # noqa: E402
+from entity_torch import encode, pointer_logits, strip_moves, moves_logits  # noqa: E402
 from encoders import MinGRU  # noqa: E402
 
 LAYOUT = json.load(open(os.path.join(RL, "layout.json")))
 TABLES = [(t["name"], t["offset"], t["rows"], t["width"]) for t in LAYOUT["tables"] if t["name"] != "moves"]
 NAMES = [t[0] for t in TABLES]
+TABLES_M = [(t["name"], t["offset"], t["rows"], t["width"]) for t in LAYOUT["tables"]]   # with the moves table
+NAMES_M = [t[0] for t in TABLES_M]
 ACTS = LAYOUT["act_size"] + 1
 
 
-def collect(games, out, seed=7):
-    """Like rl/imitation/collect.py, with the training settings: random maps and shuffled rows."""
+def collect(games, out, seed=7, bot="hand", worlds="island,not-catan", moves=False):
+    """Like rl/imitation/collect.py, with the training settings: random maps and shuffled rows. `bot` labels every
+    decision; `worlds` are dealt in turn; `moves` adds the per-move rows to the observation."""
     from charter import Game
     obs, masks, acts, game_ids, seats, returns = [], [], [], [], [], []
+    ws = worlds.split(",")
     for k in range(games):
-        gid = ["island", "not-catan"][k % 2]
-        n = 3 + (k // 2) % 2   # 3 or 4 seats: what both training games allow
-        g = Game({"game": gid, "lineup": ["caller"] * n, "seed": seed * 100000 + k, "vote_mode": "bot",
-                  "random_map": True, "slot_order": "shuffled", "declare_always": True})
+        gid = ws[k % len(ws)]
+        cfg = {"game": gid, "seed": seed * 100000 + k, "vote_mode": "bot", "random_map": True,
+               "slot_order": "shuffled", "declare_always": True, "move_rows": moves}
+        g = None
+        for n in (3 + (k // len(ws)) % 2, 4, 3, 5, 2, 6):   # 3 or 4 seats where the world allows them
+            try:
+                g = Game(dict(cfg, lineup=["caller"] * n))
+                break
+            except ValueError:
+                continue
         while not g.over:
             m = g.mask()
-            a = g.suggest("hand")
+            a = g.suggest(bot)
             if a < 0 or not m[a]:
                 a = 0 if m[0] else int(np.flatnonzero(m)[0])
             obs.append(g.obs().astype(np.float16))
@@ -58,27 +68,35 @@ def collect(games, out, seed=7):
 
 
 class EntityPolicy(torch.nn.Module):
-    def __init__(self, E, hidden, pointer):
-        """pointer: 0 none, 1 spots and links, 2 also bank trades."""
+    def __init__(self, E, hidden, pointer, moves=False):
+        """pointer: 0 none, 1 places and bank trades (layout 2). moves: per-move rows, and a pointer over them."""
         super().__init__()
+        self.tables, self.names, self.moves = (TABLES_M, NAMES_M, True) if moves else (TABLES, NAMES, False)
         self.w_in = torch.nn.ParameterList([torch.nn.Parameter(torch.randn(E, w) * (2 / w) ** 0.5)
-                                            for _, _, _, w in TABLES])
-        self.w_out = torch.nn.Parameter(torch.randn(hidden, len(TABLES) * E) * (len(TABLES) * E) ** -0.5)
+                                            for _, _, _, w in self.tables])
+        nt = len(self.tables)
+        self.w_out = torch.nn.Parameter(torch.randn(hidden, nt * E) * (nt * E) ** -0.5)
         self.gru = MinGRU(hidden)
         self.decoder = torch.nn.Parameter(torch.randn(ACTS + 1, hidden) * hidden ** -0.5)
-        self.ptr = torch.nn.Parameter(torch.randn(3 * E, hidden) * 0.1 * hidden ** -0.5) if pointer else None
+        self.ptr = (torch.nn.Parameter(torch.randn((4 if moves else 3) * E, hidden) * 0.1 * hidden ** -0.5)
+                    if pointer or moves else None)
         self.E = E
 
     def forward(self, obs):
-        ts = [(o, r, w) for _, o, r, w in TABLES]
+        ts = [(o, r, w) for _, o, r, w in self.tables]
+        if self.moves:
+            obs, macts, mreal = strip_moves(obs, ts, self.names.index("moves"), 1)
         h = encode(obs, ts, list(self.w_in), self.w_out)
         x, _ = self.gru(h, torch.zeros_like(h))
         y = x @ self.decoder.T
         logits = y[:, :ACTS]
         if self.ptr is not None:
-            logits = logits + pointer_logits(obs, ts, list(self.w_in), x, self.ptr, NAMES.index("places"),
-                                              NAMES.index("resources"), LAYOUT["actions"]["place"],
-                                              LAYOUT["actions"]["bank"], ACTS)
+            logits = logits + pointer_logits(obs, ts, list(self.w_in), x, self.ptr, self.names.index("places"),
+                                              self.names.index("resources"), LAYOUT["actions"]["place"],
+                                              LAYOUT["actions"]["bank"], ACTS, E=self.E)
+        if self.moves:
+            logits = logits + moves_logits(obs, ts, list(self.w_in), x, self.ptr, self.names.index("moves"), macts,
+                                           mreal, ACTS, self.E)
         return logits, y[:, ACTS]
 
     def blocks(self):
@@ -100,6 +118,9 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--pointer", action="store_true", help="spots and links")
     ap.add_argument("--pointer-bank", action="store_true", help="spots, links and bank trades")
+    ap.add_argument("--moves", action="store_true", help="per-move rows and a pointer over them (CE_MOVES)")
+    ap.add_argument("--bot", default="hand", help="the bot whose choices are the labels: hand or table")
+    ap.add_argument("--worlds", default="island,not-catan")
     ap.add_argument("--entity-dim", type=int, default=32)
     ap.add_argument("--hidden", type=int, default=128)
     ap.add_argument("--epochs", type=int, default=6)
@@ -108,7 +129,7 @@ def main():
     ap.add_argument("--vf-coef", type=float, default=0.0, help="also fit the value to each seat's final reward")
     args = ap.parse_args()
     if args.collect:
-        collect(args.collect, args.data)
+        collect(args.collect, args.data, bot=args.bot, worlds=args.worlds, moves=args.moves)
     torch.set_num_threads(os.cpu_count())
     z = np.load(args.data)
     obs = torch.tensor(z["obs"].astype(np.float32))
@@ -119,7 +140,7 @@ def main():
     tr, te = (~held).nonzero().squeeze(1), held.nonzero().squeeze(1)
     torch.manual_seed(0)
     pointer = int(args.pointer or args.pointer_bank)
-    pol = EntityPolicy(args.entity_dim, args.hidden, pointer)
+    pol = EntityPolicy(args.entity_dim, args.hidden, pointer, args.moves)
     opt = torch.optim.Adam(pol.parameters(), lr=args.lr)
 
     def loss_acc(idx):
@@ -144,10 +165,11 @@ def main():
               f"was a choice {100 * a:.1f}%", flush=True)
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
     save_puffer(pol, args.out)
-    meta = {"name": "bc-hand-entity" + ["", "-pointer"][pointer], "layout": LAYOUT["version"], "format": "puffer-entity",
-            "encoder": "entity", "obs_size": LAYOUT["base_size"], "act_size": ACTS, "hidden": args.hidden,
+    meta = {"name": f"bc-{args.bot}-entity" + ["", "-pointer"][pointer] + ("-moves" if args.moves else ""),
+            "layout": LAYOUT["version"], "moves": int(args.moves), "format": "puffer-entity",
+            "encoder": "entity", "obs_size": LAYOUT["full_size"] if args.moves else LAYOUT["base_size"], "act_size": ACTS, "hidden": args.hidden,
             "layers": 1, "entity_dim": args.entity_dim, "pointer": pointer,
-            "settings": {"vote_mode": "bot", "move_rows": False, "declare_always": True},
+            "settings": {"vote_mode": "bot", "move_rows": bool(args.moves), "declare_always": True},
             "agreement_with_hand": round(a, 4)}
     json.dump(meta, open(args.out + ".json", "w"))
     print(f"wrote {args.out}")
