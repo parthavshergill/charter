@@ -402,7 +402,7 @@ def Env.step (e : Env) (action : Nat) : Env :=
 
 /-- The numbers for the seat that must decide. -/
 def Env.observation (e : Env) : FloatArray :=
-  observe e.T e.ep e.ctx e.settings e.base e.play.state e.decision e.places e.free e.reach e.preview
+  observe e.T e.ep e.ctx e.settings e.base e.play.state e.decision e.places e.free e.reach e.preview e.undo
 
 /-- The actions on offer. -/
 def Env.legalActions (e : Env) : List (Nat × Event) := legal e.T e.ep e.places e.play.state e.decision e.undo

@@ -102,6 +102,11 @@ actions, at most 8 resources, 60 spots, 84 links, 24 tiles, 16 laws) refused lar
   (48), the open proposal, and places (128 x 35). No names. Rows of resources and kinds are in a new random order
   each game (`slot_order = shuffled`; `game` keeps the game's order). With `move_rows = 1` (and a build with
   `-DCHARTER_MOVE_ROWS`) a table of up to 64 legal moves and what each changes is appended: 15177 floats.
+- **The table of moves** (`move_rows = 1`): up to 64 rows, one per legal action, with what the engine says it would
+  change. A decision can have more legal actions than that (43% of decisions on AI Bubble have more than 64, up to 104;
+  Pirate Republic 9%, Hill and Chill 5%, `pack-train` 2.5%; Island and Not Catan never), mostly declarations and bank
+  trades. So the rows come in the order that keeps what matters: end turn and votes, then placements, then bank
+  trades, then declarations, and `moves_overflow` is 1 when some are left out. Each row names its action.
 - **Cost of the change.** The observation is 2.6 times as long, and `places` is 39% of it, so a flat encoder at hidden
   128 has about 1.5M weights in its first layer (v1: 0.57M), and env time per observation went up (see Known limits).
   A linear decoder still gives each action one fixed output: row `i` of `places` means "the i-th placement in this
