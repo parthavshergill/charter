@@ -117,6 +117,9 @@ int main(int argc, char** argv) {
     stale = 1;
     fails += run("island,not-catan", 6, 0, s, "bot", "0", "2-6");
     stale = 0;
+    // The generated pack: a new world each game, mixed with Island.
+    fails += run("pack-train,island", 6, 0, s, "bot", "0", "2-6");
+    fails += run("pack-train", 1, BOT_TABLE, s, "bot", "0", "2-6");
     // Made-up games at the engine's limits and at odd sizes.
     fails += run("gen-limits-1,gen-odd-2,gen-odd-3,gen-tiny-3", 6, 0, s * 8 > 20 ? s * 8 : 20, "policy", "0", "2-6");
     printf(fails ? "FAIL\n" : "PASS\n");

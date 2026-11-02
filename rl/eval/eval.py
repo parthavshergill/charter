@@ -48,6 +48,18 @@ sys.path.insert(0, os.path.join(HERE, ".."))
 
 TRAIN = ["island", "not-catan"]
 HELD_OUT = ["slime-parliament", "ai-bubble", "strike-the-earth", "pirate-republic"]
+# World sets for --worlds: (training worlds, held-out worlds).
+WORLD_SETS = {
+    # This branch's six games.
+    "harness": (["island", "not-catan"], ["slime-parliament", "ai-bubble", "strike-the-earth", "pirate-republic"]),
+    # The nine shipped worlds as `main` has them (rl/worlds/). The six above play exactly as here.
+    "main": (["main-island", "main-not-catan"],
+             ["main-slime-parliament", "main-ai-bubble", "main-strike-the-earth", "main-pirate-republic",
+              "main-the-pit", "main-omerta", "main-hill-and-chill"]),
+    # The generated pack: a new world each game, training set and the validation set.
+    "pack": (["pack-train"], ["pack-val"]),
+}
+OVERRIDES = {}   # settings from the command line that win over a policy's meta, such as random_map
 SEATS = 4
 OPPONENTS = ["hand", "random", "champion", "table"]
 # Step a policy's recurrent state on a zero observation each time another caller seat decides, as training does
@@ -164,6 +176,7 @@ def play_table(task):
     for key in ("slot_order", "move_rows", "random_map", "preview", "declare_always"):
         if key in settings:
             base[key] = settings[key]
+    base.update(OVERRIDES)
     plain = Game(base)
     recorded = Game(dict(base, record=True)) if logs else None
     saved = []
@@ -466,13 +479,15 @@ def report(subject, meta_settings, results, seconds):
             "*Target wins* count only games the subject won by reaching the game's target points. A win at the round "
             "limit goes to the leader on points (ties broken by the rules), often with a low score; *other* is a win "
             "when a law ended the game. *Best opponent points* is the mean of the highest other seat's points.", ""]
-    out += ["**By game, whole game, with laws** (win %, 95% interval, target wins %, points against the best "
+    bylaw = any(r["laws"] for r in results)
+    out += [f"**By game, whole game, {'with' if bylaw else 'without'} laws** (win %, 95% interval, target wins %, points against the best "
             "opponent's points)", "",
             "| game | " + " | ".join(OPPONENTS) + " |", "|---|" + "---|" * len(OPPONENTS)]
     for g in TRAIN + HELD_OUT:
         cells = []
         for opp in OPPONENTS:
-            sel = [r for r in results if r["game"] == g and r["opponent"] == opp and r["phase"] == "whole" and r["laws"]]
+            sel = [r for r in results if r["game"] == g and r["opponent"] == opp and r["phase"] == "whole"
+                   and r["laws"] == bylaw]
             w, n = sum(r["wins"] for r in sel), sum(r["games"] for r in sel)
             if n:
                 lo, hi = wilson(w, n)
@@ -501,13 +516,29 @@ def main():
                     help="1: step the policy's recurrent state on zeros when another caller decides, as in training")
     ap.add_argument("--can-play", type=int, default=1, help="1 to run the can-it-play check on made-up games")
     ap.add_argument("--can-play-games", type=int, default=6, help="games per made-up game and seat count")
+    ap.add_argument("--worlds", default="main",
+                    help="comma-separated sets: main (main's nine, the default), harness (this branch's six), pack "
+                         "(generated: pack-train as training, pack-val as held out)")
+    ap.add_argument("--random-map", type=int, default=None,
+                    help="1 deals a new map each game (as training does), 0 plays each world's own map (as the server "
+                         "does); default: the policy's setting, else 1")
+    ap.add_argument("--laws", default=None, choices=["both", "on", "off"],
+                    help="laws proposed during games (law_every 8) or not; default both, or on with --quick")
     args = ap.parse_args()
     OPPONENTS[:] = args.opponents.split(",")
+    TRAIN[:], HELD_OUT[:] = [], []
+    for w in args.worlds.split(","):
+        TRAIN.extend(WORLD_SETS[w][0])
+        HELD_OUT.extend(WORLD_SETS[w][1])
+    if args.random_map is not None:
+        OVERRIDES["random_map"] = bool(args.random_map)
     WAIT_STEPS[0] = args.wait_steps
     log_dir = os.path.join(args.out, "games")
     n = max(SEATS, args.games - args.games % SEATS)
     os.makedirs(args.out, exist_ok=True)
     text = ["# Charter eval", "", NOTE_SAME, "", NOTE_WEAK, "",
+            f"Worlds: {args.worlds} (training: {', '.join(TRAIN)}; held out: {', '.join(HELD_OUT)}). Maps: "
+            f"{'each world' + chr(39) + 's own' if OVERRIDES.get('random_map') is False else 'dealt anew each game, unless the policy says otherwise'}.", "",
             f"Each table has {n} games, with the subject at each seat in {n // SEATS} of them. "
             "Phases: `whole`, the subject plays all of it; `setup`, the subject places the opening pieces and "
             "`hand` plays on; `play`, `hand` places them and the subject plays on.", ""]
@@ -516,7 +547,7 @@ def main():
         label, _, settings = load_subject(spec)
         vote_mode = settings.get("vote_mode", "bot")
         phases = ["whole"] if args.quick else PHASES
-        lawset = [True] if args.quick else [True, False]
+        lawset = {"on": [True], "off": [False], "both": [True, False]}[args.laws or ("on" if args.quick else "both")]
         tasks = [(spec, g, o, p, l, n, vote_mode, settings, min(args.logs, n), log_dir)
                  for g in TRAIN + HELD_OUT for o in OPPONENTS for p in phases for l in lawset
                  if not (label in BOTS and p != "whole")]
