@@ -105,6 +105,8 @@ def handleBot (ctx : Ctx) (code : String) : ContextAsync Resp := do
   let token ← randomToken
   let nonce ← randomNat64
   let mk : Entry → Except String Json := fun e =>
+    let why := if Policy.policyOn then Policy.problems e.game else []
+    if !why.isEmpty then .error s!"The trained bot cannot play this game: {", ".intercalate why}." else
     .ok (Json.mkObj [("t", "join"), ("name", Bots.freshName e.game), ("kind", "bot"),
       ("_token", token), ("nonce", toJson nonce)])
   match ← commitRaw ctx code mk with
@@ -483,6 +485,10 @@ def main (_args : List String) : IO Unit := do
   let dataDir : System.FilePath := (← IO.getEnv "CHARTER_DATA").getD (root / "data" / "games").toString
   let mirrorUrl := (← IO.getEnv "CHARTER_MIRROR_URL").filter (!·.isEmpty)
   checkRequiredFiles root
+  if Policy.policyOn then
+    match Policy.policyNet with
+    | .ok _ => IO.println s!"charter-server: bot seats play the trained policy from {← Policy.weightsPath}"
+    | .error e => die s!"CHARTER_BOT=policy, but the policy did not load: {e}"
   if mirrorUrl.isSome || (← Formalize.settings root).key.isSome then
     let works ← try
         pure ((← IO.Process.output { cmd := "curl", args := #["--version"] }).exitCode == 0)
