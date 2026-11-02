@@ -41,7 +41,17 @@ def actualRows (s : State G) (withLaw without : List Entry) : List Row := rowsOf
 /-- Laws to try, by game. They read holdings, act at a round's end, change prices, make pieces and react
 to the roll. -/
 def lawsFor (spec : GameSpec) : List String :=
-  if spec.id == strikeSpec.id then
+  if spec.id == hillSpec.id then
+    [ "(law \"Half on a potluck\" (on-build potluck (transfer actor treasury cash (/ (holding actor cash) 2))))"
+    , "(law \"Half on a chat\" (on-build chat (transfer actor treasury gas (/ (holding actor gas) 2))))"
+    , "(law \"Half on a booth\" (on-build booth (transfer actor treasury boba (/ (holding actor boba) 2))))"
+    , "(law \"Gas levy\" (on-round-end (for-each-player true (transfer each treasury gas (/ (holding each gas) 2)))))"
+    , "(law \"Tithe\" (on-harvest (transfer actor treasury res (/ amount 2))))"
+    , "(law \"Cheap chats\" (set-cost chat (bundle (boba 1))))"
+    , "(law \"Refunds\" (on-round-end (for-each-player (<= 1 (declared each down)) (transfer treasury each cash 1))))"
+    , "(law \"Rideshare\" (on-roll (transfer bank actor gas 1)))"
+    , "(law \"Taco stands\" (new-piece taco-stand (bundle (takeout 2) (gas 1)) (points 2) (attach booth) (yield 1) (limit 2)))" ]
+  else if spec.id == strikeSpec.id then
     [ "(law \"Half on a workshop\" (on-build workshop (transfer actor treasury ore (/ (holding actor ore) 2))))"
     , "(law \"Half on a tunnel\" (on-build tunnel (transfer actor treasury ember (/ (holding actor ember) 2))))"
     , "(law \"Half on a hall\" (on-build hall (transfer actor treasury fungus (/ (holding actor fungus) 2))))"
@@ -78,6 +88,24 @@ def lawsFor (spec : GameSpec) : List String :=
     , "(law \"Roller's gift\" (on-roll (transfer bank actor rum 1)))"
     , "(law \"Sack on a 7\" (on-roll (for-each-player (and (= rolled 7) (< (points actor) (points each))) (move-piece each actor wharf))))"
     , "(law \"Lighthouses\" (new-piece lighthouse (bundle (powder 2) (timber 2)) (points 2) (attach wharf) (yield 1) (limit 2)))" ]
+  else if spec.id == pitSpec.id then
+    [ "(law \"Half on an elevator\" (on-build elevator (transfer actor treasury gold (/ (holding actor gold) 2))))"
+    , "(law \"Rail toll\" (on-build rail (transfer actor treasury iron 1)))"
+    , "(law \"Gold levy\" (on-round-end (for-each-player true (transfer each treasury gold (/ (holding each gold) 2)))))"
+    , "(law \"Tithe\" (on-harvest (transfer actor treasury res (/ amount 2))))"
+    , "(law \"Cheap rails\" (set-cost rail (bundle (lumber 1))))"
+    , "(law \"Bid tax\" (on-round-end (for-each-player (< 0 (declared each gold)) (transfer each treasury gold 1))))"
+    , "(law \"Panic on a 12\" (on-roll (for-each-player (= rolled 12) (transfer each bank wheat (holding each wheat)))))"
+    , "(law \"Mills\" (new-piece mill (bundle (lumber 2) (gold 2)) (points 2) (attach farm) (yield 1) (limit 2)))" ]
+  else if spec.id == omertaSpec.id then
+    [ "(law \"Half on a club\" (on-build club (transfer actor treasury cash (/ (holding actor cash) 2))))"
+    , "(law \"Half on a racket\" (on-build racket (transfer actor treasury wine (/ (holding actor wine) 2))))"
+    , "(law \"Fish levy\" (on-round-end (for-each-player true (transfer each treasury fish (/ (holding each fish) 2)))))"
+    , "(law \"Tithe\" (on-harvest (transfer actor treasury res (/ amount 2))))"
+    , "(law \"Cheap streets\" (set-cost street (bundle (cement 1))))"
+    , "(law \"Dirt on a 7\" (on-roll (for-each-player (= rolled 7) (transfer bank each dirt 1))))"
+    , "(law \"Rats pay\" (on-round-end (for-each-player (= 0 (holding each dirt)) (transfer each treasury cash 1))))"
+    , "(law \"Pizzerias\" (new-piece pizzeria (bundle (wine 2) (cement 2)) (points 2) (attach front) (yield 1) (limit 2)))" ]
   else
     [ "(law \"Half on a city\" (on-build city (transfer actor treasury grain (/ (holding actor grain) 2))))"
     , "(law \"Half on a road\" (on-build road (transfer actor treasury timber (/ (holding actor timber) 2))))"

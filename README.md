@@ -1,4 +1,9 @@
-![Charter](docs/screens/banner.png)
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/brand/charter-banner-vellum.png">
+    <img src="docs/brand/charter-banner-ink.png" alt="Charter" width="480">
+  </picture>
+</p>
 
 Charter is a multiplayer tabletop economy game with a fixed constitution and an evolving ruleset.
 
@@ -35,7 +40,7 @@ Charter is inspired by:
 
 **[Play Charter here](https://charter.parthavshergill.workers.dev).** It's free and needs no account. Like Among Us, you share a game code with your friends. If you're short a player, Claude can take a seat. I think it's pretty fun.
 
-Start with **Not Catan** if you've played Catan, or **Tutorial Island** if you're new to the genre. Then try the extensions in the Library: **The AI Bubble**, **The Pirate Republic**, **Strike the Earth** (inspired by Dwarf Fortress) and **Slime Parliament** (because why not). More are coming soon.
+Start with **Not Catan** if you've played Catan, or **Tutorial Island** if you're new to the genre. Then try the extensions in the Library: **The AI Bubble**, **The Pirate Republic**, **Strike the Earth** (inspired by Dwarf Fortress), **Slime Parliament** (because why not), **Omertà** (a crime family where everybody swears and somebody talks) and **Hill and Chill** (a group of friends trying to agree on dinner). More are coming soon.
 
 <img src="docs/screens/readme-island.jpg" width="49%" alt="A late game on Tutorial Island"> <img src="docs/screens/readme-ai-bubble.jpg" width="49%" alt="Datacenters and solar fields in The AI Bubble">
 <img src="docs/screens/readme-pirate-republic.jpg" width="49%" alt="Forts and pirate flags in The Pirate Republic"> <img src="docs/screens/readme-slime-parliament.jpg" width="49%" alt="Slime moulds in wigs in Slime Parliament">
@@ -54,7 +59,7 @@ The kicker, for those who care, is that the game is written in Lean. There are t
 
 ## What you have to trust
 
-- **The constitution.** Read the [theorems](Charter/Constitution.lean) and the definitions they use. That's about 2,900 lines, and they are the part that matters.
+- **The constitution.** Read the [theorems](Charter/Constitution.lean) and the definitions they use. That's about 3,000 lines, and they are the part that matters.
 - **Lean itself.** It checks the proofs.
 
 Nothing proves the server, the screen or the clerk's drafting. CI checks the proofs on every pull request, and it runs Comparator on the main theorems when a change can affect them. A run by hand with Comparator's `--paranoid` kernels passed too.
@@ -63,8 +68,20 @@ Nothing proves the server, the screen or the clerk's drafting. CI checks the pro
 
 ## How the other bits work
 
-- **The board** is drawn by three.js from a stream of commands that Lean sends. A world's look is data in Lean, too. The menus and panels are about 2,400 lines of JavaScript.
+- **The board** is drawn by three.js from a stream of commands that Lean sends. A world's look is data in Lean, too. The menus and panels are about 2,500 lines of JavaScript.
 - **Build checks** cover what doesn't need a full proof. Lean's `#guard` and similar checks stop the build if a piece has no model, a board goes over its triangle budget, or a shipped extension pack's rules aren't valid.
+
+## Sounds
+
+The game makes its sounds itself. `scripts/sound/render.py` writes them from simple synthesis and from single notes of the MuseScore General SoundFont, played by FluidSynth. No sample packs are used. [web/audio/SOURCES.md](web/audio/SOURCES.md) lists them.
+
+MuseScore_General.sf2 is under the MIT license, and these notices go with anything made from it:
+
+- FluidR3 (original version) by Frank Wen, Copyright (c) 2000-02
+- FluidR3Mono by Michael Cowgill, Copyright (c) 2014-17
+- Adaptation for MuseScore_General.sf2 by S. Christian Collins, Copyright (c) 2018-19
+- Temple Blocks instrument provided by Ethan Winer, Copyright (c) 2002
+- Drumline Cymbals provided by Michael Schorsch, Copyright (c) 2016
 
 ## Run it yourself
 

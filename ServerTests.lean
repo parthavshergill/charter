@@ -6,7 +6,7 @@ import Server.Text
 import Server.Seat
 import Server.Suggest
 import Server.Describe
-import Server.RoundTrip
+import Server.ParserFacts
 import Server.GenericCheck
 
 /-!
@@ -362,13 +362,42 @@ def roundTrips (text : String) : Bool :=
 -- A measure cannot name a seat either.
 #guard (Rules.parseProposal "(law \"x\" (on-round-end (transfer bank treasury wool (most-over true (holding 2 wool)))))").toOption.isNone
 
-/-! ### The conditions of `Rules.parse_of_print`, on real games -/
+/-! ### Text to tree, and every part of the language
+
+No theorem covers the characters, so these test them. The two long texts use every clause, effect, number,
+test and deal term. -/
+
+-- A title can hold anything.
+#guard roundTrips "(law \"A \\\"quoted\\\" \\\\ title\\nwith ; (parens)\" (end-game))"
+
+/-- A law with every clause, effect, number and test. Each place that can hold a resource holds its own. -/
+def everyPartOfALaw : String :=
+  "(law \"Every part\" (on-harvest (transfer actor treasury res (/ amount 2))) (on-build road (if (res-is r1) (move-piece each bank road))) (on-round-end (for-each-player (or (not (< round rolled)) (and (<= 1 (points each)) true)) (if (= (count each road) 0) (transfer each treasury r2 (+ (holding each r3) (- (holding each res) (* (declared each r4) (declared each res)))))) (transfer treasury each r5 (/ (min 1 (holding bank r6)) (max 3 4))))) (on-roll (transfer bank treasury r7 (total-over (= 0 (holding bank r8)) (+ (most-over true (holding bank r9)) (least-over true (/ (holding bank r10) 2)))))) (now (for-each-player true (move-piece each bank road))) (set-cost road (bundle (r11 2))) (set-points road 2) (set-bank-rate 3) (set-worth r12 1) (new-piece spire (bundle (r13 1)) (points 1) link (yield 0) (limit 1)) (new-piece dock (bundle) (points 0) spot (yield 1) (limit 2)) (new-piece tower (bundle) (points 0) (upgrade dock) (yield 1) (limit 2)) (new-piece flag (bundle) (points 0) (attach dock) (yield 1) (limit 2)) (repeal 4) (end-game))"
+
+/-- A deal with every kind of promise. -/
+def everyPartOfADeal : String :=
+  "(deal \"Every term\" (signers 0 1) (rounds 2) (exit-notice 1) (deposits (0 r1 2)) (every-round (pay 0 1 r2 1)) (on-build 1 road (pay 1 treasury r3 1)) (no-build 0 road 3 4) (no-trade 0 2))"
+
+/-- The resources of those two texts. -/
+def numberedResources : List Res := (List.range 13).map fun i => s!"r{i + 1}"
+
+/-- This text prints back as it was written, and it names these resources, in order. -/
+def readsWhole (text : String) (names : List Res) : Bool :=
+  match Rules.parseProposal text numberedResources with
+  | .ok p => Rules.printProposal p == text && Rules.resourcesNamed p == names
+  | .error _ => false
+
+-- `resourcesNamed` reaches every place that can hold a resource.
+#guard readsWhole everyPartOfALaw numberedResources
+#guard readsWhole everyPartOfADeal (numberedResources.take 3)
+
+/-! ### Founding laws and the parser, on real games -/
 
 /-- This law reads back from its printed S-expression and from its printed text, as itself. -/
 def foundingLawReads (rs : List Res) (L : Law) : Bool :=
   let same (r : Except String Proposal) : Bool :=
     match r with
-    | .ok p => Rules.proposalToSExp p == Rules.lawS L
+    | .ok p => reprStr p == reprStr (Proposal.law L)
     | .error _ => false
   same (Rules.parseProposalSExp rs (Rules.lawS L)) && same (Rules.parseProposal (Rules.printProposal (.law L)) rs)
 
@@ -378,14 +407,9 @@ def unreadableFoundingLaws : List String :=
     let rs := d.G.resources.map (·.name)
     (d.G.foundingLaws.filter (!foundingLawReads rs ·)).map (·.title)
 
--- Every founding law of every game reads back, so `Rules.parse_of_print` covers each one, and a seat can
--- propose the same law again.
+-- Every founding law of every game reads back as itself. So the parser accepts it, the statements in
+-- `Server/ParserFacts.lean` apply to it, and a seat can propose the same law again.
 #guard unreadableFoundingLaws == []
-
--- `Readable.law` picks out the same founding laws as the parser does.
-#guard gameSpecs.all fun d =>
-  let rs := d.G.resources.map (·.name)
-  d.G.foundingLaws.all fun L => Rules.Readable.law rs L == foundingLawReads rs L
 
 -- No game has a resource called `res`, the word for the resource the dice just paid.
 #guard gameSpecs.all fun d => !(d.G.resources.map (·.name)).contains "res"
@@ -396,17 +420,23 @@ def valueProblems (L : Law) : Option (List String) :=
   | some s => some (lawProblems table4.spec.G s L)
   | none => none
 
+/-- An effect to put inside the others. -/
+def anEffect : Effect := .transfer .bank .treasury (.lit "ore") (.lit 1)
+
+/-- A law with this body at the end of a round. -/
+def lawWith (b : List Effect) : Law := { title := "T", clauses := [.onRoundEnd b] }
+
 -- `lawProblems` does not refuse a value that the text cannot say. A seat can reach these only through
--- the parser, which does refuse them. A game's founding law can reach them directly.
-#guard [ [Effect.when .yes [.forEach .yes [Rules.anEffect]]]
-       , [.forEach .yes [.forEach .yes [Rules.anEffect]]]
-       , [.when .yes [.when .yes [Rules.anEffect]]]
-       , [.when .yes [], Rules.anEffect]
+-- the parser, which never returns them. A game's founding law can reach them directly.
+#guard [ [Effect.when .yes [.forEach .yes [anEffect]]]
+       , [.forEach .yes [.forEach .yes [anEffect]]]
+       , [.when .yes [.when .yes [anEffect]]]
+       , [.when .yes [], anEffect]
        , [.transfer .bank .treasury (.lit "gold") (.lit 1)]
-       , [.when (.harvestedIs "gold") [Rules.anEffect]]
+       , [.when (.harvestedIs "gold") [anEffect]]
        , [.transfer .bank .treasury (.lit "ore") (.divBy (.lit 7) (.lit 2))] ].all
     fun b =>
-      valueProblems (Rules.lawWith b) == some [] && !Rules.Readable.law Rules.islandResources (Rules.lawWith b)
+      valueProblems (lawWith b) == some [] && !foundingLawReads Rules.islandResources (lawWith b)
 
 -- The limit on planned payments counts one payment per seat per transfer.
 #guard problems table6 (manyTransfers 21) == []
@@ -465,12 +495,15 @@ section Games
 #guard (notCatanSpec.minSeats, notCatanSpec.maxSeats) == (3, 4)
 
 -- New packs go at the end of the list, and only a pack's own mesh files can be served.
-#guard gameSpecs.map (·.id) == ["island", "not-catan", "slime-parliament", "ai-bubble", "strike-the-earth", "pirate-republic"]
+#guard gameSpecs.map (·.id) == ["island", "not-catan", "slime-parliament", "ai-bubble", "strike-the-earth", "pirate-republic", "the-pit", "omerta", "hill-and-chill"]
 #guard (meshFolderOf "no-such-hash").isNone
 #guard slimeSpec.meshHashes.all fun h => meshFolderOf h == some slimeSpec.meshFolder
 #guard bubbleSpec.meshHashes.all fun h => meshFolderOf h == some bubbleSpec.meshFolder
 #guard strikeSpec.meshHashes.all fun h => meshFolderOf h == some strikeSpec.meshFolder
 #guard pirateSpec.meshHashes.all fun h => meshFolderOf h == some pirateSpec.meshFolder
+#guard hillSpec.meshHashes.all fun h => meshFolderOf h == some hillSpec.meshFolder
+#guard pitSpec.meshHashes.all fun h => meshFolderOf h == some pitSpec.meshFolder
+#guard omertaSpec.meshHashes.all fun h => meshFolderOf h == some omertaSpec.meshFolder
 #guard islandSpec.meshHashes.isEmpty && notCatanSpec.meshHashes.isEmpty
 
 -- A game with no counter has all its resources on the screen, so old games read as they did.
@@ -669,9 +702,18 @@ def lawOf (text : String) : Law :=
 #guard (packWords bubbleSpec).length == 4
 #guard (packWords strikeSpec).length == 4
 #guard (packWords pirateSpec).length == 4
+#guard (packWords hillSpec).length == 3
 #guard (packWords islandSpec).isEmpty
 #eval show IO Unit from do
-  let problems := packProblems notCatanSpec ++ packProblems slimeSpec ++ packProblems bubbleSpec ++ packProblems strikeSpec ++ packProblems pirateSpec
+  let problems := packProblems notCatanSpec ++ packProblems slimeSpec ++ packProblems bubbleSpec ++ packProblems strikeSpec ++ packProblems pirateSpec ++ packProblems hillSpec
+#guard (packWords pitSpec).length == 4
+#guard (packWords islandSpec).isEmpty
+#eval show IO Unit from do
+  let problems := packProblems notCatanSpec ++ packProblems slimeSpec ++ packProblems bubbleSpec ++ packProblems strikeSpec ++ packProblems pirateSpec ++ packProblems pitSpec
+#guard (packWords omertaSpec).length == 3
+#guard (packWords islandSpec).isEmpty
+#eval show IO Unit from do
+  let problems := packProblems notCatanSpec ++ packProblems slimeSpec ++ packProblems bubbleSpec ++ packProblems strikeSpec ++ packProblems pirateSpec ++ packProblems omertaSpec
   if !problems.isEmpty then throw (IO.userError ("\n".intercalate problems))
 
 /-- A law that changed after its words were written has no words. -/

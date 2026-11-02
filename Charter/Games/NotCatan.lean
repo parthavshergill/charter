@@ -166,7 +166,8 @@ def theme : Scene.Theme :=
       else if k == "wreath" then some (wreathModel seat)
       else none
     look :=
-      { marks := Scene.islandMarks ++
+      { music := "not-catan"
+        marks := Scene.islandMarks ++
           [("laurel", "laurel"), ("knight", "knight"), ("relic", "relic"), ("wreath", "wreath")] } }
 
 end Charter.Games.NotCatan

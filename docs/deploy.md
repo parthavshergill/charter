@@ -38,7 +38,7 @@ It prints `https://charter-preview.<your-subdomain>.workers.dev`. To remove it, 
 
 ## Settings
 
-These are under `vars` in `cloudflare/wrangler.jsonc`. Change a value and run `npx wrangler deploy`. A new container uses the new value.
+The first five are under `vars` in `cloudflare/wrangler.jsonc`. The preview has its own values there, with lower budgets of 50 and 25. The rest are defaults in the server, and to change one you add it under `vars`. Then run `npx wrangler deploy`. A new container uses the new value.
 
 | Name | Default | Meaning |
 |---|---|---|
@@ -47,6 +47,9 @@ These are under `vars` in `cloudflare/wrangler.jsonc`. Change a value and run `n
 | `CHARTER_GAMES_PER_DAY` | 500 | New tables a day, for the whole server. This limits storage, not spending. |
 | `CHARTER_GAMES_PER_IP_DAY` | 100 | New tables a day, for one IP address. |
 | `CHARTER_TABLE_AWAY_MS` | 180000 | A table pauses after this long with none of its people there. |
+| `CHARTER_SEAT_MODEL` | `claude-sonnet-5-5` | The model that plays a Claude seat. |
+| `CHARTER_SEAT_EFFORT` | `medium` | The effort of that call. |
+| `CHARTER_SEAT_CONCURRENCY` | 4 | How many Claude seat requests run at once. |
 | `CHARTER_DESCRIBE_MODEL` | `claude-sonnet-5-5` | The model that writes a law's description. |
 | `CHARTER_DESCRIBE_EFFORT` | `low` | The effort of that call. |
 | `CHARTER_PRICE_INPUT_USD` | 4 | Dollars per million input tokens, for Opus and for any model with no prices of its own. |
@@ -182,7 +185,7 @@ npx wrangler r2 object delete charter-logs/v1/ABCDE.db/000000000000-000000000512
 | About 40 hours awake in a month | About 15 cents past the included amounts, so about $5 in all. |
 | Awake all month, which only constant visitors could cause | About $7 past the included amounts, so about $12 in all. |
 | R2, Worker and Durable Object requests | Likely nothing at this size. R2 includes 10 GB, 1 million writes and 10 million reads a month. |
-| Claude | Separate. A game of four Claude seats made about 230 requests and cost about $10 at list prices when it was measured. |
+| Claude | Separate. A game of four Claude seats made about 230 requests and cost about $10 at list prices when it was measured. That game ran on Opus. Seats now use Sonnet by default, and at these prices the same tokens cost about half. |
 
 Check Cloudflare's current prices before you rely on these.
 

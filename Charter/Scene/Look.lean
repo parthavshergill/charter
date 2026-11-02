@@ -26,7 +26,7 @@ def islandMarks : List (String × String) :=
 
 structure Look where
   /-- The line under the title on the opening page. -/
-  tagline : String := "Settle an island. Rewrite its rules. The constitution holds."
+  tagline : String := "Settle an island. Rewrite its rules."
   /-- New values for the colour tokens at the top of `web/app.css`, such as ("vellum", "#efe4c8"). -/
   tokens : List (String × String) := []
   /-- A font from the fixed list in `web/look.js`. Empty keeps the default. -/
@@ -38,6 +38,8 @@ structure Look where
   marks : List (String × String) := islandMarks
   /-- Pieces the end screen does not count, because there are many and they say little. -/
   quietPieces : List String := ["road"]
+  /-- The world's music, by the name of a file in `web/audio/music`. A pack with none gets the game's own theme. -/
+  music : String := "table"
   deriving Inhabited
 
 end Charter.Scene

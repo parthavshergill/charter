@@ -25,6 +25,10 @@ def colorTokens : List String :=
 /-- The fonts a pack can choose, as in `web/look.js`. -/
 def fontNames : List String := ["", "book", "slab", "humanist", "rounded", "typewriter"]
 
+/-- The loops in `web/audio/music`. `scripts/sound/render.py` makes them. `Server/Spec.lean` and the server's
+start both check that each file is there. -/
+def musicTracks : List String := ["table", "not-catan", "slime", "bubble", "pirate", "strike"]
+
 /-- The most mesh file triangles one model and one full board may have. `docs/process/reskins.md` says
 how these were measured. `web/vendor/meshfile.js` also refuses any one file over 12000. -/
 def maxModelTriangles : Nat := 5000
@@ -127,6 +131,7 @@ def lookProblems (G : GameDef) (L : Layout) : List String :=
   let fonts :=
     [t.look.bodyFont, t.look.displayFont].filterMap fun f =>
       if fontNames.contains f then none else some s!"{f} is not a font from the fixed list"
+  let music := if musicTracks.contains t.look.music then [] else [s!"the music track {t.look.music} is not in web/audio/music"]
   let monuments :=
     [("cost", MonumentKind.cost), ("points", .points), ("bank", .bank), ("harvest", .harvest), ("build", .build)
     , ("round end", .roundEnd), ("roll", .roll), ("new piece", .newPiece "x"), ("repeal", .repeal)].filterMap fun (n, k) =>
@@ -142,6 +147,6 @@ def lookProblems (G : GameDef) (L : Layout) : List String :=
     if n > maxModelTriangles then some s!"piece {d.name} has {n} triangles, over the {maxModelTriangles} a model may have" else none
   let full := trianglesIn t (render (fullBoard G L 4))
   let scene := if full > maxSceneTriangles then [s!"a full board has {full} triangles, over the {maxSceneTriangles} a scene may have"] else []
-  resources ++ pieces ++ icons ++ tokens ++ readable ++ fonts ++ monuments ++ meshes ++ heavy ++ scene
+  resources ++ pieces ++ icons ++ tokens ++ readable ++ fonts ++ music ++ monuments ++ meshes ++ heavy ++ scene
 
 end Charter.Scene

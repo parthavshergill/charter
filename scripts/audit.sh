@@ -6,7 +6,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 echo "== Build =="
-lake build Charter Server.RoundTrip
+lake build Charter Server.ParserFacts
 
 echo
 echo "== Axioms =="
@@ -18,9 +18,9 @@ modules=$(find Charter/Words Charter/Engine Charter/Proofs Charter/Constitution 
   | sed -e 's/\.lean$//' -e 's#/#.#g' | sort)
 modules="Charter.Sha256 Charter.Words Charter.Engine Charter.Constitution Charter.Games.Tiny Charter.Games.Witnesses $modules"
 modules="HexGrid HexGrid.Basic Charter.Games.HexMap Charter.Games.Island Charter.Games.IslandGame Charter.Games.IslandGameEvents $modules"
-# The text of laws: the parser, the printer, what they can say, and the proof that they agree.
-text_of_laws="Server/SExp.lean Server/Rules.lean Server/Readable.lean Server/RoundTrip.lean"
-modules="$modules Server.SExp Server.Rules Server.Readable Server.RoundTrip"
+# The text of laws: the parser, the resources a law names, and the two statements about the parser.
+text_of_laws="Server/SExp.lean Server/Rules.lean Server/ResourcesNamed.lean Server/ParserProof.lean Server/ParserFacts.lean"
+modules="$modules Server.SExp Server.Rules Server.ResourcesNamed Server.ParserProof Server.ParserFacts"
 lake env leanchecker $modules
 echo "Replayed $(echo "$modules" | wc -w | tr -d ' ') modules through the kernel."
 

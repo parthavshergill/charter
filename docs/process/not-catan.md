@@ -17,7 +17,7 @@ There are four, and they fit on one screen.
 | The third knight or sixth road earns a wreath | Anyone with exactly 2 knights who builds a knight gets 3 laurel from the bank. Anyone with exactly 5 roads who builds a road gets 3 laurel from the bank. Each time a wreath is built, the bank pays 3 laurel to the treasury. |
 | A harvest that empties the bank pays nobody | Each time a player is paid at harvest, if the bank's holding of that resource is equal to 0, they pay all of it to the bank. |
 
-The pack also has three pieces of its own: a knight, a relic and a wreath. It uses 6 of 8 resources, 6 of 8 kinds of piece, 4 of 16 laws, and 28 of 128 planned payments at 4 seats. So a table has room for its own laws and pieces.
+The pack also has three pieces of its own: a knight, a relic and a wreath. It uses 6 of 16 resources, 6 of 16 kinds of piece, 4 of 48 laws, and 28 of 256 planned payments at 4 seats. So a table has room for its own laws and pieces.
 
 ## What fits, and what does not
 
@@ -30,13 +30,13 @@ The pack also has three pieces of its own: a knight, a relic and a wreath. It us
 | Costs, 5/4/15 limits, 2d6, 10 points, 4-for-1, 19 of each | Exact | Existing fields | | Tested |
 | Two setup passes, snake order, free settlement and road | Exact | Engine | | Tested |
 | Roads cannot pass a rival's settlement | Differs | A road only needs to touch your own piece | A placement rule about rivals | Read in `placementOk` |
-| No game length limit | Differs | A game stops at 30 rounds at most | `maxRoundsAllowed` | |
+| No game length limit | Differs | This pack stops at 30 rounds. A game can set up to 60 | `maxRoundsAllowed` | |
 | Player-to-player trading | Close | Offers on your own turn, as in the original | Open hands change it: every seat can count every card | Engine |
 | Discard on a 7 | Close | A founding law on the roll, once per seat. No hex pays | It takes half of each good, rounded down, and not half by the seat's choice. (2,2,2,1,1) loses 3 of 8, not 4 | Tested |
 | Robber | Left out | The owner does not want it as a goal. The earlier version's rough copy was removed | A chosen hex and a chosen victim | |
 | Stealing | Rough | A new knight takes 1 ore from every seat ahead | No named victim and no randomness. Only ore | Tested |
 | Knight, as a card to play | Rough | A piece on a settlement for 1 ore, 1 wool, 1 grain, limit 5. It acts when built | No hand of cards, and no playing before the roll | Tested |
-| Largest army | Rough | The third knight pays 3 laurel, and 3 laurel buy a wreath worth 2 points. Laurels exist for two wreaths in all | Points come only from pieces, and pieces never move. So a rival cannot take it | Tested |
+| Largest army | Rough | The third knight pays 3 laurel, and 3 laurel buy a wreath worth 2 points. Laurels exist for two wreaths in all | A wreath stays with the seat that built it, so a rival cannot take it. The language can now do better: see the last section | Tested |
 | Longest road | Rough | The same, for the sixth road | A law counts roads, not a path. No law can measure a graph | Tested |
 | Victory point cards | Rough | A relic: 3 ore, 3 wool, 3 grain, 1 point, limit 2, in plain sight. No law | Nothing can be hidden: hands and pieces are public | Tested as a piece |
 | Other development cards | Left out | Each passes as a fixed piece: a monopoly on ore, two fixed goods, the goods for two roads. A "draw" from the bank's ore can be counted in advance | A choice when played, and randomness | Tested, not in the pack |
@@ -51,7 +51,7 @@ The pack also has three pieces of its own: a knight, a relic and a wreath. It us
 
 ## What was played on this version
 
-Bots and scripted moves only. No Claude seat. Bots do not trade or propose laws here, they buy any attached piece as soon as they can, and they always pick the same corners. So these show that the pack runs to the end, and not how it plays.
+Bots and scripted moves only. No Claude seat. Bots make no offers and propose no laws here, they buy any attached piece as soon as they can, and they always pick the same corners. So these show that the pack runs to the end, and not how it plays.
 
 - Four games at 4 seats, by `charter-sim`: over at rounds 24, 25, 30 and 26. Seats 2, 1, 1 and 1 won. One reached the round limit.
 - One game at 3 seats: over at round 26.
@@ -90,7 +90,7 @@ What they say about parts that changed, so only as a hint:
 ## What would most close the gap
 
 1. **A move with an argument.** A way for a seat to choose a target when it builds or plays: a seat, a hex or a good. This one feature would turn the rough knight, monopoly and plenty into close copies. Commandment II does not stand in the way: the law still names no seat, and the seat chooses at play time.
-2. **A title that moves.** Points that follow a condition, or a token worth points while held. A law could then say "whoever has the most knights". It needs a "most" over seats, which `Cond` lacks.
+2. **A title that moves.** The language can now say this, and the pack does not use it yet. `set-worth` makes a good worth points, `most-over` finds the most knights, and a law at a round's end can move that good to whoever leads. `lawProblems` accepted one such law on this pack, in a check that is not kept. Nobody has played it.
 3. **A trigger on trades, and a rate per seat.** Without these a port cannot exist.
 4. **A trigger at the end of setup.** This gives starting goods.
 5. **A map from the seed.** Every game now opens the same way. Hidden information and random draws would come later, and they would change far more, since the proofs assume open state.

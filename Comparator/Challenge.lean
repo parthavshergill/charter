@@ -3,6 +3,7 @@
 import Charter.Constitution.Promises
 import Charter.Games.Witnesses
 import Charter.Games.Island
+import Server.ResourcesNamed
 
 -- From Charter/Constitution.lean
 
@@ -255,3 +256,18 @@ theorem a_finished_island_game_can_happen :
   sorry
 
 end Charter.Proofs
+
+-- From Server/ParserFacts.lean
+
+namespace Charter.Rules
+open Charter SExp
+
+theorem nothing_gets_ignored (rs : List Res) (x y : SExp) (p : Proposal)
+    (hx : parseProposalSExp rs x = .ok p) (hy : parseProposalSExp rs y = .ok p) : x = y :=
+  sorry
+
+theorem only_real_resources (rs : List Res) (x : SExp) (p : Proposal)
+    (h : parseProposalSExp rs x = .ok p) : ∀ r ∈ resourcesNamed p, r ∈ rs :=
+  sorry
+
+end Charter.Rules

@@ -51,6 +51,8 @@ const UI = {
   declare: `<path d="M5 4h14v12H10l-5 4z" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 7v6m-3-3h6" stroke="currentColor" stroke-width="1.8"/>`,
   trade: `<path d="M3.5 8h14m-4.5-4.500L17.5 8 13 12.500M20.5 16h-14m4.5-4.500L6.5 16l4.5 4.5" fill="none" stroke="currentColor" stroke-width="1.9"/>`,
   close: `<path d="m6 6 12 12M18 6 6 18" stroke="currentColor" stroke-width="2"/>`,
+  effects: `<path d="M3.500 9.500v5h3.500l5 4v-13l-5 4z" fill="currentColor"/><path d="M15 9c1.600 1.700 1.600 4.300 0 6M17.800 6.500c3 3.200 3 7.800 0 11" fill="none" stroke="currentColor" stroke-width="1.700" stroke-linecap="round"/>`,
+  music: `<path d="M9 18V6.500l10-2V16" fill="none" stroke="currentColor" stroke-width="1.800"/><ellipse cx="6.500" cy="18" rx="2.800" ry="2.200" fill="currentColor"/><ellipse cx="16.500" cy="16" rx="2.800" ry="2.200" fill="currentColor"/>`,
   talk: `<path d="M3.500 5h17v11h-9l-4.500 4v-4H3.500z" fill="none" stroke="currentColor" stroke-width="1.700"/><path d="M7.500 9h9M7.500 12.500h6" stroke="currentColor" stroke-width="1.500"/>`,
 };
 export const uiIcon = (n, cls = "ui") => svg("0 0 24 24", UI[n] || "", cls);

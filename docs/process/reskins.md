@@ -12,6 +12,7 @@ A pack's `Theme` holds all of this:
 - The seat colours.
 - The screen, through `Theme.look`: the tagline on the scroll, the colour tokens at the top of `web/app.css`, fonts from the fixed list in `web/look.js`, and icons as path data and colours. The word Charter on the scroll keeps its own face. The browser checks all of these again and sets them with `setAttribute`.
 - The 2D board's colours, through `Theme.flat`.
+- The world's music, through `Theme.look`: `music` names a loop in `web/audio/music`. A pack with none gets the default. To add a loop, write it in `scripts/sound/render.py` and add its name to `musicTracks` in `Charter/Scene/LookCheck.lean`. The sound effects are the same in every world.
 
 A pack can colour the voting panel, the preview numbers, the rule source and the constitution page. It cannot reword or hide them. The screen's structure and move flows do not change. The board stays a hex layout: pieces stand on the corners, and links lie on the sides.
 
@@ -21,7 +22,7 @@ A pack can colour the voting panel, the preview numbers, the rule source and the
 2. Name goods with mass nouns, such as "oatmeal" or "dew". The rule text says "pays 1 oatmeal", and it does not change a word to its singular.
 3. Make the meshes however you like. They go in `packs/<pack>/meshes/<sha256>.mesh`. The format is in `packages/lean-gpu-cmd/WIRE.md`. `packs/slime-parliament/gen.py` is one way to make them. Copy it if it helps. It also writes the Lean table of ids and hashes. Never edit that table by hand.
 4. Write the `Theme`. A model that shows its owner is a painted mesh drawn in white and a white mesh drawn in the seat's colour, because a draw's colour multiplies the vertex colours. Give it a second cue that differs by seat, as colour should not be the only one.
-5. Add a `GameSpec` to the end of `gameSpecs` in `Server/Spec.lean`, with a `meshFolder`. Import the pack in `Charter.lean`.
+5. Add a `GameSpec` to the end of `gameSpecs` in `Server/Spec.lean`, with a `meshFolder`. Import the pack in `Charter.lean`. A new pack shows in the Library, because `web/app.js` names the base games. To give its Claude seats their own names and voices, add a cast to `casts` in `Server/Persona.lean`.
 6. Run `lake build Server.Spec`. The check at the end of that file prints what the pack lacks, in words, and stops the build. Fix what it names.
 7. Run `make contact-sheet PACK=<id>`, and read the image in `contact-sheets/`. It shows each model in each seat's colour, every tile top, every monument, and models together on tiles, at the size a game draws them. Look for models that look alike, an owner's colour you cannot see, and anything covering a number token. Fix those, and draw it again.
 8. If the pack has founding laws, write what each one does in the pack's own words, as in `Charter/Games/SlimeParliamentWords.lean`, and set `foundingWords`. A founding law with no words shows its source with a short note. `ServerTests.lean` prints each law's fingerprint.
