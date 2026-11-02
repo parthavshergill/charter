@@ -82,7 +82,8 @@ NOTE_SAME = ("`fair`, `closed` and `hand` play identically when nobody makes off
 
 def seed_of(game, k, laws, phase, opponent):
     """Game k's seed. The same for every subject; different for every game of a table."""
-    text = f"{game}/{k}/{laws}/{phase}/{opponent}".encode()
+    salt = os.environ.get("CHARTER_SEED_SALT", "")  # --seed-salt: a fresh seed set, the same for every subject
+    text = (f"{game}/{k}/{laws}/{phase}/{opponent}" + (f"/{salt}" if salt else "")).encode()
     return int.from_bytes(hashlib.sha256(text).digest()[:6], "little")
 
 
@@ -119,13 +120,18 @@ def load_subject(spec):
         return "random", RandomPlayer, {}
     if spec in BOTS:
         return spec, None, {}
+    diag = ""
+    if "#" in spec:  # "<checkpoint>#<variant>": a diagnostic variant of the policy (rl/entity/entity_numpy.py DIAG)
+        spec, diag = spec.split("#", 1)
     meta_path = spec + ".json"
     if not os.path.exists(meta_path):
         meta_path = os.path.splitext(spec)[0] + ".json"
     meta = json.load(open(meta_path))
+    if diag:
+        meta["diag"] = diag
     from reference.policy import load_policy
     net = load_policy(spec, meta)
-    label = meta.get("name", os.path.basename(spec))
+    label = meta.get("name", os.path.basename(spec)) + (f"#{diag}" if diag else "")
     settings = dict(meta.get("settings", {}))
     # Some metas give stale_wait at the top level (rl/entity2's runs), not in settings.
     if "stale_wait" in meta and "stale_wait" not in settings:
@@ -196,6 +202,7 @@ def play_table(task):
         subject = maker(seed) if maker else None
         others = RandomPlayer(seed + 1)
         if subject:
+            subject.diag_ctx = (game_id, opponent, phase, laws, k)
             subject.reset()
             subject.stale_wait = bool(settings.get("stale_wait"))
         in_turn = 0
@@ -551,6 +558,7 @@ def main():
                     help="1: step the policy's recurrent state on zeros when another caller decides, as in training")
     ap.add_argument("--can-play", type=int, default=1, help="1 to run the can-it-play check on made-up games")
     ap.add_argument("--can-play-games", type=int, default=6, help="games per made-up game and seat count")
+    ap.add_argument("--seed-salt", default="", help="a word that gives a fresh set of seeds (same for every subject)")
     ap.add_argument("--worlds", default="main",
                     help="comma-separated sets: main (main's nine, the default), harness (this branch's six), pack "
                          "(generated: pack-train as training, pack-val as held out)")
@@ -560,6 +568,8 @@ def main():
     ap.add_argument("--laws", default=None, choices=["both", "on", "off"],
                     help="laws proposed during games (law_every 8) or not; default both, or on with --quick")
     args = ap.parse_args()
+    if args.seed_salt:
+        os.environ["CHARTER_SEED_SALT"] = args.seed_salt
     OPPONENTS[:] = args.opponents.split(",")
     TRAIN[:], HELD_OUT[:] = [], []
     for w in args.worlds.split(","):

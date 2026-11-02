@@ -77,6 +77,12 @@ class EntityNet(FlatNet):
         self.resid = resid
         self.tables, self.w_in, self.w_out, self.ptr, self.acts = tables, w_in, w_out, ptr, acts
         self.E = w_in[0].shape[0]
+        # Eval variants after `#` in a subject (rl/eval): `mixKcC` (for example `mix4c30`) picks, among the policy's K
+        # best legal actions, the one with the most logit + C * (V(after) - V(now)), each tried on a copy of the game;
+        # `time` keeps the time per decision under CHARTER_DIAG_DIR.
+        self.diag_name = ""
+        self.mix, self.timing, self._v = None, False, 0.0
+        self.t_sum, self.t_n, self.t_steps = 0.0, 0, 0
         names = [t[0] for t in tables]
         self.moves_t = names.index("moves") if "moves" in names else None
         self.act_col = 1   # rl/layout.json: the moves table's `action` column
@@ -97,11 +103,54 @@ class EntityNet(FlatNet):
             x, s2 = mingru_step(W, x, s)
             out.append(s2)
         y = self.decoder @ x
+        self._v = float(y[-1])
         logits = y[:-1]
         if self.ptr is not None:
             logits = logits + pointer_scores(rows, x, self.ptr, len(logits), self.acts["place"], self.acts["bank"],
                                              self.E, moves)
         return logits, y[-1], out
+
+
+    def set_diag(self, diag):
+        self.diag_name = diag
+        parts = set(diag.split("+")) if diag else set()
+        mix = next((d for d in parts if d.startswith("mix")), None)
+        self.mix = (int(mix[3:].split("c")[0]), float(mix.split("c")[1])) if mix else None
+        self.timing = "time" in parts
+
+    def tick(self, dt):
+        self.t_sum += dt
+        self.t_n += 1
+        if self.t_n % 50 == 0:
+            d = os.environ.get("CHARTER_DIAG_DIR", "/tmp/charter-diag")
+            os.makedirs(d, exist_ok=True)
+            with open(os.path.join(d, f"time-{self.diag_name}-{os.getpid()}.json"), "w") as f:
+                json.dump({"variant": self.diag_name, "decisions": self.t_n, "seconds": self.t_sum,
+                           "engine_steps": self.t_steps}, f)
+
+    def choose_mix(self, player, game, obs, mask, logits):
+        k, c = self.mix
+        legal = np.flatnonzero(np.isfinite(logits))
+        if len(legal) <= 1 or game.voting:
+            return None
+        cand = legal[np.argsort(-logits[legal])][:k]
+        seat, v_now, state = game.seat, self._v, player.state
+        best, best_s = None, -np.inf
+        for a in cand:
+            v = v_now
+            if a != 0:
+                g2 = game.copy()
+                g2.step(int(a))
+                self.t_steps += 1
+                if g2.over:
+                    v = float(g2.rewards()[seat])
+                elif g2.seat == seat:
+                    _, v2, _ = self.forward(g2.obs(), state)
+                    v = float(v2)
+            sc = float(logits[a]) + c * (v - v_now)
+            if sc > best_s:
+                best, best_s = int(a), sc
+        return best
 
 
 def read_entity_bin(path, tables, E, hidden, layers, act_size, pointer=0, resid=False):
@@ -150,5 +199,7 @@ def load_entity(path, meta, layout_path=LAYOUT):
         grus = [z[f"gru{i}"] for i in range(meta["layers"])]
         assert not resid, "the npz format has no residual block"
     f = lambda a: np.ascontiguousarray(a, np.float32)
-    return EntityNet(tables, [f(a) for a in w_in], f(w_out), f(dec), [f(g) for g in grus], meta["act_size"],
-                     f(ptr) if pointer else None, layout["actions"], tuple(f(a) for a in res) if res else None)
+    net = EntityNet(tables, [f(a) for a in w_in], f(w_out), f(dec), [f(g) for g in grus], meta["act_size"],
+                    f(ptr) if pointer else None, layout["actions"], tuple(f(a) for a in res) if res else None)
+    net.set_diag(meta.get("diag", ""))
+    return net

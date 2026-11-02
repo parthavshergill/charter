@@ -83,6 +83,15 @@ class Player:
         _, _, self.state = self.net.forward(x, self.state)
 
     def act(self, game):
+        if getattr(self.net, "timing", False):
+            import time
+            t0 = time.perf_counter()
+            a = self._act(game)
+            self.net.tick(time.perf_counter() - t0)
+            return a
+        return self._act(game)
+
+    def _act(self, game):
         obs = game.obs()
         mask = game.mask()
         if TURN_RESET and getattr(self, "last", None) == 0:
@@ -93,6 +102,11 @@ class Player:
         logits, _, self.state = self.net.forward(obs, self.state)
         logits = logits[:len(mask)].astype(np.float64)
         logits[mask == 0] = -np.inf
+        if getattr(self.net, "mix", None):  # decision-time blend (rl/entity/entity_numpy.py `mixKcC`)
+            a = self.net.choose_mix(self, game, obs, mask, logits)
+            if a is not None:
+                self.last = a
+                return a
         if self.greedy:
             self.last = int(np.argmax(logits))
             return self.last

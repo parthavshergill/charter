@@ -238,6 +238,7 @@ def evaluate(subjects: list, out: str, games: int = 200, quick: bool = False, op
     vol.reload()
     if "turnreset" in out:  # rl/reference/policy.py: reset the GRU state to its waiting fixed point after end turn
         os.environ["CHARTER_TURN_RESET"] = "1"
+    os.environ["CHARTER_DIAG_DIR"] = f"{out}/diag"  # rl/entity/entity_numpy.py: time per decision, for `#time`
     opp = f"--opponents {shlex.quote(opponents)}" if opponents else ""
     code, text = sh(f"cd {SRC}/.. && python3 rl/eval/eval.py {' '.join(map(shlex.quote, subjects))} --games {games} "
                     f"--jobs 8 --out {out} {'--quick' if quick else ''} {opp} --logs {logs} {eval_args}")
