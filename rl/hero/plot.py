@@ -135,7 +135,7 @@ def draw(theme_name, rows, sonnet, out_paths):
         x, y = r["steps"] / M, 100 * r["wins"] / r["games"]
         ax.plot([x, x], [100 * lo, 100 * hi], color=t["sonnet"], lw=2, alpha=0.5, zorder=5, solid_capstyle="round")
         ax.plot([x], [y], "D", ms=12, color=t["sonnet"], mec=t["bg"], mew=1.5, zorder=6, clip_on=False)
-        if x > 0.8 * xmax:
+        if r is pts[-1]:
             continue        # the label column names the last point
         right = False
         ax.text(x - 1.5 if right else x + 1.5, y, f"{r['wins']}/{r['games']}", color=t["sonnet"], fontsize=13,
@@ -144,13 +144,14 @@ def draw(theme_name, rows, sonnet, out_paths):
         r = pts[-1]
         y = 100 * r["wins"] / r["games"]
         n = sum(q["games"] for q in pts)
-        labels.append((y, f"{r['wins']}/{r['games']} wins vs 3 Claude Sonnet seats", t["sonnet"], "bold", t["sonnet"]))
+        labels.append((y, f"{r['wins']}/{r['games']} wins vs 3 Claude Sonnet seats", t["sonnet"], "bold", t["sonnet"],
+                       r["steps"] / M + 1.5))
 
     placed = []
-    for y, text, color, weight, mark in sorted(labels, key=lambda l: -l[0]):
+    for y, text, color, weight, mark, *anchor in sorted(labels, key=lambda l: -l[0]):
         ly = min([y] + [q - 5 for q in placed])
         placed.append(ly)
-        ax.annotate(text, xy=(xmax, y), xytext=(xmax + 3, ly), color=color, fontsize=15, fontweight=weight,
+        ax.annotate(text, xy=(anchor[0] if anchor else xmax, y), xytext=(xmax + 3, ly), color=color, fontsize=15, fontweight=weight,
                     va="center", ha="left", annotation_clip=False,
                     arrowprops=dict(arrowstyle="-", color=mark, lw=1, shrinkA=0, shrinkB=0))
 
