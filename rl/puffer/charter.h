@@ -397,6 +397,10 @@ void puf_init(Env* env, Dict* kwargs) {
         static const int tries[] = {4, 3, 2, 5, 6};
         char cfg[1024];
         char err[512];
+        // random_map between 0 and 1 is a share: each env draws once, per game, whether it deals a new map each game
+        // (dealt) or plays the world's own map (fixed), so one run trains on both.
+        double rm_share = opt_num(kwargs, "random_map", 1);
+        int rmap = rm_share >= 1 ? 1 : rm_share <= 0 ? 0 : (rand_r(&env->rng) < rm_share * (double)RAND_MAX);
         for (int t = 0; t < 5; t++) {
             char lineup[128] = {0};
             for (int s = 0; s < tries[t]; s++) {
@@ -407,7 +411,7 @@ void puf_init(Env* env, Dict* kwargs) {
                 "\"vote_mode\": \"%s\", \"slot_order\": \"%s\", \"move_rows\": %s, \"law_every\": %d, "
                 "\"random_map\": %s, \"preview\": %s, \"reward_win\": %g, \"reward_standing\": %g, \"shaping_points\": %g, \"declare_always\": %s, \"shaping_relative\": %g, \"shaping_gamma\": %g, \"prune_declares\": %s, \"declare_once_per_turn\": %s}",
                 id, lineup, env->rng, vote, slots, move_rows ? "true" : "false", (int)opt_num(kwargs, "law_every", 8),
-                opt_num(kwargs, "random_map", 1) ? "true" : "false", opt_num(kwargs, "preview", 1) ? "true" : "false",
+                rmap ? "true" : "false", opt_num(kwargs, "preview", 1) ? "true" : "false",
                 opt_num(kwargs, "reward_win", 1.0), opt_num(kwargs, "reward_standing", 0.25),
                 opt_num(kwargs, "shaping_points", 0.0), opt_num(kwargs, "declare_always", 0) ? "true" : "false",
                 opt_num(kwargs, "shaping_relative", 0.0), opt_num(kwargs, "shaping_gamma", 0.995),
