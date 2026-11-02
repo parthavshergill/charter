@@ -20,6 +20,9 @@ import Charter.Games.StrikeTheEarthTests
 import Charter.Games.PirateRepublic
 import Charter.Games.PirateRepublicTests
 import Charter.Games.PirateRepublicWords
+import Charter.Games.HillAndChill
+import Charter.Games.HillAndChillTests
+import Charter.Games.HillAndChillWords
 import Charter.Games.ThePit
 import Charter.Games.ThePitWords
 import Charter.Games.ThePitTests

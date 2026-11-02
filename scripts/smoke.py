@@ -218,7 +218,7 @@ def extension_pack(srv):
     limited, a counter stays off the screen, and bots play it to the end. Returns a table to check after
     a restart."""
     defs = {d["id"]: d for d in srv.get("/api/defs")}
-    check(list(defs) == ["island", "not-catan", "slime-parliament", "ai-bubble", "strike-the-earth", "pirate-republic", "the-pit", "omerta"], "the lobby lists the base game first, then the packs")
+    check(list(defs) == ["island", "not-catan", "slime-parliament", "ai-bubble", "strike-the-earth", "pirate-republic", "the-pit", "omerta", "hill-and-chill"], "the lobby lists the base game first, then the packs")
     check(all(d["name"] and d["blurb"] for d in defs.values()), "each pack has a name and a sentence")
     check(defs["not-catan"]["minSeats"] == 3 and defs["not-catan"]["maxSeats"] == 4, "a pack says how many seats it supports")
     for n in (2, 5):
@@ -339,6 +339,17 @@ def pirate_pack(srv):
     SCENES.append((srv.raw(f"/api/games/{code}/scene"), [], ["Law 0"]))
 
 
+def hill_pack(srv):
+    """Hill and Chill: bots never say they are down, so nobody eats, and everyone collects clout."""
+    d = next(x for x in srv.get("/api/defs") if x["id"] == "hill-and-chill")
+    check({"down", "lore", "clout"} <= set(d["look"]["icons"]), "the pack draws down, lore and clout")
+    for n in (3, 4, 5):
+        code, v = bots_only(srv, n, "hill-and-chill", "booth")
+        check({"down", "lore", "clout"} <= set(v["resources"]), "down, lore and clout are on the screen")
+        check(len(v["laws"]) >= 3 and v["round"] <= 8, "the founding laws stand, and the game ends by round 8")
+        check({w["res"] for w in v["worth"]} == {"lore", "clout"}, "lore and clout are each worth a point")
+        check(sum("paid" in t and "1 clout" in t for t in (l if isinstance(l, str) else l.get("text", "") for l in v["chronicle"])) >= v["round"] - 1, "a seat that is never down collects clout")
+        SCENES.append((srv.raw(f"/api/games/{code}/scene"), [], ["Law 0"]))
 def pit_pack(srv):
     """The Pit: bots play it to the end with no deals and no bids. The spot market still pays them, and
     no membership is sold, since no bot bids."""
@@ -1004,6 +1015,7 @@ def main():
         bubble_pack(srv)
         strike_pack(srv)
         pirate_pack(srv)
+        hill_pack(srv)
         pit_pack(srv)
         omerta_pack(srv)
         claude_table = claude_with_no_key(srv)

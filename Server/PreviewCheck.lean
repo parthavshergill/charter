@@ -41,7 +41,17 @@ def actualRows (s : State G) (withLaw without : List Entry) : List Row := rowsOf
 /-- Laws to try, by game. They read holdings, act at a round's end, change prices, make pieces and react
 to the roll. -/
 def lawsFor (spec : GameSpec) : List String :=
-  if spec.id == strikeSpec.id then
+  if spec.id == hillSpec.id then
+    [ "(law \"Half on a potluck\" (on-build potluck (transfer actor treasury cash (/ (holding actor cash) 2))))"
+    , "(law \"Half on a chat\" (on-build chat (transfer actor treasury gas (/ (holding actor gas) 2))))"
+    , "(law \"Half on a booth\" (on-build booth (transfer actor treasury boba (/ (holding actor boba) 2))))"
+    , "(law \"Gas levy\" (on-round-end (for-each-player true (transfer each treasury gas (/ (holding each gas) 2)))))"
+    , "(law \"Tithe\" (on-harvest (transfer actor treasury res (/ amount 2))))"
+    , "(law \"Cheap chats\" (set-cost chat (bundle (boba 1))))"
+    , "(law \"Refunds\" (on-round-end (for-each-player (<= 1 (declared each down)) (transfer treasury each cash 1))))"
+    , "(law \"Rideshare\" (on-roll (transfer bank actor gas 1)))"
+    , "(law \"Taco stands\" (new-piece taco-stand (bundle (takeout 2) (gas 1)) (points 2) (attach booth) (yield 1) (limit 2)))" ]
+  else if spec.id == strikeSpec.id then
     [ "(law \"Half on a workshop\" (on-build workshop (transfer actor treasury ore (/ (holding actor ore) 2))))"
     , "(law \"Half on a tunnel\" (on-build tunnel (transfer actor treasury ember (/ (holding actor ember) 2))))"
     , "(law \"Half on a hall\" (on-build hall (transfer actor treasury fungus (/ (holding actor fungus) 2))))"
