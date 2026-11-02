@@ -10,4 +10,4 @@ PUFFER="$1"; OCEAN="$2"; LAYOUT="$3"
 cp "$HERE/charter_entity.cu" "$OCEAN/"
 python3 "$HERE/gen_layout.py" "$LAYOUT" "$OCEAN/charter_entity_layout.h" $([ "${CHARTER_MOVE_ROWS:-0}" = 1 ] && echo --moves)
 python3 "$HERE/apply_hook.py" "$PUFFER"
-echo "-DPUFFER_CHARTER_ENTITY -DCE_ENTITY_DIM=${CHARTER_ENTITY_DIM:-32}$([ "${CHARTER_POINTER:-0}" -ge 1 ] && echo " -DCE_POINTER")$([ "${CHARTER_MOVE_ROWS:-0}" = 1 ] && echo " -DPRECISION_FLOAT")"
+echo "-DPUFFER_CHARTER_ENTITY -DCE_ENTITY_DIM=${CHARTER_ENTITY_DIM:-32}$([ "${CHARTER_POINTER:-0}" -ge 1 ] && echo " -DCE_POINTER")$([ "${CHARTER_MOVE_ROWS:-0}" = 1 ] && echo " -DPRECISION_FLOAT")$([ "${CHARTER_NO_END_LINEAR:-0}" = 1 ] && echo " -DCE_NO_LINEAR_END")"

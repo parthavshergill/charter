@@ -443,6 +443,12 @@ static Prec cp_backward(void* w, void* activations, Float grad_logits, Float gra
     CharterPointerWeights* cw = (CharterPointerWeights*)w;
     CharterPointerActivations* a = (CharterPointerActivations*)activations;
     Prec grad_in = decoder_backward(&cw->base, &a->base, grad_logits, grad_logstd, grad_value, stream);
+#ifdef CE_NO_LINEAR_END
+    // End turn (action 0) is scored from its moves row only: the decoder's linear row for it starts at 0 (see
+    // tools/graft_moves.py --no-end-linear) and its gradient is zeroed here, so it stays 0. The weight gradient is
+    // made on the side stream, so the zeroing goes on that stream after it. Muon keeps a zero row of the update zero.
+    cudaMemsetAsync(a->base.wgrad_scratch.data, 0, cw->base.hidden_dim * sizeof(precision_t), g_dw_stream);
+#endif
     int B = a->base.saved_input.shape[0];
     int od1 = cw->base.output_dim + 1;
     // Every places and resources row is written for every (b, e); other tables keep zero.

@@ -39,6 +39,9 @@ def main():
     ap.add_argument("old")
     ap.add_argument("out")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--no-end-linear", action="store_true",
+                    help="zero the decoder's linear row for end turn (action 0), so end turn is scored from its moves "
+                         "row only; train with no_end_linear (CE_NO_LINEAR_END) to keep it 0")
     a = ap.parse_args()
     meta = json.load(open(a.old + ".json"))
     assert int(meta.get("layout", 2)) == 2 and int(meta.get("pointer", 0)) == 1 and not meta.get("moves")
@@ -50,8 +53,11 @@ def main():
     w_moves = (rng.normal(size=(E, width)) * (2 / width) ** 0.5).astype(np.float32)
     w_out2 = np.concatenate([w_out, np.zeros((H, E), np.float32)], 1)
     ptr2 = np.concatenate([ptr, np.zeros((E, H), np.float32)], 0)
+    if a.no_end_linear:
+        dec = dec.copy()
+        dec[0] = 0
     write(list(w_in) + [w_moves, w_out2, dec, ptr2] + list(grus), a.out)
-    meta2 = dict(meta, moves=1, obs_size=LAYOUT["full_size"], name=os.path.basename(a.out),
+    meta2 = dict(meta, moves=1, no_end_linear=int(a.no_end_linear), obs_size=LAYOUT["full_size"], name=os.path.basename(a.out),
                  grafted_from=meta.get("name", a.old))
     meta2["settings"] = dict(meta.get("settings", {}), move_rows=True)
     json.dump(meta2, open(a.out + ".json", "w"))
@@ -69,6 +75,9 @@ def main():
         lo, vo, _ = old.forward(obs[:LAYOUT["base_size"]], s)
         ln, vn, _ = new.forward(obs, s)
         worst = max(worst, float(np.abs(lo - ln).max()), abs(float(vo - vn)))
+    if a.no_end_linear:
+        print(f"wrote {a.out}: the old net, with end turn's linear row set to 0")
+        return
     print(f"wrote {a.out}: the grafted net matches the old one to {worst:.2e} on 20 random observations")
     assert worst < 1e-4
 

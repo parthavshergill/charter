@@ -179,6 +179,7 @@ def train(run: str, train_args: str = "", seconds: int = 600, move_rows: bool = 
     os.environ["CHARTER_ENTITY_DIM"], os.environ["CHARTER_POINTER"] = str(extra.get("entity_dim", 32)), str(extra.get("pointer", 0))
     os.environ["CHARTER_STALE_WAIT"] = str(extra.get("stale_wait", 0))
     os.environ["CHARTER_MOVE_ROWS"] = "1" if move_rows else "0"   # rl/entity/puffer_build.sh: the moves pointer
+    os.environ["CHARTER_NO_END_LINEAR"] = str(extra.get("no_end_linear", 0))   # end turn from its moves row only
     code, text = build_puffer(move_rows, patch=patch, encoder=encoder)
     if code != 0:
         return {"build": code, "tail": text[-2000:]}
