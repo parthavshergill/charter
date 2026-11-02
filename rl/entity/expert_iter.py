@@ -142,7 +142,7 @@ def collect(ckpt, out, games, seed, worlds, k, c, explore):
           f"wrote {out}", flush=True)
 
 
-def distill(ckpt, out, data, epochs, lr, c, vf_coef, batch, max_rows, imitate=0.0):
+def distill(ckpt, out, data, epochs, lr, c, vf_coef, batch, max_rows, imitate=0.0, no_declare_bonus=False):
     import torch
     import torch.nn.functional as F
     from bc_entity import EntityPolicy, ACTS
@@ -167,6 +167,10 @@ def distill(ckpt, out, data, epochs, lr, c, vf_coef, batch, max_rows, imitate=0.
     table = cat("table").astype(np.int64) if imitate and all("table" in z for z in zs) else -np.ones(len(cand), np.int64)
     act_decl, act_place = layout["actions"]["declare"], layout["actions"]["place"]
     table[(table <= 0) | ((table >= act_decl) & (table < act_place))] = -1
+    if no_declare_bonus:
+        # The table bot never declares, so a declaration's value gain is often an uncontested one (ROUND4): give
+        # declarations no lookahead bonus, and the policy keeps its own prior on them.
+        dv = np.where((cand >= act_decl) & (cand < act_place), 0.0, dv).astype(np.float32)
     game = np.concatenate([z["game"] + 1000000 * j for j, z in enumerate(zs)])
     if max_rows and len(obs) > max_rows:
         keep = np.random.default_rng(0).choice(len(obs), max_rows, replace=False)
@@ -231,7 +235,7 @@ def distill(ckpt, out, data, epochs, lr, c, vf_coef, batch, max_rows, imitate=0.
     pol.save_puffer(out)
     meta2 = dict(meta, name=os.path.basename(out), distilled_from=meta.get("name", ckpt),
                  expert_iter={"c": c, "epochs": epochs, "lr": lr, "decisions": int(len(obs)), "data": data,
-                              "imitate": imitate})
+                              "imitate": imitate, "no_declare_bonus": no_declare_bonus})
     meta2.pop("diag", None)
     json.dump(meta2, open(out + ".json", "w"))
     print(f"wrote {out}", flush=True)
@@ -254,6 +258,7 @@ def main():
     ap.add_argument("--vf-coef", type=float, default=1.0)
     ap.add_argument("--batch", type=int, default=256)
     ap.add_argument("--max-rows", type=int, default=0)
+    ap.add_argument("--no-declare-bonus", action="store_true", help="no lookahead bonus on declarations")
     ap.add_argument("--imitate", type=float, default=0.0,
                     help="item 2: weight of the table bot's move where the improved move ends the turn and table "
                          "builds or trades")
@@ -261,7 +266,7 @@ def main():
     if a.mode == "collect":
         collect(a.ckpt, a.out, a.games, a.seed, a.worlds, a.k, a.c, a.explore)
     else:
-        distill(a.ckpt, a.out, a.data, a.epochs, a.lr, a.c, a.vf_coef, a.batch, a.max_rows, a.imitate)
+        distill(a.ckpt, a.out, a.data, a.epochs, a.lr, a.c, a.vf_coef, a.batch, a.max_rows, a.imitate, a.no_declare_bonus)
 
 
 if __name__ == "__main__":
