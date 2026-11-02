@@ -19,6 +19,7 @@ setting, bot seats play the rule-based bot of `Server/BotCore.lean`, as before. 
   with events; the engine has the final word, as for the others.
 - `PlayCheck.lean`: `charter-policy-check`, whole games through `Game.create` and `Game.apply`.
 - `DiffMain.lean`: `charter-policy-diff`, the Lean network against the NumPy one.
+- `scripts/policy_ref_check.py`: the Lean network and blend against the training team's own `entity_numpy.py`.
 - `policy.chpw`: the weights. **Not in this PR yet.** Swap a checkpoint in as this one file.
 
 ## Swapping in a checkpoint
@@ -41,6 +42,13 @@ rule) and then the checkpoint's floats, unchanged. The server refuses a file who
 and says why. `--gru-state` is needed when the meta has no `gru_state`; see below.
 
 ## How it decides
+
+- **The decision-time blend** (optional, `--mix-k K --mix-c C` when converting, written as format 5): among the
+  policy's K best legal actions, it plays the one with the most `logit + C * (V(after) - V(now))`. Each candidate is
+  tried on a copy of the state: V(after) is the network's value if the same seat moves next, the training
+  environment's final reward if the game ends, and V(now) otherwise (end turn, or the turn passed). It is
+  `choose_mix` in the training branch's `rl/entity/entity_numpy.py`; `scripts/policy_ref_check.py mix` checks the two
+  agree on recorded decisions.
 
 - On its turn: the legal action with the highest score. Every legal action is asked of the engine first. No
   sampling: the same state gives the same move.

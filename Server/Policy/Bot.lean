@@ -14,6 +14,7 @@ How one decision is made:
 1. On its own turn, the seat builds the observation (`observe`) and the list of actions the engine accepts now
    (`legal`, each one asked of the engine). The network scores every action. The seat picks the legal action with
    the highest score. Ties go to the lowest action number. No sampling, so the same state gives the same move.
+   With the decision-time blend on (`Net.mixK`), it first tries its best few actions: see `blendCandidates`.
 2. Votes, signatures and accepted offers use the rule-based bot's code, as before. The checkpoints were trained
    with the harness's `vote_mode=bot`, so the network never learned to vote, and it has no action for deals or
    offers.
@@ -106,20 +107,97 @@ def decisionFor (g : Game) (s : State g.spec.G) (seat : Nat) (m : MaskRules := {
 def observationFor (g : Game) (s : State g.spec.G) (seat : Nat) (m : MaskRules := {}) : FloatArray :=
   (decisionFor g s seat m).1
 
-/-- The network's move for this seat on its turn, starting from recurrent state `state`: the event, how many
-actions were legal, and the new state. `none` when it is not this seat's turn. -/
-def turnEventFrom (net : Net) (state : Array FloatArray) (g : Game) (s : State g.spec.G) (seat : Nat)
-    (m : MaskRules := {}) : Except String (Option (Event × Nat × Array FloatArray)) := do
+/-- The reward the training environment gives a seat when the game is over (`Env.finalRewards` at harness
+`3b98ee8`, with its defaults): 1 to the winner, plus 0.25 times its standing, from 1 for first to -1 for last,
+ranked by winner, then points, then seat. The blend uses it for a move that ends the game. -/
+def finalReward (s : State G) (seat : Nat) : Float :=
+  let seats := s.turnOrder.length
+  let key (q : Nat) : Nat := (if s.winner == some q then 100000 else 0) + s.pointsOf q * 10 + (maxSeats - q)
+  let order := (s.turnOrder.toArray.qsort fun a b => key a > key b).toList
+  let rank := (order.findIdx? (· == seat)).getD 0
+  let standing := 1 - 2 * Float.ofNat rank / Float.ofNat (max 1 (seats - 1))
+  (if s.winner == some seat then 1.0 else 0.0) + 0.25 * standing
+
+/-- The mask rules after this seat makes `ev` and keeps the turn: a bank trade sets the trade it may not undo, and a
+declaration joins the goods declared this turn. -/
+def MaskRules.after (m : MaskRules) (declareOnce : Bool) : Event → MaskRules
+  | .move _ (.bankTrade give get) => { m with undo := some (get, give) }
+  | .move _ (.declare r _) => if declareOnce then { m with declaredNow := m.declaredNow ++ [r] } else m
+  | _ => m
+
+/-- One candidate of the decision-time blend. -/
+structure BlendCandidate where
+  action : Nat
+  logit : Float
+  /-- V after the action: the network's value if the same seat moves next, the final reward if the game is over,
+  and V now otherwise (end turn, or the turn passed). -/
+  value : Float
+  /-- `end`, `same`, `over` or `other`, as above. -/
+  kind : String
+  /-- The observation after the action, when the same seat moves next. -/
+  after : Option FloatArray := none
+  score : Float
+
+/-- One turn decision in full: the observation, the legal actions, the network's logits, value and new state, the
+blend's candidates (empty when the blend is off), and the chosen action. -/
+structure TurnDecision where
+  obs : FloatArray
+  acts : List (Nat × Event)
+  logits : FloatArray
+  value : Float
+  state : Array FloatArray
+  candidates : Array BlendCandidate
+  chosen : Nat
+
+/-- The decision-time blend (`choose_mix` in the training branch's `rl/entity/entity_numpy.py`): among the policy's
+`net.mixK` best legal actions, choose the one with the most `logit + net.mixC * (V(after) - V(now))`, trying each
+on a copy of the state. Ties go to the higher logit. The new state from this decision is used for V(after). -/
+def blendCandidates (net : Net) (g : Game) (s : State g.spec.G) (seat : Nat) (m : MaskRules)
+    (acts : List (Nat × Event)) (logits : FloatArray) (vNow : Float) (state' : Array FloatArray) :
+    Except String (Array BlendCandidate) := do
+  let byLogit := acts.toArray.qsort fun a b =>
+    logits[a.1]! > logits[b.1]! || (logits[a.1]! == logits[b.1]! && a.1 < b.1)
+  let mut out : Array BlendCandidate := #[]
+  for (a, ev) in byLogit.toList.take net.mixK do
+    let l := logits[a]!
+    let (v, kind, after) ← if a == actEnd then pure (vNow, "end", none) else
+      match Engine.step g.spec.G s ev with
+      | .error e => throw s!"blend: the engine refused legal action {a}: {e}"
+      | .ok s2 =>
+        if s2.phase == .ended then pure (finalReward s2 seat, "over", none)
+        else if s2.currentSeat == some seat then do
+          let (obs2, _) := decisionFor g s2 seat (m.after net.declareOncePerTurn ev)
+          let (_, v2, _) ← net.forwardV obs2 state'
+          pure (v2, "same", some obs2)
+        else pure (vNow, "other", none)
+    out := out.push { action := a, logit := l, value := v, kind, after, score := l + net.mixC * (v - vNow) }
+  return out
+
+/-- This seat's turn decision in full, from recurrent state `state`. `none` when it is not this seat's turn. -/
+def turnDecision (net : Net) (state : Array FloatArray) (g : Game) (s : State g.spec.G) (seat : Nat)
+    (m : MaskRules := {}) : Except String (Option TurnDecision) := do
   if s.currentSeat != some seat || s.phase == .ended then return none
   let (obs, acts) := decisionFor g s seat m
   if acts.isEmpty then
     throw s!"seat {seat} has its turn and no legal action has a number in the layout"
-  let (logits, state') ← net.forward obs state
-  let some a := net.best logits (acts.map (·.1)).toArray
+  let (logits, vNow, state') ← net.forwardV obs state
+  let some greedy := net.best logits (acts.map (·.1)).toArray
     | throw "no legal action was scored"
-  match acts.find? (·.1 == a) with
-  | some (_, ev) => return some (ev, acts.length, state')
-  | none => throw s!"action {a} has no event"
+  let cands ← if net.mixK > 1 && acts.length > 1 then blendCandidates net g s seat m acts logits vNow state'
+    else pure #[]
+  let chosen := (cands.foldl (fun (best : Option BlendCandidate) c => match best with
+      | some b => if c.score > b.score then some c else some b
+      | none => some c) none).map (·.action) |>.getD greedy
+  return some { obs, acts, logits, value := vNow, state := state', candidates := cands, chosen }
+
+/-- The network's move for this seat on its turn, starting from recurrent state `state`: the event, how many
+actions were legal, and the new state. `none` when it is not this seat's turn. -/
+def turnEventFrom (net : Net) (state : Array FloatArray) (g : Game) (s : State g.spec.G) (seat : Nat)
+    (m : MaskRules := {}) : Except String (Option (Event × Nat × Array FloatArray)) := do
+  let some d ← turnDecision net state g s seat m | return none
+  match d.acts.find? (·.1 == d.chosen) with
+  | some (_, ev) => return some (ev, d.acts.length, d.state)
+  | none => throw s!"action {d.chosen} has no event"
 
 /-- The network's move for this seat on its turn, from a zero recurrent state, as the server plays it. -/
 def turnEvent (net : Net) (g : Game) (s : State g.spec.G) (seat : Nat) (m : MaskRules := {}) :

@@ -33,6 +33,8 @@ All numbers are little-endian.
    (2^32-1 for none), and the column holding each moves row's action number.
    Format version 4 adds one more: flags, 1 `prune_declares`, 2
    `declare_once_per_turn`, 4 the ranked order of the table of moves.
+   Format version 5 adds two more: the blend's candidate count K, and its
+   weight c as float32 bits (see `Net.mixK`).
 6. The weights: 32-bit floats, exactly as in the PufferLib `.bin` file.
    Each block is padded with zeros up to a multiple of 8 floats. Blocks, in
    order, all row-major:
@@ -122,6 +124,10 @@ structure Net where
   /-- The checkpoint's table of moves lists actions in the ranked order of harness `5fde545` (end turn and votes,
   placements, trades, declarations, without the actions the mask hides), not in `legal`'s order. -/
   rankedMoves : Bool := false
+  /-- The decision-time blend: how many of the policy's best legal actions to try (0 or 1: off). -/
+  mixK : Nat := 0
+  /-- The blend's weight: each candidate scores `logit + mixC * (V(after) - V(now))`. -/
+  mixC : Float := 0.0
   /-- One input block per table, `E x width`. -/
   wIn : Array FloatArray
   /-- Mixes the pooled tables into one hidden vector, `hidden x (ntables*E)`. -/
@@ -169,13 +175,13 @@ def Net.read (b : ByteArray) : Except String Net := do
   if b.extract 0 4 != "CHPW".toUTF8 then
     throw "weights file: missing magic bytes CHPW"
   let h (k : Nat) : Nat := (u32At b (4 + 4 * k)).toNat
-  if h 0 < 2 || h 0 > 4 then
-    throw s!"weights file: format version {h 0}, expected 2 to 4 (3 adds the table of moves, 4 the mask rules)"
+  if h 0 < 2 || h 0 > 5 then
+    throw s!"weights file: format version {h 0}, expected 2 to 5 (3 adds the table of moves, 4 the mask rules, 5 the blend)"
   let e := h 2; let hid := h 3; let layers := h 4; let act := h 5
   let pointer := h 6; let nt := h 10
   if pointer > 4 then throw s!"weights file: pointer must be 0 to 4, got {pointer}"
   if e == 0 || hid == 0 || nt == 0 then throw "weights file: E, hidden and ntables must be positive"
-  let headerBytes := 4 + 4 * (11 + 3 * nt + (if h 0 == 4 then 8 else if h 0 == 3 then 7 else 5))
+  let headerBytes := 4 + 4 * (11 + 3 * nt + (if h 0 == 5 then 10 else if h 0 == 4 then 8 else if h 0 == 3 then 7 else 5))
   if b.size < headerBytes then
     throw s!"weights file: header needs {headerBytes} bytes, got {b.size}"
   let mut tables : Array NetTable := #[]
@@ -187,7 +193,10 @@ def Net.read (b : ByteArray) : Except String Net := do
   let movesIdx : Option Nat := if h 0 ≥ 3 && idx 5 < nt then some (idx 5) else none
   let movesActionCol := if h 0 ≥ 3 then idx 6 else 0
   -- Version 4: flags for the mask and the table of moves the checkpoint trained with.
-  let flags := if h 0 == 4 then idx 7 else 0
+  let flags := if h 0 ≥ 4 then idx 7 else 0
+  -- Version 5: the decision-time blend, as the number of candidates and the weight c (a float32).
+  let mixK := if h 0 == 5 then idx 8 else 0
+  let mixC := if h 0 == 5 then (Float32.ofBits (u32At b (4 + 4 * (11 + 3 * nt + 9)))).toFloat else 0.0
   if flags ≥ 8 then throw s!"weights file: unknown flags {flags}"
   if pointer == 4 && movesIdx.isNone then throw "weights file: pointer 4 needs a table of moves"
   if let some mi := movesIdx then
@@ -237,7 +246,7 @@ def Net.read (b : ByteArray) : Except String Net := do
            actSpot := h 7, actLink := h 8, actBank := h 9, tables,
            kindsIdx := kinds, spotsIdx := spots, linksIdx := links, resourcesIdx := res,
            stateRule, movesIdx, movesActionCol, pruneDeclares := flags % 2 == 1,
-           declareOncePerTurn := flags / 2 % 2 == 1, rankedMoves := flags / 4 % 2 == 1, wIn, wOut, decoder := dec, ptr, grus }
+           declareOncePerTurn := flags / 2 % 2 == 1, rankedMoves := flags / 4 % 2 == 1, mixK, mixC, wIn, wOut, decoder := dec, ptr, grus }
 
 /-- The recurrent state at the start of a game: zeros, one vector per layer. -/
 def Net.initState (n : Net) : Array FloatArray :=
@@ -411,11 +420,12 @@ def Net.addPointer (n : Net) (keep : Array FloatArray) (h : FloatArray)
         out := out.set! a (out[a]! + (give[i]! + get[j]!))
   return out
 
-/-- Run the network on one observation. Returns the logits (one per action)
-and the new recurrent state. Fails if the observation or the state has the
-wrong size. -/
-def Net.forward (n : Net) (obs : FloatArray) (state : Array FloatArray) :
-    Except String (FloatArray × Array FloatArray) := do
+/-- Run the network on one observation. Returns the logits (one per action),
+the value (the decoder's last row: what the network expects this seat to
+earn) and the new recurrent state. Fails if the observation or the state has
+the wrong size. -/
+def Net.forwardV (n : Net) (obs : FloatArray) (state : Array FloatArray) :
+    Except String (FloatArray × Float × Array FloatArray) := do
   if obs.size != n.obsSize then
     throw s!"forward: observation has {obs.size} values, expected {n.obsSize}"
   if state.size != n.layers || state.any (·.size != n.hidden) then
@@ -429,7 +439,13 @@ def Net.forward (n : Net) (obs : FloatArray) (state : Array FloatArray) :
   let y := matVec n.decoder (n.actSize + 1) n.hidden x
   let logits := FloatArray.mk (y.data.extract 0 n.actSize)
   let logits := if n.pointer > 0 then n.addPointer keep x logits obs else logits
-  return (logits, newState)
+  return (logits, y[n.actSize]!, newState)
+
+/-- Run the network on one observation: the logits (one per action) and the new recurrent state. -/
+def Net.forward (n : Net) (obs : FloatArray) (state : Array FloatArray) :
+    Except String (FloatArray × Array FloatArray) := do
+  let (logits, _, st) ← n.forwardV obs state
+  return (logits, st)
 
 /-- The legal action with the highest logit. Ties go to the lowest action
 index. Indices past the end of `logits` are skipped. `none` if no legal

@@ -30,6 +30,9 @@ def main():
                     help="for a checkpoint with per-move rows, if the meta has no moves_order: the order of the table "
                          "of moves it trained with. legal: before harness 5fde545 (end turn, trades, declarations, "
                          "placements); ranked: 5fde545 and later (end turn and votes, placements, trades, declarations)")
+    ap.add_argument("--mix-k", type=int, help="the decision-time blend: how many of the policy's best legal actions "
+                    "to try (rl/entity/entity_numpy.py choose_mix); with --mix-c. Off when not given.")
+    ap.add_argument("--mix-c", type=float, help="the blend's weight c: each candidate scores logit + c * (V(after) - V(now))")
     ap.add_argument("--gru-state", choices=sorted(STATE_RULES),
                     help="how the recurrent state moves between a seat's decisions, if the meta has no gru_state: "
                          "carry (eval, games against bots), turn (0.5 at each turn start, as self-play waiting ticks "
@@ -83,10 +86,22 @@ def main():
         if once and not prune:
             sys.exit("declare_once_per_turn works only with prune_declares, and the meta has one without the other")
         flags = (1 if prune else 0) + (2 if once else 0) + (4 if order == "ranked" else 0)
-    out = header_bytes(layout, E, hidden, layers, pointer, rule, act, flags) + data
+    settings = meta.get("settings") or {}
+    mix_k = a.mix_k if a.mix_k is not None else settings.get("mix_k")
+    mix_c = a.mix_c if a.mix_c is not None else settings.get("mix_c")
+    mix = None
+    if mix_k is not None or mix_c is not None:
+        if mix_k is None or mix_c is None:
+            sys.exit("the blend needs both a candidate count and a weight: --mix-k K --mix-c C")
+        if flags is None:
+            sys.exit("the blend is written in format 5, which needs a checkpoint with per-move rows")
+        mix = (int(mix_k), float(mix_c))
+    out = header_bytes(layout, E, hidden, layers, pointer, rule, act, flags, mix) + data
     open(a.out, "wb").write(out)
     extra = "" if flags is None else ", moves order %s, prune_declares %s, declare_once_per_turn %s" % (
         "ranked" if flags & 4 else "legal", bool(flags & 1), bool(flags & 2))
+    if mix:
+        extra += ", blend over %d candidates at c = %g" % mix
     print("wrote %s (%d bytes, %d params, state rule %s%s)" % (a.out, len(out), sum(r * c for r, c in shapes), rule, extra))
 
 

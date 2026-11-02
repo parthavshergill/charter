@@ -49,15 +49,15 @@ def pad8(n):
 STATE_RULES = {"carry": 0, "turn": 1, "zero": 2}
 
 
-def header_bytes(layout, E, hidden, layers, pointer, state_rule, act_size=None, flags=None):
+def header_bytes(layout, E, hidden, layers, pointer, state_rule, act_size=None, flags=None, mix=None):
     """The weights-file header (magic + UInt32s) for this layout and model. Format 2; format 3 when the layout has a
     table of moves; format 4 when `flags` are given (1 prune_declares, 2 declare_once_per_turn, 4 ranked moves)."""
     tables = layout["tables"]
     names = [t[0] for t in tables]
     moves = layout.get("moves_table")
-    version = 4 if flags is not None else (3 if moves else 2)
-    if version == 4 and not moves:
-        raise ValueError("format 4 needs a layout with a table of moves")
+    version = 5 if mix is not None else (4 if flags is not None else (3 if moves else 2))
+    if version >= 4 and not moves:
+        raise ValueError("formats 4 and 5 need a layout with a table of moves")
     vals = [version, layout["layout_version"], E, hidden, layers, act_size or layout["act_size"], pointer,
             layout["act_spot"], layout["act_link"], layout["act_bank"], len(tables)]
     for _, off, rows, width in tables:
@@ -66,8 +66,10 @@ def header_bytes(layout, E, hidden, layers, pointer, state_rule, act_size=None, 
     vals += [STATE_RULES[state_rule]]
     if moves:
         vals += [names.index(moves), layout["moves_action_col"]]
-    if version == 4:
-        vals += [flags]
+    if version >= 4:
+        vals += [flags or 0]
+    if version == 5:
+        vals += [int(mix[0]), struct.unpack("<I", struct.pack("<f", float(mix[1])))[0]]
     return b"CHPW" + struct.pack("<%dI" % len(vals), *vals)
 
 
@@ -85,14 +87,14 @@ def read_weights(path):
     b = open(path, "rb").read()
     assert b[:4] == b"CHPW", "missing magic"
     h = lambda k: struct.unpack_from("<I", b, 4 + 4 * k)[0]
-    assert h(0) in (2, 3, 4), "format version"
+    assert h(0) in (2, 3, 4, 5), "format version"
     E, hidden, layers, act, pointer = h(2), h(3), h(4), h(5), h(6)
     nt = h(10)
     tables = [(h(11 + 3 * t), h(12 + 3 * t), h(13 + 3 * t)) for t in range(nt)]
     idx = [h(11 + 3 * nt + k) for k in range(4)]
     rule = h(11 + 3 * nt + 4)
     moves_idx, act_col = (h(11 + 3 * nt + 5), h(11 + 3 * nt + 6)) if h(0) >= 3 else (None, None)
-    pos = 4 + 4 * (11 + 3 * nt + {2: 5, 3: 7, 4: 8}[h(0)])
+    pos = 4 + 4 * (11 + 3 * nt + {2: 5, 3: 7, 4: 8, 5: 10}[h(0)])
     blocks = []
     for r, c in block_shapes([t[2] for t in tables], E, hidden, layers, act, pointer):
         a = np.frombuffer(b, dtype="<f4", count=r * c, offset=pos).astype(np.float64)
