@@ -202,7 +202,7 @@ def omertaSpec : GameSpec :=
 instance : Inhabited GameSpec := ⟨islandSpec⟩
 
 /-- Every game this server can run. The first is the default. -/
-def gameSpecs : List GameSpec := [islandSpec, notCatanSpec, slimeSpec, bubbleSpec, strikeSpec, pirateSpec, hillSpec, pitSpec, omertaSpec]
+def gameSpecs : List GameSpec := [islandSpec, notCatanSpec, slimeSpec, bubbleSpec, strikeSpec, pirateSpec, pitSpec, omertaSpec, hillSpec]
 
 /-- The game with this id. A log entry with no id is from before there was a choice: it is the Island. -/
 def specOf? (id : Option String) : Option GameSpec :=
