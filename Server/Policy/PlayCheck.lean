@@ -129,7 +129,12 @@ def playOne (net : Net) (spec : GameSpec) (seats seed : Nat) (policySeats : List
           roundPoints := roundPoints.push (lastRound, (List.range seats).map s.pointsOf)
           lastRound := s.round
         log := log.push (s.round, ev)
-      if policySeats.any (s.currentSeat == some ·) then mem := mem.after net g ev
+      if policySeats.any (s.currentSeat == some ·) then
+        -- The driver's memory update after the move: part of the server's cost per decision.
+        let t0 ← IO.monoNanosNow
+        mem := mem.after net g ev
+        let t1 ← IO.monoNanosNow
+        if !isReactionJson ev then ns := ns + (t1 - t0)
       match apply g ev with
       | .ok g' => g := g'
       | .error e => err := some e; break
