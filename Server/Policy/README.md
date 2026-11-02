@@ -28,8 +28,15 @@ python3 scripts/policy_weights.py CKPT.bin --out Server/Policy/policy.chpw --gru
 ```
 
 `CKPT.bin.json` must sit beside the checkpoint. With `moves` (or `settings.move_rows`) in the meta, the file gets
-format 3: the header also names the table of moves and its action column, and the server builds the larger
-observation. The file is a header (sizes, action offsets and the state
+format 4: the header also names the table of moves and its action column, and carries three flags for what the
+checkpoint trained with:
+
+- `prune_declares` and `declare_once_per_turn`, from the meta's `settings`. They only remove declarations from what
+  the policy may choose; a person can still declare freely.
+- the order of the table of moves. Harness `5fde545` changed it for every run, with no flag: before it, the rows
+  follow `legal` (end turn, trades, declarations, placements); from it, they are ranked (end turn and votes,
+  placements, trades, declarations) and leave out the trade the mask hides. The meta cannot say which, so the
+  converter takes `moves_order` from the meta or `--moves-order legal|ranked`, and refuses to guess. The file is a header (sizes, action offsets and the state
 rule) and then the checkpoint's floats, unchanged. The server refuses a file whose layout or sizes do not match,
 and says why. `--gru-state` is needed when the meta has no `gru_state`; see below.
 
