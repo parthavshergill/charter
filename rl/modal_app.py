@@ -228,7 +228,8 @@ def train(run: str, train_args: str = "", seconds: int = 600, move_rows: bool = 
 
 
 @app.function(cpu=8, memory=8192, timeout=3 * 3600, volumes={VOL: vol})
-def evaluate(subjects: list, out: str, games: int = 200, quick: bool = False, opponents: str = "", logs: int = 2):
+def evaluate(subjects: list, out: str, games: int = 200, quick: bool = False, opponents: str = "", logs: int = 2,
+             eval_args: str = ""):
     """Run rl/eval on these subjects (`random`, `hand`, `champion`, or policy paths on the volume) and save the report,
     with `logs` saved games per table in `out/games/`."""
     vol.reload()
@@ -236,7 +237,7 @@ def evaluate(subjects: list, out: str, games: int = 200, quick: bool = False, op
         os.environ["CHARTER_TURN_RESET"] = "1"
     opp = f"--opponents {shlex.quote(opponents)}" if opponents else ""
     code, text = sh(f"cd {SRC}/.. && python3 rl/eval/eval.py {' '.join(map(shlex.quote, subjects))} --games {games} "
-                    f"--jobs 8 --out {out} {'--quick' if quick else ''} {opp} --logs {logs}")
+                    f"--jobs 8 --out {out} {'--quick' if quick else ''} {opp} --logs {logs} {eval_args}")
     vol.commit()
     return {"exit": code, "report": open(f"{out}/report.md").read() if os.path.exists(f"{out}/report.md") else text[-4000:]}
 
@@ -275,7 +276,7 @@ def guard(max_dollars, gpu, cpu, gib, want_seconds):
 def main(action: str = "test", run: str = "smoke", minutes: float = 10, max_dollars: float = 1.0,
          train_args: str = "", games: int = 200, subjects: str = "", quick: bool = False, move_rows: bool = False,
          no_patch: bool = False, encoder: str = "flat", meta_extra: str = "", opponents: str = "", logs: int = 2,
-         eval_name: str = "eval"):
+         eval_name: str = "eval", eval_args: str = ""):
     if action == "test":
         total = guard(max_dollars, None, 4, 8, 1500)
         print(json.dumps(test.with_options(timeout=total).remote(quick), indent=1))
@@ -294,7 +295,7 @@ def main(action: str = "test", run: str = "smoke", minutes: float = 10, max_doll
         subs = subjects.split(",") if subjects else ["random", "hand"]
         bots = ("random", "hand", "champion", "champion-closed", "table")
         r = evaluate_.remote([s if s in bots or s.startswith("/") else f"{VOL}/{s}" for s in subs],
-                            f"{VOL}/{run}/{eval_name}", games, quick, opponents, logs)
+                            f"{VOL}/{run}/{eval_name}", games, quick, opponents, logs, eval_args)
         print(r["report"])
     else:
         sys.exit(f"unknown action {action}")
