@@ -164,7 +164,8 @@ def distill(ckpt, out, data, epochs, lr, c, vf_coef, batch, max_rows, imitate=0.
     obs, state, maskb = cat("obs"), cat("state"), cat("mask")
     cand, dv, value = cat("cand").astype(np.int64), cat("dv"), cat("value")
     # Item 2: the table bot's move where it builds or trades (not end turn, not a declaration), else -1.
-    table = cat("table").astype(np.int64) if imitate and all("table" in z for z in zs) else -np.ones(len(cand), np.int64)
+    table = np.concatenate([z["table"].astype(np.int64) if "table" in z else -np.ones(len(z["action"]), np.int64)
+                            for z in zs]) if imitate else -np.ones(len(cand), np.int64)
     act_decl, act_place = layout["actions"]["declare"], layout["actions"]["place"]
     table[(table <= 0) | ((table >= act_decl) & (table < act_place))] = -1
     if no_declare_bonus:
