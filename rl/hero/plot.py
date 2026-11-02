@@ -178,8 +178,8 @@ def draw(theme_name, rows, sonnet, out_paths):
              "itself and an evolved rival*.", fontsize=16, color=t["ink2"])
     n_s = sum(r["games"] for r in pts)
     foot = ("* Evolved by program synthesis [read: Claude keeps rewriting the bot and we keep whatever wins].\n"
-            "The bot it copied is an older rule-based bot. The bot at our tables today is stronger: our best "
-            "checkpoint wins 24% against it (PR #31).\n"
+            "The bot it copied is an older rule-based bot. The bot at our tables today is stronger: the final "
+            "checkpoint wins 18% against it across nine worlds, where an equal player wins 25%.\n"
             "Bot games: 800 per point on Island and Not Catan, with 95% intervals.\n"
             f"Sonnet: {n_s} games on Island, our bot in every seat in turn. Sonnet gets only our bot's moves "
             "(no laws, talk or player trades). Small samples, so wide bars.")
