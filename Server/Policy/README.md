@@ -6,10 +6,14 @@ setting, bot seats play the rule-based bot of `Server/BotCore.lean`, as before. 
 ## Files
 
 - `Layout.lean`, `Obs.lean`: what the network reads, and its actions. A copy of the training harness's
-  `rl/lean/CharterRL/` (branch `rl-harness` at `89a3a51`, layout version 2, the layout of `entity2`'s candidates),
-  cut to what one decision needs.
+  `rl/lean/CharterRL/` (branch `rl-harness` at `52ce36e`, layout version 2), cut to what one decision needs. It
+  keeps the optional table of moves (`move_rows`), which runs `Engine.step` once per legal action, and the harness's
+  legality rules: no early end turn in setup while a placement is legal, and no bank trade that undoes the seat's
+  last one this turn.
 - `Net.lean`: the network in plain Lean (entity encoder, MinGRU, linear decoder, pointer decoder over the rows of
-  `places` and over bank trades), and the reader of the weights file. No GPU, no Python, no new library.
+  `places`, over bank trades, and, for a network with per-move rows, over the rows of `moves`), and the reader of
+  the weights file. No GPU, no Python, no new library. With per-move rows, each `moves` row's `action` column is a
+  routing number: the encoder reads 0 there, and the row's score is added to that action.
 - `Bot.lean`: one decision, the seat's memory, and the switch `CHARTER_BOT`.
 - `Server/Player.lean`: `trained` is one more player beside `human` and `bot`. It gets a `Situation` and answers
   with events; the engine has the final word, as for the others.
@@ -23,7 +27,9 @@ setting, bot seats play the rule-based bot of `Server/BotCore.lean`, as before. 
 python3 scripts/policy_weights.py CKPT.bin --out Server/Policy/policy.chpw --gru-state carry
 ```
 
-`CKPT.bin.json` must sit beside the checkpoint. The file is a header (sizes, action offsets and the state
+`CKPT.bin.json` must sit beside the checkpoint. With `moves` (or `settings.move_rows`) in the meta, the file gets
+format 3: the header also names the table of moves and its action column, and the server builds the larger
+observation. The file is a header (sizes, action offsets and the state
 rule) and then the checkpoint's floats, unchanged. The server refuses a file whose layout or sizes do not match,
 and says why. `--gru-state` is needed when the meta has no `gru_state`; see below.
 

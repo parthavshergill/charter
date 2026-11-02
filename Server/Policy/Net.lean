@@ -15,7 +15,8 @@ All numbers are little-endian.
    format version (2; version 1 files have no item 5), layout version, `E` (size of one table row
    after encoding), `hidden`, `layers`, `act_size` (number of actions),
    `pointer` (0 none; 1 and 2 layout 1: spots by kind, links, and with 2
-   bank trades; 3 layout 2: rows of `places`, and bank trades), `act_spot`
+   bank trades; 3 layout 2: rows of `places`, and bank trades; 4 the same plus
+   each row of the table of moves, scored into its own action), `act_spot`
    (the first place action, for pointer 3), `act_link`, `act_bank` (where
    the pointer scores go in the action list), `ntables`.
 3. For each table: three unsigned 32-bit integers (offset, rows, width).
@@ -28,6 +29,8 @@ All numbers are little-endian.
 5. One unsigned 32-bit integer: the state rule, how the recurrent state
    moves between one seat's decisions (`StateRule`): 0 `carry`, 1 `turn`,
    2 `zero`. It must match how the checkpoint was trained.
+   Format version 3 adds two more: the table number of the table of moves
+   (2^32-1 for none), and the column holding each moves row's action number.
 6. The weights: 32-bit floats, exactly as in the PufferLib `.bin` file.
    Each block is padded with zeros up to a multiple of 8 floats. Blocks, in
    order, all row-major:
@@ -35,7 +38,7 @@ All numbers are little-endian.
    - `out`, `hidden x (ntables*E)`;
    - `decoder`, `(act_size+1) x hidden` (the last row is the value head; it
      is not used here);
-   - if `pointer > 0`: `ptr`, `(2E, 4E or 3E for pointer 1, 2 or 3) x hidden`;
+   - if `pointer > 0`: `ptr`, `(2E, 4E, 3E or 4E for pointer 1, 2, 3 or 4) x hidden`;
    - one MinGRU block per layer, `(3*hidden) x hidden`.
 
 So converting a PufferLib checkpoint is: header bytes, then the `.bin` bytes.
@@ -105,6 +108,11 @@ structure Net where
   linksIdx : Nat
   /-- Table number of the `resources` table. -/
   resourcesIdx : Nat
+  /-- The table of moves, if the network reads one (`move_rows`). Its rows are legal actions; column
+  `movesActionCol` holds each row's action number. The encoder reads 0 there, and pointer 4 adds the row's score to
+  that action. -/
+  movesIdx : Option Nat := none
+  movesActionCol : Nat := 1
   /-- One input block per table, `E x width`. -/
   wIn : Array FloatArray
   /-- Mixes the pooled tables into one hidden vector, `hidden x (ntables*E)`. -/
@@ -141,7 +149,8 @@ def Net.obsSize (n : Net) : Nat :=
 
 /-- Number of rows in the pointer block: 0, `2E` or `4E`. -/
 def ptrRows (pointer e : Nat) : Nat :=
-  if pointer == 0 then 0 else if pointer == 1 then 2 * e else if pointer == 2 then 4 * e else 3 * e
+  if pointer == 0 then 0 else if pointer == 1 then 2 * e else if pointer == 2 then 4 * e
+  else if pointer == 3 then 3 * e else 4 * e
 
 /-- Parse a weights file. Fails with a message if the magic, version, sizes
 or table numbers are wrong. -/
@@ -151,12 +160,13 @@ def Net.read (b : ByteArray) : Except String Net := do
   if b.extract 0 4 != "CHPW".toUTF8 then
     throw "weights file: missing magic bytes CHPW"
   let h (k : Nat) : Nat := (u32At b (4 + 4 * k)).toNat
-  if h 0 != 2 then throw s!"weights file: format version {h 0}, expected 2 (it records the state rule)"
+  if h 0 != 2 && h 0 != 3 then
+    throw s!"weights file: format version {h 0}, expected 2 or 3 (version 3 adds the table of moves)"
   let e := h 2; let hid := h 3; let layers := h 4; let act := h 5
   let pointer := h 6; let nt := h 10
-  if pointer > 3 then throw s!"weights file: pointer must be 0, 1, 2 or 3, got {pointer}"
+  if pointer > 4 then throw s!"weights file: pointer must be 0 to 4, got {pointer}"
   if e == 0 || hid == 0 || nt == 0 then throw "weights file: E, hidden and ntables must be positive"
-  let headerBytes := 4 + 4 * (11 + 3 * nt + 5)
+  let headerBytes := 4 + 4 * (11 + 3 * nt + (if h 0 == 3 then 7 else 5))
   if b.size < headerBytes then
     throw s!"weights file: header needs {headerBytes} bytes, got {b.size}"
   let mut tables : Array NetTable := #[]
@@ -164,6 +174,12 @@ def Net.read (b : ByteArray) : Except String Net := do
     tables := tables.push { offset := h (11 + 3*t), rows := h (12 + 3*t), width := h (13 + 3*t) }
   let idx (k : Nat) := h (11 + 3 * nt + k)
   let kinds := idx 0; let spots := idx 1; let links := idx 2; let res := idx 3
+  -- Version 3: the table of moves (its number, or 2^32-1 for none) and the column of each row's action number.
+  let movesIdx : Option Nat := if h 0 == 3 && idx 5 < nt then some (idx 5) else none
+  let movesActionCol := if h 0 == 3 then idx 6 else 0
+  if pointer == 4 && movesIdx.isNone then throw "weights file: pointer 4 needs a table of moves"
+  if let some mi := movesIdx then
+    if movesActionCol ≥ tables[mi]!.width then throw "weights file: the moves action column is past the table's width"
   let stateRule ← match idx 4 with
     | 0 => pure StateRule.carry | 1 => pure .turn | 2 => pure .zero
     | k => throw s!"weights file: state rule {k}, expected 0, 1 or 2"
@@ -178,7 +194,7 @@ def Net.read (b : ByteArray) : Except String Net := do
       throw "weights file: pointer table number out of range"
     let tk := tables[kinds]!; let ts := tables[spots]!; let tl := tables[links]!
     let tr := tables[res]!
-    if pointer == 3 then
+    if pointer ≥ 3 then
       if h 7 + ts.rows > act then throw "weights file: place scores run past act_size"
       if h 9 + tr.rows * tr.rows > act then throw "weights file: bank scores run past act_size"
     else
@@ -208,7 +224,7 @@ def Net.read (b : ByteArray) : Except String Net := do
   return { layoutVersion := h 1, E := e, hidden := hid, layers, actSize := act, pointer,
            actSpot := h 7, actLink := h 8, actBank := h 9, tables,
            kindsIdx := kinds, spotsIdx := spots, linksIdx := links, resourcesIdx := res,
-           stateRule, wIn, wOut, decoder := dec, ptr, grus }
+           stateRule, movesIdx, movesActionCol, wIn, wOut, decoder := dec, ptr, grus }
 
 /-- The recurrent state at the start of a game: zeros, one vector per layer. -/
 def Net.initState (n : Net) : Array FloatArray :=
@@ -264,8 +280,17 @@ def minGruStep (w : FloatArray) (hid : Nat) (x s : FloatArray) : FloatArray × F
 /-- Encode each table: every row goes through its input block and a ReLU.
 Returns the encoded rows of every table (`rows x E`, padding rows included)
 and the hidden vector made from the average over the real rows. -/
-def Net.encode (n : Net) (obs : FloatArray) : Array FloatArray × FloatArray := Id.run do
+def Net.encode (n : Net) (obs0 : FloatArray) : Array FloatArray × FloatArray := Id.run do
   let e := n.E
+  -- The moves table's action column is a routing number, not a feature: the encoder reads 0 there.
+  let obs := match n.movesIdx with
+    | none => obs0
+    | some mi => Id.run do
+      let t := n.tables[mi]!
+      let mut o := obs0
+      for row in [0:t.rows] do
+        o := o.set! (t.offset + row * t.width + n.movesActionCol) 0.0
+      return o
   let mut keep : Array FloatArray := #[]
   let mut pooled := FloatArray.emptyWithCapacity (n.tables.size * e)
   for ti in [0:n.tables.size] do
@@ -293,10 +318,10 @@ def Net.encode (n : Net) (obs : FloatArray) : Array FloatArray × FloatArray := 
 /-- Add the pointer scores: spot actions score a (kind, spot) pair, link
 actions score a link, bank actions score a (give, get) resource pair. -/
 def Net.addPointer (n : Net) (keep : Array FloatArray) (h : FloatArray)
-    (logits : FloatArray) : FloatArray := Id.run do
+    (logits : FloatArray) (obs : FloatArray := FloatArray.empty) : FloatArray := Id.run do
   let e := n.E
   let q := matVec n.ptr (ptrRows n.pointer e) n.hidden h
-  if n.pointer == 3 then
+  if n.pointer ≥ 3 then
     -- Layout 2: one score per row of `places` (its table number is in the `spots` slot), and bank trades.
     let rp := keep[n.spotsIdx]!; let np := n.tables[n.spotsIdx]!.rows
     let rr := keep[n.resourcesIdx]!; let nr := n.tables[n.resourcesIdx]!.rows
@@ -320,6 +345,20 @@ def Net.addPointer (n : Net) (keep : Array FloatArray) (h : FloatArray)
       for j in [0:nr] do
         let a := n.actBank + i * nr + j
         out := out.set! a (out[a]! + (give[i]! + get[j]!))
+    -- Pointer 4: each real row of the moves table adds its score to its own action.
+    if n.pointer == 4 then
+      if let some mi := n.movesIdx then
+        let t := n.tables[mi]!
+        let rm := keep[mi]!
+        for m in [0:t.rows] do
+          let base := t.offset + m * t.width
+          if obs[base]! > 0.5 then
+            let a := (obs[base + n.movesActionCol]!).round.toUInt64.toNat
+            if a < out.size then
+              let mut sc := 0.0
+              for i in [0:e] do
+                sc := sc + rm[m * e + i]! * q[3 * e + i]!
+              out := out.set! a (out[a]! + sc)
     return out
   let rk := keep[n.kindsIdx]!; let rs := keep[n.spotsIdx]!; let rl := keep[n.linksIdx]!
   let nk := n.tables[n.kindsIdx]!.rows; let ns := n.tables[n.spotsIdx]!.rows
@@ -376,7 +415,7 @@ def Net.forward (n : Net) (obs : FloatArray) (state : Array FloatArray) :
     x := y; newState := newState.push s2
   let y := matVec n.decoder (n.actSize + 1) n.hidden x
   let logits := FloatArray.mk (y.data.extract 0 n.actSize)
-  let logits := if n.pointer > 0 then n.addPointer keep x logits else logits
+  let logits := if n.pointer > 0 then n.addPointer keep x logits obs else logits
   return (logits, newState)
 
 /-- The legal action with the highest logit. Ties go to the lowest action

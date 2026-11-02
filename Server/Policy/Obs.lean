@@ -4,7 +4,7 @@ import Server.Policy.Layout
 /-!
 # Observations and actions for the trained policy
 
-The observation builder and the action decoding of the training harness (`rl/lean/CharterRL/` at commit `89a3a51`
+The observation builder and the action decoding of the training harness (`rl/lean/CharterRL/` at commit `52ce36e`
 on branch `rl-harness`, layout version 2), brought across with only what one decision needs:
 
 - `Tables`, `Episode`: what is fixed for a game. Rows of `resources` and `kinds` are in the game's own order
@@ -12,7 +12,9 @@ on branch `rl-harness`, layout version 2), brought across with only what one dec
 - `placeList`, `legal`, `decode`: the actions on offer, each asked of the engine, and the event for an action.
 - `template`, `observe`: the numbers the network reads, for one seat.
 
-Removed: the table of moves (off in training), the environment's law library, rewards, opponents, random maps.
+Kept: the optional table of moves (`move_rows`), for checkpoints trained with it, and the harness's legality rules at
+`52ce36e` (no early end turn in setup while a placement is legal; no bank trade that undoes the last one).
+Removed: the environment's law library, rewards, opponents, random maps.
 The code that is kept is the harness's, line for line. `scripts/policy_obs_compare.sh` checks that it writes the
 same numbers as the harness on the same games: on 470 decisions over every world they match, except the law-shape
 columns of AI Bubble's and Pirate Republic's founding laws, which `main` rewrote after `89a3a51` (`f78dddd`).
@@ -287,7 +289,8 @@ def decode (T : Tables) (ep : Episode) (places : Array Move) (d : Decision) (a :
 /-- Every action on offer now, with its event, by asking the engine. Ending the turn needs no asking: the rules
 accept it on a seat's own turn, and theorem `endTurnNow_some` says that it cannot fail. Placements come from
 `places`, which `placeList` made by asking the engine about each. -/
-def legal (T : Tables) (ep : Episode) (places : Array Move) (s : State G) (d : Decision) : List (Nat × Event) :=
+def legal (T : Tables) (ep : Episode) (places : Array Move) (s : State G) (d : Decision)
+    (undo : Option (Res × Res) := Option.none) : List (Nat × Event) :=
   match d with
   | .none => []
   | .vote seat id _ =>
@@ -296,10 +299,14 @@ def legal (T : Tables) (ep : Episode) (places : Array Move) (s : State G) (d : D
   | .turn seat =>
     let end_ : List (Nat × Event) := if s.isTurnOf seat then [(actEnd, .move seat .endTurn)] else []
     let rows := ((places.toList.take maxPlaceRows).zipIdx).map fun (m, i) => (actPlace + i, Event.move seat m)
-    if s.phase == .setup then end_ ++ rows else
+    -- In setup, end turn is offered only when nothing can be placed: the engine allows ending a setup turn early,
+    -- but that gives up a free opening piece, and policies kept doing it.
+    if s.phase == .setup then (if rows.isEmpty then end_ else []) ++ rows else
     let names := ep.rowRes.toList
+    -- `undo` is the trade that would reverse this seat's last bank trade of this turn: never worth making, since the
+    -- bank takes its rate both ways, so it is not offered (the engine would accept it).
     let trades := names.flatMap fun g => names.filterMap fun h =>
-      if g == h then Option.none else some (Move.bankTrade g h)
+      if g == h || undo == some (g, h) then Option.none else some (Move.bankTrade g h)
     let declares := if T.declares then names.flatMap fun r => declareLevels.toList.map (Move.declare r) else []
     let others := (trades ++ declares).filterMap fun m =>
       if isLegal s seat m then (encodeMove ep places m).map (·, .move seat m) else Option.none
@@ -331,6 +338,7 @@ private def oSpots := offsetOf "spots"
 private def oLaws := offsetOf "laws"
 private def oProposal := offsetOf "proposal"
 private def oPlaces := offsetOf "places"
+private def oMoves := baseSize
 
 private def cG (name : String) := tGlobal.col name
 private def gVote := cG "decide_vote"
@@ -457,6 +465,25 @@ private def qPoints := cQ "points_change"
 private def qMyNet := cQ "next_turn_my_net"
 private def qCost := cQ "cost_change"
 
+private def cM (name : String) := tMoves.col name
+private def mAction := cM "action"
+private def mEnd := cM "is_end"
+private def mVoteNo := cM "is_vote_no"
+private def mVoteYes := cM "is_vote_yes"
+private def mBank := cM "is_bank"
+private def mDeclare := cM "is_declare"
+private def mLink := cM "is_link"
+private def mSpot := cM "is_spot"
+private def mUpgrade := cM "is_upgrade"
+private def mAttach := cM "is_attach"
+private def mExpected := cM "expected"
+private def mEnds := cM "ends_game"
+private def mWin := cM "i_win"
+private def mPoints := cM "points"
+private def mGoods := cM "goods"
+private def mMyHolding := cM "my_holding"
+private def mMyIncome := cM "my_income"
+
 /-- `real` is column 0 of every table. -/
 private def real := 0
 
@@ -480,8 +507,8 @@ def writeLaws (a : FloatArray) (G : GameDef) (laws : List (Nat × Law)) : FloatA
   return a
 
 /-- Everything an observation of this game has before anyone moves. -/
-def template (T : Tables) (ep : Episode) (G : GameDef) (seats : Nat) (_moveRows : Bool := false) : FloatArray := Id.run do
-  let size := baseSize
+def template (T : Tables) (ep : Episode) (G : GameDef) (seats : Nat) (moveRows : Bool) : FloatArray := Id.run do
+  let size := if moveRows then fullSize else baseSize
   let mut a : FloatArray := (List.range size).foldl (fun a _ => a.push 0) FloatArray.empty
   a := put a tGlobal oGlobal 0 real 1
   a := put a tGlobal oGlobal 0 gTarget (ofNat G.targetPoints / 50)
@@ -657,6 +684,68 @@ private def writeProposal (a : FloatArray) (ep : Episode) (pv : Option Preview) 
       a := at_ a (qCost + row) (pv.cost[row]! / 8)
   return a
 
+/-- The class of an event, as its column in the table of moves. -/
+private def moveClass (rules : Rules) : Event → Nat
+  | .vote _ _ yes => if yes then mVoteYes else mVoteNo
+  | .move _ .endTurn => mEnd
+  | .move _ (.bankTrade ..) => mBank
+  | .move _ (.declare ..) => mDeclare
+  | .move _ (.place k _) =>
+    match (rules.piece? k).map (·.placement) with
+    | some Placement.link => mLink
+    | some Placement.spot => mSpot
+    | some (Placement.upgrade _) => mUpgrade
+    | _ => mAttach
+  | _ => mEnd
+
+/-- The table of moves: for each action on offer, what the engine says it would change. Ending the turn rolls the
+dice, and a seat must not see the roll, so that row is what `predictNextTurn` gives on average over the dice. -/
+private def writeMoves (a : FloatArray) (ep : Episode) (rules : Rules) (s : State G) (me seats : Nat)
+    (acts : List (Nat × Event)) (held income : Array Nat) : FloatArray := Id.run do
+  let mut a := a
+  let w := tMoves
+  let nres := ep.rowRes.size
+  let probe : State G := { s with journal := [] }
+  let goodsOf (h : Array Nat) (q : Nat) : Nat :=
+    (List.range nres).foldl (fun n r => n + h[q * nres + r]!) 0
+  let mut row := 0
+  for (action, ev) in acts do
+    if maxMoveRows ≤ row then
+      a := put a tGlobal oGlobal 0 gOver 1
+      break
+    a := put a w oMoves row real 1
+    a := put a w oMoves row mAction (ofNat action)
+    a := put a w oMoves row (moveClass rules ev) 1
+    match ev with
+    | .move _ .endTurn =>
+      a := put a w oMoves row mExpected 1
+      let zero (n : Nat) : Array Float := Array.replicate n 0
+      let (net, myRes) := expectedTurn ep s me seats 1 (zero maxSeats) (zero maxRes)
+      for i in [0:seats] do
+        a := put a w oMoves row (mGoods + i) (net[i]! / 10)
+      for r in [0:nres] do
+        a := put a w oMoves row (mMyHolding + r) (myRes[r]! / 4)
+    | _ =>
+      match Engine.step G probe ev with
+      | .error _ => pure ()
+      | .ok s' =>
+        let held' := holdings ep s' seats
+        for i in [0:seats] do
+          let q := (me + i) % seats
+          a := put a w oMoves row (mPoints + i) ((ofNat (s'.pointsOf q) - ofNat (s.pointsOf q)) / 5)
+          a := put a w oMoves row (mGoods + i) ((ofNat (goodsOf held' q) - ofNat (goodsOf held q)) / 10)
+        let income' := incomes ep s'.rules s' seats
+        for r in [0:nres] do
+          let at_ := me * nres + r
+          a := put a w oMoves row (mMyHolding + r) ((ofNat held'[at_]! - ofNat held[at_]!) / 4)
+          a := put a w oMoves row (mMyIncome + r) ((ofNat income'[at_]! - ofNat income[at_]!) / 6)
+        if s'.phase == .ended then
+          a := put a w oMoves row mEnds 1
+          if s'.winner == some me then a := put a w oMoves row mWin 1
+    row := row + 1
+  return a
+
+/-- The table of legal placements, in `placeOrder`. -/
 private def writePlaces (a : FloatArray) (T : Tables) (ctx : Ctx G) (ep : Episode) (rules : Rules) (s : State G) (me : Nat)
     (places : Array Move) (free reach : Array Bool) (demand : Array Nat) (held income : Array Nat) : FloatArray :=
     Id.run do
@@ -720,7 +809,7 @@ private def writePlaces (a : FloatArray) (T : Tables) (ctx : Ctx G) (ep : Episod
   return a
 
 /-- The whole observation for the seat that must decide. `base` is the game's template. -/
-def observe (T : Tables) (ep : Episode) (ctx : Ctx G) (base : FloatArray) (s : State G)
+def observe (T : Tables) (ep : Episode) (ctx : Ctx G) (moveRows : Bool) (base : FloatArray) (s : State G)
     (d : Decision) (places : Array Move) (free reach : Array Bool) (pv : Option Preview) : FloatArray := Id.run do
   let some me := d.seat? | return base
   let mut a := base
@@ -873,6 +962,8 @@ def observe (T : Tables) (ep : Episode) (ctx : Ctx G) (base : FloatArray) (s : S
   -- The legal placements.
   if let .turn _ := d then
     a := writePlaces a T ctx ep rules s me places free reach demand held income
+  if moveRows then
+    a := writeMoves a ep rules s me seats (legal T ep places s d) held income
   return a
 
 end CharterServer.Policy

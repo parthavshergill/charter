@@ -37,6 +37,8 @@ V2_TABLES = [
 # act_spot holds the first place action; the pointer's spots slot holds `places`.
 V2 = dict(layout_version=2, act_size=515, act_spot=387, act_link=387, act_bank=3,
           tables=V2_TABLES, pointer_tables=("kinds", "places", "places", "resources"))
+# Layout 2 with per-move rows (move_rows=1): a ninth table, `moves`, whose column 1 is each row's action number.
+V2M = dict(V2, tables=V2_TABLES + [("moves", 11465, 64, 58)], moves_table="moves", moves_action_col=1)
 LAYOUTS = {1: V1, 2: V2}
 
 
@@ -48,15 +50,19 @@ STATE_RULES = {"carry": 0, "turn": 1, "zero": 2}
 
 
 def header_bytes(layout, E, hidden, layers, pointer, state_rule, act_size=None):
+    """Format 2, or format 3 when the layout has a table of moves."""
     """The weights-file header (magic + UInt32s) for this layout and model."""
     tables = layout["tables"]
     names = [t[0] for t in tables]
-    vals = [2, layout["layout_version"], E, hidden, layers, act_size or layout["act_size"], pointer,
+    moves = layout.get("moves_table")
+    vals = [3 if moves else 2, layout["layout_version"], E, hidden, layers, act_size or layout["act_size"], pointer,
             layout["act_spot"], layout["act_link"], layout["act_bank"], len(tables)]
     for _, off, rows, width in tables:
         vals += [off, rows, width]
     vals += [names.index(n) for n in layout["pointer_tables"]]
     vals += [STATE_RULES[state_rule]]
+    if moves:
+        vals += [names.index(moves), layout["moves_action_col"]]
     return b"CHPW" + struct.pack("<%dI" % len(vals), *vals)
 
 
@@ -65,7 +71,7 @@ def block_shapes(widths, E, hidden, layers, act_size, pointer):
     shapes = [(E, w) for w in widths]
     shapes += [(hidden, len(widths) * E), (act_size + 1, hidden)]
     if pointer:
-        shapes.append(({1: 2, 2: 4, 3: 3}[pointer] * E, hidden))
+        shapes.append(({1: 2, 2: 4, 3: 3, 4: 4}[pointer] * E, hidden))
     shapes += [(3 * hidden, hidden)] * layers
     return shapes
 
@@ -74,13 +80,14 @@ def read_weights(path):
     b = open(path, "rb").read()
     assert b[:4] == b"CHPW", "missing magic"
     h = lambda k: struct.unpack_from("<I", b, 4 + 4 * k)[0]
-    assert h(0) == 2, "format version"
+    assert h(0) in (2, 3), "format version"
     E, hidden, layers, act, pointer = h(2), h(3), h(4), h(5), h(6)
     nt = h(10)
     tables = [(h(11 + 3 * t), h(12 + 3 * t), h(13 + 3 * t)) for t in range(nt)]
     idx = [h(11 + 3 * nt + k) for k in range(4)]
     rule = h(11 + 3 * nt + 4)
-    pos = 4 + 4 * (11 + 3 * nt + 5)
+    moves_idx, act_col = (h(11 + 3 * nt + 5), h(11 + 3 * nt + 6)) if h(0) == 3 else (None, None)
+    pos = 4 + 4 * (11 + 3 * nt + (7 if h(0) == 3 else 5))
     blocks = []
     for r, c in block_shapes([t[2] for t in tables], E, hidden, layers, act, pointer):
         a = np.frombuffer(b, dtype="<f4", count=r * c, offset=pos).astype(np.float64)
@@ -88,7 +95,8 @@ def read_weights(path):
         pos += 4 * pad8(r * c)
     assert pos == len(b), "size mismatch: expected %d bytes, got %d" % (pos, len(b))
     net = dict(E=E, hidden=hidden, layers=layers, act=act, pointer=pointer,
-               act_spot=h(7), act_link=h(8), act_bank=h(9), tables=tables, idx=idx, rule=rule)
+               act_spot=h(7), act_link=h(8), act_bank=h(9), tables=tables, idx=idx, rule=rule,
+               moves_idx=moves_idx if moves_idx is not None and moves_idx < nt else None, act_col=act_col)
     net["w_in"] = blocks[:nt]
     net["w_out"], net["decoder"] = blocks[nt], blocks[nt + 1]
     k = nt + 2
@@ -118,6 +126,14 @@ def mingru_step(W, x, state):
 def forward(net, obs, state):
     E = net["E"]
     keep, pooled = [], []
+    routes = None
+    if net.get("moves_idx") is not None:
+        # The moves table's action column routes each real row's score, and the encoder reads 0 there.
+        off, rows, width = net["tables"][net["moves_idx"]]
+        cols = off + np.arange(rows) * width + net["act_col"]
+        routes = (np.rint(obs[cols]).astype(np.int64), obs[off + np.arange(rows) * width] > 0.5)
+        obs = obs.copy()
+        obs[cols] = 0
     for (off, rows, width), w in zip(net["tables"], net["w_in"]):
         x = obs[off:off + rows * width].reshape(rows, width)
         real = x[:, 0] > 0.5
@@ -130,16 +146,22 @@ def forward(net, obs, state):
         x, s2 = mingru_step(W, x, s)
         new_state.append(s2)
     logits = (net["decoder"] @ x)[:-1]
-    if net["pointer"] == 3:   # layout 2: rows of places, and bank trades (entity_numpy.pointer_scores)
+    if net["pointer"] in (3, 4):   # layout 2: rows of places, bank trades, and with 4 the moves rows
         _, pi, _, ri = net["idx"]
         rp, rr = keep[pi], keep[ri]
         q = net["ptr"] @ x
         out = np.zeros(net["act"])
         a = net["act_spot"]
         out[a:a + rp.shape[0]] = rp @ q[:E]
-        bank = (rr @ q[E:2 * E])[:, None] + (rr @ q[2 * E:])[None, :]
+        bank = (rr @ q[E:2 * E])[:, None] + (rr @ q[2 * E:3 * E])[None, :]
         a = net["act_bank"]
         out[a:a + bank.size] = bank.reshape(-1)
+        if net["pointer"] == 4:
+            acts, real = routes
+            score = keep[net["moves_idx"]] @ q[3 * E:4 * E]
+            for m in np.flatnonzero(real):
+                if 0 <= acts[m] < net["act"]:
+                    out[acts[m]] += score[m]
         logits = logits + out
     elif net["pointer"]:
         ki, si, li, ri = net["idx"]
@@ -164,6 +186,8 @@ def forward(net, obs, state):
 
 def make_synthetic(out, E=32, hidden=128, layers=1, pointer=3, seed=1234, scale=0.1, state_rule="carry", layout=None):
     layout = layout or V2
+    if pointer == 4:
+        layout = V2M
     act = layout["act_size"] + 1   # the trainer's decoder also scores the no-op
     rng = np.random.default_rng(seed)
     payload = bytearray()
@@ -178,7 +202,7 @@ def make_synthetic(out, E=32, hidden=128, layers=1, pointer=3, seed=1234, scale=
 
 
 def make_obs(out, n, seed=99, layout=None):
-    layout = layout or V2
+    layout = layout or (V2M if len(sys.argv) > 4 and sys.argv[4] == "moves" else V2)
     rng = np.random.default_rng(seed)
     size = sum(t[2] * t[3] for t in layout["tables"])
     lines = []
@@ -224,7 +248,8 @@ def expect(weights, obs_path, out):
 
 def main(argv):
     if len(argv) >= 2 and argv[0] == "make-synthetic":
-        make_synthetic(argv[1], state_rule=argv[2] if len(argv) >= 3 else "carry")
+        make_synthetic(argv[1], state_rule=argv[2] if len(argv) >= 3 else "carry",
+                       pointer=int(argv[3]) if len(argv) >= 4 else 3)
     elif len(argv) >= 3 and argv[0] == "make-obs":
         make_obs(argv[1], int(argv[2]))
     elif len(argv) >= 4 and argv[0] == "expect":

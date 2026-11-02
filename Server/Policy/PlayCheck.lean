@@ -73,11 +73,11 @@ def playOne (net : Net) (spec : GameSpec) (seats seed : Nat) (policySeats : List
               if seat == policySeats.headD 0 then
                 if lastTurn != some s.turnsTaken then h.putStrLn "turn"
                 lastTurn := some s.turnsTaken
-                h.putStrLn (" ".intercalate ((observationFor g s seat).toList.map toString))
+                h.putStrLn (" ".intercalate ((observationFor g s seat net.movesIdx.isSome).toList.map toString))
             decisions := decisions + 1
             ns := ns + (t1 - t0)
             -- The move it plays carries the state; count where a zero state would have chosen another move.
-            match turnEventFrom net (mem.stateOf net s seat) g s seat, turnEvent net g s seat with
+            match turnEventFrom net (mem.stateOf net s seat) g s seat (mem.undoFor s seat), turnEvent net g s seat (mem.undoFor s seat) with
             | .ok (some (evC, _, _)), .ok (some (evZ, _)) =>
               if (Bots.eventJson? evC).map (·.compress) != (Bots.eventJson? evZ).map (·.compress) then differs := differs + 1
             | _, _ => pure ()

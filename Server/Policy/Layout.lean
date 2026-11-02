@@ -3,10 +3,11 @@ import Charter.Words.Game
 /-!
 # The layout of observations and actions (layout version 2)
 
-A copy of the training harness's `rl/lean/CharterRL/Layout.lean` at commit `89a3a51` (layout version 2, the
-layout of `entity2`'s `CANDIDATE 1`), without the optional table of moves (no shipped policy reads it) and without
-the JSON printer. The trained network reads numbers by position, so this file must match the layout the checkpoint
-was trained on, number for number. The weights file records the layout version, and the server checks it.
+A copy of the training harness's `rl/lean/CharterRL/Layout.lean` at commit `52ce36e` (layout version 2; unchanged
+since `89a3a51`), without the JSON printer. The optional table of moves (`move_rows`) is kept: a checkpoint trained
+with it reads `fullSize` numbers, one without it reads `baseSize`. The trained network reads numbers by position, so
+this file must match the layout the checkpoint was trained on, number for number. The weights file records the
+layout version and the tables, and the server checks both.
 -/
 
 namespace CharterServer.Policy
@@ -30,6 +31,9 @@ def maxLaws : Nat := Charter.maxLawsInForce
 `placeOrder` have rows, and `place_overflow` is 1. A turn always has another action (end turn), and a setup turn
 always has one row, so a seat is never left without a legal action. -/
 def maxPlaceRows : Nat := 128
+/-- Rows of the optional table of moves. Moves past this have no row, and `moves_overflow` says so. -/
+def maxMoveRows : Nat := 64
+
 /-- The numbers a seat can declare. -/
 def declareLevels : Array Nat := #[0, 1, 2, 3, 4, 6, 8, 12]
 
@@ -140,12 +144,20 @@ def tPlaces : Table :=
         , "demand_value", "new_for_me", "free_ends", "reach_me", "points_gain", "yield_gain", "cost_total", "my_short" ]
       ++ across .kinds ["kind"] }
 
+/-- The optional table: one row per legal action, with what the engine says it would change. -/
+def tMoves : Table :=
+  { name := "moves", rows := maxMoveRows
+    cols := ones
+        [ "real", "action", "is_end", "is_vote_no", "is_vote_yes", "is_bank", "is_declare", "is_link", "is_spot"
+        , "is_upgrade", "is_attach", "expected", "ends_game", "i_win" ]
+      ++ across .seats ["points", "goods"] ++ across .res ["my_holding", "my_income"] }
+
 /-- The tables of every observation, in order. -/
 def baseTables : List Table := [tGlobal, tSeats, tResources, tKinds, tSpots, tLaws, tProposal, tPlaces]
 
 def Table.size (t : Table) : Nat := t.rows * t.width
 
-/-- Where a table starts. -/
+/-- Where a table starts. `tMoves` comes after all the others. -/
 def offsetOf (name : String) : Nat :=
   let rec go (ts : List Table) (at_ : Nat) : Nat :=
     match ts with
@@ -154,6 +166,7 @@ def offsetOf (name : String) : Nat :=
   go baseTables 0
 
 def baseSize : Nat := (baseTables.map (·.size)).sum
+def fullSize : Nat := baseSize + tMoves.size
 
 /-! ## Actions
 
@@ -170,6 +183,7 @@ def actPlace : Nat := actDeclare + maxRes * declareLevels.size
 def actSize : Nat := actPlace + maxPlaceRows
 
 #guard baseSize == 11465
+#guard fullSize == 15177
 #guard actSize == 515
 
 end CharterServer.Policy
