@@ -86,7 +86,12 @@ def casts : List (String × List (String × String)) :=
       , ("Nan Tolliver", "a purser who talks in sums and quotes back what you said three rounds ago")
       , ("Ezekiel Thorn", "a master gunner and lay preacher who thunders about the Articles and the Republic")
       , ("Marisol Vane", "a smuggler from Havana who is courteous, amused and never quite answers the question")
-      , ("Jory Quick", "a young powder monkey who has never been to sea this long and says so, loudly") ]) ]
+      , ("Jory Quick", "a young powder monkey who has never been to sea this long and says so, loudly") ])
+  , ("the-pit",
+      [ ("Ambrose Kittredge", "an old-money grain merchant in a silk hat who quotes prices from memory and calls everyone 'my boy'")
+      , ("Delia Fairweather", "a sharp young widow who took over her husband's elevator company and keeps a ledger nobody else may read")
+      , ("Hiram Teague", "a loud farmer's son turned pit trader who shouts every bid and trusts a handshake more than a contract")
+      , ("Otto Brandeis", "a careful miller from Milwaukee who prices everything twice and smiles only at a fair deal") ]) ]
 
 /-- One seat's persona. -/
 structure Persona where

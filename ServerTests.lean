@@ -495,12 +495,13 @@ section Games
 #guard (notCatanSpec.minSeats, notCatanSpec.maxSeats) == (3, 4)
 
 -- New packs go at the end of the list, and only a pack's own mesh files can be served.
-#guard gameSpecs.map (·.id) == ["island", "not-catan", "slime-parliament", "ai-bubble", "strike-the-earth", "pirate-republic", "omerta"]
+#guard gameSpecs.map (·.id) == ["island", "not-catan", "slime-parliament", "ai-bubble", "strike-the-earth", "pirate-republic", "the-pit", "omerta"]
 #guard (meshFolderOf "no-such-hash").isNone
 #guard slimeSpec.meshHashes.all fun h => meshFolderOf h == some slimeSpec.meshFolder
 #guard bubbleSpec.meshHashes.all fun h => meshFolderOf h == some bubbleSpec.meshFolder
 #guard strikeSpec.meshHashes.all fun h => meshFolderOf h == some strikeSpec.meshFolder
 #guard pirateSpec.meshHashes.all fun h => meshFolderOf h == some pirateSpec.meshFolder
+#guard pitSpec.meshHashes.all fun h => meshFolderOf h == some pitSpec.meshFolder
 #guard omertaSpec.meshHashes.all fun h => meshFolderOf h == some omertaSpec.meshFolder
 #guard islandSpec.meshHashes.isEmpty && notCatanSpec.meshHashes.isEmpty
 
@@ -700,6 +701,10 @@ def lawOf (text : String) : Law :=
 #guard (packWords bubbleSpec).length == 4
 #guard (packWords strikeSpec).length == 4
 #guard (packWords pirateSpec).length == 4
+#guard (packWords pitSpec).length == 4
+#guard (packWords islandSpec).isEmpty
+#eval show IO Unit from do
+  let problems := packProblems notCatanSpec ++ packProblems slimeSpec ++ packProblems bubbleSpec ++ packProblems strikeSpec ++ packProblems pirateSpec ++ packProblems pitSpec
 #guard (packWords omertaSpec).length == 3
 #guard (packWords islandSpec).isEmpty
 #eval show IO Unit from do
