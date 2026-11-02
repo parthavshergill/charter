@@ -38,6 +38,24 @@ The Pit is the world furthest from the bar, and wider worlds, chain worlds and l
 
 Choose by the server-like row (`--random-map 0 --laws off`), at 800 games per world. Do not count a win from a declaration that no opponent contests. When the new table bot lands, re-measure CANDIDATE 9 first, and do not compare numbers across that change.
 
+## Wild worlds
+
+The owner wants far wilder games in training, so the policy learns to read rules and does not memorise worlds. The evidence so far: 512 pack worlds in three styles. The fast style moved AI Bubble from 6% to 21%, and Procgen needed about 10,000 levels to close its gap. Plain wider worlds did not help before per-move rows.
+
+`speed` builds `pack-wild`:
+
+1. **Far more worlds.** Tens of thousands of seeds, with a new world each game, and a separate `pack-wild-val`.
+2. **Wilder economies.** Random build trees of any shape the engine allows, including long upgrade chains, goods that convert into each other, odd costs, yields and point values. Few or many goods. Rich and starved boards. Very short and very long games. Odd bank rates and dice.
+3. **Wilder laws.** Dense founding laws from the whole rule language: taxes, dividends, auctions, declarations that pay, round-end transfers, piece moves on a roll, cost changes, worth changes, conditional rewards, repeals.
+4. **Rules that change during the game.** Laws pass and lapse in the middle of training games, because that is what Charter is. This matters most: the policy must cope when the world changes under it.
+5. **Perturbed Island and Not Catan.** Mutate only these two training worlds: costs, points, targets and laws. Do not build from the text, numbers or structure of any held-out shipped world.
+
+Agents may write law ideas in English and have them drafted into the rule language, as the owner's plan always allowed. Every world must pass `G.checks`.
+
+**Keep the worlds honest.** A wild world is no use if it is decided by luck or by doing nothing. Reject a world where a passive seat wins more than its share, where a random seat matches `table`, or where the game is decided in setup. Report the rejection rate, and a coverage check by style. Every observation column should vary.
+
+**`entity4`** runs this beside item 1, from CANDIDATE 9's run: the same recipe on `island,not-catan,pack-wild`, with the switches on. Judge at 30M and 60M on the server-like row, with `pack-wild-val` beside it. Stop if held-out without Pirate Republic has not gained 2 points by 60M. Then try replaying worlds by value loss (PLR). Read games on wild worlds as well, because new worlds can bring new ways to hack: stalls, no-op loops and worlds won by a single trick.
+
 ## `speed`
 
 When the table bot PR merges to `main`, vendor the new bot, signal `HARNESS-READY`, and give the old and new table's win shares by world.
