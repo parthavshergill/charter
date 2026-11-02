@@ -68,8 +68,9 @@ def collect(games, out, seed=7, bot="hand", worlds="island,not-catan", moves=Fal
 
 
 class EntityPolicy(torch.nn.Module):
-    def __init__(self, E, hidden, pointer, moves=False):
-        """pointer: 0 none, 1 places and bank trades (layout 2). moves: per-move rows, and a pointer over them."""
+    def __init__(self, E, hidden, pointer, moves=False, resid=False):
+        """pointer: 0 none, 1 places and bank trades (layout 2). moves: per-move rows, and a pointer over them.
+        resid: the encoder's residual block (charter_entity.cu, CE_RESID)."""
         super().__init__()
         self.tables, self.names, self.moves = (TABLES_M, NAMES_M, True) if moves else (TABLES, NAMES, False)
         self.w_in = torch.nn.ParameterList([torch.nn.Parameter(torch.randn(E, w) * (2 / w) ** 0.5)
@@ -81,13 +82,18 @@ class EntityPolicy(torch.nn.Module):
         self.ptr = (torch.nn.Parameter(torch.randn((4 if moves else 3) * E, hidden) * 0.1 * hidden ** -0.5)
                     if pointer or moves else None)
         self.E = E
+        self.resid = torch.nn.ParameterList([torch.nn.Parameter(torch.ones(1, hidden)),
+                                             torch.nn.Parameter(torch.zeros(1, hidden)),
+                                             torch.nn.Parameter(torch.randn(hidden, hidden) * (2 / hidden) ** 0.5),
+                                             torch.nn.Parameter(torch.zeros(hidden, hidden))]) if resid else None
 
-    def forward(self, obs):
+    def forward(self, obs, state=None):
+        """state: the MinGRU state before this step, (B, hidden); zeros if None."""
         ts = [(o, r, w) for _, o, r, w in self.tables]
         if self.moves:
             obs, macts, mreal = strip_moves(obs, ts, self.names.index("moves"), 1)
-        h = encode(obs, ts, list(self.w_in), self.w_out)
-        x, _ = self.gru(h, torch.zeros_like(h))
+        h = encode(obs, ts, list(self.w_in), self.w_out, list(self.resid) if self.resid is not None else None)
+        x, _ = self.gru(h, torch.zeros_like(h) if state is None else state)
         y = x @ self.decoder.T
         logits = y[:, :ACTS]
         if self.ptr is not None:
@@ -100,7 +106,20 @@ class EntityPolicy(torch.nn.Module):
         return logits, y[:, ACTS]
 
     def blocks(self):
-        return list(self.w_in) + [self.w_out, self.decoder] + ([self.ptr] if self.ptr is not None else []) + [self.gru.w]
+        return (list(self.w_in) + [self.w_out] + (list(self.resid) if self.resid is not None else [])
+                + [self.decoder] + ([self.ptr] if self.ptr is not None else []) + [self.gru.w])
+
+    def load_numpy(self, w_in, w_out, dec, ptr, grus, res=None):
+        """Weights as entity_numpy.read_entity_bin returns them (one GRU layer)."""
+        arrays = list(w_in) + [w_out] + ([np.reshape(a, p.shape) for a, p in zip(res, self.resid)] if res else []) \
+            + [dec] + ([ptr] if ptr is not None else []) + [grus[0]]
+        with torch.no_grad():
+            for p, a in zip(self.blocks(), arrays):
+                assert tuple(p.shape) == tuple(np.shape(a)), (p.shape, np.shape(a))
+                p.copy_(torch.tensor(np.asarray(a, np.float32)))
+
+    def save_puffer(self, path):
+        save_puffer(self, path)
 
 
 def save_puffer(pol, path):

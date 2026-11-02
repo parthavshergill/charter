@@ -111,3 +111,40 @@ def meta_main(ckpt: str, like: str = "", extra: str = ""):
 @app.local_entrypoint()
 def ls_main(run: str):
     print("\n".join(ls.remote(run)))
+
+
+@app.function(cpu=16, memory=32768, timeout=7200, volumes={m.VOL: m.vol})
+def ei_collect(ckpt: str, out_dir: str, games: int, seed0: int, procs: int, extra: str = ""):
+    """rl/entity/expert_iter.py collect, `procs` processes at once, `games` games each, seeds seed0, seed0 + 1, ..."""
+    m.vol.reload()
+    os.makedirs(out_dir, exist_ok=True)
+    jobs = " ".join(f"(python3 rl/entity/expert_iter.py collect {shlex.quote(ckpt)} {out_dir}/part-{seed0 + i}.npz "
+                    f"--games {games} --seed {seed0 + i} {extra} > {out_dir}/part-{seed0 + i}.log 2>&1) &"
+                    for i in range(procs))
+    code, text = m.sh(f"cd {m.SRC}/..; {jobs} wait; tail -n 2 {out_dir}/part-*.log")
+    m.vol.commit()
+    return {"exit": code, "tail": text[-4000:]}
+
+
+@app.function(cpu=16, memory=65536, timeout=7200, volumes={m.VOL: m.vol})
+def ei_distill(args: str):
+    """rl/entity/expert_iter.py distill with these arguments (paths on the volume)."""
+    m.vol.reload()
+    m.sh("pip install -q torch --index-url https://download.pytorch.org/whl/cpu 2>&1 | tail -1")
+    code, text = m.sh(f"cd {m.SRC}/.. && python3 rl/entity/expert_iter.py distill {args}")
+    m.vol.commit()
+    return {"exit": code, "tail": text[-4000:]}
+
+
+@app.local_entrypoint()
+def ei_collect_main(ckpt: str, out_dir: str, games: int = 50, seed0: int = 1, procs: int = 16, extra: str = ""):
+    r = ei_collect.remote(f"{m.VOL}/{ckpt}", f"{m.VOL}/{out_dir}", games, seed0, procs, extra)
+    print(r["tail"])
+    print("exit", r["exit"])
+
+
+@app.local_entrypoint()
+def ei_distill_main(args: str):
+    r = ei_distill.remote(args)
+    print(r["tail"])
+    print("exit", r["exit"])
