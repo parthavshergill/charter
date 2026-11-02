@@ -74,6 +74,11 @@ class EntityNet(FlatNet):
         self.diag = set(diag.split("+")) if diag else set()
         self.diag_log = "log" in self.diag
         self.look = next((d for d in self.diag if d.startswith("look")), None)
+        # `mixKcC`, for example `mix4c0.5`: among the policy's K best actions, pick by logit + C * (V(after) - V(now)).
+        mix = next((d for d in self.diag if d.startswith("mix")), None)
+        self.mix = (int(mix[3:].split("c")[0]), float(mix.split("c")[1])) if mix else None
+        self.timing = "time" in self.diag
+        self.t_sum, self.t_n, self.t_steps, self.diag_name = 0.0, 0, 0, diag
         self.rng = np.random.default_rng(12345)
         self.places_at = next(off for name, off, _, _ in tables if name == "places")
         self._lin = self._ptr = None
@@ -117,7 +122,46 @@ class EntityNet(FlatNet):
             return "declare"
         return "place"
 
+    def tick(self, dt):
+        """Time per decision, kept per process under CHARTER_DIAG_DIR (rl/eval reads nothing from it)."""
+        self.t_sum += dt
+        self.t_n += 1
+        if self.t_n % 50 == 0:
+            import json as _json
+            d = os.environ.get("CHARTER_DIAG_DIR", "/vol/priorart2/diag")
+            os.makedirs(d, exist_ok=True)
+            with open(os.path.join(d, f"time-{self.diag_name}-{os.getpid()}.json"), "w") as f:
+                _json.dump({"variant": self.diag_name, "decisions": self.t_n, "seconds": self.t_sum,
+                            "engine_steps": self.t_steps}, f)
+
+    def choose_mix(self, player, game, obs, mask, logits):
+        k, c = self.mix
+        legal = np.flatnonzero(mask[:len(logits)])
+        if len(legal) <= 1 or game.voting:
+            return None
+        cand = legal[np.argsort(-logits[legal])][:k]
+        seat, v_now, state = game.seat, self._v, player.state
+        best, best_s = None, -np.inf
+        for a in cand:
+            v = v_now
+            if a != 0:
+                g2 = game.copy()
+                g2.step(int(a))
+                self.t_steps += 1
+                if g2.over:
+                    v = float(g2.rewards()[seat])
+                elif g2.seat == seat:
+                    _, v2, _ = self.forward(g2.obs(), state)
+                    v = float(v2)
+            sc = float(logits[a]) + c * (v - v_now)
+            if sc > best_s:
+                best, best_s = int(a), sc
+        self.forward(obs, state)  # restore this decision's parts
+        return best
+
     def choose(self, player, game, obs, mask, logits):
+        if self.mix:
+            return self.choose_mix(player, game, obs, mask, logits)
         if not self.look:
             return None
         legal = np.flatnonzero(mask[:len(logits)])

@@ -77,6 +77,15 @@ class Player:
         _, _, self.state = self.net.forward(x, self.state)
 
     def act(self, game):
+        if getattr(self.net, "timing", False):
+            import time
+            t0 = time.perf_counter()
+            a = self._act(game)
+            self.net.tick(time.perf_counter() - t0)
+            return a
+        return self._act(game)
+
+    def _act(self, game):
         obs = game.obs()
         mask = game.mask()
         self.last_obs = np.array(obs, np.float32)
