@@ -5,6 +5,11 @@
 //                      p_t    = mean of h[r] over rows with x[r][0] = 1, or 0 if none
 //   out                       = W_out [p_0, ..., p_8]
 //
+// With -DCE_RESID (float32 builds only) a residual block follows, with a LayerNorm inside it:
+//   o0 = W_out [p_0, ..., p_8];   z = g * (o0 - mean o0) / sqrt(var o0 + 1e-5) + b
+//   out = o0 + W_r2 relu(W_r1 z)
+// W_r2 starts at 0 in tools/graft_resid.py, so a grafted network plays exactly as before.
+//
 // No biases: column 0 of every real row is 1, so it plays that part.
 // Same shape as ocean/asteroids/asteroids.cu, with a masked mean instead of a
 // max. With a mean, W_out can sit after the pool, which saves a layer per row.
@@ -16,6 +21,10 @@
 #include "charter_entity_layout.h"
 #if defined(CE_MOVES) && !defined(PRECISION_FLOAT)
 #error "per-move rows route each row by its action number (up to 514), which bf16 cannot hold exactly: build with -DPRECISION_FLOAT"
+#endif
+
+#if defined(CE_RESID) && !defined(PRECISION_FLOAT)
+#error "the residual block (CE_RESID) is written for float32 builds: build with -DPRECISION_FLOAT"
 #endif
 
 #ifndef CE_ENTITY_DIM
@@ -32,6 +41,7 @@ static constexpr int CE_E = CE_ENTITY_DIM;  // numbers per row after the shared 
 struct CharterEntityWeights {
     Prec w_in[CE_NUM_TABLES];
     Prec w_out;
+    Prec ln_g, ln_b, w_r1, w_r2;   // CE_RESID: LayerNorm gain and bias (H), then W_r1 and W_r2 (H x H)
     int obs_size, hidden;
 };
 
@@ -45,6 +55,10 @@ struct CharterEntityActivations {
     Prec w_in_grad[CE_NUM_TABLES];
     Prec w_out_grad;
     Prec ext_grad;  // CE_POINTER, training only: gradient from the decoder on relu(h), same layout as ent_h
+    // CE_RESID: o0 = W_out pooled; xhat and rstd of the LayerNorm; z = g xhat + b; u = W_r1 z; v = relu(u)
+    Prec o0, xhat, rstd, z, u, v;
+    Prec grad_v, grad_z, grad_o0;
+    Prec ln_g_grad, ln_b_grad, w_r1_grad, w_r2_grad;
     Prec move_act;  // CE_MOVES: each moves row's action number, (B, rows of moves). The encoder sees 0 in its place.
 };
 
@@ -140,6 +154,91 @@ __global__ void ce_unpool_kernel(precision_t* __restrict__ grad_h,
     grad_h[idx] = from_float(active * (real * g / n + ext));
 }
 
+#ifdef CE_RESID
+static constexpr float CE_LN_EPS = 1e-5f;
+
+// One thread per sample: the LayerNorm of o0 over its H numbers.
+__global__ void ce_ln_forward_kernel(precision_t* __restrict__ xhat, precision_t* __restrict__ rstd,
+        precision_t* __restrict__ z, const precision_t* __restrict__ o0,
+        const precision_t* __restrict__ g, const precision_t* __restrict__ bias, int B, int H) {
+    int b = blockIdx.x * blockDim.x + threadIdx.x;
+    if (b >= B) return;
+    const precision_t* x = o0 + (int64_t)b * H;
+    float mean = 0.0f, var = 0.0f;
+    for (int h = 0; h < H; h++) mean += to_float(x[h]);
+    mean /= H;
+    for (int h = 0; h < H; h++) { float d = to_float(x[h]) - mean; var += d * d; }
+    float r = rsqrtf(var / H + CE_LN_EPS);
+    rstd[b] = from_float(r);
+    for (int h = 0; h < H; h++) {
+        float xh = (to_float(x[h]) - mean) * r;
+        xhat[(int64_t)b * H + h] = from_float(xh);
+        z[(int64_t)b * H + h] = from_float(xh * to_float(g[h]) + to_float(bias[h]));
+    }
+}
+
+__global__ void ce_relu_kernel(precision_t* __restrict__ v, const precision_t* __restrict__ u, int64_t n) {
+    int64_t i = (int64_t)blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) v[i] = from_float(fmaxf(to_float(u[i]), 0.0f));
+}
+
+// grad_u = grad_v where u > 0, in place.
+__global__ void ce_relu_back_kernel(precision_t* __restrict__ gv, const precision_t* __restrict__ u, int64_t n) {
+    int64_t i = (int64_t)blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n && to_float(u[i]) <= 0.0f) gv[i] = from_float(0.0f);
+}
+
+// One thread per sample: grad_o0 = grad_out (the skip) + the LayerNorm's backward of grad_z.
+__global__ void ce_ln_backward_kernel(precision_t* __restrict__ grad_o0, const precision_t* __restrict__ grad_out,
+        const precision_t* __restrict__ grad_z, const precision_t* __restrict__ xhat,
+        const precision_t* __restrict__ rstd, const precision_t* __restrict__ g, int B, int H) {
+    int b = blockIdx.x * blockDim.x + threadIdx.x;
+    if (b >= B) return;
+    int64_t o = (int64_t)b * H;
+    float m1 = 0.0f, m2 = 0.0f;
+    for (int h = 0; h < H; h++) {
+        float d = to_float(grad_z[o + h]) * to_float(g[h]);
+        m1 += d;
+        m2 += d * to_float(xhat[o + h]);
+    }
+    m1 /= H; m2 /= H;
+#if CE_SEEDED_ERROR == 7
+    m2 = 0.0f;  // seeded error: the LayerNorm's variance term dropped
+#endif
+    float r = to_float(rstd[b]);
+    for (int h = 0; h < H; h++) {
+        float d = to_float(grad_z[o + h]) * to_float(g[h]);
+        float skip = CE_SEEDED_ERROR == 8 ? 0.0f : to_float(grad_out[o + h]);  // seeded error 8: the skip dropped
+        grad_o0[o + h] = from_float(skip + r * (d - m1 - to_float(xhat[o + h]) * m2));
+    }
+}
+
+// One block per column h: grad of the gain (sum over b of grad_z * xhat) and of the bias (sum of grad_z).
+__global__ void ce_ln_param_grad_kernel(precision_t* __restrict__ g_grad, precision_t* __restrict__ b_grad,
+        const precision_t* __restrict__ grad_z, const precision_t* __restrict__ xhat, int B, int H) {
+    __shared__ float sg[256], sb[256];
+    int h = blockIdx.x;
+    float ag = 0.0f, ab = 0.0f;
+    for (int b = threadIdx.x; b < B; b += blockDim.x) {
+        float d = to_float(grad_z[(int64_t)b * H + h]);
+        ag += d * to_float(xhat[(int64_t)b * H + h]);
+        ab += d;
+    }
+    sg[threadIdx.x] = ag; sb[threadIdx.x] = ab;
+    __syncthreads();
+    for (int s = blockDim.x / 2; s > 0; s >>= 1) {
+        if (threadIdx.x < s) { sg[threadIdx.x] += sg[threadIdx.x + s]; sb[threadIdx.x] += sb[threadIdx.x + s]; }
+        __syncthreads();
+    }
+    if (threadIdx.x == 0) { g_grad[h] = from_float(sg[0]); b_grad[h] = from_float(sb[0]); }
+}
+
+__global__ void ce_fill_kernel(precision_t* __restrict__ x, float v, int64_t n) {
+    int64_t i = (int64_t)blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) x[i] = from_float(v);
+}
+#endif
+
 static Prec ce_view(Prec& buf, int64_t start, int d0, int d1, int d2) {
     Prec v = {.data = buf.data + start, .shape = {d0, d1, d2}};
     return v;
@@ -160,7 +259,22 @@ static Prec ce_encoder_forward(void* w, void* activations, Prec input, cudaStrea
         a->pooled.data, a->count.data, a->ent_in.data, a->ent_h.data, B);
     Prec pooled = {.data = a->pooled.data, .shape = {B, CE_NUM_TABLES * CE_E}};
     Prec out = {.data = a->out.data, .shape = {B, ew->hidden}};
+#ifdef CE_RESID
+    int H = ew->hidden;
+    Prec o0 = {.data = a->o0.data, .shape = {B, H}};
+    Prec z = {.data = a->z.data, .shape = {B, H}};
+    Prec u = {.data = a->u.data, .shape = {B, H}};
+    Prec v = {.data = a->v.data, .shape = {B, H}};
+    puf_mm(&pooled, &ew->w_out, &o0, stream);
+    ce_ln_forward_kernel<<<grid_size(B), BLOCK_SIZE, 0, stream>>>(
+        a->xhat.data, a->rstd.data, a->z.data, a->o0.data, ew->ln_g.data, ew->ln_b.data, B, H);
+    puf_mm(&z, &ew->w_r1, &u, stream);
+    ce_relu_kernel<<<grid_size((int64_t)B * H), BLOCK_SIZE, 0, stream>>>(a->v.data, a->u.data, (int64_t)B * H);
+    puf_mm(&v, &ew->w_r2, &out, stream);
+    add_kernel<<<grid_size(B * H), BLOCK_SIZE, 0, stream>>>(out.data, o0.data, B * H);
+#else
     puf_mm(&pooled, &ew->w_out, &out, stream);
+#endif
     return out;
 }
 
@@ -170,6 +284,24 @@ static void ce_encoder_backward(void* w, void* activations, Prec grad, cudaStrea
     int B = numel(grad.shape) / ew->hidden;
     int T_E = CE_NUM_TABLES * CE_E;
     Prec g = {.data = grad.data, .shape = {B, ew->hidden}};
+#ifdef CE_RESID
+    {
+        int H = ew->hidden;
+        Prec z = {.data = a->z.data, .shape = {B, H}};
+        Prec v = {.data = a->v.data, .shape = {B, H}};
+        Prec gv = {.data = a->grad_v.data, .shape = {B, H}};
+        Prec gz = {.data = a->grad_z.data, .shape = {B, H}};
+        puf_mm_tn(&g, &v, &a->w_r2_grad, stream);           // (H, H)
+        puf_mm_nn(&g, &ew->w_r2, &gv, stream);              // (B, H)
+        ce_relu_back_kernel<<<grid_size((int64_t)B * H), BLOCK_SIZE, 0, stream>>>(gv.data, a->u.data, (int64_t)B * H);
+        puf_mm_tn(&gv, &z, &a->w_r1_grad, stream);          // (H, H)
+        puf_mm_nn(&gv, &ew->w_r1, &gz, stream);             // (B, H)
+        ce_ln_param_grad_kernel<<<H, 256, 0, stream>>>(a->ln_g_grad.data, a->ln_b_grad.data, gz.data, a->xhat.data, B, H);
+        ce_ln_backward_kernel<<<grid_size(B), BLOCK_SIZE, 0, stream>>>(
+            a->grad_o0.data, grad.data, gz.data, a->xhat.data, a->rstd.data, ew->ln_g.data, B, H);
+        g = {.data = a->grad_o0.data, .shape = {B, H}};
+    }
+#endif
     Prec pooled = {.data = a->pooled.data, .shape = {B, T_E}};
     Prec grad_pooled = {.data = a->grad_pooled.data, .shape = {B, T_E}};
     puf_mm_tn(&g, &pooled, &a->w_out_grad, stream);        // (H, T*E)
@@ -191,6 +323,13 @@ static void ce_encoder_init_weights(void* w, uint64_t* seed, cudaStream_t stream
         puf_kaiming_init(&ew->w_in[t], std::sqrt(2.0f), (*seed)++, stream);
     }
     puf_kaiming_init(&ew->w_out, 1.0f, (*seed)++, stream);
+#ifdef CE_RESID
+    int H = ew->hidden;
+    ce_fill_kernel<<<grid_size(H), BLOCK_SIZE, 0, stream>>>(ew->ln_g.data, 1.0f, H);
+    ce_fill_kernel<<<grid_size(H), BLOCK_SIZE, 0, stream>>>(ew->ln_b.data, 0.0f, H);
+    puf_kaiming_init(&ew->w_r1, std::sqrt(2.0f), (*seed)++, stream);
+    ce_fill_kernel<<<grid_size((int64_t)H * H), BLOCK_SIZE, 0, stream>>>(ew->w_r2.data, 0.0f, (int64_t)H * H);  // starts as identity
+#endif
 }
 
 static void ce_encoder_reg_params(void* w, Allocator* alloc) {
@@ -201,6 +340,17 @@ static void ce_encoder_reg_params(void* w, Allocator* alloc) {
     }
     ew->w_out = {.shape = {ew->hidden, CE_NUM_TABLES * CE_E}};
     alloc_register(alloc, &ew->w_out);
+#ifdef CE_RESID
+    int H = ew->hidden;
+    ew->ln_g = {.shape = {H}};
+    ew->ln_b = {.shape = {H}};
+    ew->w_r1 = {.shape = {H, H}};
+    ew->w_r2 = {.shape = {H, H}};
+    alloc_register(alloc, &ew->ln_g);
+    alloc_register(alloc, &ew->ln_b);
+    alloc_register(alloc, &ew->w_r1);
+    alloc_register(alloc, &ew->w_r2);
+#endif
 }
 
 static void ce_reg_forward(CharterEntityWeights* ew, CharterEntityActivations* a,
@@ -215,6 +365,13 @@ static void ce_reg_forward(CharterEntityWeights* ew, CharterEntityActivations* a
     alloc_register(acts, &a->count);
     alloc_register(acts, &a->pooled);
     alloc_register(acts, &a->out);
+#ifdef CE_RESID
+    int H = ew->hidden;
+    a->o0 = {.shape = {B, H}}; a->xhat = {.shape = {B, H}}; a->rstd = {.shape = {B}};
+    a->z = {.shape = {B, H}}; a->u = {.shape = {B, H}}; a->v = {.shape = {B, H}};
+    alloc_register(acts, &a->o0); alloc_register(acts, &a->xhat); alloc_register(acts, &a->rstd);
+    alloc_register(acts, &a->z); alloc_register(acts, &a->u); alloc_register(acts, &a->v);
+#endif
 #ifdef CE_MOVES
     a->move_act = {.shape = {B, CE_ROWS[CE_MOVES_TABLE]}};
     alloc_register(acts, &a->move_act);
@@ -230,6 +387,11 @@ static void ce_encoder_reg_train(void* w, void* activations, Allocator* acts, Al
     a->grad_h = {.shape = {B_TT, CE_TOTAL_ROWS, CE_E}};
     alloc_register(acts, &a->grad_pooled);
     alloc_register(acts, &a->grad_h);
+#ifdef CE_RESID
+    a->grad_v = {.shape = {B_TT, ew->hidden}}; a->grad_z = {.shape = {B_TT, ew->hidden}};
+    a->grad_o0 = {.shape = {B_TT, ew->hidden}};
+    alloc_register(acts, &a->grad_v); alloc_register(acts, &a->grad_z); alloc_register(acts, &a->grad_o0);
+#endif
 #ifdef CE_POINTER
     a->ext_grad = {.shape = {B_TT, CE_TOTAL_ROWS, CE_E}};
     alloc_register(acts, &a->ext_grad);
@@ -242,6 +404,16 @@ static void ce_encoder_reg_train(void* w, void* activations, Allocator* acts, Al
     }
     a->w_out_grad = {.shape = {ew->hidden, CE_NUM_TABLES * CE_E}};
     alloc_register(grads, &a->w_out_grad);
+#ifdef CE_RESID
+    a->ln_g_grad = {.shape = {ew->hidden}};
+    a->ln_b_grad = {.shape = {ew->hidden}};
+    a->w_r1_grad = {.shape = {ew->hidden, ew->hidden}};
+    a->w_r2_grad = {.shape = {ew->hidden, ew->hidden}};
+    alloc_register(grads, &a->ln_g_grad);
+    alloc_register(grads, &a->ln_b_grad);
+    alloc_register(grads, &a->w_r1_grad);
+    alloc_register(grads, &a->w_r2_grad);
+#endif
 }
 
 static void ce_encoder_reg_rollout(void* w, void* activations, Allocator* alloc, int B) {

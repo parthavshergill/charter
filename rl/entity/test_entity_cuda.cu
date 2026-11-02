@@ -48,7 +48,12 @@ static void ce_free(Allocator* x) {
     *x = {};
 }
 
-int ce_test_num_params() { return CE_NUM_TABLES + 1; }
+#ifdef CE_RESID
+static constexpr int CE_TEST_NPARAM = CE_NUM_TABLES + 5;   // then ln_g, ln_b, w_r1, w_r2
+#else
+static constexpr int CE_TEST_NPARAM = CE_NUM_TABLES + 1;
+#endif
+int ce_test_num_params() { return CE_TEST_NPARAM; }
 
 int ce_test_init(int batch, int hidden) {
     ce_free(&ce_params); ce_free(&ce_acts); ce_free(&ce_grads);
@@ -72,12 +77,25 @@ int ce_test_init(int batch, int hidden) {
     return CE_OBS_SIZE;
 }
 
-static Prec* ce_param(int i) { return i < CE_NUM_TABLES ? &ce_w->w_in[i] : &ce_w->w_out; }
-static Prec* ce_grad(int i) { return i < CE_NUM_TABLES ? &ce_a->w_in_grad[i] : &ce_a->w_out_grad; }
+static Prec* ce_param(int i) {
+    if (i < CE_NUM_TABLES) return &ce_w->w_in[i];
+    if (i == CE_NUM_TABLES) return &ce_w->w_out;
+    Prec* r[4] = {&ce_w->ln_g, &ce_w->ln_b, &ce_w->w_r1, &ce_w->w_r2};
+    return r[i - CE_NUM_TABLES - 1];
+}
+static Prec* ce_grad(int i) {
+    if (i < CE_NUM_TABLES) return &ce_a->w_in_grad[i];
+    if (i == CE_NUM_TABLES) return &ce_a->w_out_grad;
+    Prec* r[4] = {&ce_a->ln_g_grad, &ce_a->ln_b_grad, &ce_a->w_r1_grad, &ce_a->w_r2_grad};
+    return r[i - CE_NUM_TABLES - 1];
+}
 
+// A 1-D parameter (the LayerNorm's gain and bias) is reported as 1 x n.
 void ce_test_param_shape(int i, int* rows, int* cols) {
-    *rows = ce_param(i)->shape[0];
-    *cols = ce_param(i)->shape[1];
+    Prec* p = ce_param(i);
+    bool one = p->shape[1] == 0;
+    *rows = one ? 1 : p->shape[0];
+    *cols = one ? p->shape[0] : p->shape[1];
 }
 
 void ce_test_set_param(int i, const float* host) {
@@ -120,13 +138,13 @@ void ce_test_get_grad(int i, float* host) {
 
 #ifdef CE_POINTER
 // The pointer decoder on top of the encoder: h = encoder(obs) goes straight to the decoder (no GRU here).
-// Parameters 0..CE_NUM_TABLES are the encoder's, then the decoder's weight, then the pointer block A.
+// Parameters 0..CE_TEST_NPARAM-1 are the encoder's, then the decoder's weight, then the pointer block A.
 static Decoder cp_dec;
 static CharterPointerWeights* cp_w;
 static CharterPointerActivations* cp_a;
 static Allocator cp_params, cp_acts, cp_grads;
 
-int cp_test_num_params() { return CE_NUM_TABLES + 3; }
+int cp_test_num_params() { return CE_TEST_NPARAM + 2; }
 
 int cp_test_init(int batch, int hidden, int act_size) {
     ce_test_init(batch, hidden);  // the encoder; registers its activations last, so the decoder finds them
@@ -150,10 +168,13 @@ int cp_test_init(int batch, int hidden, int act_size) {
     return CE_OBS_SIZE;
 }
 
-static Prec* cp_param(int i) { return i <= CE_NUM_TABLES ? ce_param(i) : i == CE_NUM_TABLES + 1 ? &cp_w->base.weight : &cp_w->ptr; }
-static Prec* cp_grad(int i) { return i <= CE_NUM_TABLES ? ce_grad(i) : i == CE_NUM_TABLES + 1 ? &cp_a->base.wgrad_scratch : &cp_a->ptr_wgrad; }
+static Prec* cp_param(int i) { return i < CE_TEST_NPARAM ? ce_param(i) : i == CE_TEST_NPARAM ? &cp_w->base.weight : &cp_w->ptr; }
+static Prec* cp_grad(int i) { return i < CE_TEST_NPARAM ? ce_grad(i) : i == CE_TEST_NPARAM ? &cp_a->base.wgrad_scratch : &cp_a->ptr_wgrad; }
 
-void cp_test_param_shape(int i, int* rows, int* cols) { *rows = cp_param(i)->shape[0]; *cols = cp_param(i)->shape[1]; }
+void cp_test_param_shape(int i, int* rows, int* cols) {
+    if (i < CE_TEST_NPARAM) { ce_test_param_shape(i, rows, cols); return; }
+    *rows = cp_param(i)->shape[0]; *cols = cp_param(i)->shape[1];
+}
 void cp_test_set_param(int i, const float* host) { ce_put(cp_param(i)->data, host, numel(cp_param(i)->shape)); }
 void cp_test_get_grad(int i, float* host) { ce_get(host, cp_grad(i)->data, numel(cp_grad(i)->shape)); }
 

@@ -31,7 +31,7 @@ BATCH, HIDDEN = 37, 128
 TOL = {"float": 1e-4, "bf16": 5e-2}
 
 
-def build(puffer, work, seeded, precision, pointer=0, moves=False):
+def build(puffer, work, seeded, precision, pointer=0, moves=False, resid=False):
     raylib = next(puffer.glob("raylib-*/include"))
     src = HERE
     if moves:
@@ -42,9 +42,9 @@ def build(puffer, work, seeded, precision, pointer=0, moves=False):
         for f in ("charter_entity.cu", "test_entity_cuda.cu"):
             shutil.copy(HERE / f, work / f)
         src = work
-    so = work / f"entity_test_{precision}_{seeded}_ptr{pointer}{'_moves' if moves else ''}.so"
+    so = work / f"entity_test_{precision}_{seeded}_ptr{pointer}{'_moves' if moves else ''}{'_resid' if resid else ''}.so"
     flags = ((["-DPRECISION_FLOAT"] if precision == "float" else []) + (["-DCE_POINTER"] if pointer else [])
-)
+             + (["-DCE_RESID"] if resid else []))
     cmd = ["nvcc", "-shared", "-o", str(so), str(src / "test_entity_cuda.cu"),
            *flags, f"-DCE_SEEDED_ERROR={seeded}",
            "-I", str(puffer / "src"), "-I", str(puffer / "vendor"), "-I", str(raylib), "-I", str(work), "-I", str(HERE),
@@ -93,7 +93,7 @@ def to_bf16(a):
     return torch.tensor(a).to(torch.bfloat16).to(torch.float32).numpy()
 
 
-def run(lib, ts, size, rng, precision):
+def run(lib, ts, size, rng, precision, resid=False):
     lib.ce_test_init(BATCH, HIDDEN)
     n = lib.ce_test_num_params()
     shapes = []
@@ -119,7 +119,8 @@ def run(lib, ts, size, rng, precision):
 
     tw = [torch.tensor(w, dtype=torch.float64, requires_grad=True) for w in ws]
     tables_ = [(off, rows, width) for _, off, rows, width in ts]
-    ref = encode(torch.tensor(obs, dtype=torch.float64), tables_, tw[:-1], tw[-1])
+    T = len(ts)
+    ref = encode(torch.tensor(obs, dtype=torch.float64), tables_, tw[:T], tw[T], tw[T + 1:T + 5] if resid else None)
     (ref * torch.tensor(up, dtype=torch.float64)).sum().backward()
 
     def rel(a, b):
@@ -130,7 +131,7 @@ def run(lib, ts, size, rng, precision):
             "grads": [rel(g, w.grad) for g, w in zip(grads, tw)]}
 
 
-def run_pointer(lib, ts, layout, rng, precision, moves=False):
+def run_pointer(lib, ts, layout, rng, precision, moves=False, resid=False):
     act = layout["act_size"] + 1   # the actions and the no-op
     size = layout["full_size"] if moves else layout["base_size"]
     lib.cp_test_init(BATCH, HIDDEN, act)
@@ -170,13 +171,14 @@ def run_pointer(lib, ts, layout, rng, precision, moves=False):
     o = torch.tensor(obs, dtype=torch.float64)
     if moves:
         o, macts, mreal = strip_moves(o, tables_, names.index("moves"), 1)
-    h = encode(o, tables_, tw[:T], tw[T])
-    base = h @ tw[T + 1].T
-    logits = base[:, :act] + pointer_logits(o, tables_, tw[:T], h, tw[T + 2], names.index("places"),
+    h = encode(o, tables_, tw[:T], tw[T], tw[T + 1:T + 5] if resid else None)
+    D = T + 5 if resid else T + 1   # the decoder's weight, then the pointer block
+    base = h @ tw[D].T
+    logits = base[:, :act] + pointer_logits(o, tables_, tw[:T], h, tw[D + 1], names.index("places"),
                                             names.index("resources"), layout["actions"]["place"],
                                             layout["actions"]["bank"], act, E=tw[0].shape[0])
     if moves:
-        logits = logits + moves_logits(o, tables_, tw[:T], h, tw[T + 2], names.index("moves"), macts, mreal, act,
+        logits = logits + moves_logits(o, tables_, tw[:T], h, tw[D + 1], names.index("moves"), macts, mreal, act,
                                        tw[0].shape[0])
     ref = torch.cat([logits, base[:, act:]], 1)
     (logits * torch.tensor(up_l, dtype=torch.float64)).sum().add(
@@ -205,17 +207,26 @@ def main():
     moves_cases = [("float", 0, 1), ("float", 3, 1), ("float", 5, 1), ("float", 6, 1)]
     if "--moves" in sys.argv:
         cases = []
+    # The residual block (CE_RESID, float only). Seeded errors: 7, the LayerNorm's variance term dropped in its
+    # backward; 8, the skip connection's gradient dropped. Encoder alone, then with the pointer and moves rows.
+    resid_enc, resid_cases = [], []
+    if "--resid" in sys.argv:
+        cases, moves_cases = [], []
+        resid_enc = [("float", s, 0) for s in (0, 7, 8)]
+        resid_cases = [("float", s, 1) for s in (0, 7, 8)]
     (work / "moves").mkdir(parents=True, exist_ok=True)
     (work / "moves" / "charter_entity_layout.h").write_text(header(layout, True))
-    for precision, seeded, pointer, moves in [c + (False,) for c in cases] + [c + (True,) for c in moves_cases]:
-        lib = build(puffer, work, seeded, precision, pointer, moves)
+    allc = ([c + (False, False) for c in cases] + [c + (True, False) for c in moves_cases]
+            + [c + (False, True) for c in resid_enc] + [c + (True, True) for c in resid_cases])
+    for precision, seeded, pointer, moves, resid in allc:
+        lib = build(puffer, work, seeded, precision, pointer, moves, resid)
         rng = np.random.default_rng(seeded + 7)
-        res = (run_pointer(lib, tables(layout, True) if moves else ts, layout, rng, precision, moves) if pointer
-               else run(lib, ts, layout["base_size"], rng, precision))
+        res = (run_pointer(lib, tables(layout, True) if moves else ts, layout, rng, precision, moves, resid) if pointer
+               else run(lib, ts, layout["base_size"], rng, precision, resid))
         worst = max([res["forward"]] + res["grads"])
         passed = worst < TOL[precision] and res["cuda_error"] == "no error"
         expect = seeded == 0
-        res.update(precision=precision, seeded_error=seeded, pointer=pointer, moves=moves, worst=worst, matches_reference=passed,
+        res.update(precision=precision, seeded_error=seeded, pointer=pointer, moves=moves, resid=resid, worst=worst, matches_reference=passed,
                    as_expected=passed == expect)
         print(json.dumps(res))
         ok &= passed == expect

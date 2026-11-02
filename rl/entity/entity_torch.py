@@ -8,9 +8,10 @@ is 1 on every real row, so it acts as one.
 """
 import torch
 
-def encode(obs, tables, w_in, w_out):
+def encode(obs, tables, w_in, w_out, resid=None):
     """obs: (B, obs_size). tables: list of (offset, rows, width).
-    w_in[t]: (E, width_t). w_out: (H, len(tables) * E)."""
+    w_in[t]: (E, width_t). w_out: (H, len(tables) * E). resid: None, or (gain, bias, W_r1, W_r2) for the
+    residual block (charter_entity.cu, CE_RESID): out = o0 + W_r2 relu(W_r1 LayerNorm(o0)), o0 = W_out pooled."""
     B = obs.shape[0]
     pooled = []
     for (off, rows, width), w in zip(tables, w_in):
@@ -19,7 +20,12 @@ def encode(obs, tables, w_in, w_out):
         h = torch.relu(x @ w.T)                                 # (B, rows, E)
         count = real.sum(1, keepdim=True).clamp(min=1.0)        # (B, 1)
         pooled.append((h * real[:, :, None]).sum(1) / count)    # (B, E)
-    return torch.cat(pooled, 1) @ w_out.T                       # (B, H)
+    o0 = torch.cat(pooled, 1) @ w_out.T                         # (B, H)
+    if resid is None:
+        return o0
+    g, b, w1, w2 = resid
+    z = torch.nn.functional.layer_norm(o0, (o0.shape[1],), g.reshape(-1), b.reshape(-1), eps=1e-5)
+    return o0 + torch.relu(z @ w1.T) @ w2.T
 
 
 def rows(obs, tables, w_in, t):

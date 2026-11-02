@@ -10,6 +10,8 @@ The meta must give `entity_dim` (E). The table layout comes from rl/layout.json.
 the decoder block is followed by the pointer block `ptr` (3E x hidden, layout 2: places and bank trades), and the
 pointer scores are added
 (charter_entity.cu, CE_POINTER; entity_torch.py `pointer_logits`).
+With `"resid": 1`, four blocks follow `out`: the LayerNorm gain and bias (hidden each), W_r1 and W_r2 (hidden x
+hidden), and the encoder ends with out = o0 + W_r2 relu(W_r1 LayerNorm(o0)) (charter_entity.cu, CE_RESID).
 """
 import json
 import os
@@ -26,7 +28,12 @@ def base_tables(layout, moves=False):
     return [(t["name"], t["offset"], t["rows"], t["width"]) for t in layout["tables"] if moves or t["name"] != "moves"]
 
 
-def entity_encode(obs, tables, w_in, w_out, keep=None):
+def layer_norm(x, g, b, eps=1e-5):
+    m = x.mean()
+    return (x - m) / np.sqrt(((x - m) ** 2).mean() + eps) * g + b
+
+
+def entity_encode(obs, tables, w_in, w_out, keep=None, resid=None):
     """One observation (obs_size,) to (hidden,): per table, relu(W_t x) on each row, the mean over real rows
     (column 0 above 0.5, zeros if none), then W_out on all the means joined. `keep`, a dict, gets every
     table's rows relu(W_t x), by table name, for the pointer decoder."""
@@ -38,7 +45,11 @@ def entity_encode(obs, tables, w_in, w_out, keep=None):
         if keep is not None:
             keep[name] = r
         pooled.append(r[real].sum(0) / max(int(real.sum()), 1))
-    return w_out @ np.concatenate(pooled)
+    o0 = w_out @ np.concatenate(pooled)
+    if resid is None:
+        return o0
+    g, b, w1, w2 = resid
+    return o0 + w2 @ np.maximum(w1 @ layer_norm(o0, g, b), 0.0)
 
 
 def pointer_scores(rows, h, ptr, act_size, act_place, act_bank, E=None, moves=None):
@@ -61,8 +72,9 @@ def pointer_scores(rows, h, ptr, act_size, act_place, act_bank, E=None, moves=No
 
 
 class EntityNet(FlatNet):
-    def __init__(self, tables, w_in, w_out, decoder, grus, act_size, ptr=None, acts=None):
+    def __init__(self, tables, w_in, w_out, decoder, grus, act_size, ptr=None, acts=None, resid=None):
         super().__init__(None, decoder, grus, act_size)
+        self.resid = resid
         self.tables, self.w_in, self.w_out, self.ptr, self.acts = tables, w_in, w_out, ptr, acts
         self.E = w_in[0].shape[0]
         names = [t[0] for t in tables]
@@ -79,7 +91,7 @@ class EntityNet(FlatNet):
             cols = off + np.arange(nrows) * width + self.act_col
             moves = (np.rint(obs[cols]).astype(np.int64), obs[off + np.arange(nrows) * width] > 0.5)
             obs[cols] = 0
-        x = entity_encode(obs, self.tables, self.w_in, self.w_out, rows)
+        x = entity_encode(obs, self.tables, self.w_in, self.w_out, rows, self.resid)
         out = []
         for W, s in zip(self.grus, state):
             x, s2 = mingru_step(W, x, s)
@@ -92,7 +104,8 @@ class EntityNet(FlatNet):
         return logits, y[-1], out
 
 
-def read_entity_bin(path, tables, E, hidden, layers, act_size, pointer=0):
+def read_entity_bin(path, tables, E, hidden, layers, act_size, pointer=0, resid=False):
+    """w_in, w_out, decoder, ptr, grus; with `resid`, also the residual block (g, b, W_r1, W_r2) as a sixth."""
     w = np.fromfile(path, dtype="<f4")
     pos = 0
 
@@ -104,11 +117,14 @@ def read_entity_bin(path, tables, E, hidden, layers, act_size, pointer=0):
 
     w_in = [block(E, width) for _, _, _, width in tables]
     w_out = block(hidden, len(tables) * E)
+    res = (block(1, hidden)[0], block(1, hidden)[0], block(hidden, hidden), block(hidden, hidden)) if resid else None
     dec = block(act_size + 1, hidden)
     ptr = block((4 if any(t[0] == "moves" for t in tables) else 3) * E, hidden) if pointer else None
     grus = [block(3 * hidden, hidden) for _ in range(layers)]
     if pos != len(w) and (len(w) + 7) & ~7 != pos:
         raise ValueError(f"{path}: {len(w)} floats, expected {pos} for this shape")
+    if resid:
+        return w_in, w_out, dec, ptr, grus, res
     return w_in, w_out, dec, ptr, grus
 
 
@@ -120,15 +136,19 @@ def load_entity(path, meta, layout_path=LAYOUT):
     E = meta["entity_dim"]
     pointer = int(meta.get("pointer", 0))
     assert layout["version"] == 2 and meta.get("layout", 2) == 2, "this pointer decoder is for layout 2"
+    resid = bool(meta.get("resid", 0))
+    res = None
     if meta["format"] == "puffer-entity":
-        w_in, w_out, dec, ptr, grus = read_entity_bin(path, tables, E, meta["hidden"], meta["layers"],
-                                                      meta["act_size"], pointer)
+        got = read_entity_bin(path, tables, E, meta["hidden"], meta["layers"], meta["act_size"], pointer, resid)
+        w_in, w_out, dec, ptr, grus = got[:5]
+        res = got[5] if resid else None
     else:
         z = np.load(path)
         w_in = [z[f"in_{name}"] for name, _, _, _ in tables]
         w_out, dec = z["out"], z["decoder"]
         ptr = z["ptr"] if pointer else None
         grus = [z[f"gru{i}"] for i in range(meta["layers"])]
+        assert not resid, "the npz format has no residual block"
     f = lambda a: np.ascontiguousarray(a, np.float32)
     return EntityNet(tables, [f(a) for a in w_in], f(w_out), f(dec), [f(g) for g in grus], meta["act_size"],
-                     f(ptr) if pointer else None, layout["actions"])
+                     f(ptr) if pointer else None, layout["actions"], tuple(f(a) for a in res) if res else None)
