@@ -215,6 +215,13 @@ def train(run: str, train_args: str = "", seconds: int = 600, move_rows: bool = 
                     if key in ("declare_always", "stale_wait", "prune_declares", "declare_once_per_turn"):
                         v = bool(int(float(v)))
                     meta["settings"][key] = v
+        # Training-only switches (what games the run saw, not how a policy is played) go under "train".
+        train = {k: ini.get("env", k) for k in ("random_map", "last_seat_share") if ini.has_option("env", k)}
+        for tok in train_args.split():
+            for key in ("random_map", "last_seat_share"):
+                if tok.startswith(f"--env.{key}="):
+                    train[key] = tok.split("=", 1)[1]
+        meta["train"] = {k: float(v) for k, v in train.items()}
         meta.update(json.loads(meta_extra) if meta_extra else {})
         json.dump(meta, open(c + ".json", "w"))
     vol.commit()

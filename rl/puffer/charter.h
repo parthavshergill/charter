@@ -61,6 +61,7 @@ struct Env {
     unsigned int rng;
     int bot_policy;
     float bot_share;
+    float last_seat_share;
     int playing;           // agents in this game: the seat count, or 1 when bots took the others' seats
     int seats;             // seats in this game
     int seat_choices[SEATS];
@@ -239,6 +240,17 @@ static void start_game(Env* env) {
         (float)rand_r(&env->rng) / (float)RAND_MAX < env->bot_share) {
         env->playing = 1;
     }
+    // last_seat_share: in a bot game, this chance that the learner sits last (it places its openings last in setup).
+    if (env->playing == 1 && env->last_seat_share > 0 &&
+        (float)rand_r(&env->rng) / (float)RAND_MAX < env->last_seat_share) {
+        for (int k = 0; k < seats; k++) {
+            if (perm[k] == seats - 1) {
+                perm[k] = perm[0];
+                perm[0] = seats - 1;
+                break;
+            }
+        }
+    }
     for (int i = 0; i < env->playing; i++) {
         env->seat_of[i] = perm[i];
         env->agent_at[perm[i]] = i;
@@ -347,6 +359,7 @@ void puf_init(Env* env, Dict* kwargs) {
     env->bot_policy = (int)opt_num(kwargs, "bot_policy", BOT_HAND);
     assert(env->bot_policy >= 0 && env->bot_policy < NUM_BOT_POLICIES);
     env->bot_share = (float)opt_num(kwargs, "bot_share", 0.0);
+    env->last_seat_share = (float)opt_num(kwargs, "last_seat_share", 0.0);
     env->playing = env->num_agents;
     assert(env->num_agents >= 1 && env->num_agents <= SEATS);
     // Seat counts: "4", "2-6" or "3,4,5".
@@ -397,6 +410,10 @@ void puf_init(Env* env, Dict* kwargs) {
         static const int tries[] = {4, 3, 2, 5, 6};
         char cfg[1024];
         char err[512];
+        // random_map between 0 and 1 is a share: each env draws once, per game, whether it deals a new map each game
+        // (dealt) or plays the world's own map (fixed), so one run trains on both.
+        double rm_share = opt_num(kwargs, "random_map", 1);
+        int rmap = rm_share >= 1 ? 1 : rm_share <= 0 ? 0 : (rand_r(&env->rng) < rm_share * (double)RAND_MAX);
         for (int t = 0; t < 5; t++) {
             char lineup[128] = {0};
             for (int s = 0; s < tries[t]; s++) {
@@ -407,7 +424,7 @@ void puf_init(Env* env, Dict* kwargs) {
                 "\"vote_mode\": \"%s\", \"slot_order\": \"%s\", \"move_rows\": %s, \"law_every\": %d, "
                 "\"random_map\": %s, \"preview\": %s, \"reward_win\": %g, \"reward_standing\": %g, \"shaping_points\": %g, \"declare_always\": %s, \"shaping_relative\": %g, \"shaping_gamma\": %g, \"prune_declares\": %s, \"declare_once_per_turn\": %s}",
                 id, lineup, env->rng, vote, slots, move_rows ? "true" : "false", (int)opt_num(kwargs, "law_every", 8),
-                opt_num(kwargs, "random_map", 1) ? "true" : "false", opt_num(kwargs, "preview", 1) ? "true" : "false",
+                rmap ? "true" : "false", opt_num(kwargs, "preview", 1) ? "true" : "false",
                 opt_num(kwargs, "reward_win", 1.0), opt_num(kwargs, "reward_standing", 0.25),
                 opt_num(kwargs, "shaping_points", 0.0), opt_num(kwargs, "declare_always", 0) ? "true" : "false",
                 opt_num(kwargs, "shaping_relative", 0.0), opt_num(kwargs, "shaping_gamma", 0.995),

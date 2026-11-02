@@ -135,11 +135,16 @@ actions, at most 8 resources, 60 spots, 84 links, 24 tiles, 16 laws) refused lar
 - **Training against bots.** `bot_share = p`: in self-play, each game has chance `p` that agents other than 0 sit out and
   `bot_policy` bots take their seats, so agent 0 also plays against, say, `champion` (`bot_policy = 4`). The agents
   that sit out see only waiting rows, with no reward.
-- **Maps.** `random_map = 1` shuffles resources and numbers between the tiles that pay, each game.
+- **Learner last.** `last_seat_share = p`: in a game against bots, chance `p` that the learner takes the last seat.
+  The default is 0.
+- **Maps.** `random_map = 1` shuffles resources and numbers between the tiles that pay, each game. `random_map = 0`
+  plays each world's own map. A number between, such as 0.5, is a share: each env draws once per world whether it
+  deals maps or plays the world's own map, so one run trains on both. Train metas keep `random_map` and
+  `last_seat_share` under `"train"`; eval does not read them (it takes `--random-map`).
 
 `[env]` keys in `charter.ini`: `games` (comma-separated ids), `seats`, `vote_mode`, `slot_order`, `move_rows`, `law_every`,
 `random_map`, `preview`, `reward_win`, `reward_standing`, `shaping_points`, `bot_policy`, `bot_share`,
-`distinct_opps`, `declare_always`, `stale_wait`, `shaping_relative`, `shaping_gamma`. The Lean configuration also takes `record` (keep the game's events for a saved log;
+`distinct_opps`, `declare_always`, `stale_wait`, `shaping_relative`, `shaping_gamma`, `last_seat_share`. The Lean configuration also takes `record` (keep the game's events for a saved log;
 eval only).
 
 - **Waiting rows** (`stale_wait`, **on by default** in `charter.ini` since `HARNESS-READY` after `dd1b711`; it was
