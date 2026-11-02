@@ -8,6 +8,11 @@ A compact policy for Charter: 170,016 parameters at layout version 2.
   - For each base table of `rl/layout.json`, one shared layer per row: `relu(W_t x)`, 32 numbers (`CE_ENTITY_DIM`), no bias.
   - Then a mean over the table's real rows (column 0 above 0.5).
   - Then one layer, `W_out`, from all the means joined to the hidden size (128).
+- **Residual block** (optional, `-DCE_RESID`, float32 builds; meta `"resid": 1`): after `W_out`,
+  `out = o0 + W_r2 relu(W_r1 LayerNorm(o0))`, with a LayerNorm gain and bias (128 each) and `W_r1`, `W_r2` (128 x 128).
+  It adds 33,024 numbers. `tools/graft_resid.py` adds it to a checkpoint with `W_r2 = 0`, so the network starts
+  out playing exactly as before. PufferLib's Muon gives 1-D parameters a plain update that isn't rescaled, so the
+  gain and bias barely move in training (about 1e-4 over 12M steps): in effect, the LayerNorm has no gain or bias.
 - **GRU:** PufferLib's MinGRU, 1 layer.
 - **Decoder:** PufferLib's linear decoder (one output per action, and the value). With `-DCE_POINTER` it also adds a score taken from the rows that an action names. Two reasons it helps:
   - a placement is an action by its row of `places`, and a fixed output per row cannot know what the row holds;
@@ -30,8 +35,12 @@ A compact policy for Charter: 170,016 parameters at layout version 2.
 2. padding rows get gradient
 3. the decoder's gradient into the encoder rows dropped
 4. a wrong gradient on `A`
+5. (moves) the action column left in the encoder's input
+6. (moves) a wrong gradient on the move query
+7. (`--resid`) the LayerNorm's variance term dropped in its backward pass
+8. (`--resid`) the skip connection's gradient dropped
 
-Run it with `modal run entity/tools/modal_extra.py::reftest_main`.
+Run it with `modal run entity/tools/modal_extra.py::reftest_main`, and add `--extra="--moves"` or `--extra="--resid"` for those builds.
 
 ## Training recipe (the best so far)
 
@@ -49,6 +58,7 @@ Run it with `modal run entity/tools/modal_extra.py::reftest_main`.
 
 - `launch.sh RUN MINUTES DOLLARS E "TRAIN ARGS" ["EXTRA META"]`: a detached training run on Modal.
 - `latest.sh entity2/RUN`: the newest checkpoint of a run.
-- `quick_eval.sh CKPT LABEL STALE "ARGS"`: writes a layout-2 meta, then runs `rl/eval --quick` against hand, random, champion and champion-closed, keeping saved games.
+- `quick_eval.sh CKPT LABEL STALE "ARGS"`: writes a layout-2 meta, then runs `rl/eval --quick` against `table` and `hand`, on dealt maps and on the server-like row (`--random-map 0 --laws off`), keeping saved games. `GAMES`, `MOVES=1`, `PRUNE=1`, `RESID=1`.
+- `graft_moves.py`, `graft_resid.py`: add the moves table, or the residual block, to a checkpoint without changing how it plays.
 - `games.py`: plays full games and writes an action-by-action log. With `--count`, it splits wins into target wins and round-limit wins.
 - `modal_extra.py`: Modal entry points for game logs, win counts, BC, metas and the reference test.
