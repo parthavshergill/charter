@@ -210,6 +210,31 @@ points so that declaring matters, conditional build rewards, effects at once, re
 spots. Random players win 18% against 3 `hand` and 7 to 15% against 3 `table` there (1% against `hand` on Island), so play
 matters, and `table` plays point goods better than `hand`.
 
+**Three styles, by world number** (`n % 3`, the same in `pack-train` and `pack-val`; style 0 worlds are as before):
+- **0, general:** as described above.
+- **1, chains** (made like The Pit's situation, from nothing of its): a chain of 2 or 3 steps on a spot (hut, fort
+  replacing it, keep attached to the fort, and in half the worlds a spire attached to the keep). The fort costs goods
+  the board barely makes (about one tile in twelve), so it is funded by bank trades at a rate of 2 or 3. Keeps and
+  spires cost a good that counts as a point, earned by building forts, so held points are turned into more by
+  climbing. The board is poor (a third of tiles barren, numbers from the dice's ends), and every seat gets a lump of
+  board goods at the end of round 1. Targets 18 to 26, 10 to 12 rounds.
+- **2, fast** (like AI Bubble's situation): a rich board (few barren tiles, numbers from the dice's middle), cheap
+  pieces, a good that counts as a point paid for each build, and a target of 22 to 30 in 8 to 10 rounds, which
+  seats reach by about round 6 only by building every turn.
+
+Measured over 80 games of each (seats in turn, against 3 `table`):
+
+| style, set | `table` seat wins (at the target) | games end | end round | its bank trades | its builds per game | passive seat wins | random seat wins |
+|---|---|---|---|---|---|---|---|
+| chains, train | 25 (12) | 35 at the target, 45 at the limit | 9.5 | 4.7 | fort 1.5, keep 0.7, spire 0.1, hut 6.0 | 1 | 1 |
+| chains, val | 18 (8) | 27 / 53 | 9.9 | 5.0 | fort 1.6, keep 0.8, spire 0.1 | 1 | 1 |
+| fast, train | 24 (18) | 57 / 23 | 6.3 | 5.0 | fort 3.7, hut 6.8 | 0 | 0 |
+| fast, val | 23 (21) | 68 / 12 | 6.0 | 5.5 | fort 3.6, hut 6.6 | 0 | 0 |
+
+A passive seat (it places in setup, then ends every turn) wins at most 1 of 80; a `table` seat wins its fair share
+by building and trading. The table bot makes 4.7 to 5.5 bank trades a game here, fewer than the 8 to 22 seen on The
+Pit: it trades only toward its first upgrade, its spot piece and what its point goods buy.
+
 **Which generated worlds are for what.** `pack-train` is for training. `pack-val` is for validation only: never
 train on it or choose settings on it. `gen-*` (`CharterRL.Gen`) stays for "can it play" only.
 
