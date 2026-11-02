@@ -61,6 +61,7 @@ struct Env {
     unsigned int rng;
     int bot_policy;
     float bot_share;
+    float last_seat_share;
     int playing;           // agents in this game: the seat count, or 1 when bots took the others' seats
     int seats;             // seats in this game
     int seat_choices[SEATS];
@@ -239,6 +240,17 @@ static void start_game(Env* env) {
         (float)rand_r(&env->rng) / (float)RAND_MAX < env->bot_share) {
         env->playing = 1;
     }
+    // last_seat_share: in a bot game, this chance that the learner sits last (it places its openings last in setup).
+    if (env->playing == 1 && env->last_seat_share > 0 &&
+        (float)rand_r(&env->rng) / (float)RAND_MAX < env->last_seat_share) {
+        for (int k = 0; k < seats; k++) {
+            if (perm[k] == seats - 1) {
+                perm[k] = perm[0];
+                perm[0] = seats - 1;
+                break;
+            }
+        }
+    }
     for (int i = 0; i < env->playing; i++) {
         env->seat_of[i] = perm[i];
         env->agent_at[perm[i]] = i;
@@ -347,6 +359,7 @@ void puf_init(Env* env, Dict* kwargs) {
     env->bot_policy = (int)opt_num(kwargs, "bot_policy", BOT_HAND);
     assert(env->bot_policy >= 0 && env->bot_policy < NUM_BOT_POLICIES);
     env->bot_share = (float)opt_num(kwargs, "bot_share", 0.0);
+    env->last_seat_share = (float)opt_num(kwargs, "last_seat_share", 0.0);
     env->playing = env->num_agents;
     assert(env->num_agents >= 1 && env->num_agents <= SEATS);
     // Seat counts: "4", "2-6" or "3,4,5".
