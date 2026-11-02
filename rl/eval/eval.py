@@ -236,12 +236,16 @@ def can_play_task(task):
     """Play one made-up game at one seat count, the subject at each seat in turn, the others random."""
     from charter import Game
     spec, game_id, seats, n, vote_mode = task
-    label, maker, _ = load_subject(spec)
+    label, maker, settings = load_subject(spec)
     bot = spec if spec in BOTS else None
     out = {"game": game_id, "seats": seats, "games": 0, "ended": 0, "refused": 0, "errors": 0, "decisions": 0,
            "first_error": ""}
     try:
-        g = Game({"game": game_id, "lineup": ["caller"] * seats, "seed": 1, "vote_mode": vote_mode})
+        cfg = {"game": game_id, "lineup": ["caller"] * seats, "seed": 1, "vote_mode": vote_mode}
+        for key in ("slot_order", "move_rows", "random_map", "preview", "declare_always"):   # as play_table does
+            if key in settings:
+                cfg[key] = settings[key]
+        g = Game(cfg)
     except Exception as e:  # noqa: BLE001
         out["errors"] += 1
         out["first_error"] = f"could not start: {e}"
@@ -255,6 +259,7 @@ def can_play_task(task):
             subject = maker(7000 + k) if maker else None
             if subject:
                 subject.reset()
+                subject.stale_wait = bool(settings.get("stale_wait"))
             others = RandomPlayer(7001 + k)
             steps = 0
             while not g.over and steps < 50000:
