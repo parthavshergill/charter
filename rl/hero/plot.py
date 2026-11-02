@@ -156,7 +156,7 @@ def draw(theme_name, rows, sonnet, out_paths):
                     arrowprops=dict(arrowstyle="-", color=mark, lw=1, shrinkA=0, shrinkB=0))
 
     if main["hand"]:
-        ax.annotate("start: imitation of\na rule-based bot", xy=(0, 100 * main["hand"][0][1]), xytext=(3, 45),
+        ax.annotate("start: imitation of\na rule-based bot", xy=(0, 100 * main["hand"][0][1]), xytext=(32, 6),
                     color=t["ink2"], fontsize=13, arrowprops=dict(arrowstyle="-", color=t["muted"], lw=1))
     ax.set_xlim(-2, xmax)
     ax.set_ylim(0, 102)
