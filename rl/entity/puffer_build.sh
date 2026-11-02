@@ -2,11 +2,12 @@
 # Compile the entity encoder into PufferLib: copy the .cu, write its layout header, add the hook to src/ocean.cu.
 # Usage: bash puffer_build.sh PUFFER_DIR OCEAN_DIR LAYOUT_JSON. The last line printed is the extra nvcc flags.
 # CHARTER_ENTITY_DIM (default 32) sets the numbers per row, and CHARTER_POINTER=1 adds the pointer decoder;
-# modal_app.py sets both from --meta-extra's entity_dim and pointer.
+# modal_app.py sets both from --meta-extra's entity_dim and pointer. CHARTER_MOVE_ROWS=1 (training with --move-rows)
+# makes the moves table an encoder table, with its pointer (CE_MOVES), and builds in float32 (PRECISION_FLOAT).
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 PUFFER="$1"; OCEAN="$2"; LAYOUT="$3"
 cp "$HERE/charter_entity.cu" "$OCEAN/"
-python3 "$HERE/gen_layout.py" "$LAYOUT" "$OCEAN/charter_entity_layout.h"
+python3 "$HERE/gen_layout.py" "$LAYOUT" "$OCEAN/charter_entity_layout.h" $([ "${CHARTER_MOVE_ROWS:-0}" = 1 ] && echo --moves)
 python3 "$HERE/apply_hook.py" "$PUFFER"
-echo "-DPUFFER_CHARTER_ENTITY -DCE_ENTITY_DIM=${CHARTER_ENTITY_DIM:-32}$([ "${CHARTER_POINTER:-0}" -ge 1 ] && echo " -DCE_POINTER")"
+echo "-DPUFFER_CHARTER_ENTITY -DCE_ENTITY_DIM=${CHARTER_ENTITY_DIM:-32}$([ "${CHARTER_POINTER:-0}" -ge 1 ] && echo " -DCE_POINTER")$([ "${CHARTER_MOVE_ROWS:-0}" = 1 ] && echo " -DPRECISION_FLOAT")$([ "${CHARTER_NO_END_LINEAR:-0}" = 1 ] && echo " -DCE_NO_LINEAR_END")"

@@ -510,7 +510,8 @@ private def writePlaces (a : FloatArray) (T : Tables) (ctx : Ctx G) (ep : Episod
 
 /-- The whole observation for the seat that must decide. `base` is the game's template. -/
 def observe (T : Tables) (ep : Episode) (ctx : Ctx G) (settings : Settings) (base : FloatArray) (s : State G)
-    (d : Decision) (places : Array Move) (free reach : Array Bool) (pv : Option Preview) : FloatArray := Id.run do
+    (d : Decision) (places : Array Move) (free reach : Array Bool) (pv : Option Preview)
+    (undo : Option (Res × Res) := Option.none) (declaredNow : List Res := []) : FloatArray := Id.run do
   let some me := d.seat? | return base
   let mut a := base
   let seats := s.turnOrder.length
@@ -663,7 +664,17 @@ def observe (T : Tables) (ep : Episode) (ctx : Ctx G) (settings : Settings) (bas
   if let .turn _ := d then
     a := writePlaces a T ctx ep rules s me places free reach demand held income
   if settings.moveRows then
-    a := writeMoves a ep rules s me seats (legal T ep places s d) held income
+    -- The table has `maxMoveRows` rows, and a decision can have more legal actions (declarations and bank trades on
+    -- worlds with many goods). So the rows come in the order that keeps what matters most: ending the turn and votes,
+    -- then placements, then bank trades, then declarations. Each row names its action.
+    let acts := legal T ep places s d undo settings.pruneDeclares declaredNow
+    let rank : Event → Nat
+      | .move _ (.place ..) => 1
+      | .move _ (.bankTrade ..) => 2
+      | .move _ (.declare ..) => 3
+      | _ => 0
+    let ordered := (List.range 4).flatMap fun k => acts.filter (rank ·.2 == k)
+    a := writeMoves a ep rules s me seats ordered held income
   return a
 
 end CharterRL

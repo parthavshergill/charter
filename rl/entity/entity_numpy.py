@@ -21,9 +21,9 @@ from reference.policy import FlatNet, mingru_step
 LAYOUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "layout.json")
 
 
-def base_tables(layout):
-    """(name, offset, rows, width) for each base table. Same as gen_layout.tables."""
-    return [(t["name"], t["offset"], t["rows"], t["width"]) for t in layout["tables"] if t["name"] != "moves"]
+def base_tables(layout, moves=False):
+    """(name, offset, rows, width) for each table, the moves table only if `moves`. Same as gen_layout.tables."""
+    return [(t["name"], t["offset"], t["rows"], t["width"]) for t in layout["tables"] if moves or t["name"] != "moves"]
 
 
 def entity_encode(obs, tables, w_in, w_out, keep=None):
@@ -41,116 +41,87 @@ def entity_encode(obs, tables, w_in, w_out, keep=None):
     return w_out @ np.concatenate(pooled)
 
 
-def pointer_scores(rows, h, ptr, act_size, act_place, act_bank):
-    """The pointer decoder's added scores (act_size,), layout 2: see entity_torch.pointer_logits."""
-    E = ptr.shape[0] // 3
+def pointer_scores(rows, h, ptr, act_size, act_place, act_bank, E=None, moves=None):
+    """The pointer decoder's added scores (act_size,), layout 2: see entity_torch.pointer_logits. With `moves`
+    (action numbers and real flags of the moves rows), also entity_torch.moves_logits."""
+    E = E or ptr.shape[0] // 3
     q = ptr @ h
     out = np.zeros(act_size, np.float32)
     rp, rr = rows["places"], rows["resources"]
     out[act_place:act_place + rp.shape[0]] = rp @ q[:E]
-    bank = (rr @ q[E:2 * E])[:, None] + (rr @ q[2 * E:])[None, :]
+    bank = (rr @ q[E:2 * E])[:, None] + (rr @ q[2 * E:3 * E])[None, :]
     out[act_bank:act_bank + bank.size] = bank.reshape(-1)
+    if moves is not None:
+        acts, real = moves
+        score = rows["moves"] @ q[3 * E:4 * E]
+        for m in np.flatnonzero(real):
+            if 0 <= acts[m] < act_size:
+                out[acts[m]] += score[m]
     return out
 
 
-# Diagnostic variants, named after `#` in an eval subject (rl/eval/eval.py), joined by `+`:
-# - `perm`: shuffle the linear decoder's place logits at every decision. The encoder and the pointer do not depend on
-#   the order of the `places` rows, so this is exactly a random reordering of `places` at eval.
-# - `nolin`: drop the linear decoder's place logits (the pointer alone scores placements).
-# - `nolinbank`: also drop its bank-trade logits.
-# - `look`: one step of lookahead with the engine: each legal action is tried on a copy of the game, and scored by
-#   the value of the position after it (the reward if the game ends); end turn is scored by the value now.
-#   `lookK` (for example `look4`) only considers the policy's K best actions.
-# - `log`: write one JSON line per decision (linear and pointer parts, legal sets, the `table` and `hand` bots'
-#   choices) under CHARTER_DIAG_DIR (default /vol/priorart2/diag).
-PLACES_COLS = {"points_gain": 15, "yield_gain": 16, "cost_total": 17, "my_short": 18, "on_upgrade": 3, "on_link": 1}
-
-
 class EntityNet(FlatNet):
-    def __init__(self, tables, w_in, w_out, decoder, grus, act_size, ptr=None, acts=None, diag=""):
+    def __init__(self, tables, w_in, w_out, decoder, grus, act_size, ptr=None, acts=None):
         super().__init__(None, decoder, grus, act_size)
         self.tables, self.w_in, self.w_out, self.ptr, self.acts = tables, w_in, w_out, ptr, acts
         self.E = w_in[0].shape[0]
-        self.diag = set(diag.split("+")) if diag else set()
-        self.diag_log = "log" in self.diag
-        self.look = next((d for d in self.diag if d.startswith("look")), None)
-        # `mixKcC`, for example `mix4c0.5`: among the policy's K best actions, pick by logit + C * (V(after) - V(now)).
-        mix = next((d for d in self.diag if d.startswith("mix")), None)
-        # `mixpKcC`: the same, and end turn and the policy's best bank trade are always candidates too.
-        self.mix_plus = bool(mix) and mix.startswith("mixp")
-        self.mix = (int(mix[4 if self.mix_plus else 3:].split("c")[0]), float(mix.split("c")[1])) if mix else None
-        self.timing = "time" in self.diag
-        self.t_sum, self.t_n, self.t_steps, self.diag_name = 0.0, 0, 0, diag
-        self.rng = np.random.default_rng(12345)
-        self.places_at = next(off for name, off, _, _ in tables if name == "places")
-        self._lin = self._ptr = None
-        self._v = 0.0
+        # Eval variants after `#` in a subject (rl/eval): `mixKcC` (for example `mix4c30`) picks, among the policy's K
+        # best legal actions, the one with the most logit + C * (V(after) - V(now)), each tried on a copy of the game;
+        # `time` keeps the time per decision under CHARTER_DIAG_DIR.
+        self.diag_name = ""
+        self.mix, self.timing, self._v = None, False, 0.0
+        self.t_sum, self.t_n, self.t_steps = 0.0, 0, 0
+        names = [t[0] for t in tables]
+        self.moves_t = names.index("moves") if "moves" in names else None
+        self.act_col = 1   # rl/layout.json: the moves table's `action` column
 
     def forward(self, obs, state):
         rows = {} if self.ptr is not None else None
-        x = entity_encode(np.asarray(obs, np.float32), self.tables, self.w_in, self.w_out, rows)
+        obs = np.array(obs, np.float32)
+        moves = None
+        if self.moves_t is not None:
+            # The moves table's action column routes each row's score, and the encoder sees 0 there.
+            _, off, nrows, width = self.tables[self.moves_t]
+            cols = off + np.arange(nrows) * width + self.act_col
+            moves = (np.rint(obs[cols]).astype(np.int64), obs[off + np.arange(nrows) * width] > 0.5)
+            obs[cols] = 0
+        x = entity_encode(obs, self.tables, self.w_in, self.w_out, rows)
         out = []
         for W, s in zip(self.grus, state):
             x, s2 = mingru_step(W, x, s)
             out.append(s2)
         y = self.decoder @ x
-        lin = y[:-1].copy()
-        P, B = self.acts["place"], self.acts["bank"]
-        if "perm" in self.diag:
-            lin[P:P + 128] = lin[P:P + 128][self.rng.permutation(128)]
-        if "nolin" in self.diag or "nolinbank" in self.diag:
-            lin[P:P + 128] = 0.0
-        if "nolinbank" in self.diag:
-            lin[B:B + 256] = 0.0
-        logits = lin
-        ptr = None
+        self._v = float(y[-1])
+        logits = y[:-1]
         if self.ptr is not None:
-            ptr = pointer_scores(rows, x, self.ptr, len(lin), P, B)
-            logits = lin + ptr
-        self._lin, self._ptr, self._v = lin, ptr, float(y[-1])
+            logits = logits + pointer_scores(rows, x, self.ptr, len(logits), self.acts["place"], self.acts["bank"],
+                                             self.E, moves)
         return logits, y[-1], out
 
-    def category(self, a):
-        P, B, D = self.acts["place"], self.acts["bank"], self.acts["declare"]
-        if a < 0:
-            return "none"
-        if a == 0:
-            return "end"
-        if a < B:
-            return "vote"
-        if a < D:
-            return "bank"
-        if a < P:
-            return "declare"
-        return "place"
+
+    def set_diag(self, diag):
+        self.diag_name = diag
+        parts = set(diag.split("+")) if diag else set()
+        mix = next((d for d in parts if d.startswith("mix")), None)
+        self.mix = (int(mix[3:].split("c")[0]), float(mix.split("c")[1])) if mix else None
+        self.timing = "time" in parts
 
     def tick(self, dt):
-        """Time per decision, kept per process under CHARTER_DIAG_DIR (rl/eval reads nothing from it)."""
         self.t_sum += dt
         self.t_n += 1
         if self.t_n % 50 == 0:
-            import json as _json
-            d = os.environ.get("CHARTER_DIAG_DIR", "/vol/priorart2/diag")
+            d = os.environ.get("CHARTER_DIAG_DIR", "/tmp/charter-diag")
             os.makedirs(d, exist_ok=True)
             with open(os.path.join(d, f"time-{self.diag_name}-{os.getpid()}.json"), "w") as f:
-                _json.dump({"variant": self.diag_name, "decisions": self.t_n, "seconds": self.t_sum,
-                            "engine_steps": self.t_steps}, f)
+                json.dump({"variant": self.diag_name, "decisions": self.t_n, "seconds": self.t_sum,
+                           "engine_steps": self.t_steps}, f)
 
     def choose_mix(self, player, game, obs, mask, logits):
         k, c = self.mix
-        legal = np.flatnonzero(mask[:len(logits)])
+        legal = np.flatnonzero(np.isfinite(logits))
         if len(legal) <= 1 or game.voting:
             return None
-        cand = list(legal[np.argsort(-logits[legal])][:k])
-        if self.mix_plus:
-            B, D = self.acts["bank"], self.acts["declare"]
-            if mask[0] and 0 not in cand:
-                cand.append(0)
-            bank = legal[(legal >= B) & (legal < D)]
-            if len(bank):
-                b = int(bank[np.argmax(logits[bank])])
-                if b not in cand:
-                    cand.append(b)
+        cand = legal[np.argsort(-logits[legal])][:k]
         seat, v_now, state = game.seat, self._v, player.state
         best, best_s = None, -np.inf
         for a in cand:
@@ -167,77 +138,7 @@ class EntityNet(FlatNet):
             sc = float(logits[a]) + c * (v - v_now)
             if sc > best_s:
                 best, best_s = int(a), sc
-        self.forward(obs, state)  # restore this decision's parts
         return best
-
-    def choose(self, player, game, obs, mask, logits):
-        if self.mix:
-            return self.choose_mix(player, game, obs, mask, logits)
-        if not self.look:
-            return None
-        legal = np.flatnonzero(mask[:len(logits)])
-        if len(legal) <= 1 or game.voting:
-            return None
-        k = int(self.look[4:] or 0)
-        cand = legal[np.argsort(-logits[legal])][:k] if k else legal
-        if len(cand) > 64:
-            return None
-        seat, v_now = game.seat, self._v
-        state = player.state
-        best, best_v = None, -np.inf
-        for a in cand:
-            if a == 0:
-                v = v_now
-            else:
-                g2 = game.copy()
-                g2.step(int(a))
-                if g2.over:
-                    v = float(g2.rewards()[seat])
-                elif g2.seat == seat:
-                    _, v, _ = self.forward(g2.obs(), state)
-                    v = float(v)
-                else:
-                    v = v_now
-            if v > best_v:
-                best, best_v = int(a), v
-        self.forward(obs, state)  # restore the parts of this decision
-        return best
-
-    def record(self, player, game, obs, mask, logits, a):
-        import json as _json
-        d = os.environ.get("CHARTER_DIAG_DIR", "/vol/priorart2/diag")
-        os.makedirs(d, exist_ok=True)
-        P, B = self.acts["place"], self.acts["bank"]
-        m = np.asarray(mask[:len(logits)], bool)
-        lp = np.flatnonzero(m[P:P + 128])
-        rec = {"ctx": list(getattr(player, "diag_ctx", ())), "setup": float(obs[2]), "round": float(obs[4]),
-               "end_legal": bool(m[0]), "n_place": int(len(lp)), "n_bank": int(m[B:B + 256].sum()),
-               "chosen": self.category(a), "v": self._v, "lin_end": float(self._lin[0])}
-        if len(lp):
-            tot = logits[P + lp]
-            i = int(lp[np.argmax(tot)])
-            rec["best_place"] = {"total": float(logits[P + i]), "lin": float(self._lin[P + i]),
-                                 "ptr": float(self._ptr[P + i]) if self._ptr is not None else 0.0, "row": i}
-            rows = np.asarray(obs[self.places_at:self.places_at + 128 * 35], np.float32).reshape(128, 35)
-            rec["best_place_row"] = {k: float(rows[i, c]) for k, c in PLACES_COLS.items()}
-            rec["legal_points_gain_max"] = float(rows[lp, 15].max())
-            rec["legal_short_min"] = float(rows[lp, 18].min())
-            rec["lin_place_mean"] = float(self._lin[P + lp].mean())
-            rec["ptr_place_mean"] = float(self._ptr[P + lp].mean()) if self._ptr is not None else 0.0
-            rec["ptr_place_sd"] = float(self._ptr[P + lp].std()) if self._ptr is not None else 0.0
-            rec["lin_place_sd"] = float(self._lin[P + lp].std())
-        for bot in ("table", "hand"):
-            try:
-                s = int(game.suggest(bot))
-            except Exception:
-                s = -1
-            rec[bot] = self.category(s)
-            rec[bot + "_same"] = bool(s == a)
-            if s >= P and len(lp):
-                rec[bot + "_place"] = {"total": float(logits[s]), "lin": float(self._lin[s]),
-                                       "ptr": float(self._ptr[s]) if self._ptr is not None else 0.0}
-        with open(os.path.join(d, f"{os.getpid()}.jsonl"), "a") as f:
-            f.write(_json.dumps(rec) + "\n")
 
 
 def read_entity_bin(path, tables, E, hidden, layers, act_size, pointer=0):
@@ -253,7 +154,7 @@ def read_entity_bin(path, tables, E, hidden, layers, act_size, pointer=0):
     w_in = [block(E, width) for _, _, _, width in tables]
     w_out = block(hidden, len(tables) * E)
     dec = block(act_size + 1, hidden)
-    ptr = block(3 * E, hidden) if pointer else None
+    ptr = block((4 if any(t[0] == "moves" for t in tables) else 3) * E, hidden) if pointer else None
     grus = [block(3 * hidden, hidden) for _ in range(layers)]
     if pos != len(w) and (len(w) + 7) & ~7 != pos:
         raise ValueError(f"{path}: {len(w)} floats, expected {pos} for this shape")
@@ -262,8 +163,9 @@ def read_entity_bin(path, tables, E, hidden, layers, act_size, pointer=0):
 
 def load_entity(path, meta, layout_path=LAYOUT):
     layout = json.load(open(layout_path))
-    tables = base_tables(layout)
-    assert meta["obs_size"] == layout["base_size"], "the entity encoder reads the base tables only"
+    moves = bool(meta.get("moves", 0))   # per-move rows (move_rows=1, built with CE_MOVES)
+    tables = base_tables(layout, moves)
+    assert meta["obs_size"] == (layout["full_size"] if moves else layout["base_size"]), "obs_size and moves disagree"
     E = meta["entity_dim"]
     pointer = int(meta.get("pointer", 0))
     assert layout["version"] == 2 and meta.get("layout", 2) == 2, "this pointer decoder is for layout 2"
@@ -277,5 +179,7 @@ def load_entity(path, meta, layout_path=LAYOUT):
         ptr = z["ptr"] if pointer else None
         grus = [z[f"gru{i}"] for i in range(meta["layers"])]
     f = lambda a: np.ascontiguousarray(a, np.float32)
-    return EntityNet(tables, [f(a) for a in w_in], f(w_out), f(dec), [f(g) for g in grus], meta["act_size"],
-                     f(ptr) if pointer else None, layout["actions"], meta.get("diag", ""))
+    net = EntityNet(tables, [f(a) for a in w_in], f(w_out), f(dec), [f(g) for g in grus], meta["act_size"],
+                     f(ptr) if pointer else None, layout["actions"])
+    net.set_diag(meta.get("diag", ""))
+    return net

@@ -60,6 +60,11 @@ WORLD_SETS = {
     "pack": (["pack-train"], ["pack-val"]),
 }
 OVERRIDES = {}   # settings from the command line that win over a policy's meta, such as random_map
+# The settings a policy's meta can give that change what it sees or may do.
+SETTING_KEYS = ("slot_order", "move_rows", "random_map", "preview", "declare_always", "prune_declares",
+                "declare_once_per_turn")
+LAYOUT = json.load(open(os.path.join(HERE, "..", "layout.json")))
+ACT_DECLARE, ACT_PLACE = LAYOUT["actions"]["declare"], LAYOUT["actions"]["place"]
 SEATS = 4
 OPPONENTS = ["hand", "random", "champion", "table"]
 # Step a policy's recurrent state on a zero observation each time another caller seat decides, as training does
@@ -177,9 +182,10 @@ def play_table(task):
     win_how = {"target": 0, "limit": 0, "law": 0, "other": 0}
     games_how = {"target": 0, "limit": 0, "law": 0, "other": 0, "none": 0}
     best_other = 0.0
+    declares, most_in_turn = 0, 0
     base = {"game": game_id, "lineup": ["caller"] * SEATS, "seed": 1, "vote_mode": vote_mode,
             "law_every": 8 if laws else 0}
-    for key in ("slot_order", "move_rows", "random_map", "preview", "declare_always"):
+    for key in SETTING_KEYS:
         if key in settings:
             base[key] = settings[key]
     base.update(OVERRIDES)
@@ -198,6 +204,7 @@ def play_table(task):
             subject.diag_ctx = (game_id, opponent, phase, laws, k)
             subject.reset()
             subject.stale_wait = bool(settings.get("stale_wait"))
+        in_turn = 0
         while not g.over:
             seat = g.seat
             if seat == at:
@@ -208,6 +215,12 @@ def play_table(task):
                 else:
                     a = subject.act(g)
                 decisions += 1
+                if ACT_DECLARE <= a < ACT_PLACE:
+                    declares += 1
+                    in_turn += 1
+                    most_in_turn = max(most_in_turn, in_turn)
+                elif a == 0:
+                    in_turn = 0
             else:
                 a = others.act(g)
                 if subject is not None and WAIT_STEPS[0] and hasattr(subject, "wait"):
@@ -231,6 +244,7 @@ def play_table(task):
     return {"subject": label, "game": game_id, "opponent": opponent, "phase": phase, "laws": laws, "games": n,
             "wins": wins, "wins_by_seat": by_seat, "points": points / n, "rounds": rounds / n,
             "win_how": win_how, "games_how": games_how, "best_other": best_other / n,
+            "declares": declares, "most_declares_in_turn": most_in_turn,
             "refused": refused, "decisions": decisions, "ended": ended, "saved": saved}
 
 
@@ -243,12 +257,16 @@ def can_play_task(task):
     """Play one made-up game at one seat count, the subject at each seat in turn, the others random."""
     from charter import Game
     spec, game_id, seats, n, vote_mode = task
-    label, maker, _ = load_subject(spec)
+    label, maker, settings = load_subject(spec)
     bot = spec if spec in BOTS else None
     out = {"game": game_id, "seats": seats, "games": 0, "ended": 0, "refused": 0, "errors": 0, "decisions": 0,
            "first_error": ""}
     try:
-        g = Game({"game": game_id, "lineup": ["caller"] * seats, "seed": 1, "vote_mode": vote_mode})
+        cfg = {"game": game_id, "lineup": ["caller"] * seats, "seed": 1, "vote_mode": vote_mode}
+        for key in SETTING_KEYS:   # as play_table does
+            if key in settings:
+                cfg[key] = settings[key]
+        g = Game(cfg)
     except Exception as e:  # noqa: BLE001
         out["errors"] += 1
         out["first_error"] = f"could not start: {e}"
@@ -262,6 +280,7 @@ def can_play_task(task):
             subject = maker(7000 + k) if maker else None
             if subject:
                 subject.reset()
+                subject.stale_wait = bool(settings.get("stale_wait"))
             others = RandomPlayer(7001 + k)
             steps = 0
             while not g.over and steps < 50000:
@@ -352,6 +371,8 @@ def summary(events, state, names, at, info, game_id, opponent, phase, laws, seed
     votes = {}
     proposals = []
     laws_before = None
+    turn_decl = [0] * seats
+    most_decl = [0] * seats
     for ev, st in zip(play, state):
         rnd, setup, nlaws = st[0], st[1], st[2]
         when = "setup" if setup else f"r{rnd}"
@@ -360,6 +381,11 @@ def summary(events, state, names, at, info, game_id, opponent, phase, laws, seed
             s, m = ev["seat"], ev["move"]
             name = move_kind(m)
             kinds[s][name] = kinds[s].get(name, 0) + 1
+            if m.get("t") == "declare":
+                turn_decl[s] += 1
+                most_decl[s] = max(most_decl[s], turn_decl[s])
+            elif m.get("t") == "endTurn":
+                turn_decl[s] = 0
             if m.get("t") == "place":
                 where = m.get("spot", m.get("link", m.get("on", "")))
                 builds[s].append(f"{when} {m.get('kind')} at {where}")
@@ -375,9 +401,10 @@ def summary(events, state, names, at, info, game_id, opponent, phase, laws, seed
            f"Seed {seed}. Subject at seat {at}. Rounds: {int(info['round'])}. "
            f"Winner: {names[int(info['winner'])] if int(info['winner']) >= 0 else 'nobody'}. "
            "Points: " + ", ".join(f"{names[s]} {int(info[f'points{s}'])}" for s in range(seats)) + ".", ""]
-    out += ["## Moves by type", "", "| seat | " + " | ".join(["moves"]) + " |", "|---|---|"]
+    out += ["## Moves by type", "", "| seat | moves | declarations | most declarations in one turn |", "|---|---|---|---|"]
     for s in range(seats):
-        out.append(f"| {names[s]} | " + ", ".join(f"{k} {v}" for k, v in sorted(kinds[s].items())) + " |")
+        out.append(f"| {names[s]} | " + ", ".join(f"{k} {v}" for k, v in sorted(kinds[s].items())) +
+                   f" | {kinds[s].get('declare', 0)} | {most_decl[s]} |")
     out += ["", "## Points at the end of each round", "", "| round | " + " | ".join(names) + " |",
             "|---|" + "---|" * seats]
     last = {}
@@ -460,9 +487,11 @@ def table_rows(results, games, phase, laws):
         other_w = w - tw - limit_w
         share = (f"{pct(tw / w)} / {pct(limit_w / w)} / {pct(other_w / w)}" if w else "n/a")
         limit_games = sum(r["games_how"]["limit"] for r in sel)
+        decl = sum(r.get("declares", 0) for r in sel) / n
+        most = max(r.get("most_declares_in_turn", 0) for r in sel)
         rows.append(f"| {opp} | {n} | {pct(w / n)} | {pct(lo)} to {pct(hi)} | {pct(tw / n)} ({pct(tlo)} to {pct(thi)}) | "
                     f"{share} | {pct(limit_games / n)} | " + " / ".join(pct(x) for x in seat) +
-                    f" | {pts:.2f} | {best:.2f} |")
+                    f" | {pts:.2f} | {best:.2f} | {decl:.1f} | {most} |")
     return rows
 
 
@@ -480,12 +509,14 @@ def report(subject, meta_settings, results, seconds):
                 out += [f"**{name}, {'with' if laws else 'without'} laws, phase `{phase}`**", "",
                         "| opponents | games | win % | 95% interval | target wins % (95%) | wins at target / at round "
                         "limit / other | games ending at the limit % | win % by seat 0/1/2/3 | points | best opponent "
-                        "points |",
-                        "|---|---|---|---|---|---|---|---|---|---|"] + rows + [""]
+                        "points | declarations per game | most in one turn |",
+                        "|---|---|---|---|---|---|---|---|---|---|---|---|"] + rows + [""]
     out += [f"Refused actions: {refused}. Games that did not end: {unended}.", "",
             "*Target wins* count only games the subject won by reaching the game's target points. A win at the round "
             "limit goes to the leader on points (ties broken by the rules), often with a low score; *other* is a win "
-            "when a law ended the game. *Best opponent points* is the mean of the highest other seat's points.", ""]
+            "when a law ended the game. *Best opponent points* is the mean of the highest other seat's points. "
+            "*Declarations* are the subject's own (a bot subject's moves are not seen here, so it shows 0); *most in one "
+            "turn* is the largest number it made in one turn in any game of the table.", ""]
     bylaw = any(r["laws"] for r in results)
     out += [f"**By game, whole game, {'with' if bylaw else 'without'} laws** (win %, 95% interval, target wins %, points against the best "
             "opponent's points)", "",

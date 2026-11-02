@@ -129,6 +129,8 @@ def build_puffer(move_rows=False, out="puffer", patch=True, encoder="flat"):
           else f"cd {PUFFER} && git checkout -q -- src"))
     lib = f"{REPO}/rl/build"
     extra = f"-L{lib} -lcharter_rl -Xlinker=-rpath -Xlinker={lib}" + (" -DCHARTER_MOVE_ROWS" if move_rows else "")
+    if os.environ.get("CHARTER_STALE_WAIT") == "1":  # waiting players keep their last observation (charter.h)
+        extra += " -DCHARTER_STALE_WAIT"
     if encoder != "flat":
         e = encoder_dir(encoder)
         if os.path.isdir(f"{e}/patches"):
@@ -173,6 +175,11 @@ def train(run: str, train_args: str = "", seconds: int = 600, move_rows: bool = 
     t0 = time.time()
     sh("ln -sf /usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1 /usr/lib/x86_64-linux-gnu/libnvidia-ml.so; "
        "nvidia-smi --query-gpu=name,driver_version --format=csv,noheader")
+    extra = json.loads(meta_extra) if meta_extra else {}  # rl/entity/puffer_build.sh reads these two
+    os.environ["CHARTER_ENTITY_DIM"], os.environ["CHARTER_POINTER"] = str(extra.get("entity_dim", 32)), str(extra.get("pointer", 0))
+    os.environ["CHARTER_STALE_WAIT"] = str(extra.get("stale_wait", 0))
+    os.environ["CHARTER_MOVE_ROWS"] = "1" if move_rows else "0"   # rl/entity/puffer_build.sh: the moves pointer
+    os.environ["CHARTER_NO_END_LINEAR"] = str(extra.get("no_end_linear", 0))   # end turn from its moves row only
     code, text = build_puffer(move_rows, patch=patch, encoder=encoder)
     if code != 0:
         return {"build": code, "tail": text[-2000:]}
@@ -203,15 +210,16 @@ def train(run: str, train_args: str = "", seconds: int = 600, move_rows: bool = 
         import configparser
         ini = configparser.ConfigParser()
         ini.read(f"{SRC}/puffer/charter.ini")
-        for key in ("declare_always", "stale_wait"):
+        for key in ("declare_always", "stale_wait", "prune_declares", "declare_once_per_turn"):
             if ini.has_option("env", key):
                 meta["settings"][key] = bool(int(float(ini.get("env", key))))
         for tok in train_args.split():
             for key in ("vote_mode", "slot_order", "declare_always", "stale_wait", "shaping_points",
-                        "shaping_relative", "bot_share", "bot_policy", "seats"):
+                        "shaping_relative", "bot_share", "bot_policy", "seats", "prune_declares",
+                        "declare_once_per_turn"):
                 if tok.startswith(f"--env.{key}="):
                     v = tok.split("=", 1)[1]
-                    if key in ("declare_always", "stale_wait"):
+                    if key in ("declare_always", "stale_wait", "prune_declares", "declare_once_per_turn"):
                         v = bool(int(float(v)))
                     meta["settings"][key] = v
         meta.update(json.loads(meta_extra) if meta_extra else {})
@@ -227,7 +235,9 @@ def evaluate(subjects: list, out: str, games: int = 200, quick: bool = False, op
     """Run rl/eval on these subjects (`random`, `hand`, `champion`, or policy paths on the volume) and save the report,
     with `logs` saved games per table in `out/games/`."""
     vol.reload()
-    os.environ["CHARTER_DIAG_DIR"] = f"{out}/diag"  # rl/entity/entity_numpy.py, for `#log` subjects
+    if "turnreset" in out:  # rl/reference/policy.py: reset the GRU state to its waiting fixed point after end turn
+        os.environ["CHARTER_TURN_RESET"] = "1"
+    os.environ["CHARTER_DIAG_DIR"] = f"{out}/diag"  # rl/entity/entity_numpy.py: time per decision, for `#time`
     opp = f"--opponents {shlex.quote(opponents)}" if opponents else ""
     code, text = sh(f"cd {SRC}/.. && python3 rl/eval/eval.py {' '.join(map(shlex.quote, subjects))} --games {games} "
                     f"--jobs 8 --out {out} {'--quick' if quick else ''} {opp} --logs {logs} {eval_args}")

@@ -1,24 +1,26 @@
 """Write charter_entity_layout.h from rl/layout.json: where each base table sits in the observation.
 
-Usage: python rl/entity/gen_layout.py rl/layout.json rl/entity/charter_entity_layout.h
+Usage: python rl/entity/gen_layout.py rl/layout.json rl/entity/charter_entity_layout.h [--moves]
+
+With --moves, the moves table (per-move rows, `move_rows=1`) is a table too, and the header defines CE_MOVES.
 """
 import json, sys
 
 
-def tables(layout):
-    """(name, offset, rows, width) for each base table, in observation order. The moves table is left out."""
-    out = [(t["name"], t["offset"], t["rows"], t["width"]) for t in layout["tables"] if t["name"] != "moves"]
+def tables(layout, moves=False):
+    """(name, offset, rows, width) for each table, in observation order. The moves table is left out unless moves."""
+    out = [(t["name"], t["offset"], t["rows"], t["width"]) for t in layout["tables"] if moves or t["name"] != "moves"]
     at = 0
     for name, off, rows, width in out:
         assert off == at, f"table {name} starts at {off}, expected {at}"
         assert width >= 1 and rows >= 1
         at += rows * width
-    assert at == layout["base_size"], (at, layout["base_size"])
+    assert at == (layout["full_size"] if moves else layout["base_size"]), at
     return out
 
 
-def header(layout):
-    ts = tables(layout)
+def header(layout, moves=False):
+    ts = tables(layout, moves)
     lst = lambda xs: "{" + ", ".join(str(x) for x in xs) + "}"
     names = [t[0] for t in ts]
     starts, acc = [], 0
@@ -31,7 +33,7 @@ def header(layout):
         "#pragma once",
         f"#define CE_LAYOUT_VERSION {layout['version']}",
         f"#define CE_NUM_TABLES {len(ts)}",
-        f"#define CE_OBS_SIZE {layout['base_size']}",
+        f"#define CE_OBS_SIZE {layout['full_size'] if moves else layout['base_size']}",
         f"#define CE_TOTAL_ROWS {acc}",
         f"#define CE_OFF_LIST {lst(t[1] for t in ts)}",
         f"#define CE_ROWS_LIST {lst(t[2] for t in ts)}",
@@ -43,10 +45,16 @@ def header(layout):
         f"#define CE_RES_TABLE {names.index('resources')}",
         f"#define CE_ACT_BANK {layout['actions']['bank']}",
         f"#define CE_ACT_SIZE {layout['act_size']}",
+    ] + ([
+        "// Per-move rows: the moves table, and its column holding each row's action number.",
+        "#define CE_MOVES 1",
+        f"#define CE_MOVES_TABLE {names.index('moves')}",
+        f"#define CE_MOVE_ACT_COL {[c['name'] for c in next(t for t in layout['tables'] if t['name'] == 'moves')['cols']].index('action')}",
+    ] if moves else []) + [
         "",
     ])
 
 
 if __name__ == "__main__":
     layout = json.load(open(sys.argv[1]))
-    open(sys.argv[2], "w").write(header(layout))
+    open(sys.argv[2], "w").write(header(layout, "--moves" in sys.argv))

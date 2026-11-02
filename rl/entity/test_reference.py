@@ -22,7 +22,7 @@ import torch
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from entity_torch import encode, pointer_logits  # noqa: E402
+from entity_torch import encode, pointer_logits, strip_moves, moves_logits  # noqa: E402
 from gen_layout import header, tables  # noqa: E402
 
 BATCH, HIDDEN = 37, 128
@@ -31,12 +31,21 @@ BATCH, HIDDEN = 37, 128
 TOL = {"float": 1e-4, "bf16": 5e-2}
 
 
-def build(puffer, work, seeded, precision, pointer=0):
+def build(puffer, work, seeded, precision, pointer=0, moves=False):
     raylib = next(puffer.glob("raylib-*/include"))
-    so = work / f"entity_test_{precision}_{seeded}_ptr{pointer}.so"
+    src = HERE
+    if moves:
+        # Its own layout header (the moves table, CE_MOVES). `#include "..."` looks beside the .cu first, so the
+        # sources are copied next to that header.
+        import shutil
+        work = work / "moves"
+        for f in ("charter_entity.cu", "test_entity_cuda.cu"):
+            shutil.copy(HERE / f, work / f)
+        src = work
+    so = work / f"entity_test_{precision}_{seeded}_ptr{pointer}{'_moves' if moves else ''}.so"
     flags = ((["-DPRECISION_FLOAT"] if precision == "float" else []) + (["-DCE_POINTER"] if pointer else [])
 )
-    cmd = ["nvcc", "-shared", "-o", str(so), str(HERE / "test_entity_cuda.cu"),
+    cmd = ["nvcc", "-shared", "-o", str(so), str(src / "test_entity_cuda.cu"),
            *flags, f"-DCE_SEEDED_ERROR={seeded}",
            "-I", str(puffer / "src"), "-I", str(puffer / "vendor"), "-I", str(raylib), "-I", str(work), "-I", str(HERE),
            "-Xlinker", "--no-as-needed", "-lcublas", "-lcurand", "-lnccl", "-lnvidia-ml", "-lcusolver",
@@ -121,9 +130,9 @@ def run(lib, ts, size, rng, precision):
             "grads": [rel(g, w.grad) for g, w in zip(grads, tw)]}
 
 
-def run_pointer(lib, ts, layout, rng, precision):
-    act = layout["act_size"] + 1   # 695 actions and the no-op
-    size = layout["base_size"]
+def run_pointer(lib, ts, layout, rng, precision, moves=False):
+    act = layout["act_size"] + 1   # the actions and the no-op
+    size = layout["full_size"] if moves else layout["base_size"]
     lib.cp_test_init(BATCH, HIDDEN, act)
     n = lib.cp_test_num_params()
     shapes = []
@@ -135,6 +144,13 @@ def run_pointer(lib, ts, layout, rng, precision):
     for i, w in enumerate(ws):
         lib.cp_test_set_param(i, ptr(np.ascontiguousarray(w)))
     obs = make_obs(ts, size, rng)
+    names = [t[0] for t in ts]
+    if moves:
+        # Each real moves row names a different action, as the environment writes them; padding rows hold junk.
+        _, off, nrows, width = ts[names.index("moves")]
+        blk = obs[:, off:off + nrows * width].reshape(BATCH, nrows, width)
+        for b in range(BATCH):
+            blk[b, :, 1] = np.where(blk[b, :, 0] > 0.5, rng.permutation(act - 1)[:nrows], blk[b, :, 1])
     up_l = rng.normal(size=(BATCH, act)).astype(np.float32)
     up_v = rng.normal(size=(BATCH,)).astype(np.float32)
     if precision == "bf16":
@@ -151,13 +167,17 @@ def run_pointer(lib, ts, layout, rng, precision):
     T = len(ts)
     tw = [torch.tensor(w, dtype=torch.float64, requires_grad=True) for w in ws]
     tables_ = [(off, rows, width) for _, off, rows, width in ts]
-    names = [t[0] for t in ts]
     o = torch.tensor(obs, dtype=torch.float64)
+    if moves:
+        o, macts, mreal = strip_moves(o, tables_, names.index("moves"), 1)
     h = encode(o, tables_, tw[:T], tw[T])
     base = h @ tw[T + 1].T
     logits = base[:, :act] + pointer_logits(o, tables_, tw[:T], h, tw[T + 2], names.index("places"),
                                             names.index("resources"), layout["actions"]["place"],
-                                            layout["actions"]["bank"], act)
+                                            layout["actions"]["bank"], act, E=tw[0].shape[0])
+    if moves:
+        logits = logits + moves_logits(o, tables_, tw[:T], h, tw[T + 2], names.index("moves"), macts, mreal, act,
+                                       tw[0].shape[0])
     ref = torch.cat([logits, base[:, act:]], 1)
     (logits * torch.tensor(up_l, dtype=torch.float64)).sum().add(
         (base[:, act] * torch.tensor(up_v, dtype=torch.float64)).sum()).backward()
@@ -179,15 +199,23 @@ def main():
     only_pointer = "--pointer" in sys.argv
     cases = [] if only_pointer else [(p, s, 0) for p, s in (("float", 0), ("float", 1), ("float", 2), ("bf16", 0))]
     cases += [("float", 0, 1), ("float", 3, 1), ("float", 4, 1), ("bf16", 0, 1)]
-    for precision, seeded, pointer in cases:
-        lib = build(puffer, work, seeded, precision, pointer)
+    # Per-move rows (CE_MOVES, float only: action numbers up to 514 do not fit bf16). Seeded errors: 3, the
+    # decoder's gradient into the encoder rows dropped; 5, the action column left in the encoder's input; 6, a
+    # wrong gradient on the move query.
+    moves_cases = [("float", 0, 1), ("float", 3, 1), ("float", 5, 1), ("float", 6, 1)]
+    if "--moves" in sys.argv:
+        cases = []
+    (work / "moves").mkdir(parents=True, exist_ok=True)
+    (work / "moves" / "charter_entity_layout.h").write_text(header(layout, True))
+    for precision, seeded, pointer, moves in [c + (False,) for c in cases] + [c + (True,) for c in moves_cases]:
+        lib = build(puffer, work, seeded, precision, pointer, moves)
         rng = np.random.default_rng(seeded + 7)
-        res = (run_pointer(lib, ts, layout, rng, precision) if pointer
+        res = (run_pointer(lib, tables(layout, True) if moves else ts, layout, rng, precision, moves) if pointer
                else run(lib, ts, layout["base_size"], rng, precision))
         worst = max([res["forward"]] + res["grads"])
         passed = worst < TOL[precision] and res["cuda_error"] == "no error"
         expect = seeded == 0
-        res.update(precision=precision, seeded_error=seeded, pointer=pointer, worst=worst, matches_reference=passed,
+        res.update(precision=precision, seeded_error=seeded, pointer=pointer, moves=moves, worst=worst, matches_reference=passed,
                    as_expected=passed == expect)
         print(json.dumps(res))
         ok &= passed == expect
