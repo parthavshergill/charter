@@ -183,7 +183,7 @@ def draw(theme_name, rows, sonnet, out_paths):
             "Bot games: 800 per point on Island and Not Catan, with 95% intervals.\n"
             f"Sonnet: {n_s} games on Island, our bot in every seat in turn. Sonnet gets only our bot's moves "
             "(no laws, talk or player trades). Small samples, so wide bars.")
-    fig.text(0.07, 0.025, foot, fontsize=11.5, color=t["muted"], va="bottom", linespacing=1.6)
+    fig.text(0.07, 0.025, foot, fontsize=11, color=t["muted"], va="bottom", linespacing=1.6)
     for path in out_paths:
         fig.savefig(path, facecolor=t["bg"], dpi=120)
     plt.close(fig)
