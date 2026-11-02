@@ -102,13 +102,18 @@ def load_subject(spec):
         return "random", RandomPlayer, {}
     if spec in BOTS:
         return spec, None, {}
+    diag = ""
+    if "#" in spec:  # "<checkpoint>#<variant>": a diagnostic variant of the policy (rl/entity/entity_numpy.py DIAG)
+        spec, diag = spec.split("#", 1)
     meta_path = spec + ".json"
     if not os.path.exists(meta_path):
         meta_path = os.path.splitext(spec)[0] + ".json"
     meta = json.load(open(meta_path))
+    if diag:
+        meta["diag"] = diag
     from reference.policy import load_policy
     net = load_policy(spec, meta)
-    label = meta.get("name", os.path.basename(spec))
+    label = meta.get("name", os.path.basename(spec)) + (f"#{diag}" if diag else "")
     settings = dict(meta.get("settings", {}))
     # Some metas give stale_wait at the top level (rl/entity2's runs), not in settings.
     if "stale_wait" in meta and "stale_wait" not in settings:
@@ -176,6 +181,7 @@ def play_table(task):
         subject = maker(seed) if maker else None
         others = RandomPlayer(seed + 1)
         if subject:
+            subject.diag_ctx = (game_id, opponent, phase, laws, k)
             subject.reset()
             subject.stale_wait = bool(settings.get("stale_wait"))
         while not g.over:

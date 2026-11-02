@@ -83,8 +83,15 @@ class Player:
         logits, _, self.state = self.net.forward(obs, self.state)
         logits = logits[:len(mask)].astype(np.float64)
         logits[mask == 0] = -np.inf
+        if hasattr(self.net, "choose"):  # diagnostic variants that choose another way (rl/entity/entity_numpy.py)
+            a = self.net.choose(self, game, obs, mask, logits)
+            if a is not None:
+                return a
         if self.greedy:
-            return int(np.argmax(logits))
+            a = int(np.argmax(logits))
+            if getattr(self.net, "diag_log", None):
+                self.net.record(self, game, obs, mask, logits, a)
+            return a
         p = np.exp(logits - logits.max())
         p /= p.sum()
         return int(self.rng.choice(len(p), p=p))
