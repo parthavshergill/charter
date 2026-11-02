@@ -33,12 +33,19 @@ TOL = {"float": 1e-4, "bf16": 5e-2}
 
 def build(puffer, work, seeded, precision, pointer=0, moves=False):
     raylib = next(puffer.glob("raylib-*/include"))
+    src = HERE
     if moves:
-        work = work / "moves"   # its layout header has the moves table and CE_MOVES
+        # Its own layout header (the moves table, CE_MOVES). `#include "..."` looks beside the .cu first, so the
+        # sources are copied next to that header.
+        import shutil
+        work = work / "moves"
+        for f in ("charter_entity.cu", "test_entity_cuda.cu"):
+            shutil.copy(HERE / f, work / f)
+        src = work
     so = work / f"entity_test_{precision}_{seeded}_ptr{pointer}{'_moves' if moves else ''}.so"
     flags = ((["-DPRECISION_FLOAT"] if precision == "float" else []) + (["-DCE_POINTER"] if pointer else [])
 )
-    cmd = ["nvcc", "-shared", "-o", str(so), str(HERE / "test_entity_cuda.cu"),
+    cmd = ["nvcc", "-shared", "-o", str(so), str(src / "test_entity_cuda.cu"),
            *flags, f"-DCE_SEEDED_ERROR={seeded}",
            "-I", str(puffer / "src"), "-I", str(puffer / "vendor"), "-I", str(raylib), "-I", str(work), "-I", str(HERE),
            "-Xlinker", "--no-as-needed", "-lcublas", "-lcurand", "-lnccl", "-lnvidia-ml", "-lcusolver",
