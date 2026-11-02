@@ -223,6 +223,14 @@ def train(run: str, train_args: str = "", seconds: int = 600, move_rows: bool = 
                     if key in ("declare_always", "stale_wait", "prune_declares", "declare_once_per_turn"):
                         v = bool(int(float(v)))
                     meta["settings"][key] = v
+        # Training-only switches (what games the run saw, not how a policy is played) go under "train".
+        train = {k: ini.get("env", k) for k in ("random_map", "last_seat_share", "law_every", "repeal_every")
+                 if ini.has_option("env", k)}
+        for tok in train_args.split():
+            for key in ("random_map", "last_seat_share", "law_every", "repeal_every"):
+                if tok.startswith(f"--env.{key}="):
+                    train[key] = tok.split("=", 1)[1]
+        meta["train"] = {k: float(v) for k, v in train.items()}
         meta.update(json.loads(meta_extra) if meta_extra else {})
         json.dump(meta, open(c + ".json", "w"))
     vol.commit()
@@ -244,6 +252,18 @@ def evaluate(subjects: list, out: str, games: int = 200, quick: bool = False, op
                     f"--jobs 8 --out {out} {'--quick' if quick else ''} {opp} --logs {logs} {eval_args}")
     vol.commit()
     return {"exit": code, "report": open(f"{out}/report.md").read() if os.path.exists(f"{out}/report.md") else text[-4000:]}
+
+
+@app.function(cpu=8, memory=4096, timeout=1800, volumes={VOL: vol})
+def wild_part(set_: str, start: int, count: int, out: str):
+    """Judge wild worlds `start` to `start + count - 1` of a set with rl/worlds/wild_filter.py, and keep the verdicts
+    on the volume."""
+    os.makedirs(out, exist_ok=True)
+    path = f"{out}/{set_}-{start:06d}.jsonl"
+    code, text = sh(f"cd {SRC}/.. && python3 rl/worlds/wild_filter.py run --set {set_} --start {start} "
+                    f"--count {count} --jobs 8 --out {path}")
+    vol.commit()
+    return {"exit": code, "path": path, "text": open(path).read() if os.path.exists(path) else text[-2000:]}
 
 
 # ---- Money -------------------------------------------------------------------------------------------------
@@ -301,5 +321,18 @@ def main(action: str = "test", run: str = "smoke", minutes: float = 10, max_doll
         r = evaluate_.remote([s if s in bots or s.startswith("/") else f"{VOL}/{s}" for s in subs],
                             f"{VOL}/{run}/{eval_name}", games, quick, opponents, logs, eval_args)
         print(r["report"])
+    elif action == "wild":
+        # The honesty filter over every wild world, in parts of 1024 worlds, 8 CPUs each. Verdicts go to the volume
+        # (`run`/wild) and to `rl/build/wild/` here, for `wild_filter.py write` and `summary`.
+        sizes = {"train": 65536, "val": 8192}
+        parts = [(s, a, 1024) for s, n in sizes.items() for a in range(0, n, 1024)]
+        seconds = guard(max_dollars, None, 8 * len(parts), 4 * len(parts), 900)
+        local = os.path.join(ROOT, "rl", "build", "wild")
+        os.makedirs(local, exist_ok=True)
+        bad = 0
+        for r in wild_part.with_options(timeout=seconds).starmap([(s, a, c, f"{VOL}/{run}/wild") for s, a, c in parts]):
+            bad += r["exit"] != 0
+            open(os.path.join(local, os.path.basename(r["path"])), "w").write(r["text"])
+        print(f"{len(parts) - bad} of {len(parts)} parts judged; verdicts in {local}")
     else:
         sys.exit(f"unknown action {action}")

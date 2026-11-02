@@ -2,6 +2,7 @@ import Lean.Data.Json
 import CharterRL.Obs
 import CharterRL.Gen
 import CharterRL.Pack
+import CharterRL.Wild
 
 /-!
 # The environment
@@ -73,7 +74,11 @@ structure Env where
   rewards : FloatArray
   proposed : Nat := 0
   passed : Nat := 0
+  /-- Laws that were in force and were repealed. -/
+  lapsed : Nat := 0
   decisions : Nat := 0
+  /-- Caller decisions with more legal placements than `places` has rows. -/
+  placeOver : Nat := 0
   /-- The current law's `VoteNets`, once a seat has voted on it. -/
   voteNets : Option VoteNets := Option.none
   /-- The open law's `Preview`, for the observations of its voters. -/
@@ -141,6 +146,7 @@ private def Env.syncLaws (e : Env) : Env :=
   { e with
     lawsSeen := ids
     passed := e.passed + (ids.filter (!e.lawsSeen.contains ·)).length
+    lapsed := e.lapsed + (e.lawsSeen.filter (!ids.contains ·)).length
     base := writeLaws e.base e.G s.laws
     ep := e.ep.seat s.rules.pieces }
 
@@ -158,12 +164,28 @@ private def Env.injectLaw (e : Env) : Env :=
   let e := { e with lawTurn := s0.turnsTaken }
   let (x, e) := e.draw
   let lib := e.T.library
-  if x.toNat % e.settings.lawEvery != 0 || lib.isEmpty then e else
+  if x.toNat % e.settings.lawEvery != 0 || (lib.isEmpty && (e.settings.repealEvery == 0 || s0.laws.isEmpty)) then e else
   let (y, e) := e.draw
   let s := e.play.state
   match s.currentSeat with
   | Option.none => e
   | some seat =>
+    -- With `repealEvery = n`, 1 proposal in n is to repeal a law in force, chosen at random, so laws also lapse.
+    let repeal? : Option (Law × String) :=
+      if e.settings.repealEvery == 0 || s.laws.isEmpty || (y >>> 32).toNat % e.settings.repealEvery != 0 then
+        Option.none
+      else
+        (s.laws[(y >>> 16).toNat % s.laws.length]?).map fun (id, L) =>
+          let title := s!"Repeal {L.title}"
+          (({ title, clauses := [.repeal id] } : Law), s!"(law \"{title}\" (repeal {id}))")
+    match repeal? with
+    | some (L, text) =>
+      match Engine.step e.G s (.propose seat (.law L)) with
+      | .ok s' =>
+        { e with play := e.play.commit {} e.playTable (.propose seat (.law L)) s', proposed := e.proposed + 1 }.note
+          (.propose seat (.law L)) (some text)
+      | .error _ => e
+    | Option.none =>
     let start := y.toNat % lib.size
     let tries := (List.range lib.size).filterMap fun i => (lib[(start + i) % lib.size]?).map ((start + i) % lib.size, ·)
     let found := tries.findSome? fun (i, L) =>
@@ -255,7 +277,9 @@ def Env.await (e : Env) (d : Decision) : Env :=
   | .turn seat =>
     let free := freeMap e.ctx s
     let reach := reachMap e.ctx s seat
-    { e with decision := d, places := placeList e.ctx e.ep s seat free reach, free, reach }
+    let places := placeList e.ctx e.ep s seat free reach
+    { e with decision := d, places, free, reach
+             placeOver := e.placeOver + (if places.size > maxPlaceRows then 1 else 0) }
   | .vote seat id L =>
     let cached := match e.preview with
       | some p => if e.shareVotes && p.id == id && p.rollsMade == s.rollsMade && p.turnsTaken == s.turnsTaken then some p
@@ -345,7 +369,7 @@ private def Env.reckon (e : Env) : Env := Id.run do
 /-- Start a game with this seed. The map, the dice, the row order and the laws all follow from the seed. -/
 def Env.start (T : Tables) (settings : Settings) (lineup : Array SeatPlan) (seed : Nat) (shareVotes : Bool := true) :
     Except String Env := do
-  let T := Pack.dealt T seed
+  let T := Wild.dealt (Pack.dealt T seed) seed
   let T := if settings.declareAlways then { T with declares := true } else T
   let seats := lineup.size
   let G := if settings.randomMap then randomMap T.G seed else T.G
@@ -479,7 +503,7 @@ def Env.savedState (e : Env) : String :=
 def infoNames : List String :=
   [ "over", "winner", "round", "events", "rejected", "proposed", "passed", "decisions", "offers" ]
   ++ (List.range maxSeats).map (s!"points{·}") ++ (List.range maxSeats).map (s!"opening{·}")
-  ++ [ "target", "round_limit", "law_ends" ]
+  ++ [ "target", "round_limit", "law_ends", "place_over", "lapsed" ]
 
 def Env.info (e : Env) : FloatArray :=
   let s := e.play.state
@@ -492,7 +516,7 @@ def Env.info (e : Env) : FloatArray :=
     , Float.ofNat e.proposed, Float.ofNat e.passed, Float.ofNat e.decisions
     , Float.ofNat (e.play.offersMade.foldl (· + ·) 0) ]
   let last : List Float :=
-    [ Float.ofNat e.G.targetPoints, Float.ofNat e.G.rounds, if s.lawEnds then 1 else 0 ]
+    [ Float.ofNat e.G.targetPoints, Float.ofNat e.G.rounds, if s.lawEnds then 1 else 0, Float.ofNat e.placeOver, Float.ofNat e.lapsed ]
   (first ++ seat s.pointsOf ++ seat (e.opening.getD · 0) ++ last).foldl FloatArray.push FloatArray.empty
 
 /-! ## Reading a configuration -/
@@ -519,7 +543,7 @@ private def readBool (j : Json) (k : String) (dflt : Bool) : Except String Bool 
 def readSettings (j : Json) : Except String Settings := do
   let known := ["game", "seats", "lineup", "seed", "law_every", "vote_mode", "move_rows", "preview", "random_map",
     "slot_order", "reward_win", "reward_standing", "shaping_points", "record", "declare_always", "shaping_relative",
-    "shaping_gamma", "block_undo_trades", "prune_declares", "declare_once_per_turn"]
+    "shaping_gamma", "block_undo_trades", "prune_declares", "declare_once_per_turn", "repeal_every"]
   match j.getObj? with
   | .error _ => throw "a configuration must be an object"
   | .ok kvs =>
@@ -531,6 +555,11 @@ def readSettings (j : Json) : Except String Settings := do
     | some v => match v.getNat? with
       | .ok n => pure n
       | .error _ => throw "law_every must be a whole number"
+  let repealEvery ← match jGet j "repeal_every" with
+    | Option.none => pure d.repealEvery
+    | some v => match v.getNat? with
+      | .ok n => pure n
+      | .error _ => throw "repeal_every must be a whole number"
   let voteMode ← match jGet j "vote_mode" with
     | Option.none => pure d.voteMode
     | some v => match v.getStr? with
@@ -545,7 +574,7 @@ def readSettings (j : Json) : Except String Settings := do
       | .ok "game" => pure .game
       | _ => throw "slot_order must be shuffled or game"
   pure
-    { lawEvery, voteMode, slotOrder
+    { lawEvery, voteMode, slotOrder, repealEvery
       moveRows := ← readBool j "move_rows" d.moveRows
       preview := ← readBool j "preview" d.preview
       randomMap := ← readBool j "random_map" d.randomMap
@@ -578,7 +607,7 @@ def readSeat (text : String) : Except String SeatPlan := do
 def Env.ofJson (j : Json) : Except String Env := do
   let settings ← readSettings j
   let id ← j.getObjValAs? String "game"
-  let T ← match tablesOf? id, Gen.tables? id, Pack.tables? id with
+  let T ← match tablesOf? id, Gen.tables? id, (Pack.tables? id).orElse fun _ => Wild.tables? id with
     | some T, _, _ => pure T
     | none, some made, _ => made
     | none, none, some T => pure T

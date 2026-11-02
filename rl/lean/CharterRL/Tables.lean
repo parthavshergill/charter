@@ -244,6 +244,17 @@ def tableBot : Strategy :=
     Table.Bots.handEvents ({ board := ⟨b.spots, b.neighbours, b.balls, b.spotPips, b.spotGoods⟩ } : Table.Bots.Ctx _)
       s [seat]
 
+/-- A seat that does nothing after setup: it places its setup pieces as `table` does, then only votes and signs as
+`table` would, and ends each turn at once. It never builds, trades or declares. It tests a world: if `idle` wins its
+share, play after setup does not decide the game. -/
+def idleBot : Strategy :=
+  Strategy.ofSeat "idle" fun ctx s seat =>
+    let evs := tableBot.decide ctx s [seat]
+    if s.phase == .setup then evs else
+    let reacts := evs.filter fun | .vote .. | .sign .. => true | _ => false
+    if !reacts.isEmpty then reacts
+    else if s.currentSeat == some seat && s.phase == .actions then [.move seat .endTurn] else []
+
 /-- `fair` accepts an offer only if it helps its next build and counts what it pays. `closed` refuses every offer.
 Both are the hand bot's code, and the weights are those of the evolution runs.
 
@@ -258,7 +269,8 @@ def opponents : List Opponent :=
   , { name := "champion-closed", strategy := Champion.strategy, weights := Champion.closedWeights }
   -- The champion as written, slower. Only for the test that `champion` decides the same.
   , { name := "champion-ref", strategy := ChampionRef.strategy, weights := ChampionRef.weights }
-  , { name := "table", strategy := tableBot, weights := .default } ]
+  , { name := "table", strategy := tableBot, weights := .default }
+  , { name := "idle", strategy := idleBot, weights := .default } ]
 
 /-- What plays a seat. `none` is the caller. `setup` plays until the setup turns are over, and `play` after. -/
 structure SeatPlan where
@@ -290,6 +302,9 @@ inductive SlotOrder where
 structure Settings where
   /-- A law is put to a vote at the start of a turn with a chance of 1 in this. 0 never does. -/
   lawEvery : Nat := 8
+  /-- When a law is put to a vote, it is with a chance of 1 in this a repeal of a law in force, chosen at random, so
+  laws lapse as well as pass. 0 (the default) never does, and leaves the game as before. -/
+  repealEvery : Nat := 0
   voteMode : VoteMode := .policy
   /-- Add the table of moves to the observation. -/
   moveRows : Bool := false

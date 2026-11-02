@@ -1,0 +1,292 @@
+# Sample wild worlds, all accepted by the honesty filter: two of each style (charter-rl-check --show pack-wild-1016 pack-wild-1024 pack-wild-1005 pack-wild-1009 pack-wild-1002 pack-wild-1010 pack-wild-1003 pack-wild-1011)
+
+pack-wild-1016: Wild economy world 30001016
+  2 to 6 seats. 12 rounds, target 33 points. 2 dice of 8 sides. Bank rate 5.
+  Board: 85 spots, 113 links, 26 tiles that pay (6 amber, 10 basalt, 6 coal, 4 dune, 0 ember).
+  Bank stock: 1352 amber, 690 basalt, 1366 coal, 141 dune, 936 ember.
+  Pieces:
+    hut: on a spot, costs 3 amber, 1 basalt, 2 points, yields 2, at most 7
+    path: on a link, costs 2 dune, 0 points, yields 0, at most 14
+    fort: replaces a hut, costs 4 basalt, 2 dune, 5 points, yields 1, at most 15
+  Setup: hut, path, hut, path.
+  Founding laws (2):
+    (law "ember is worth 2" (set-worth ember 2) (on-build fort (transfer bank actor ember 1)))
+    (law "Dividend of coal" (on-round-end (for-each-player true (transfer treasury each coal (/ (holding treasury coal) 4)))))
+  Laws that can be put to a vote (14):
+    (law "Repeal of law 1" (repeal 1))
+    (law "Wealth tax on coal" (on-round-end (for-each-player (<= 4 (holding each coal)) (transfer each treasury coal (/ (holding each coal) 3)))))
+    (law "Harvest tax on basalt" (on-harvest (if (res-is basalt) (transfer actor treasury basalt (/ amount 2)))))
+    (law "Points from hut" (on-round-end (for-each-player (<= 3 (count each hut)) (transfer bank each ember 1))))
+    (law "Help for the last" (on-round-end (for-each-player (= (points each) (least-over true (points each))) (transfer bank each basalt 2))))
+    (law "Help for the last" (on-round-end (for-each-player (= (points each) (least-over true (points each))) (transfer bank each basalt 3))))
+    (law "Exchange of basalt" (on-round-end (for-each-player (<= 4 (holding each basalt)) (transfer each bank basalt 4) (transfer bank each dune 1))))
+    (law "Upkeep of fort" (on-round-end (for-each-player (<= 3 (count each fort)) (transfer each bank dune (min (count each fort) (holding each dune))))))
+    (law "New price of path" (set-cost path (bundle (dune 3) (basalt 1))))
+    (law "fort brings amber" (on-build fort (transfer bank actor amber 1)))
+    (law "Auction for ember" (on-round-end (for-each-player (and (<= 1 (declared each dune)) (= (declared each dune) (most-over true (declared each dune)))) (transfer each treasury dune (min (declared each dune) (holding each dune))) (transfer bank each ember 1))))
+    (law "Points from hut" (on-round-end (for-each-player (<= 3 (count each hut)) (transfer bank each ember 1))))
+    (law "amber makes coal" (on-harvest (if (res-is amber) (transfer bank actor coal 1))))
+    (law "Honest count of basalt" (on-round-end (for-each-player (and (<= 1 (declared each basalt)) (<= (declared each basalt) (holding each basalt))) (transfer bank each dune (/ (declared each basalt) 2)))))
+
+pack-wild-1024: Wild economy world 30001024
+  2 to 6 seats. 9 rounds, target 26 points. 2 dice of 3 sides. Bank rate 5.
+  Board: 55 spots, 71 links, 14 tiles that pay (2 amber, 2 basalt, 0 coal, 1 dune, 0 ember, 3 flax, 1 gum, 1 hemp, 2 iron, 1 jade, 1 kelp, 0 lime).
+  Bank stock: 1452 amber, 884 basalt, 1838 coal, 558 dune, 344 ember, 1114 flax, 198 gum, 125 hemp, 474 iron, 1599 jade, 295 kelp, 1033 lime.
+  Pieces:
+    hut: on a spot, costs 4 gum, 4 flax, 1 ember, 1 points, yields 2, at most 3
+    path: on a link, costs 1 kelp, 0 points, yields 0, at most 5
+    fort: attaches to a hut, costs 2 amber, 1 gum, 2 lime, 1 points, yields 0, at most 3
+    mill: attaches to a fort, costs 2 iron, 2 jade, 4 points, yields 1, at most 1
+    tower: replaces a hut, costs 3 flax, 4 points, yields 1, at most 1
+    dock: replaces a tower, costs 4 ember, 3 jade, 1 points, yields 0, at most 17
+    canal: replaces a dock, costs 1 ember, 3 points, yields 0, at most 13
+    shrine: replaces a hut, costs 2 flax, 2 basalt, 3 hemp, 4 points, yields 2, at most 2
+  Setup: hut.
+  Founding laws (4):
+    (law "lime is worth 2" (set-worth lime 2) (on-round-end (for-each-player true (transfer bank each lime (count each mill)))))
+    (law "Dividend of kelp" (on-round-end (for-each-player true (transfer treasury each kelp (/ (holding treasury kelp) 4)))))
+    (law "Exchange of iron" (on-round-end (for-each-player (<= 6 (holding each iron)) (transfer each bank iron 6) (transfer bank each basalt 1))))
+    (law "Exchange of flax" (on-round-end (for-each-player (<= 4 (holding each flax)) (transfer each bank flax 4) (transfer bank each basalt 1))))
+  Laws that can be put to a vote (14):
+    (law "Harvest tax on flax" (on-harvest (if (res-is flax) (transfer actor treasury flax (/ amount 2)))))
+    (law "canal brings jade" (on-build canal (transfer bank actor jade 2)))
+    (law "dock brings ember" (on-build dock (transfer bank actor ember 4)))
+    (law "Tax and relief on iron" (on-harvest (if (res-is iron) (transfer actor treasury iron 1))) (on-round-end (for-each-player (< (points each) 5) (transfer treasury each iron 1))))
+    (law "Early help" (on-round-end (for-each-player (and (< round 4) (< (count each fort) 2)) (transfer bank each hemp 2))))
+    (law "amber makes ember" (on-harvest (if (res-is amber) (transfer bank actor ember 1))))
+    (law "The leader pays" (on-round-end (for-each-player (and (<= 3 (points each)) (= (points each) (most-over true (points each)))) (transfer each treasury iron (min 2 (holding each iron))))))
+    (law "kelp makes kelp" (on-harvest (if (res-is kelp) (transfer bank actor kelp 1))))
+    (law "dock is worth 3" (set-points dock 3))
+    (law "Repeal of law 3, and a new price of shrine" (repeal 3) (set-cost shrine (bundle (hemp 4) (flax 1))))
+    (law "Windfall of flax" (now (for-each-player (< (points each) 10) (transfer bank each flax 6))))
+    (law "Harvest tax on basalt" (on-harvest (if (res-is basalt) (transfer actor treasury basalt (/ amount 2)))))
+    (law "mill is worth 2" (set-points mill 2))
+    (law "Dividend of hemp" (on-round-end (for-each-player true (transfer treasury each hemp (/ (holding treasury hemp) 4)))))
+
+pack-wild-1005: Wild laws world 30001005
+  2 to 6 seats. 9 rounds, target 30 points. 2 dice of 12 sides. Bank rate 5.
+  Board: 70 spots, 92 links, 21 tiles that pay (21 amber, 0 basalt, 0 coal, 0 dune).
+  Bank stock: 36 amber, 34 basalt, 32 coal, 33 dune.
+  Pieces:
+    hut: on a spot, costs 2 amber, 1 points, yields 1, at most 3
+    path: on a link, costs 2 amber, 0 points, yields 0, at most 17
+    fort: attaches to a hut, costs 2 dune, 3 basalt, 1 coal, 5 points, yields 1, at most 3
+    mill: replaces a fort, costs 4 amber, 2 points, yields 1, at most 10
+    tower: replaces a hut, costs 3 amber, 6 points, yields 2, at most 20
+  Setup: hut, path, hut, path.
+  Founding laws (9):
+    (law "basalt is worth 2" (set-worth basalt 2) (on-build mill (transfer bank actor basalt 1)))
+    (law "coal is worth 2" (set-worth coal 2))
+    (law "dune is worth 3" (set-worth dune 3) (on-round-end (for-each-player true (transfer bank each dune (count each fort)))))
+    (law "Bank rate 3" (set-bank-rate 3))
+    (law "Harvest tax on amber" (on-harvest (if (res-is amber) (transfer actor treasury amber (/ amount 2)))))
+    (law "Raid on 15" (on-roll (for-each-player (and (= rolled 15) (< (points actor) (points each))) (move-piece each actor fort))))
+    (law "Wealth tax on amber" (on-round-end (for-each-player (<= 4 (holding each amber)) (transfer each treasury amber (/ (holding each amber) 3)))))
+    (law "Dividend of amber" (on-round-end (for-each-player true (transfer treasury each amber (/ (holding treasury amber) 4)))))
+    (law "Wealth tax on amber" (on-round-end (for-each-player (<= 5 (holding each amber)) (transfer each treasury amber (/ (holding each amber) 3)))))
+  Laws that can be put to a vote (13):
+    (law "Tax and relief on amber" (on-harvest (if (res-is amber) (transfer actor treasury amber 1))) (on-round-end (for-each-player (< (points each) 5) (transfer treasury each amber 1))))
+    (law "Repeal of law 7" (repeal 7))
+    (law "mill brings amber" (on-build mill (transfer bank actor amber 1)))
+    (law "Auction for coal" (on-round-end (for-each-player (and (<= 1 (declared each amber)) (= (declared each amber) (most-over true (declared each amber)))) (transfer each treasury amber (min (declared each amber) (holding each amber))) (transfer bank each coal 3))))
+    (law "New price of hut" (set-cost hut (bundle (amber 3))))
+    (law "Auction for basalt" (on-round-end (for-each-player (and (<= 1 (declared each amber)) (= (declared each amber) (most-over true (declared each amber)))) (transfer each treasury amber (min (declared each amber) (holding each amber))) (transfer bank each basalt 3))))
+    (law "Annex 206" (new-piece annex206 (bundle (amber 5)) (points 2) (attach hut) (yield 1) (limit 2)))
+    (law "New price of tower" (set-cost tower (bundle (amber 5))))
+    (law "amber counts" (set-worth amber 2))
+    (law "Repeal of law 1, and a new price of tower" (repeal 1) (set-cost tower (bundle (amber 4))))
+    (law "Wealth tax on amber" (on-round-end (for-each-player (<= 6 (holding each amber)) (transfer each treasury amber (/ (holding each amber) 3)))))
+    (law "Tax and relief on amber" (on-harvest (if (res-is amber) (transfer actor treasury amber 1))) (on-round-end (for-each-player (< (points each) 5) (transfer treasury each amber 1))))
+    (law "Repeal of law 6, and a new price of tower" (repeal 6) (set-cost tower (bundle (amber 3))))
+
+pack-wild-1009: Wild laws world 30001009
+  2 to 6 seats. 34 rounds, target 59 points. 2 dice of 7 sides. Bank rate 8.
+  Board: 67 spots, 86 links, 18 tiles that pay (5 amber, 4 basalt, 2 coal, 5 dune, 2 ember).
+  Bank stock: 1040 amber, 731 basalt, 883 coal, 1949 dune, 1596 ember.
+  Pieces:
+    hut: on a spot, costs 2 amber, 4 coal, 1 points, yields 2, at most 9
+    path: on a link, costs 2 amber, 0 points, yields 0, at most 18
+    fort: replaces a hut, costs 4 coal, 1 amber, 1 points, yields 3, at most 14
+    mill: on a spot, costs 3 basalt, 3 coal, 1 points, yields 1, at most 4
+    tower: replaces a fort, costs 1 coal, 1 points, yields 2, at most 2
+  Setup: hut, path, hut, path.
+  Founding laws (11):
+    (law "dune is worth 1" (set-worth dune 1) (on-build mill (transfer bank actor dune 2)))
+    (law "ember is worth 1" (set-worth ember 1))
+    (law "The leader pays" (on-round-end (for-each-player (and (<= 3 (points each)) (= (points each) (most-over true (points each)))) (transfer each treasury coal (min 3 (holding each coal))))))
+    (law "Points from mill" (on-round-end (for-each-player (<= 4 (count each mill)) (transfer bank each dune 1))))
+    (law "Early help" (on-round-end (for-each-player (and (< round 4) (< (count each mill) 2)) (transfer bank each coal 2))))
+    (law "Raid on 6" (on-roll (for-each-player (and (= rolled 6) (< (points actor) (points each))) (move-piece each actor tower))))
+    (law "Dividend of basalt" (on-round-end (for-each-player true (transfer treasury each basalt (/ (holding treasury basalt) 4)))))
+    (law "New price of hut" (set-cost hut (bundle (basalt 4) (amber 1))))
+    (law "Points from mill" (on-round-end (for-each-player (<= 4 (count each mill)) (transfer bank each ember 1))))
+    (law "Early help" (on-round-end (for-each-player (and (< round 6) (< (count each tower) 2)) (transfer bank each amber 2))))
+    (law "Upkeep of tower" (on-round-end (for-each-player (<= 3 (count each tower)) (transfer each bank amber (min (count each tower) (holding each amber))))))
+  Laws that can be put to a vote (14):
+    (law "Early help" (on-round-end (for-each-player (and (< round 7) (< (count each mill) 2)) (transfer bank each basalt 2))))
+    (law "Harvest tax on basalt" (on-harvest (if (res-is basalt) (transfer actor treasury basalt (/ amount 2)))))
+    (law "The leader pays" (on-round-end (for-each-player (and (<= 3 (points each)) (= (points each) (most-over true (points each)))) (transfer each treasury amber (min 3 (holding each amber))))))
+    (law "Upkeep of tower" (on-round-end (for-each-player (<= 3 (count each tower)) (transfer each bank basalt (min (count each tower) (holding each basalt))))))
+    (law "Windfall of basalt" (now (for-each-player (< (points each) 7) (transfer bank each basalt 5))))
+    (law "Exchange of coal" (on-round-end (for-each-player (<= 5 (holding each coal)) (transfer each bank coal 5) (transfer bank each coal 1))))
+    (law "Repeal of law 5, and a new price of hut" (repeal 5) (set-cost hut (bundle (amber 4))))
+    (law "coal counts" (set-worth coal 1))
+    (law "Bank rate 2" (set-bank-rate 2))
+    (law "Tax and relief on amber" (on-harvest (if (res-is amber) (transfer actor treasury amber 1))) (on-round-end (for-each-player (< (points each) 7) (transfer treasury each amber 1))))
+    (law "New price of tower" (set-cost tower (bundle (basalt 2) (amber 1))))
+    (law "Points from fort" (on-round-end (for-each-player (<= 6 (count each fort)) (transfer bank each dune 1))))
+    (law "Exchange of basalt" (on-round-end (for-each-player (<= 6 (holding each basalt)) (transfer each bank basalt 6) (transfer bank each amber 1))))
+    (law "Upkeep of mill" (on-round-end (for-each-player (<= 3 (count each mill)) (transfer each bank basalt (min (count each mill) (holding each basalt))))))
+
+pack-wild-1002: Wild Tutorial Island 30001002
+  2 to 6 seats. 18 rounds, target 16 points. 2 dice of 6 sides. Bank rate 3.
+  Board: 54 spots, 72 links, 18 tiles that pay (4 grain, 4 timber, 3 ore, 4 wool, 3 brick).
+  Bank stock: 30 grain, 30 timber, 30 ore, 30 wool, 30 brick.
+  Pieces:
+    road: on a link, costs 1 timber, 3 brick, 0 points, yields 0, at most 15
+    settlement: on a spot, costs 1 timber, 1 brick, 1 grain, 2 wool, 1 points, yields 0, at most 5
+    city: replaces a settlement, costs 1 grain, 2 ore, 2 points, yields 2, at most 4
+  Setup: settlement, road.
+  Founding laws (2):
+    (law "New price of settlement" (set-cost settlement (bundle (grain 3) (brick 1))))
+    (law "ore makes wool" (on-harvest (if (res-is ore) (transfer bank actor wool 1))))
+  Laws that can be put to a vote (21):
+    (law "Half on a city" (on-build city (transfer actor treasury grain (/ (holding actor grain) 2))))
+    (law "Half on a road" (on-build road (transfer actor treasury timber (/ (holding actor timber) 2))))
+    (law "Half on a settlement" (on-build settlement (transfer actor treasury grain (/ (holding actor grain) 2))))
+    (law "Wool levy" (on-round-end (for-each-player true (transfer each treasury wool (/ (holding each wool) 2)))))
+    (law "Dole and tithe" (on-round-end (for-each-player true (transfer bank each grain 1))) (on-harvest (if (< 1 (holding actor grain)) (transfer actor treasury grain 1))))
+    (law "Tithe" (on-harvest (transfer actor treasury res (/ amount 2))))
+    (law "Cheap cities" (set-cost city (bundle (grain 2) (ore 2))))
+    (law "Roller's gift" (on-roll (transfer bank actor grain 1)))
+    (law "Half on a 7" (on-roll (for-each-player (and (= rolled 7) (< 3 (+ (holding each grain) (holding each wool)))) (transfer each treasury grain (/ (holding each grain) 2)) (transfer each treasury wool (/ (holding each wool) 2)))))
+    (law "Roll tithe" (on-roll (for-each-player (<= 7 rolled) (transfer each treasury grain (/ (holding each grain) 2)))))
+    (law "Lighthouses" (new-piece lighthouse (bundle (ore 2) (brick 2)) (points 2) (attach settlement) (yield 1) (limit 2)))
+    (law "Exchange of timber" (on-round-end (for-each-player (<= 6 (holding each timber)) (transfer each bank timber 6) (transfer bank each timber 1))))
+    (law "settlement is worth 0" (set-points settlement 0))
+    (law "brick makes ore" (on-harvest (if (res-is brick) (transfer bank actor ore 1))))
+    (law "Windfall of grain" (now (for-each-player (< (points each) 8) (transfer bank each grain 2))))
+    (law "Wealth tax on timber" (on-round-end (for-each-player (<= 2 (holding each timber)) (transfer each treasury timber (/ (holding each timber) 3)))))
+    (law "Windfall of wool" (now (for-each-player (< (points each) 10) (transfer bank each wool 5))))
+    (law "Honest count of brick" (on-round-end (for-each-player (and (<= 1 (declared each brick)) (<= (declared each brick) (holding each brick))) (transfer bank each grain (/ (declared each brick) 2)))))
+    (law "Repeal of law 1" (repeal 1))
+    (law "city brings wool" (on-build city (transfer bank actor wool 3)))
+    (law "Repeal of law 0" (repeal 0))
+
+pack-wild-1010: Wild Tutorial Island 30001010
+  2 to 6 seats. 16 rounds, target 15 points. 2 dice of 6 sides. Bank rate 5.
+  Board: 54 spots, 72 links, 18 tiles that pay (4 grain, 4 timber, 3 ore, 4 wool, 3 brick).
+  Bank stock: 30 grain, 30 timber, 30 ore, 30 wool, 30 brick.
+  Pieces:
+    road: on a link, costs 1 timber, 3 brick, 0 points, yields 0, at most 23
+    settlement: on a spot, costs 1 timber, 1 brick, 3 grain, 1 wool, 1 points, yields 2, at most 5
+    city: replaces a settlement, costs 2 grain, 3 ore, 1 points, yields 2, at most 4
+  Setup: settlement, road.
+  Founding laws (2):
+    (law "road brings grain" (on-build road (transfer bank actor grain 3)))
+    (law "Honest count of wool" (on-round-end (for-each-player (and (<= 1 (declared each wool)) (<= (declared each wool) (holding each wool))) (transfer bank each grain (/ (declared each wool) 2)))))
+  Laws that can be put to a vote (21):
+    (law "Half on a city" (on-build city (transfer actor treasury grain (/ (holding actor grain) 2))))
+    (law "Half on a road" (on-build road (transfer actor treasury timber (/ (holding actor timber) 2))))
+    (law "Half on a settlement" (on-build settlement (transfer actor treasury grain (/ (holding actor grain) 2))))
+    (law "Wool levy" (on-round-end (for-each-player true (transfer each treasury wool (/ (holding each wool) 2)))))
+    (law "Dole and tithe" (on-round-end (for-each-player true (transfer bank each grain 1))) (on-harvest (if (< 1 (holding actor grain)) (transfer actor treasury grain 1))))
+    (law "Tithe" (on-harvest (transfer actor treasury res (/ amount 2))))
+    (law "Cheap cities" (set-cost city (bundle (grain 2) (ore 2))))
+    (law "Roller's gift" (on-roll (transfer bank actor grain 1)))
+    (law "Half on a 7" (on-roll (for-each-player (and (= rolled 7) (< 3 (+ (holding each grain) (holding each wool)))) (transfer each treasury grain (/ (holding each grain) 2)) (transfer each treasury wool (/ (holding each wool) 2)))))
+    (law "Roll tithe" (on-roll (for-each-player (<= 7 rolled) (transfer each treasury grain (/ (holding each grain) 2)))))
+    (law "Lighthouses" (new-piece lighthouse (bundle (ore 2) (brick 2)) (points 2) (attach settlement) (yield 1) (limit 2)))
+    (law "road is worth 1" (set-points road 1))
+    (law "Harvest tax on timber" (on-harvest (if (res-is timber) (transfer actor treasury timber (/ amount 2)))))
+    (law "The leader pays" (on-round-end (for-each-player (and (<= 3 (points each)) (= (points each) (most-over true (points each)))) (transfer each treasury ore (min 3 (holding each ore))))))
+    (law "Dividend of timber" (on-round-end (for-each-player true (transfer treasury each timber (/ (holding treasury timber) 4)))))
+    (law "Upkeep of road" (on-round-end (for-each-player (<= 3 (count each road)) (transfer each bank wool (min (count each road) (holding each wool))))))
+    (law "Wealth tax on wool" (on-round-end (for-each-player (<= 3 (holding each wool)) (transfer each treasury wool (/ (holding each wool) 3)))))
+    (law "brick makes wool" (on-harvest (if (res-is brick) (transfer bank actor wool 1))))
+    (law "Help for the last" (on-round-end (for-each-player (= (points each) (least-over true (points each))) (transfer bank each wool 1))))
+    (law "New price of city" (set-cost city (bundle (brick 4) (grain 1))))
+    (law "Annex 209" (new-piece annex209 (bundle (ore 6)) (points 2) (attach settlement) (yield 1) (limit 2)))
+
+pack-wild-1003: Wild Not Catan 30001003
+  3 to 4 seats. 36 rounds, target 15 points. 2 dice of 6 sides. Bank rate 3.
+  Board: 54 spots, 72 links, 18 tiles that pay (4 timber, 4 grain, 3 ore, 4 wool, 3 brick, 0 laurel).
+  Bank stock: 19 timber, 19 grain, 19 ore, 19 wool, 19 brick, 6 laurel.
+  Pieces:
+    road: on a link, costs 1 timber, 1 ore, 0 points, yields 0, at most 15
+    settlement: on a spot, costs 1 timber, 1 brick, 1 grain, 2 wool, 2 points, yields 2, at most 5
+    city: replaces a settlement, costs 2 grain, 4 ore, 3 points, yields 3, at most 3
+    knight: attaches to a settlement, costs 1 brick, 1 wool, 2 grain, 0 points, yields 0, at most 5
+    relic: attaches to a settlement, costs 2 ore, 5 wool, 4 timber, 3 points, yields 0, at most 2
+    wreath: attaches to a settlement, costs 3 laurel, 3 points, yields 0, at most 2
+  Setup: settlement, road.
+  Founding laws (5):
+    (law "A 7 costs big hands half" (on-roll (for-each-player (and (= rolled 7) (< 7 (+ (holding each timber) (+ (holding each grain) (+ (holding each ore) (+ (holding each wool) (holding each brick))))))) (transfer each bank timber (/ (holding each timber) 2)) (transfer each bank grain (/ (holding each grain) 2)) (transfer each bank ore (/ (holding each ore) 2)) (transfer each bank wool (/ (holding each wool) 2)) (transfer each bank brick (/ (holding each brick) 2)))))
+    (law "A new knight takes ore from each seat ahead" (on-build knight (for-each-player (and (< (points actor) (points each)) (< 0 (holding each ore))) (transfer each actor ore 1))))
+    (law "The third knight or sixth road earns a wreath" (on-build knight (if (= (count actor knight) 2) (transfer bank actor laurel 3))) (on-build road (if (= (count actor road) 5) (transfer bank actor laurel 3))) (on-build wreath (transfer bank treasury laurel 3)))
+    (law "A harvest that empties the bank pays nobody" (on-harvest (if (= (holding bank res) 0) (transfer actor bank res amount))))
+    (law "Help for the last" (on-round-end (for-each-player (= (points each) (least-over true (points each))) (transfer bank each wool 1))))
+  Laws that can be put to a vote (21):
+    (law "Half on a city" (on-build city (transfer actor treasury grain (/ (holding actor grain) 2))))
+    (law "Half on a road" (on-build road (transfer actor treasury timber (/ (holding actor timber) 2))))
+    (law "Half on a settlement" (on-build settlement (transfer actor treasury grain (/ (holding actor grain) 2))))
+    (law "Wool levy" (on-round-end (for-each-player true (transfer each treasury wool (/ (holding each wool) 2)))))
+    (law "Dole and tithe" (on-round-end (for-each-player true (transfer bank each grain 1))) (on-harvest (if (< 1 (holding actor grain)) (transfer actor treasury grain 1))))
+    (law "Tithe" (on-harvest (transfer actor treasury res (/ amount 2))))
+    (law "Cheap cities" (set-cost city (bundle (grain 2) (ore 2))))
+    (law "Roller's gift" (on-roll (transfer bank actor grain 1)))
+    (law "Half on a 7" (on-roll (for-each-player (and (= rolled 7) (< 3 (+ (holding each grain) (holding each wool)))) (transfer each treasury grain (/ (holding each grain) 2)) (transfer each treasury wool (/ (holding each wool) 2)))))
+    (law "Roll tithe" (on-roll (for-each-player (<= 7 rolled) (transfer each treasury grain (/ (holding each grain) 2)))))
+    (law "Lighthouses" (new-piece lighthouse (bundle (ore 2) (brick 2)) (points 2) (attach settlement) (yield 1) (limit 2)))
+    (law "Repeal of law 4" (repeal 4))
+    (law "Annex 201" (new-piece annex201 (bundle (wool 4)) (points 1) (attach settlement) (yield 1) (limit 2)))
+    (law "Annex 202" (new-piece annex202 (bundle (grain 4)) (points 3) (attach settlement) (yield 1) (limit 2)))
+    (law "Help for the last" (on-round-end (for-each-player (= (points each) (least-over true (points each))) (transfer bank each timber 2))))
+    (law "Upkeep of wreath" (on-round-end (for-each-player (<= 3 (count each wreath)) (transfer each bank timber (min (count each wreath) (holding each timber))))))
+    (law "Repeal of law 0, and a new price of relic" (repeal 0) (set-cost relic (bundle (laurel 4) (grain 1))))
+    (law "wreath brings ore" (on-build wreath (transfer bank actor ore 4)))
+    (law "wool makes brick" (on-harvest (if (res-is wool) (transfer bank actor brick 1))))
+    (law "Bank rate 6" (set-bank-rate 6))
+    (law "Bonus for relic" (on-build relic (if (<= 3 (count actor wreath)) (transfer bank actor laurel 1))))
+
+pack-wild-1011: Wild Not Catan 30001011
+  3 to 4 seats. 24 rounds, target 13 points. 2 dice of 6 sides. Bank rate 3.
+  Board: 54 spots, 72 links, 18 tiles that pay (4 timber, 4 grain, 3 ore, 4 wool, 3 brick, 0 laurel).
+  Bank stock: 19 timber, 19 grain, 19 ore, 19 wool, 19 brick, 6 laurel.
+  Pieces:
+    road: on a link, costs 1 timber, 2 brick, 0 points, yields 1, at most 15
+    settlement: on a spot, costs 1 timber, 1 brick, 1 grain, 1 wool, 1 points, yields 1, at most 4
+    city: replaces a settlement, costs 2 grain, 3 ore, 2 points, yields 1, at most 4
+    knight: attaches to a settlement, costs 1 ore, 1 wool, 1 grain, 0 points, yields 0, at most 5
+    relic: attaches to a settlement, costs 2 ore, 3 wool, 3 grain, 0 points, yields 0, at most 2
+    wreath: attaches to a settlement, costs 3 laurel, 3 points, yields 0, at most 2
+  Setup: settlement, road.
+  Founding laws (6):
+    (law "A 7 costs big hands half" (on-roll (for-each-player (and (= rolled 7) (< 7 (+ (holding each timber) (+ (holding each grain) (+ (holding each ore) (+ (holding each wool) (holding each brick))))))) (transfer each bank timber (/ (holding each timber) 2)) (transfer each bank grain (/ (holding each grain) 2)) (transfer each bank ore (/ (holding each ore) 2)) (transfer each bank wool (/ (holding each wool) 2)) (transfer each bank brick (/ (holding each brick) 2)))))
+    (law "A new knight takes ore from each seat ahead" (on-build knight (for-each-player (and (< (points actor) (points each)) (< 0 (holding each ore))) (transfer each actor ore 1))))
+    (law "The third knight or sixth road earns a wreath" (on-build knight (if (= (count actor knight) 2) (transfer bank actor laurel 3))) (on-build road (if (= (count actor road) 5) (transfer bank actor laurel 3))) (on-build wreath (transfer bank treasury laurel 3)))
+    (law "A harvest that empties the bank pays nobody" (on-harvest (if (= (holding bank res) 0) (transfer actor bank res amount))))
+    (law "laurel is worth 1" (set-worth laurel 1) (on-build city (transfer bank actor laurel 1)))
+    (law "Auction for laurel" (on-round-end (for-each-player (and (<= 1 (declared each ore)) (= (declared each ore) (most-over true (declared each ore)))) (transfer each treasury ore (min (declared each ore) (holding each ore))) (transfer bank each laurel 1))))
+  Laws that can be put to a vote (20):
+    (law "Half on a city" (on-build city (transfer actor treasury grain (/ (holding actor grain) 2))))
+    (law "Half on a road" (on-build road (transfer actor treasury timber (/ (holding actor timber) 2))))
+    (law "Half on a settlement" (on-build settlement (transfer actor treasury grain (/ (holding actor grain) 2))))
+    (law "Wool levy" (on-round-end (for-each-player true (transfer each treasury wool (/ (holding each wool) 2)))))
+    (law "Dole and tithe" (on-round-end (for-each-player true (transfer bank each grain 1))) (on-harvest (if (< 1 (holding actor grain)) (transfer actor treasury grain 1))))
+    (law "Tithe" (on-harvest (transfer actor treasury res (/ amount 2))))
+    (law "Cheap cities" (set-cost city (bundle (grain 2) (ore 2))))
+    (law "Roller's gift" (on-roll (transfer bank actor grain 1)))
+    (law "Half on a 7" (on-roll (for-each-player (and (= rolled 7) (< 3 (+ (holding each grain) (holding each wool)))) (transfer each treasury grain (/ (holding each grain) 2)) (transfer each treasury wool (/ (holding each wool) 2)))))
+    (law "Roll tithe" (on-roll (for-each-player (<= 7 rolled) (transfer each treasury grain (/ (holding each grain) 2)))))
+    (law "Lighthouses" (new-piece lighthouse (bundle (ore 2) (brick 2)) (points 2) (attach settlement) (yield 1) (limit 2)))
+    (law "Early help" (on-round-end (for-each-player (and (< round 4) (< (count each relic) 2)) (transfer bank each grain 2))))
+    (law "Repeal of law 5" (repeal 5))
+    (law "Repeal of law 1, and a new price of road" (repeal 1) (set-cost road (bundle (brick 3) (grain 1))))
+    (law "Annex 204" (new-piece annex204 (bundle (brick 2)) (points 4) (attach settlement) (yield 1) (limit 2)))
+    (law "Auction for laurel" (on-round-end (for-each-player (and (<= 1 (declared each ore)) (= (declared each ore) (most-over true (declared each ore)))) (transfer each treasury ore (min (declared each ore) (holding each ore))) (transfer bank each laurel 2))))
+    (law "knight brings ore" (on-build knight (transfer bank actor ore 2)))
+    (law "Tax and relief on timber" (on-harvest (if (res-is timber) (transfer actor treasury timber 1))) (on-round-end (for-each-player (< (points each) 5) (transfer treasury each timber 1))))
+    (law "Harvest tax on brick" (on-harvest (if (res-is brick) (transfer actor treasury brick (/ amount 2)))))
+    (law "Annex 209" (new-piece annex209 (bundle (ore 6)) (points 1) (attach settlement) (yield 1) (limit 2)))
+
