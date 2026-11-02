@@ -14,6 +14,9 @@
 // Written by rl/entity/gen_layout.py from rl/layout.json: CE_NUM_TABLES, CE_OBS_SIZE,
 // CE_TOTAL_ROWS and the lists CE_OFF_LIST, CE_ROWS_LIST, CE_WIDTH_LIST, CE_ROWSTART_LIST.
 #include "charter_entity_layout.h"
+#if defined(CE_MOVES) && !defined(PRECISION_FLOAT)
+#error "per-move rows route each row by its action number (up to 514), which bf16 cannot hold exactly: build with -DPRECISION_FLOAT"
+#endif
 
 #ifndef CE_ENTITY_DIM
 #define CE_ENTITY_DIM 32
@@ -42,6 +45,7 @@ struct CharterEntityActivations {
     Prec w_in_grad[CE_NUM_TABLES];
     Prec w_out_grad;
     Prec ext_grad;  // CE_POINTER, training only: gradient from the decoder on relu(h), same layout as ent_h
+    Prec move_act;  // CE_MOVES: each moves row's action number, (B, rows of moves). The encoder sees 0 in its place.
 };
 
 // The pointer decoder reads the encoder's rows. arch_reg_train and arch_reg_rollout register the encoder's
@@ -63,7 +67,7 @@ static inline int64_t ce_in_start(int t, int B) { return (int64_t)B * CE_OFF[t];
 static inline int64_t ce_h_start(int t, int B) { return (int64_t)CE_ROWSTART[t] * B * CE_E; }
 
 __global__ void ce_regroup_kernel(precision_t* __restrict__ ent_in,
-        const precision_t* __restrict__ obs, int B, int obs_size) {
+        const precision_t* __restrict__ obs, int B, int obs_size, precision_t* __restrict__ move_act) {
     int64_t idx = (int64_t)blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= (int64_t)B * CE_OBS_SIZE) return;
     int b = idx / CE_OBS_SIZE;
@@ -72,7 +76,16 @@ __global__ void ce_regroup_kernel(precision_t* __restrict__ ent_in,
     while (t + 1 < CE_NUM_TABLES && j >= ce_off_dev[t + 1]) t++;
     int size = ce_rows_dev[t] * ce_width_dev[t];
     int64_t dst = (int64_t)B * ce_off_dev[t] + (int64_t)b * size + (j - ce_off_dev[t]);
-    ent_in[dst] = obs[(int64_t)b * obs_size + j];
+    precision_t v = obs[(int64_t)b * obs_size + j];
+#ifdef CE_MOVES
+    // A moves row's action number routes its score in the pointer decoder. It is not a feature: as a raw number
+    // up to 514 it would swamp the row's layer, so the encoder sees 0 there (seeded error 5 keeps it).
+    if (t == CE_MOVES_TABLE && (j - ce_off_dev[t]) % ce_width_dev[t] == CE_MOVE_ACT_COL) {
+        move_act[(int64_t)b * ce_rows_dev[t] + (j - ce_off_dev[t]) / ce_width_dev[t]] = v;
+        if (CE_SEEDED_ERROR != 5) v = from_float(0.0f);
+    }
+#endif
+    ent_in[dst] = v;
 }
 
 // One thread per (b, t, e): the masked mean of relu(h) over table t's rows.
@@ -137,7 +150,7 @@ static Prec ce_encoder_forward(void* w, void* activations, Prec input, cudaStrea
     CharterEntityActivations* a = (CharterEntityActivations*)activations;
     int B = numel(input.shape) / ew->obs_size;
     ce_regroup_kernel<<<grid_size(B * CE_OBS_SIZE), BLOCK_SIZE, 0, stream>>>(
-        a->ent_in.data, input.data, B, ew->obs_size);
+        a->ent_in.data, input.data, B, ew->obs_size, a->move_act.data);
     for (int t = 0; t < CE_NUM_TABLES; t++) {
         Prec x = ce_view(a->ent_in, ce_in_start(t, B), B, CE_ROWS[t], CE_WIDTH[t]);
         Prec h = ce_view(a->ent_h, ce_h_start(t, B), B, CE_ROWS[t], CE_E);
@@ -202,6 +215,10 @@ static void ce_reg_forward(CharterEntityWeights* ew, CharterEntityActivations* a
     alloc_register(acts, &a->count);
     alloc_register(acts, &a->pooled);
     alloc_register(acts, &a->out);
+#ifdef CE_MOVES
+    a->move_act = {.shape = {B, CE_ROWS[CE_MOVES_TABLE]}};
+    alloc_register(acts, &a->move_act);
+#endif
 }
 
 static void ce_encoder_reg_train(void* w, void* activations, Allocator* acts, Allocator* grads, int B_TT) {
@@ -276,12 +293,17 @@ static void create_charter_entity_encoder(Encoder* enc) {
 static constexpr int CE_NPLACE = CE_ROWS[CE_PLACE_TABLE];
 static constexpr int CE_NRES = CE_ROWS[CE_RES_TABLE];
 static constexpr int CE_NBANK = CE_NRES * CE_NRES;
+#ifdef CE_MOVES
+static constexpr int CE_NMOVE = CE_ROWS[CE_MOVES_TABLE];
+static constexpr int CE_PQ = 4;   // q_place, q_give, q_get, q_move
+#else
 static constexpr int CE_PQ = 3;
+#endif
 static_assert(CE_ACT_BANK + CE_NBANK <= CE_ACT_PLACE && CE_ACT_PLACE + CE_NPLACE == CE_ACT_SIZE, "layout 2 actions");
 
 struct CharterPointerWeights {
     DecoderWeights base;  // first, so code that reads DecoderWeights (pufferl.cu reads .continuous) still works
-    Prec ptr;             // A: (3E, H): place, bank give, bank get
+    Prec ptr;             // A: (CE_PQ E, H): place, bank give, bank get (and with CE_MOVES, move)
 };
 
 struct CharterPointerActivations {
@@ -322,11 +344,32 @@ __global__ void cp_forward_kernel(precision_t* __restrict__ out, const precision
     out[o] = from_float(to_float(out[o]) + sum);
 }
 
+#ifdef CE_MOVES
+// One thread per (b, moves row m): logit[action of m] += q_move . r_moves[m], for real rows. Each action has at
+// most one row; atomicAdd keeps it right even if not (precision_t is float here).
+__global__ void cp_moves_forward_kernel(precision_t* __restrict__ out, const precision_t* __restrict__ q,
+        const precision_t* __restrict__ ent_h, const precision_t* __restrict__ ent_in,
+        const precision_t* __restrict__ move_act, int B, int od1) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= B * CE_NMOVE) return;
+    int b = idx / CE_NMOVE, m = idx - b * CE_NMOVE;
+    const int t = CE_MOVES_TABLE;
+    if (to_float(ent_in[(int64_t)B * ce_off_dev[t] + ((int64_t)b * ce_rows_dev[t] + m) * ce_width_dev[t]]) <= 0.5f) return;
+    int act = (int)lrintf(to_float(move_act[(int64_t)b * CE_NMOVE + m]));
+    if (act < 0 || act >= CE_ACT_SIZE) return;
+    const precision_t* qb = q + (int64_t)b * CE_PQ * CE_E + 3 * CE_E;
+    float sum = 0.0f;
+    for (int e = 0; e < CE_E; e++) sum += to_float(qb[e]) * ce_r(ent_h, B, t, b, m, e);
+    atomicAdd(&out[(int64_t)b * od1 + act], sum);
+}
+#endif
+
 // One thread per (b, e): gradients on q and on every places and resources row's r, for that e.
 // G is the assembled logit gradient (B, od1). ext_grad gets d loss / d r (the encoder applies relu').
 __global__ void cp_backward_kernel(precision_t* __restrict__ grad_q, precision_t* __restrict__ ext_grad,
         const precision_t* __restrict__ G, const precision_t* __restrict__ q,
-        const precision_t* __restrict__ ent_h, int B, int od1) {
+        const precision_t* __restrict__ ent_h, int B, int od1,
+        const precision_t* __restrict__ ent_in, const precision_t* __restrict__ move_act) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= B * CE_E) return;
     int b = idx / CE_E, e = idx - b * CE_E;
@@ -360,6 +403,22 @@ __global__ void cp_backward_kernel(precision_t* __restrict__ grad_q, precision_t
     gq[e] = from_float(dqp);
     gq[CE_E + e] = from_float(dqg);
     gq[2 * CE_E + e] = from_float(dqt);
+#ifdef CE_MOVES
+    float qm = to_float(qb[3 * CE_E + e]), dqm = 0.0f;
+    const int tm = CE_MOVES_TABLE;
+    for (int m = 0; m < CE_NMOVE; m++) {
+        bool real = to_float(ent_in[(int64_t)B * ce_off_dev[tm] + ((int64_t)b * ce_rows_dev[tm] + m) * ce_width_dev[tm]]) > 0.5f;
+        int act = (int)lrintf(to_float(move_act[(int64_t)b * CE_NMOVE + m]));
+        if (!real || act < 0 || act >= CE_ACT_SIZE) continue;
+        float gv = to_float(g[act]);
+        dqm += gv * ce_r(ent_h, B, tm, b, m, e);
+        ext(tm, m) = from_float(gv * qm);
+    }
+#if CE_SEEDED_ERROR == 6
+    dqm *= 1.5f;  // seeded error: a wrong gradient on the move query
+#endif
+    gq[3 * CE_E + e] = from_float(dqm);
+#endif
 }
 
 static Prec cp_forward(void* w, void* activations, Prec input, cudaStream_t stream) {
@@ -372,6 +431,10 @@ static Prec cp_forward(void* w, void* activations, Prec input, cudaStream_t stre
     int od1 = cw->base.output_dim + 1;
     cp_forward_kernel<<<grid_size(B * (CE_NPLACE + CE_NBANK)), BLOCK_SIZE, 0, stream>>>(
         out.data, q.data, a->enc->ent_h.data, B, od1);
+#ifdef CE_MOVES
+    cp_moves_forward_kernel<<<grid_size(B * CE_NMOVE), BLOCK_SIZE, 0, stream>>>(
+        out.data, q.data, a->enc->ent_h.data, a->enc->ent_in.data, a->enc->move_act.data, B, od1);
+#endif
     return out;
 }
 
@@ -385,7 +448,8 @@ static Prec cp_backward(void* w, void* activations, Float grad_logits, Float gra
     // Every places and resources row is written for every (b, e); other tables keep zero.
     cudaMemsetAsync(a->enc->ext_grad.data, 0, numel(a->enc->ext_grad.shape) * sizeof(precision_t), stream);
     cp_backward_kernel<<<grid_size(B * CE_E), BLOCK_SIZE, 0, stream>>>(
-        a->grad_q.data, a->enc->ext_grad.data, a->base.grad_out.data, a->q.data, a->enc->ent_h.data, B, od1);
+        a->grad_q.data, a->enc->ext_grad.data, a->base.grad_out.data, a->q.data, a->enc->ent_h.data, B, od1,
+        a->enc->ent_in.data, a->enc->move_act.data);
     puf_mm_tn(&a->grad_q, &a->base.saved_input, &a->ptr_wgrad, stream);   // (3E, H)
     puf_mm_nn(&a->grad_q, &cw->ptr, &a->grad_in2, stream);                // (B, H)
     int n = B * cw->base.hidden_dim;

@@ -21,9 +21,9 @@ from reference.policy import FlatNet, mingru_step
 LAYOUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "layout.json")
 
 
-def base_tables(layout):
-    """(name, offset, rows, width) for each base table. Same as gen_layout.tables."""
-    return [(t["name"], t["offset"], t["rows"], t["width"]) for t in layout["tables"] if t["name"] != "moves"]
+def base_tables(layout, moves=False):
+    """(name, offset, rows, width) for each table, the moves table only if `moves`. Same as gen_layout.tables."""
+    return [(t["name"], t["offset"], t["rows"], t["width"]) for t in layout["tables"] if moves or t["name"] != "moves"]
 
 
 def entity_encode(obs, tables, w_in, w_out, keep=None):
@@ -41,15 +41,22 @@ def entity_encode(obs, tables, w_in, w_out, keep=None):
     return w_out @ np.concatenate(pooled)
 
 
-def pointer_scores(rows, h, ptr, act_size, act_place, act_bank):
-    """The pointer decoder's added scores (act_size,), layout 2: see entity_torch.pointer_logits."""
-    E = ptr.shape[0] // 3
+def pointer_scores(rows, h, ptr, act_size, act_place, act_bank, E=None, moves=None):
+    """The pointer decoder's added scores (act_size,), layout 2: see entity_torch.pointer_logits. With `moves`
+    (action numbers and real flags of the moves rows), also entity_torch.moves_logits."""
+    E = E or ptr.shape[0] // 3
     q = ptr @ h
     out = np.zeros(act_size, np.float32)
     rp, rr = rows["places"], rows["resources"]
     out[act_place:act_place + rp.shape[0]] = rp @ q[:E]
-    bank = (rr @ q[E:2 * E])[:, None] + (rr @ q[2 * E:])[None, :]
+    bank = (rr @ q[E:2 * E])[:, None] + (rr @ q[2 * E:3 * E])[None, :]
     out[act_bank:act_bank + bank.size] = bank.reshape(-1)
+    if moves is not None:
+        acts, real = moves
+        score = rows["moves"] @ q[3 * E:4 * E]
+        for m in np.flatnonzero(real):
+            if 0 <= acts[m] < act_size:
+                out[acts[m]] += score[m]
     return out
 
 
@@ -58,10 +65,21 @@ class EntityNet(FlatNet):
         super().__init__(None, decoder, grus, act_size)
         self.tables, self.w_in, self.w_out, self.ptr, self.acts = tables, w_in, w_out, ptr, acts
         self.E = w_in[0].shape[0]
+        names = [t[0] for t in tables]
+        self.moves_t = names.index("moves") if "moves" in names else None
+        self.act_col = 1   # rl/layout.json: the moves table's `action` column
 
     def forward(self, obs, state):
         rows = {} if self.ptr is not None else None
-        x = entity_encode(np.asarray(obs, np.float32), self.tables, self.w_in, self.w_out, rows)
+        obs = np.array(obs, np.float32)
+        moves = None
+        if self.moves_t is not None:
+            # The moves table's action column routes each row's score, and the encoder sees 0 there.
+            _, off, nrows, width = self.tables[self.moves_t]
+            cols = off + np.arange(nrows) * width + self.act_col
+            moves = (np.rint(obs[cols]).astype(np.int64), obs[off + np.arange(nrows) * width] > 0.5)
+            obs[cols] = 0
+        x = entity_encode(obs, self.tables, self.w_in, self.w_out, rows)
         out = []
         for W, s in zip(self.grus, state):
             x, s2 = mingru_step(W, x, s)
@@ -69,7 +87,8 @@ class EntityNet(FlatNet):
         y = self.decoder @ x
         logits = y[:-1]
         if self.ptr is not None:
-            logits = logits + pointer_scores(rows, x, self.ptr, len(logits), self.acts["place"], self.acts["bank"])
+            logits = logits + pointer_scores(rows, x, self.ptr, len(logits), self.acts["place"], self.acts["bank"],
+                                             self.E, moves)
         return logits, y[-1], out
 
 
@@ -86,7 +105,7 @@ def read_entity_bin(path, tables, E, hidden, layers, act_size, pointer=0):
     w_in = [block(E, width) for _, _, _, width in tables]
     w_out = block(hidden, len(tables) * E)
     dec = block(act_size + 1, hidden)
-    ptr = block(3 * E, hidden) if pointer else None
+    ptr = block((4 if any(t[0] == "moves" for t in tables) else 3) * E, hidden) if pointer else None
     grus = [block(3 * hidden, hidden) for _ in range(layers)]
     if pos != len(w) and (len(w) + 7) & ~7 != pos:
         raise ValueError(f"{path}: {len(w)} floats, expected {pos} for this shape")
@@ -95,8 +114,9 @@ def read_entity_bin(path, tables, E, hidden, layers, act_size, pointer=0):
 
 def load_entity(path, meta, layout_path=LAYOUT):
     layout = json.load(open(layout_path))
-    tables = base_tables(layout)
-    assert meta["obs_size"] == layout["base_size"], "the entity encoder reads the base tables only"
+    moves = bool(meta.get("moves", 0))   # per-move rows (move_rows=1, built with CE_MOVES)
+    tables = base_tables(layout, moves)
+    assert meta["obs_size"] == (layout["full_size"] if moves else layout["base_size"]), "obs_size and moves disagree"
     E = meta["entity_dim"]
     pointer = int(meta.get("pointer", 0))
     assert layout["version"] == 2 and meta.get("layout", 2) == 2, "this pointer decoder is for layout 2"

@@ -30,15 +30,15 @@ def rows(obs, tables, w_in, t):
     return torch.relu(x @ w_in[t].T)
 
 
-def pointer_logits(obs, tables, w_in, h, ptr, place_t, res_t, act_place, act_bank, act_size):
+def pointer_logits(obs, tables, w_in, h, ptr, place_t, res_t, act_place, act_bank, act_size, E=None):
     """The pointer decoder's added scores (layout 2), as a (B, act_size) tensor, zero outside placement and bank
     actions. ptr is (3E, H): q = h @ ptr.T is split into q_place, q_give, q_get (E each).
 
     logit(place p)     = q_place . r_places[p]                     at act_place + p
     logit(bank i -> j) = q_give . r_res[i] + q_get . r_res[j]      at act_bank + i * resources + j
     """
-    E = ptr.shape[0] // 3
-    q = h @ ptr.T
+    E = E or ptr.shape[0] // 3   # pass E when ptr also has the move block (4E rows)
+    q = h @ ptr[:3 * E].T
     B = obs.shape[0]
     rp = rows(obs, tables, w_in, place_t)                         # (B, places, E)
     rr = rows(obs, tables, w_in, res_t)                           # (B, res, E)
@@ -51,3 +51,27 @@ def pointer_logits(obs, tables, w_in, h, ptr, place_t, res_t, act_place, act_ban
     out = out.index_put((ar, act_place + torch.arange(place.shape[1])[None, :]), place)
     out = out.index_put((ar, act_bank + torch.arange(bank.shape[1])[None, :]), bank)
     return out
+
+
+def strip_moves(obs, tables, moves_t, act_col):
+    """The moves table's action column routes each row's score; it is not a feature. Returns the observation with
+    that column set to 0 (what the encoder sees), each row's action number (B, rows) and whether the row is real."""
+    off, nrows, width = tables[moves_t]
+    x = obs[:, off:off + nrows * width].reshape(obs.shape[0], nrows, width)
+    acts = torch.round(x[:, :, act_col]).long()
+    real = x[:, :, 0] > 0.5
+    obs2 = obs.clone()
+    cols = off + torch.arange(nrows) * width + act_col
+    obs2[:, cols] = 0
+    return obs2, acts, real
+
+
+def moves_logits(obs, tables, w_in, h, ptr, moves_t, acts, real, act_size, E):
+    """logit[action of row m] += q_move . r_moves[m] for real rows, q_move = rows 3E..4E of ptr times h. `obs` is the
+    stripped observation."""
+    q = h @ ptr[3 * E:4 * E].T                                         # (B, E)
+    rm = rows(obs, tables, w_in, moves_t)                         # (B, rows, E)
+    score = (rm * q[:, None, :]).sum(2) * real.to(obs.dtype)      # (B, rows)
+    out = torch.zeros(obs.shape[0], act_size, dtype=obs.dtype)
+    a = acts.clamp(0, act_size - 1)
+    return out.scatter_add(1, a, score)

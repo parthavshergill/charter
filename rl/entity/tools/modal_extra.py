@@ -63,12 +63,12 @@ def ls(run: str):
 
 
 @app.function(gpu=m.GPU, cpu=4, memory=16384, timeout=1800, volumes={m.VOL: m.vol})
-def reftest(pointer_only: bool):
+def reftest(pointer_only: bool, extra: str = ""):
     """rl/entity/test_reference.py on a GPU: the CUDA encoder (and pointer decoder) against PyTorch."""
     m.sh("ln -sf /usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1 /usr/lib/x86_64-linux-gnu/libnvidia-ml.so")
     m.sh("pip install -q torch --index-url https://download.pytorch.org/whl/cpu 2>&1 | tail -1")
     code, text = m.sh(f"cd {m.SRC}/entity && python3 test_reference.py {m.PUFFER} {m.SRC}/layout.json /tmp/reftest"
-                      + (" --pointer" if pointer_only else ""))
+                      + (" --pointer" if pointer_only else "") + (f" {extra}" if extra else ""))
     return {"exit": code, "tail": text[-5000:]}
 
 
@@ -88,8 +88,8 @@ def bc_main(args: str):
 
 
 @app.local_entrypoint()
-def reftest_main(pointer_only: bool = False):
-    r = reftest.remote(pointer_only)
+def reftest_main(pointer_only: bool = False, extra: str = ""):
+    r = reftest.remote(pointer_only, extra)
     print(r["tail"])
     print("exit", r["exit"])
 
