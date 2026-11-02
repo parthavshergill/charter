@@ -1,5 +1,6 @@
 import Server.Game
 import Server.Bots
+import Server.Policy.Bot
 
 /-!
 # The player interface
@@ -31,9 +32,11 @@ structure Situation where
   offers : Thunk (List Offer)
   /-- It is this seat's turn. -/
   myTurn : Bool
+  /-- What the trained policy remembers at this table (its recurrent state, by seat). Only the policy player reads it. -/
+  memory : Policy.Memory := {}
 
 /-- Build the situation of a seat. -/
-def situation (g : Game) (s : State g.spec.G) (seat : Nat) : Situation :=
+def situation (g : Game) (s : State g.spec.G) (seat : Nat) (memory : Policy.Memory := {}) : Situation :=
   let G := g.spec.G
   { game := g, seat, state := s
     legal := Thunk.mk fun _ => Engine.legalMoves G s seat
@@ -46,7 +49,8 @@ def situation (g : Game) (s : State g.spec.G) (seat : Nat) : Situation :=
       | .deal d => d.signers.contains seat && !p.signed.contains seat
       | .law _ => false
     offers := Thunk.mk fun _ => s.offers.filter fun o => (Engine.step G s (.move seat (.accept o.id))).toOption.isSome
-    myTurn := s.currentSeat == some seat && s.phase != .ended }
+    myTurn := s.currentSeat == some seat && s.phase != .ended
+    memory }
 
 /-- What a player answers. -/
 inductive Choice where
@@ -78,6 +82,20 @@ def bot : Player :=
     policy := some botPolicy
     choose := fun sit => pure (.act (botPolicy sit)) }
 
+/-- The trained policy of `Server/Policy/Bot.lean`: the network's move on its turn, the rule-based bot's votes. -/
+def trainedPolicy (sit : Situation) : List Json := Policy.candidates sit.memory sit.game sit.seat
+
+def trained : Player :=
+  { kind := "bot"
+    policy := some trainedPolicy
+    choose := fun sit => pure (.act (trainedPolicy sit)) }
+
+/-- The player in a bot seat: `trained` when the server runs with `CHARTER_BOT=policy`, else `bot`. -/
+def botSeat : Player := if Policy.policyOn then trained else bot
+
+/-- The choice of the player in a bot seat. -/
+def botSeatPolicy (sit : Situation) : List Json := if Policy.policyOn then trainedPolicy sit else botPolicy sit
+
 /-! ## The order of events from several rule-based seats
 
 Reactions come before moves: votes and signatures by proposal, then accepted offers by offer, then the
@@ -104,12 +122,13 @@ def merged (lists : List (List Json)) : List Json :=
       let kb := orderKey b.1
       ka.1 < kb.1 || (ka.1 == kb.1 && (ka.2 < kb.2 || (ka.2 == kb.2 && a.2 < b.2)))).toList).map (·.1)
 
-/-- What the rule-based seats do next, if anything: the first event the engine accepts. -/
-def nextRuleEvent (g : Game) : Option Json :=
+/-- What the bot seats do next, if anything: the first event the engine accepts. `mem` is the trained policy's
+memory for this table. -/
+def nextRuleEvent (g : Game) (mem : Policy.Memory := {}) : Option Json :=
   match g.state with
   | none => none
   | some s =>
-    let lists := g.botSeats.map fun seat => botPolicy (situation g s seat)
+    let lists := g.botSeats.map fun seat => botSeatPolicy (situation g s seat mem)
     (merged lists).find? fun ev => (apply g ev).toOption.isSome
 
 end CharterServer.Player

@@ -1,0 +1,305 @@
+import Server.Game
+import Server.Policy.Obs
+import Server.Policy.Net
+
+/-!
+# The trained policy as a bot
+
+`CHARTER_BOT=policy` makes every bot seat play by the trained network in the weights file
+`CHARTER_POLICY_WEIGHTS` (default `Server/Policy/policy.chpw`). Without it, bot seats play the rule-based bot of
+`Server/BotCore.lean`, as before.
+
+How one decision is made:
+
+1. On its own turn, the seat builds the observation (`observe`) and the list of actions the engine accepts now
+   (`legal`, each one asked of the engine). The network scores every action. The seat picks the legal action with
+   the highest score. Ties go to the lowest action number. No sampling, so the same state gives the same move.
+   With the decision-time blend on (`Net.mixK`), it first tries its best few actions: see `blendCandidates`.
+2. Votes, signatures and accepted offers use the rule-based bot's code, as before. The checkpoints were trained
+   with the harness's `vote_mode=bot`, so the network never learned to vote, and it has no action for deals or
+   offers.
+3. The event goes to the driver, which commits it through `Game.apply` and so through `Engine.step`, like every
+   other bot event.
+
+There is no fallback inside this path. Layout 2's limits are the engine's own, so every game that passes `G.Valid`
+fits. `problems` would refuse a game past them when the bot joins, with the reason.
+
+Each seat's recurrent state starts at zero each game and moves between its own decisions by the weights file's
+state rule (`StateRule`: carried, set to 0.5 at each turn start, or zero), which must match how the checkpoint
+was trained. The driver moves it on after each of the seat's moves goes through.
+-/
+
+namespace CharterServer.Policy
+open Lean Charter CharterServer CharterServer.Game CharterServer.Bots
+
+variable {G : GameDef}
+
+/-- Is the policy bot on: `CHARTER_BOT=policy`. Read once when the server starts. -/
+initialize policyOn : Bool ← do
+  return (← IO.getEnv "CHARTER_BOT") == some "policy"
+
+/-- Where the weights file is. -/
+def weightsPath : IO System.FilePath := do
+  return (← IO.getEnv "CHARTER_POLICY_WEIGHTS").getD "Server/Policy/policy.chpw"
+
+/-- Read and check a weights file for this layout. -/
+def loadNet (path : System.FilePath) : IO (Except String Net) := do
+  let bytes ← try IO.FS.readBinFile path catch e => return .error s!"cannot read {path}: {e}"
+  match Net.read bytes with
+  | .error e => return .error s!"{path}: {e}"
+  | .ok n =>
+    if n.layoutVersion != version then
+      return .error s!"{path}: layout version {n.layoutVersion}, and this server reads version {version}"
+    let wantObs := if n.movesIdx.isSome then fullSize else baseSize
+    if n.obsSize != wantObs || (n.actSize != actSize && n.actSize != actSize + 1) then
+      return .error s!"{path}: observation {n.obsSize} and actions {n.actSize}, expected {wantObs} and {actSize} (or one more, for the no-op)"
+    return .ok n
+
+/-- The network, loaded once when the server starts, if the policy bot is on. -/
+initialize policyNet : Except String Net ← do
+  if !policyOn then return .error "the policy bot is off (CHARTER_BOT is not policy)"
+  loadNet (← weightsPath)
+
+/-- What the network sees of this game. -/
+def tablesOf (g : Game) : Tables :=
+  Tables.make g.spec.G (g.spec.layout.spots.map (·.toPixel 1.0))
+
+/-- Why the network cannot play this game, if it cannot. Layout 2's limits are the engine's own
+(`Charter.maxResources` and the rest), so a game that passes `G.Valid` always fits and this is empty. It is kept
+so that a checkpoint with a smaller layout could never play a game it does not fit. -/
+def problems (g : Game) : List String :=
+  let G := g.spec.G
+  (if G.resources.length ≤ maxRes then [] else [s!"{G.resources.length} resources, and the limit is {maxRes}"]) ++
+  (if G.pieces.length ≤ maxKinds then [] else [s!"{G.pieces.length} kinds of piece, and the limit is {maxKinds}"]) ++
+  (if G.map.spotCount ≤ maxSpots then [] else [s!"{G.map.spotCount} spots, and the limit is {maxSpots}"]) ++
+  (if G.foundingLaws.length ≤ maxLaws then [] else [s!"{G.foundingLaws.length} founding laws, and the limit is {maxLaws}"])
+
+/-- What the mask and the table of moves need besides the state, by the checkpoint's training settings. -/
+structure MaskRules where
+  /-- The table of moves is in the network's input. -/
+  moveRows : Bool := false
+  /-- The table of moves is in the ranked order of harness `5fde545`. -/
+  rankedMoves : Bool := false
+  /-- `prune_declares`: no declaration that would change nothing. -/
+  prune : Bool := false
+  /-- The bank trade that would reverse the seat's last bank trade this turn, which is never offered. -/
+  undo : Option (Res × Res) := none
+  /-- With `declare_once_per_turn`, the goods the seat has already declared this turn. -/
+  declaredNow : List Res := []
+
+/-- Everything one turn decision needs: the observation, and the legal actions with their events, under the mask
+rules the checkpoint trained with. A person at the table is not bound by these rules; only the policy is. -/
+def decisionFor (g : Game) (s : State g.spec.G) (seat : Nat) (m : MaskRules := {}) :
+    FloatArray × List (Nat × Event) :=
+  let G := g.spec.G
+  let T := tablesOf g
+  let ep := (Episode.make G).seat s.rules.pieces
+  let ctx := Ctx.of G
+  let d : Decision := .turn seat
+  let free := freeMap ctx s
+  let reach := reachMap ctx s seat
+  let places := placeList ctx ep s seat free reach
+  let obs := observe T ep ctx m.moveRows (template T ep G s.turnOrder.length m.moveRows) s d places free reach none
+    m.undo m.declaredNow m.prune m.rankedMoves
+  (obs, legal T ep places s d m.undo m.prune m.declaredNow)
+
+/-- The observation this seat sees on its turn, as the network reads it. -/
+def observationFor (g : Game) (s : State g.spec.G) (seat : Nat) (m : MaskRules := {}) : FloatArray :=
+  (decisionFor g s seat m).1
+
+/-- The reward the training environment gives a seat when the game is over (`Env.finalRewards` at harness
+`3b98ee8`, with its defaults): 1 to the winner, plus 0.25 times its standing, from 1 for first to -1 for last,
+ranked by winner, then points, then seat. The blend uses it for a move that ends the game. -/
+def finalReward (s : State G) (seat : Nat) : Float :=
+  let seats := s.turnOrder.length
+  let key (q : Nat) : Nat := (if s.winner == some q then 100000 else 0) + s.pointsOf q * 10 + (maxSeats - q)
+  let order := (s.turnOrder.toArray.qsort fun a b => key a > key b).toList
+  let rank := (order.findIdx? (· == seat)).getD 0
+  let standing := 1 - 2 * Float.ofNat rank / Float.ofNat (max 1 (seats - 1))
+  (if s.winner == some seat then 1.0 else 0.0) + 0.25 * standing
+
+/-- The mask rules after this seat makes `ev` and keeps the turn: a bank trade sets the trade it may not undo, and a
+declaration joins the goods declared this turn. -/
+def MaskRules.after (m : MaskRules) (declareOnce : Bool) : Event → MaskRules
+  | .move _ (.bankTrade give get) => { m with undo := some (get, give) }
+  | .move _ (.declare r _) => if declareOnce then { m with declaredNow := m.declaredNow ++ [r] } else m
+  | _ => m
+
+/-- One candidate of the decision-time blend. -/
+structure BlendCandidate where
+  action : Nat
+  logit : Float
+  /-- V after the action: the network's value if the same seat moves next, the final reward if the game is over,
+  and V now otherwise (end turn, or the turn passed). -/
+  value : Float
+  /-- `end`, `same`, `over` or `other`, as above. -/
+  kind : String
+  /-- The observation after the action, when the same seat moves next. -/
+  after : Option FloatArray := none
+  score : Float
+
+/-- One turn decision in full: the observation, the legal actions, the network's logits, value and new state, the
+blend's candidates (empty when the blend is off), and the chosen action. -/
+structure TurnDecision where
+  obs : FloatArray
+  acts : List (Nat × Event)
+  logits : FloatArray
+  value : Float
+  state : Array FloatArray
+  candidates : Array BlendCandidate
+  chosen : Nat
+
+/-- The decision-time blend (`choose_mix` in the training branch's `rl/entity/entity_numpy.py`): among the policy's
+`net.mixK` best legal actions, choose the one with the most `logit + net.mixC * (V(after) - V(now))`, trying each
+on a copy of the state. Ties go to the higher logit. The new state from this decision is used for V(after). -/
+def blendCandidates (net : Net) (g : Game) (s : State g.spec.G) (seat : Nat) (m : MaskRules)
+    (acts : List (Nat × Event)) (logits : FloatArray) (vNow : Float) (state' : Array FloatArray) :
+    Except String (Array BlendCandidate) := do
+  let byLogit := acts.toArray.qsort fun a b =>
+    logits[a.1]! > logits[b.1]! || (logits[a.1]! == logits[b.1]! && a.1 < b.1)
+  let mut out : Array BlendCandidate := #[]
+  for (a, ev) in byLogit.toList.take net.mixK do
+    let l := logits[a]!
+    let (v, kind, after) ← if a == actEnd then pure (vNow, "end", none) else
+      match Engine.step g.spec.G s ev with
+      | .error e => throw s!"blend: the engine refused legal action {a}: {e}"
+      | .ok s2 =>
+        if s2.phase == .ended then pure (finalReward s2 seat, "over", none)
+        else if s2.currentSeat == some seat then do
+          let (obs2, _) := decisionFor g s2 seat (m.after net.declareOncePerTurn ev)
+          let (_, v2, _) ← net.forwardV obs2 state'
+          pure (v2, "same", some obs2)
+        else pure (vNow, "other", none)
+    out := out.push { action := a, logit := l, value := v, kind, after, score := l + net.mixC * (v - vNow) }
+  return out
+
+/-- This seat's turn decision in full, from recurrent state `state`. `none` when it is not this seat's turn. -/
+def turnDecision (net : Net) (state : Array FloatArray) (g : Game) (s : State g.spec.G) (seat : Nat)
+    (m : MaskRules := {}) : Except String (Option TurnDecision) := do
+  if s.currentSeat != some seat || s.phase == .ended then return none
+  let (obs, acts) := decisionFor g s seat m
+  if acts.isEmpty then
+    throw s!"seat {seat} has its turn and no legal action has a number in the layout"
+  let (logits, vNow, state') ← net.forwardV obs state
+  let some greedy := net.best logits (acts.map (·.1)).toArray
+    | throw "no legal action was scored"
+  let cands ← if net.mixK > 1 && acts.length > 1 then blendCandidates net g s seat m acts logits vNow state'
+    else pure #[]
+  let chosen := (cands.foldl (fun (best : Option BlendCandidate) c => match best with
+      | some b => if c.score > b.score then some c else some b
+      | none => some c) none).map (·.action) |>.getD greedy
+  return some { obs, acts, logits, value := vNow, state := state', candidates := cands, chosen }
+
+/-- The network's move for this seat on its turn, starting from recurrent state `state`: the event, how many
+actions were legal, and the new state. `none` when it is not this seat's turn. -/
+def turnEventFrom (net : Net) (state : Array FloatArray) (g : Game) (s : State g.spec.G) (seat : Nat)
+    (m : MaskRules := {}) : Except String (Option (Event × Nat × Array FloatArray)) := do
+  let some d ← turnDecision net state g s seat m | return none
+  match d.acts.find? (·.1 == d.chosen) with
+  | some (_, ev) => return some (ev, d.acts.length, d.state)
+  | none => throw s!"action {d.chosen} has no event"
+
+/-- The network's move for this seat on its turn, from a zero recurrent state, as the server plays it. -/
+def turnEvent (net : Net) (g : Game) (s : State g.spec.G) (seat : Nat) (m : MaskRules := {}) :
+    Except String (Option (Event × Nat)) := do
+  return (← turnEventFrom net net.initState g s seat m).map fun (ev, n, _) => (ev, n)
+
+/-- Is this event a reaction (a vote, a signature or an accepted offer), not a move on the seat's turn? -/
+def isReactionJson (ev : Json) : Bool :=
+  match jStr ev "t" with
+  | some "vote" | some "sign" => true
+  | some "move" => (jField ev "move").bind (jStr · "t") == some "accept"
+  | _ => false
+
+/-- What the policy remembers for one seat, after its last move that went through. -/
+structure SeatMemory where
+  /-- The turn of that move (`State.turnsTaken`). -/
+  turn : Nat
+  /-- The recurrent state after it. -/
+  state : Array FloatArray
+  /-- The seat's last bank trade, as (turn, give, get). -/
+  lastTrade : Option (Nat × Res × Res) := none
+  /-- The goods the seat declared, with the turn of each. -/
+  declared : List (Nat × Res) := []
+
+/-- Each policy seat's memory. A seat not here starts from zero. -/
+abbrev Memory := Std.HashMap Nat SeatMemory
+
+/-- The state this seat decides from now, by the weights file's state rule: carried, set at a new turn, or zero. -/
+def Memory.stateOf (mem : Memory) (net : Net) (s : State G) (seat : Nat) : Array FloatArray :=
+  let st := match mem.get? seat with
+    | some m => if m.turn == s.turnsTaken then m.state else net.atTurnStart m.state
+    | none => net.atTurnStart net.initState
+  net.atDecision st
+
+/-- The mask rules for this seat now: the checkpoint's settings, and what this seat did earlier this turn. -/
+def Memory.rulesFor (mem : Memory) (net : Net) (s : State G) (seat : Nat) : MaskRules :=
+  let undo := match (mem.get? seat).bind (·.lastTrade) with
+    | some (turn, give, get) => if turn == s.turnsTaken then some (get, give) else none
+    | none => none
+  let declaredNow := if !net.declareOncePerTurn then [] else
+    ((mem.get? seat).map (·.declared)).getD [] |>.filterMap fun (t, r) => if t == s.turnsTaken then some r else none
+  { moveRows := net.movesIdx.isSome, rankedMoves := net.rankedMoves, prune := net.pruneDeclares, undo, declaredNow }
+
+/-- The bank trade that would undo this seat's last bank trade of this turn, which is not offered. -/
+def Memory.undoFor (mem : Memory) (s : State G) (seat : Nat) : Option (Res × Res) :=
+  match (mem.get? seat).bind (·.lastTrade) with
+  | some (turn, give, get) => if turn == s.turnsTaken then some (get, give) else none
+  | none => none
+
+/-- The policy bot's events for this seat, best first: the rule-based bot's reactions, then the network's move.
+An error is a bug to report, not something to play around. -/
+def candidatesWith (net : Net) (mem : Memory) (g : Game) (seat : Nat) (mayVote : Nat → Bool := fun _ => true) :
+    Except String (List Json) := do
+  let some s := g.state | return []
+  let reactions := if s.openProposals.isEmpty && s.offers.isEmpty then [] else
+    ((handEvents (Ctx.of g.spec.G) s [seat] mayVote).filterMap eventJson?).filter isReactionJson
+  let move ← turnEventFrom net (mem.stateOf net s seat) g s seat (mem.rulesFor net s seat)
+  return reactions ++ ((move.map (·.1)).toList.filterMap eventJson?)
+
+/-- The policy bot's events for this seat. If the network did not load, or a decision fails, the error is
+printed to the server's log as a bug and the seat does nothing; there is no fallback to another bot. -/
+def candidates (mem : Memory) (g : Game) (seat : Nat) (mayVote : Nat → Bool := fun _ => true) : List Json :=
+  match policyNet.bind fun net => candidatesWith net mem g seat mayVote with
+  | .ok evs => evs
+  | .error e => dbgTrace s!"policy bot bug: {e}" fun _ => []
+
+/-- The memory after `ev` went through in game `g` (the game before it): if `ev` is one of the moves on offer to the
+policy seat whose turn it was (the driver commits only the policy's own choice there), that seat's state moves on.
+Votes and other reactions leave it alone, as in training, where the network never voted. -/
+def Memory.after (mem : Memory) (net : Net) (g : Game) (ev : Json) : Memory := Id.run do
+  let some s := g.state | return mem
+  let some seat := s.currentSeat | return mem
+  if !g.isBot seat || isReactionJson ev then return mem
+  -- The new state needs only the observation and one forward pass: the blend changes the move, not the state.
+  let (obs, acts) := decisionFor g s seat (mem.rulesFor net s seat)
+  let some (_, mine) := acts.find? fun (_, e) => (eventJson? e).map (·.compress) == some ev.compress | return mem
+  match net.forwardV obs (mem.stateOf net s seat) with
+  | .ok (_, _, st) =>
+    let lastTrade := match mine with
+      | .move _ (.bankTrade give get) => some (s.turnsTaken, give, get)
+      | _ => (mem.get? seat).bind (·.lastTrade)
+    -- Only this turn's declarations are needed.
+    let declared := (((mem.get? seat).map (·.declared)).getD []).filter (·.1 == s.turnsTaken) ++
+      (match mine with
+       | .move _ (.declare r _) => [(s.turnsTaken, r)]
+       | _ => [])
+    return mem.insert seat { turn := s.turnsTaken, state := st, lastTrade, declared }
+  | .error _ => return mem
+
+/-- Every table's memory, by table code. It lives as long as the server process: after a restart, a seat's
+state starts again from zero. -/
+initialize memories : IO.Ref (Std.HashMap String Memory) ← IO.mkRef {}
+
+/-- This table's memory. -/
+def memoryOf (code : String) : IO Memory := do
+  return (← memories.get).getD code {}
+
+/-- Record that `ev` went through at table `code`, whose game before it was `g`. -/
+def recordCommit (code : String) (g : Game) (ev : Json) : IO Unit := do
+  if !policyOn then return
+  let .ok net := policyNet | return
+  let mem ← memoryOf code
+  memories.modify (·.insert code (mem.after net g ev))
+
+end CharterServer.Policy

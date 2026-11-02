@@ -1,0 +1,269 @@
+import Server.Player
+import Server.PreviewCheck
+
+/-!
+# Playing whole games with the trained policy
+
+`charter-policy-check WEIGHTS [GAMES] [--vs-hand]` plays games through the server's own `Game.create` and
+`Game.apply` (so every event goes through `Engine.step`), with the policy in some seats and the current bot in the
+rest.
+
+- Without `--vs-hand`: every world in the Library, every seat played by the policy, at 2, 4 and 6 seats where
+  the world allows. Each game must reach its end. It fails if a seat is stuck (no event the engine accepts while
+  the game is not over), if a decision fails, or if a game runs past the step cap.
+- With `--vs-hand`: one policy seat against current bots, the policy's seat moving round the table, `GAMES`
+  games per world. It prints win rate, target wins against round-limit wins, and points.
+
+Time per policy decision is measured on the plain CPU this runs on.
+-/
+
+namespace CharterServer.Policy.PlayCheck
+open Lean Charter CharterServer CharterServer.Game CharterServer.Player
+
+/-- What one game came to. -/
+structure Result where
+  game : String
+  seats : Nat
+  policySeats : List Nat
+  ended : Bool
+  winner : Option Nat
+  /-- The winner reached the target, rather than winning on the round limit. -/
+  byTarget : Bool
+  points : List Nat
+  rounds : Nat
+  decisions : Nat
+  decisionNs : Nat
+  /-- Turn decisions where a zero recurrent state would have chosen another move than the carried one. -/
+  stateDiffers : Nat := 0
+  /-- Declarations the policy made. -/
+  declarations : Nat := 0
+  /-- Declarations the other seats made. -/
+  oppDeclarations : Nat := 0
+  /-- The most declarations the policy made in one turn. -/
+  maxDeclarationsInTurn : Nat := 0
+  /-- Every committed event as (round, its JSON), when kept. -/
+  log : Array (Nat × Json) := #[]
+  /-- Each seat's points at the end of each round, when kept. -/
+  roundPoints : Array (Nat × List Nat) := #[]
+  error : Option String
+
+/-- Play one game. `policySeats` play by `net`; the others by the current bot. -/
+def playOne (net : Net) (spec : GameSpec) (seats seed : Nat) (policySeats : List Nat)
+    (record : Option IO.FS.Handle := none) (keepLog : Bool := false) (zeroCheck : Bool := false)
+    (recordMix : Option IO.FS.Handle := none) : IO Result := do
+  let base : Result := { game := spec.id, seats, policySeats, ended := false, winner := none, byTarget := false
+                         points := [], rounds := 0, decisions := 0, decisionNs := 0, error := none }
+  let .ok g0 := PreviewCheck.newTable spec seats seed | return { base with error := some "the table did not start" }
+  let mut g := g0
+  let mut decisions := 0
+  let mut ns := 0
+  let mut err : Option String := none
+  let mut mem : Memory := {}
+  let mut log : Array (Nat × Json) := #[]
+  let mut roundPoints : Array (Nat × List Nat) := #[]
+  let mut lastRound := 0
+  let mut lastTurn : Option Nat := none
+  if let some h := record then h.putStrLn "reset"
+  let mut differs := 0
+  let mut declarations := 0
+  let mut oppDeclarations := 0
+  let mut mixRows := 0
+  let mut perTurn : Std.HashMap Nat Nat := {}
+  for _ in [0:20000] do
+    let some s := g.state | break
+    if s.phase == .ended then break
+    let mut lists : List (List Json) := []
+    for seat in List.range seats do
+      if policySeats.contains seat then
+        let t0 ← IO.monoNanosNow
+        match candidatesWith net mem g seat with
+        | .ok evs =>
+          let t1 ← IO.monoNanosNow
+          if s.currentSeat == some seat then
+            if let some h := record then
+              if seat == policySeats.headD 0 then
+                if lastTurn != some s.turnsTaken then h.putStrLn "turn"
+                lastTurn := some s.turnsTaken
+                h.putStrLn (" ".intercalate ((observationFor g s seat (mem.rulesFor net s seat)).toList.map toString))
+            decisions := decisions + 1
+            ns := ns + (t1 - t0)
+            -- The move it plays carries the state; count where a zero state would have chosen another move.
+            if zeroCheck then
+              match turnEventFrom net (mem.stateOf net s seat) g s seat (mem.rulesFor net s seat), turnEvent net g s seat (mem.rulesFor net s seat) with
+              | .ok (some (evC, _, _)), .ok (some (evZ, _)) =>
+                if (Bots.eventJson? evC).map (·.compress) != (Bots.eventJson? evZ).map (·.compress) then differs := differs + 1
+              | _, _ => pure ()
+            -- For the check against `choose_mix`: the decision, its state, and each blend candidate's after-state.
+            if let some h := recordMix then
+              if seat == policySeats.headD 0 && mixRows < 15 then
+                let st := mem.stateOf net s seat
+                if let .ok (some d) := turnDecision net st g s seat (mem.rulesFor net s seat) then
+                  if d.candidates.size > 1 then
+                    mixRows := mixRows + 1
+                    let nums (xs : List Float) := " ".intercalate (xs.map toString)
+                    h.putStrLn s!"decision {spec.id} {s.round} {seat}"
+                    h.putStrLn ("state " ++ nums (st.toList.flatMap (·.toList)))
+                    h.putStrLn ("obs " ++ nums d.obs.toList)
+                    h.putStrLn ("legal " ++ " ".intercalate (d.acts.map (toString ·.1)))
+                    for c in d.candidates do
+                      h.putStrLn s!"cand {c.action} {c.kind} {c.value} {c.score}"
+                      if let some o := c.after then h.putStrLn ("after " ++ nums o.toList)
+                    h.putStrLn s!"lean {d.chosen} {d.value}"
+          lists := lists ++ [evs]
+        | .error e =>
+          err := some s!"round {s.round}, seat {seat}: {e}"
+          lists := lists ++ [[]]
+      else
+        lists := lists ++ [Bots.candidatesFor g [seat]]
+    if err.isSome then break
+    match (merged lists).find? fun ev => (apply g ev).toOption.isSome with
+    | some ev =>
+      if policySeats.any (s.currentSeat == some ·) && jStr ev "t" == some "move" &&
+          ((jField ev "move").bind (jStr · "t")) == some "declare" then
+        declarations := declarations + 1
+        perTurn := perTurn.insert s.turnsTaken (perTurn.getD s.turnsTaken 0 + 1)
+      else if jStr ev "t" == some "move" && ((jField ev "move").bind (jStr · "t")) == some "declare" then
+        oppDeclarations := oppDeclarations + 1
+      if keepLog then
+        if s.round != lastRound then
+          roundPoints := roundPoints.push (lastRound, (List.range seats).map s.pointsOf)
+          lastRound := s.round
+        log := log.push (s.round, ev)
+      if policySeats.any (s.currentSeat == some ·) then
+        -- The driver's memory update after the move: part of the server's cost per decision.
+        let t0 ← IO.monoNanosNow
+        mem := mem.after net g ev
+        let t1 ← IO.monoNanosNow
+        if !isReactionJson ev then ns := ns + (t1 - t0)
+      match apply g ev with
+      | .ok g' => g := g'
+      | .error e => err := some e; break
+    | none =>
+      err := some s!"stuck in round {s.round}: seat {s.currentSeat} has no event the engine accepts"
+      break
+  let some s := g.state | return { base with error := some "no state" }
+  let ended := s.phase == .ended
+  let points := (List.range seats).map s.pointsOf
+  let byTarget := match s.winner with
+    | some w => s.pointsOf w ≥ g.spec.G.targetPoints
+    | none => false
+  let err2 := if err.isNone && !ended then some "the game did not end within the step cap" else err
+  return { base with ended, winner := s.winner, byTarget, points, rounds := s.round, decisions, decisionNs := ns
+                     stateDiffers := differs, log, declarations, oppDeclarations
+                     maxDeclarationsInTurn := perTurn.fold (fun m _ v => max m v) 0
+                     roundPoints := if keepLog then roundPoints.push (s.round, points) else roundPoints
+                     error := err2 }
+
+/-- One line about a game. -/
+def Result.line (r : Result) : String :=
+  let who := match r.winner with
+    | some w => s!"seat {w} ({if r.policySeats.contains w then "policy" else "current bot"}) won by {if r.byTarget then "target" else "round limit"}"
+    | none => "no winner"
+  let ms := if r.decisions == 0 then 0.0 else Float.ofNat r.decisionNs / Float.ofNat r.decisions / 1e6
+  s!"{r.game}, {r.seats} seats, policy {r.policySeats}: {if r.ended then "ended" else "NOT ENDED"} in round {r.rounds}; {who}; points {r.points}; {r.decisions} policy turn decisions, {ms} ms each; zero state would differ on {r.stateDiffers}; {r.declarations} declarations (at most {r.maxDeclarationsInTurn} in a turn), {r.oppDeclarations} by the others" ++
+    (match r.error with | some e => s!"; ERROR: {e}" | none => "")
+
+/-- A short account of one game, to read: what each seat did, points by round, and the policy's builds and bank
+trades in order. -/
+def Result.summary (r : Result) : String := Id.run do
+  let me := r.policySeats.headD 0
+  let who (p : Nat) := if r.policySeats.contains p then s!"seat {p} (policy)" else s!"seat {p} (current bot)"
+  let mut out := s!"# {r.game}, {r.seats} seats, policy in seat {me}\n\n{r.line}\n\n## Moves by seat\n\n"
+  for p in List.range r.seats do
+    let mine := r.log.filter fun (_, ev) => jNat ev "seat" == some p && jStr ev "t" == some "move"
+    let kinds := mine.filterMap fun (_, ev) => (jField ev "move").bind fun m =>
+      if jStr m "t" == some "place" then jStr m "kind" else none
+    let count (t : String) := (mine.filter fun (_, ev) => ((jField ev "move").bind (jStr · "t")) == some t).size
+    let byKind := (kinds.toList.eraseDups.map fun k => s!"{(kinds.filter (· == k)).size} {k}")
+    out := out ++ s!"- {who p}: built {", ".intercalate byKind}; {count "bankTrade"} bank trades, {count "declare"} declarations, {count "endTurn"} end turns, {count "accept"} accepted offers\n"
+  out := out ++ "\n## Points at the end of each round\n\n"
+  for (rd, pts) in r.roundPoints do
+    out := out ++ s!"- round {rd}: {pts}\n"
+  out := out ++ s!"\n## Seat {me}'s builds and bank trades, in order\n\n"
+  for (rd, ev) in r.log do
+    if jNat ev "seat" == some me then
+      if let some m := jField ev "move" then
+        match jStr m "t" with
+        | some "place" => out := out ++ s!"- round {rd}: built {(jStr m "kind").getD "?"}\n"
+        | some "bankTrade" => out := out ++ s!"- round {rd}: bank trade {(jStr m "give").getD "?"} for {(jStr m "get").getD "?"}\n"
+        | some "declare" => out := out ++ s!"- round {rd}: declared {(jStr m "res").getD "?"} {(jNat m "n").getD 0}\n"
+        | _ => pure ()
+  return out
+
+def main (args : List String) : IO UInt32 := do
+  let some path := args.head? | do
+    IO.eprintln "usage: charter-policy-check WEIGHTS [GAMES] [--vs-hand] [--record OBS.txt] [--record-mix FILE] [--logs DIR] [--log-count N] [--world ID] [--zero-state]"
+    return 2
+  let net ← match ← loadNet path with
+    | .ok n => pure n
+    | .error e => do IO.eprintln e; return 2
+  IO.println s!"weights {path}: E {net.E}, hidden {net.hidden}, layers {net.layers}, pointer {net.pointer}, state rule {net.stateRule.name}, moves {if net.movesIdx.isSome then (if net.rankedMoves then "ranked" else "legal order") else "none"}, prune_declares {net.pruneDeclares}, declare_once_per_turn {net.declareOncePerTurn}, blend {if net.mixK > 1 then s!"{net.mixK} candidates at c = {net.mixC}" else "off"}"
+  let zeroCheck := args.contains "--zero-state"
+  let recordMix ← (match args.dropWhile (· != "--record-mix") with
+    | _ :: p :: _ => some p
+    | _ => none).mapM fun p => IO.FS.Handle.mk p .write
+  let vsHand := args.contains "--vs-hand"
+  let games := ((args.drop 1).head?.bind String.toNat?).getD 4
+  let mut ok := true
+  let recordPath := match args.dropWhile (· != "--record") with
+    | _ :: p :: _ => some p
+    | _ => none
+  let record ← recordPath.mapM fun p => IO.FS.Handle.mk p .write
+  let logDir := match args.dropWhile (· != "--logs") with
+    | _ :: p :: _ => some p
+    | _ => none
+  let logCount := (match args.dropWhile (· != "--log-count") with
+    | _ :: n :: _ => n.toNat?
+    | _ => none).getD 4
+  let only := match args.dropWhile (· != "--world") with
+    | _ :: w :: _ => some w
+    | _ => none
+  if !vsHand then
+    for spec in gameSpecs do
+      for seats in [2, 4, 6].filter fun n => spec.minSeats ≤ n && n ≤ spec.maxSeats do
+        -- Record seat 0's observations in the 4-seat game of each world (or its first), for the differential test.
+        let rec_ := if seats == 4 || (seats == spec.maxSeats && spec.maxSeats < 4) then record else none
+        let r ← playOne net spec seats (100 + seats) (List.range seats) rec_ false zeroCheck
+          (if seats == 4 || (seats == spec.maxSeats && spec.maxSeats < 4) then recordMix else none)
+        IO.println r.line
+        (← IO.getStdout).flush
+        if r.error.isSome || !r.ended then ok := false
+    IO.println (if ok then "policy check: PASS, every world ended at every seat count tried" else "policy check: FAILED")
+  else
+    let mut all : List Result := []
+    for spec in gameSpecs.filter fun sp => only.all (· == sp.id) do
+      let seats := min 4 spec.maxSeats
+      let mut rs : List Result := []
+      for i in [0:games] do
+        let keep := logDir.isSome && i < logCount
+        let r ← playOne net spec seats (5000 + i) [i % seats] none keep zeroCheck
+        if keep then
+          if let some d := logDir then
+            IO.FS.createDirAll d
+            IO.FS.writeFile (System.FilePath.mk d / s!"{spec.id}-{i}.md") r.summary
+        IO.println r.line
+        (← IO.getStdout).flush
+        rs := rs ++ [r]
+        if r.error.isSome then ok := false
+      all := all ++ rs
+    let tally (rs : List Result) : String :=
+      let wins := rs.filter fun r => r.winner.any r.policySeats.contains
+      let target := wins.filter (·.byTarget)
+      let pts := rs.map fun r => r.points.getD (r.policySeats.headD 0) 0
+      let best := rs.map fun r => (r.points.zipIdx.filter fun (_, i) => !r.policySeats.contains i).foldl (fun m (p, _) => max m p) 0
+      let decl := (rs.map (·.declarations)).sum
+      let declWins := (wins.filter fun r => r.declarations > 0 && r.oppDeclarations == 0).length
+      let loops := (rs.filter (·.maxDeclarationsInTurn ≥ 5)).length
+      s!"{wins.length}/{rs.length} wins ({target.length} by target, {wins.length - target.length} by round limit); policy points {pts.sum}, best current bot's points {best.sum}; {decl} declarations, {loops} games with 5 or more in one turn; {declWins} wins where the policy declared and no other seat did"
+    for spec in gameSpecs.filter fun sp => only.all (· == sp.id) do
+      IO.println s!"{spec.id}: {tally (all.filter (·.game == spec.id))}"
+    IO.println s!"all worlds: {tally all}"
+    let d := (all.map (·.decisions)).sum
+    let x := (all.map (·.stateDiffers)).sum
+    if zeroCheck then
+      IO.println s!"recurrent state: a zero state instead would change {x} of {d} policy turn decisions"
+  return if ok then 0 else 1
+
+end CharterServer.Policy.PlayCheck
+
+def main (args : List String) : IO UInt32 := CharterServer.Policy.PlayCheck.main args

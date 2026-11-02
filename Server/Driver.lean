@@ -52,7 +52,7 @@ def pauseSteps (ev : Option Json) : Nat :=
 /-- The player in a seat. -/
 def playerOf (ctx : Ctx) (code : String) (g : Game) (seat : Nat) : Player :=
   if g.isClaude seat then Seat.claudePlayer ctx code seat
-  else if g.isBot seat then Player.bot
+  else if g.isBot seat then Player.botSeat
   else Player.human
 
 /-- Which open laws are being held for the people at the table. The clock for a law starts when the
@@ -190,14 +190,19 @@ partial def driverLoop (ctx : Ctx) (code : String) : IO Unit := do
         IO.sleep 100
         return ← again
       else
-        let rule := nextRuleEvent g
+        let mem ← Policy.memoryOf code
+        let rule := nextRuleEvent g mem
         let commitRule : IO Bool := do
           if ctx.botDelayMs > 0 then
             IO.sleep (ctx.botDelayMs * pauseSteps rule).toUInt32
           if ← isPaused ctx code g then return false
-          let r ← commitRaw ctx code fun e => match nextRuleEvent e.game with
+          let before ← findEntry ctx code
+          let r ← commitRaw ctx code fun e => match nextRuleEvent e.game mem with
             | some ev => .ok ev
             | none => .error "no bot move"
+          -- The policy bot's memory moves on only for the move it chose in the game it saw.
+          if let (.ok _, some b) := (r, before) then
+            if let some ev := nextRuleEvent b.game mem then Policy.recordCommit code b.game ev
           return r.isOk
         match rule with
         | some ev =>
