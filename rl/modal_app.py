@@ -210,15 +210,16 @@ def train(run: str, train_args: str = "", seconds: int = 600, move_rows: bool = 
         import configparser
         ini = configparser.ConfigParser()
         ini.read(f"{SRC}/puffer/charter.ini")
-        for key in ("declare_always", "stale_wait"):
+        for key in ("declare_always", "stale_wait", "prune_declares", "declare_once_per_turn"):
             if ini.has_option("env", key):
                 meta["settings"][key] = bool(int(float(ini.get("env", key))))
         for tok in train_args.split():
             for key in ("vote_mode", "slot_order", "declare_always", "stale_wait", "shaping_points",
-                        "shaping_relative", "bot_share", "bot_policy", "seats"):
+                        "shaping_relative", "bot_share", "bot_policy", "seats", "prune_declares",
+                        "declare_once_per_turn"):
                 if tok.startswith(f"--env.{key}="):
                     v = tok.split("=", 1)[1]
-                    if key in ("declare_always", "stale_wait"):
+                    if key in ("declare_always", "stale_wait", "prune_declares", "declare_once_per_turn"):
                         v = bool(int(float(v)))
                     meta["settings"][key] = v
         meta.update(json.loads(meta_extra) if meta_extra else {})

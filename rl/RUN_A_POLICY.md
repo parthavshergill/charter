@@ -50,6 +50,29 @@ of these for it, or falls back to its own rules for them. Under `vote_mode = bot
 the server must vote with `CharterServer.Bots.lawOk ctx s seat id L` unless the checkpoint's meta says
 `"vote_mode": "policy"`.
 
+### What the server's mask must mirror
+
+The server path copied the harness at `89a3a51`. Several rules were added to the mask since then. A policy must be
+given the mask it trained with, so the server must apply each rule that the checkpoint's meta (or `charter.ini` at
+its training commit) had on. Each rule only removes actions; the engine still accepts all of them, and a person can
+still make them.
+
+| rule | since | on by default | what it removes |
+|---|---|---|---|
+| setup end turn | `30684c0` | always | end turn in a setup turn while some placement is legal |
+| `block_undo_trades` | `223416e` | yes | the bank trade that reverses this seat's last bank trade of this turn (`Env.undo`) |
+| `declare_always` | `89a3a51` | no | (adds) declarations in worlds where no law reads one |
+| `prune_declares` | this commit | no | a declaration of the number this seat has already declared of that good this round (`s.declared seat r == n`), and a declaration of a good that no law in force (`s.laws`) and no open law proposal reads (`declaredRead`, `Actions.lean`) |
+| `declare_once_per_turn` | this commit | no | with `prune_declares`, a declaration of a good this seat has already declared this turn (`Env.declaredNow`) |
+
+`declaredRead` reads every `(declared _ r)` in the laws' numbers and tests (`declaredRefsE`/`C`, `Tables.lean`). A law
+that reads the declaration of a good it does not name (`harvested`) keeps every good's declarations. To mirror it:
+take the laws in force and the open law proposals; for each, collect the goods `r` of `.declared _ (.lit r)`; if any
+is `.declared _ .harvested`, offer all goods; else offer only the collected ones, and never the number already
+declared. For `declare_once_per_turn`, keep a list of the goods this seat declared since the turn began
+(`turnsTaken` unchanged), and clear it when the turn changes. Declared numbers go back to 0 at each round's end, so
+"already declared" is this round's.
+
 ## 3. The forward pass
 
 The checkpoint is a PufferLib `.bin` (raw float32, each block padded to a multiple of 8 floats) with a `.bin.json`

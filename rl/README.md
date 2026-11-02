@@ -102,6 +102,11 @@ actions, at most 8 resources, 60 spots, 84 links, 24 tiles, 16 laws) refused lar
   (48), the open proposal, and places (128 x 35). No names. Rows of resources and kinds are in a new random order
   each game (`slot_order = shuffled`; `game` keeps the game's order). With `move_rows = 1` (and a build with
   `-DCHARTER_MOVE_ROWS`) a table of up to 64 legal moves and what each changes is appended: 15177 floats.
+- **The table of moves** (`move_rows = 1`): up to 64 rows, one per legal action, with what the engine says it would
+  change. A decision can have more legal actions than that (43% of decisions on AI Bubble have more than 64, up to 104;
+  Pirate Republic 9%, Hill and Chill 5%, `pack-train` 2.5%; Island and Not Catan never), mostly declarations and bank
+  trades. So the rows come in the order that keeps what matters: end turn and votes, then placements, then bank
+  trades, then declarations, and `moves_overflow` is 1 when some are left out. Each row names its action.
 - **Cost of the change.** The observation is 2.6 times as long, and `places` is 39% of it, so a flat encoder at hidden
   128 has about 1.5M weights in its first layer (v1: 0.57M), and env time per observation went up (see Known limits).
   A linear decoder still gives each action one fixed output: row `i` of `places` means "the i-th placement in this
@@ -156,6 +161,17 @@ eval only).
   (`block_undo_trades`, on by default; the bank takes its rate both ways, so it only loses goods).
 - **Setup:** the mask does not offer end turn in a setup turn while a placement is legal (the engine allows it, and
   policies gave up free opening pieces that way).
+
+**Pointless declarations** (`prune_declares = 1`, off by default, so older checkpoints evaluate as before): the
+mask no longer offers a declaration that would change nothing: the number the seat has already declared of that good
+this round, or a good that no law in force and no open proposal reads (a law reading the declaration of a good it does
+not name keeps every good's). `declare_once_per_turn = 1` also offers each good at most once per turn, since only the
+last number counts when laws read them at a round's end; a law that reads declarations at a build could make a
+mid-turn revision matter, so that one is a choice. The engine still accepts every declaration, and a person can
+still make them. `charter-rl-check` plays games with them on: no repeats and no unread declarations; on Pirate
+Republic seats still declare ballots and the hat changes hands. `rl/eval` reports the subject's declarations per
+game and most in one turn in every table, and each saved game's summary gives them per seat. `rl/RUN_A_POLICY.md`
+lists what the server's mask must mirror.
 
 **Warning:** with `declare_always = 1` and `stale_wait = 0`, `attention2` found self-play learning to fill its turns
 with free declarations (217 to 383 a game) and stop building: a `REWARD-HACK` through the critic's blind waiting rows.

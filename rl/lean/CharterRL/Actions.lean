@@ -122,11 +122,30 @@ def decode (T : Tables) (ep : Episode) (places : Array Move) (d : Decision) (a :
     else if a < actSize then (places[a - actPlace]?).map (.move seat ·)
     else Option.none
 
+/-- The goods whose declarations some law in force or open law proposal reads, or `none` if one of them could read
+any good. -/
+def declaredRead (s : State G) : Option (List Res) :=
+  let laws := s.laws.map (·.2) ++ s.openProposals.filterMap fun p => match p.body with
+    | .law L => some L
+    | .deal _ => Option.none
+  laws.foldl (fun acc L => match acc, CharterRL.Law.declaredGoods L with
+    | some xs, some ys => some (xs ++ ys.filter (!xs.contains ·))
+    | _, _ => Option.none) (some [])
+
+/-- A declaration changes something: it is not the number this seat has already declared of this good, and some law
+reads that good's declarations. For `pruneDeclares`. -/
+def declareChanges (s : State G) (seat : Nat) (r : Res) (n : Nat) : Bool :=
+  s.declared seat r != n &&
+    match declaredRead s with
+    | some rs => rs.contains r
+    | Option.none => true
+
 /-- Every action on offer now, with its event, by asking the engine. Ending the turn needs no asking: the rules
 accept it on a seat's own turn, and theorem `endTurnNow_some` says that it cannot fail. Placements come from
 `places`, which `placeList` made by asking the engine about each. -/
 def legal (T : Tables) (ep : Episode) (places : Array Move) (s : State G) (d : Decision)
-    (undo : Option (Res × Res) := Option.none) : List (Nat × Event) :=
+    (undo : Option (Res × Res) := Option.none) (prune : Bool := false) (declaredNow : List Res := []) :
+    List (Nat × Event) :=
   match d with
   | .none => []
   | .vote seat id _ =>
@@ -143,7 +162,9 @@ def legal (T : Tables) (ep : Episode) (places : Array Move) (s : State G) (d : D
     -- bank takes its rate both ways, so it is not offered (the engine would accept it).
     let trades := names.flatMap fun g => names.filterMap fun h =>
       if g == h || undo == some (g, h) then Option.none else some (Move.bankTrade g h)
-    let declares := if T.declares then names.flatMap fun r => declareLevels.toList.map (Move.declare r) else []
+    let declares := if T.declares then names.flatMap fun r => declareLevels.toList.filterMap fun n =>
+        if prune && (!declareChanges s seat r n || declaredNow.contains r) then Option.none
+        else some (Move.declare r n) else []
     let others := (trades ++ declares).filterMap fun m =>
       if isLegal s seat m then (encodeMove ep places m).map (·, .move seat m) else Option.none
     end_ ++ others ++ rows

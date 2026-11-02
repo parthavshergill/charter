@@ -54,6 +54,41 @@ end
 def Law.readsDeclared (L : Law) : Bool :=
   L.clauses.any fun c => readsDeclaredAll c.effects
 
+mutual
+  /-- The goods whose declarations this number reads. `.harvested` stands for "a good not named here". -/
+  def declaredRefsE : Expr → List ResRef
+    | .declared _ r => [r]
+    | .add a b | .sub a b | .mul a b | .min a b | .max a b | .divBy a b => declaredRefsE a ++ declaredRefsE b
+    | .div a _ => declaredRefsE a
+    | .totalOver c a | .mostOver c a | .leastOver c a => declaredRefsC c ++ declaredRefsE a
+    | _ => []
+
+  def declaredRefsC : Cond → List ResRef
+    | .lt a b | .le a b | .eq a b => declaredRefsE a ++ declaredRefsE b
+    | .and a b | .or a b => declaredRefsC a ++ declaredRefsC b
+    | .not c => declaredRefsC c
+    | _ => []
+end
+
+mutual
+  def declaredRefsF : Effect → List ResRef
+    | .transfer _ _ _ amount => declaredRefsE amount
+    | .movePiece .. => []
+    | .forEach c body | .when c body => declaredRefsC c ++ declaredRefsAll body
+
+  def declaredRefsAll : List Effect → List ResRef
+    | [] => []
+    | e :: es => declaredRefsF e ++ declaredRefsAll es
+end
+
+/-- The goods whose declarations this law reads, or `none` if it reads one it does not name (`harvested`), so it
+could read any. -/
+def Law.declaredGoods (L : Law) : Option (List Res) :=
+  let refs := L.clauses.flatMap fun c => declaredRefsAll c.effects
+  refs.foldl (fun acc r => match acc, r with
+    | some xs, .lit x => some (if xs.contains x then xs else xs ++ [x])
+    | _, _ => none) (some [])
+
 /-- A law's columns of `lawShape`, in that order. -/
 structure LawCounts where
   transfers : Nat := 0
@@ -283,6 +318,13 @@ structure Settings where
   declareAlways : Bool := false
   /-- Do not offer a bank trade that reverses the seat's last bank trade of the same turn. On by default. -/
   blockUndoTrades : Bool := true
+  /-- Do not offer a declaration that would change nothing: the number the seat has already declared of that good
+  this round, or a good that no law in force and no open proposal reads. A law that reads a declaration of a good
+  it does not name keeps every good's declarations. Off by default, so older policies see what they trained on. -/
+  pruneDeclares : Bool := false
+  /-- With `pruneDeclares`, also offer each good's declaration at most once per turn per seat. Off by default. A law
+  that reads declarations at a build could make a mid-turn revision matter, so this is a choice, not a fact. -/
+  declareOncePerTurn : Bool := false
   deriving Inhabited
 
 /-! ## One game's rows -/
