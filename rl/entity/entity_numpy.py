@@ -104,10 +104,12 @@ class EntityNet(FlatNet):
             out.append(s2)
         y = self.decoder @ x
         self._v = float(y[-1])
+        self._raw = None
         logits = y[:-1]
         if self.ptr is not None:
             logits = logits + pointer_scores(rows, x, self.ptr, len(logits), self.acts["place"], self.acts["bank"],
                                              self.E, moves)
+        self._raw = logits
         return logits, y[-1], out
 
 
@@ -117,6 +119,8 @@ class EntityNet(FlatNet):
         mix = next((d for d in parts if d.startswith("mix")), None)
         self.mix = (int(mix[3:].split("c")[0]), float(mix.split("c")[1])) if mix else None
         self.timing = "time" in parts
+        # `two` (with mix): also try "bank trade, then a build it makes legal" (rl/ROUND4.md item 3, two-step value)
+        self.two = "two" in parts
 
     def tick(self, dt):
         self.t_sum += dt
@@ -135,6 +139,7 @@ class EntityNet(FlatNet):
             return None
         cand = legal[np.argsort(-logits[legal])][:k]
         seat, v_now, state = game.seat, self._v, player.state
+        raw = None if self._raw is None else np.array(self._raw[:len(logits)], np.float64)
         best, best_s = None, -np.inf
         for a in cand:
             v = v_now
@@ -150,7 +155,50 @@ class EntityNet(FlatNet):
             sc = float(logits[a]) + c * (v - v_now)
             if sc > best_s:
                 best, best_s = int(a), sc
+        if self.two:
+            a2, s2 = self.two_step(game, seat, state, v_now, raw, c)
+            if a2 is not None and s2 > best_s:
+                best, best_s = a2, s2
         return best
+
+    def two_step(self, game, seat, state, v_now, raw, c, max_trades=8, max_builds=2):
+        """Item 3: a bank trade earns nothing by itself, so one step of lookahead cannot price it. For each legal bank
+        trade that makes a build legal that is not legal now, try the trade, then that build (the policy's best one
+        or two of them), and score the pair by the build's own logit now plus c * (V after both - V now). Returns the
+        trade with the best such score, or None."""
+        bank0, decl0, place0 = self.acts["bank"], self.acts["declare"], self.acts["place"]
+        mask = game.mask()
+        trades = [a for a in np.flatnonzero(mask) if bank0 <= a < decl0]
+        best, best_s, tried = None, -np.inf, 0
+        for a in trades:
+            if tried >= max_trades:
+                break
+            g2 = game.copy()
+            g2.step(int(a))
+            self.t_steps += 1
+            if g2.over or g2.seat != seat:
+                continue
+            m2 = g2.mask()
+            new = [b for b in np.flatnonzero(m2[:len(mask)]) if b >= place0 and not mask[b]]
+            if not new:
+                continue
+            tried += 1
+            new.sort(key=lambda b: -raw[b])
+            for b in new[:max_builds]:
+                g3 = g2.copy()
+                g3.step(int(b))
+                self.t_steps += 1
+                if g3.over:
+                    v = float(g3.rewards()[seat])
+                elif g3.seat == seat:
+                    _, v3, _ = self.forward(g3.obs(), state)
+                    v = float(v3)
+                else:
+                    continue
+                sc = float(raw[b]) + c * (v - v_now)
+                if sc > best_s:
+                    best, best_s = int(a), sc
+        return best, best_s
 
 
 def read_entity_bin(path, tables, E, hidden, layers, act_size, pointer=0, resid=False):
