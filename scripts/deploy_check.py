@@ -181,6 +181,11 @@ def rows_on_disk(path):
     db = sqlite3.connect(path)
     try:
         return db.execute("SELECT COUNT(*) FROM events").fetchone()[0]
+    except sqlite3.OperationalError as e:
+        # The server creates the file a moment before the table. In that gap there are no rows yet.
+        if str(e) == "no such table: events":
+            return 0
+        raise
     finally:
         db.close()
 
