@@ -85,12 +85,12 @@ def langLaw (goods points kinds : Array String) (i : Nat) (forLibrary : Bool) (r
     | 7 => s!"(on-round-end (for-each-player (<= 1 (declared each {R})) (transfer each treasury {R} (min (declared each {R}) (holding each {R}))) (transfer bank each {P} 1)))"
     | 8 => s!"(on-build {K} (if (<= {n} (holding actor {R})) (transfer actor treasury {R} {n}) (transfer bank actor {P} 1)))"
     | 9 => s!"(on-round-end (for-each-player (<= {n} (holding each {R})) (transfer each bank {R} 1) (transfer treasury each {P} 1)))"
-    | 10 => s!"(now (for-each-player (< (points each) {n + 1}) (transfer bank each {R} 2)))"
+    | 10 => s!"(now (for-each-player (< (points each) {n + 10}) (transfer bank each {R} 2)))"
     | _ => "(repeal 0)"
   return (s!"(law \"Law {i}\" {body})", r)
 
-/-- A world of the pack, its library of laws and its spots' places. -/
-def make (seed : Nat) : Except String (GameDef × Array (Law × String) × Array (Float × Float)) := do
+/-- A general world of the pack (style 0), its library of laws and its spots' places. -/
+def makeGeneral (seed : Nat) : Except String (GameDef × Array (Law × String) × Array (Float × Float)) := do
   let mut r : Rng := ⟨UInt64.ofNat seed * 0x9E3779B97F4A7C15 + 0x51ED⟩
   let (nhex, r1) := r.range 14 30; r := r1
   let (hexes, r1) := patch nhex r; r := r1
@@ -199,11 +199,150 @@ def make (seed : Nat) : Except String (GameDef × Array (Law × String) × Array
   let library := (parsed names texts).toArray
   return (G, library, normalised (spots.map (·.toPixel 1.0)))
 
+/-- Tiles over these hexes: a good from `pool` with a number, or barren with chance `1 / barrenOneIn`. `lowPips`
+draws numbers from the dice's ends, where they come up least. -/
+def tilesFor (hexes : List Hex) (pool : Array String) (barrenOneIn dice sides : Nat) (lowPips : Bool) (r : Rng) :
+    List TileDef × Rng := Id.run do
+  let mut r := r
+  let mut out : List TileDef := []
+  let lo := dice
+  let hi := dice * sides
+  let mid := (lo + hi) / 2
+  for h in hexes do
+    let (barren, r1) := r.range 0 (barrenOneIn - 1); r := r1
+    let (a, r1) := r.range 0 (pool.size - 1); r := r1
+    let (num, r1) := if lowPips then
+        let (side, r1) := r.range 0 1
+        let (k, r2) := r1.range 0 1
+        (if side == 0 then lo + k else hi - k, r2)
+      else r.range (mid - 2) (mid + 2)
+    r := r1
+    out := out ++ [if barren == 0 then { hex := h, res := none, number := none }
+                   else { hex := h, res := some pool[a]!, number := some num }]
+  return (out, r)
+
+/-- The laws of a shaped world, its library, its spots' places, from its game and law texts. -/
+def finish (G0 : GameDef) (rs : Array String) (found : List String) (goods points kinds : Array String) (r : Rng)
+    (spots : List Vertex) : GameDef × Array (Law × String) × Array (Float × Float) := Id.run do
+  let names := rs.toList
+  let mut G := G0
+  for (L, _) in parsed names found do
+    let G' := { G with foundingLaws := G.foundingLaws ++ [L] }
+    if G'.checks then G := G'
+  let mut r := r
+  let spotKinds := (G0.pieces.filter fun d => match d.placement with | .spot => true | _ => false).map (·.name) |>.toArray
+  let mut texts : List String := []
+  for j in [0:10] do
+    -- One law in three from the older templates, which include a new piece; the rest from the law language.
+    let (t, r1) := if j % 3 == 0 then lawTexts rs kinds spotKinds (100 + j) r else langLaw goods points kinds (100 + j) true r
+    r := r1
+    texts := texts ++ [t]
+  return (G, (parsed names texts).toArray, normalised (spots.map (·.toPixel 1.0)))
+
+/-- Style 1, **chains**: a chain of 2 or 3 steps on a spot. A fort replaces a hut and costs goods the board barely
+makes, so it is funded by bank trades at a rate of 2 or 3. A keep attaches to a fort, and in half the worlds a spire
+attaches to the keep; they cost a good that counts as a point, which a fort earns when it is built, so a seat
+turns held points into more points by climbing. The board is poor (a third of tiles barren, numbers from the dice's
+ends), but every seat gets a lump of the board's goods at the end of round 1, so a seat that converts it well moves
+first. -/
+def makeChain (seed : Nat) : Except String (GameDef × Array (Law × String) × Array (Float × Float)) := do
+  let mut r : Rng := ⟨UInt64.ofNat seed * 0xD1B54A32D192ED03 + 0xC4A1⟩
+  let (nhex, r1) := r.range 16 26; r := r1
+  let (hexes, r1) := patch nhex r; r := r1
+  let (nres, r1) := r.range 5 7; r := r1
+  let rs := resNames.extract 0 nres
+  let star := rs[nres - 1]!
+  let nboard := (nres - 1) / 2 + 1
+  let board := rs.extract 0 nboard
+  let scarce := rs.extract nboard (nres - 1)
+  -- About one tile in twelve makes a scarce good; the rest make board goods. No tile makes the point good.
+  let pool := board ++ board ++ board ++ board ++ board ++ board ++ board ++ board ++ board ++ board ++ board ++ scarce
+  let (tiles, r1) := tilesFor hexes pool 3 2 6 true r; r := r1
+  let spots := spotsOf tiles
+  let (three, r1) := r.range 0 1; r := r1
+  let (n1, r1) := r.range 1 3; r := r1
+  let (n2, r1) := r.range 1 3; r := r1
+  let s0 := scarce[0]!
+  let s1 := scarce[scarce.size - 1]!
+  let b0 := board[0]!
+  let b1 := board[1 % board.size]!
+  let mut pieces : List PieceDef :=
+    [ { name := "hut", cost := [(b0, 1), (b1, 1)], points := 1, placement := .spot, yield := 1, limit := 5 }
+    , { name := "path", cost := [(b0, 1)], points := 0, placement := .link, yield := 0, limit := 12 }
+    , { name := "fort", cost := [(b1, 2), (s0, n1)], points := 2, placement := .upgrade "hut", yield := 2, limit := 4 }
+    , { name := "keep", cost := [(star, 2), (s1, n2)], points := 4, placement := .attach "fort", yield := 0, limit := 4 } ]
+  if three == 1 then
+    pieces := pieces ++ [{ name := "spire", cost := [(star, 3), (b0, 2)], points := 6, placement := .attach "keep"
+                           yield := 0, limit := 2 }]
+  pieces := pieces.map fun d => { d with cost := (d.cost.foldl (fun acc (g, k) =>
+      if acc.any (·.1 == g) then acc.map (fun (h, m) => if h == g then (h, m + k) else (h, m)) else acc ++ [(g, k)]) []) }
+  let (bank, r1) := r.range 2 3; r := r1
+  let (target, r1) := r.range 18 26; r := r1
+  let (rounds, r1) := r.range 10 12; r := r1
+  let (lump, r1) := r.range 4 8; r := r1
+  let G0 : GameDef :=
+    { name := s!"Pack chain world {seed}"
+      resources := rs.toList.map fun n => { name := n, stock := 999 }
+      pieces, map := { spotCount := spots.length, links := linksOf tiles, regions := regionsOf tiles }
+      diceCount := 2, diceSides := 6, targetPoints := target, rounds, bankRate := bank
+      setupPieces := ["hut", "path", "hut", "path"] }
+  if !G0.checks then throw s!"pack chain world {seed} does not pass G.checks"
+  let found :=
+    [ s!"(law \"A start\" (on-round-end (for-each-player (= round 1) (transfer bank each {b0} {lump}) (transfer bank each {b1} {lump}))))"
+    , s!"(law \"Forts pay\" (set-worth {star} 1) (on-build fort (transfer bank actor {star} 2)))" ]
+  let ks := (pieces.map (·.name)).toArray
+  return finish G0 rs found board #[star] ks r spots
+
+/-- Style 2, **fast**: a rich board (few barren tiles, numbers from the dice's middle), cheap pieces, a good that
+counts as points and is paid for building, and a target that a seat reaches by about round 6 to 8 only if it builds
+every turn. A seat that waits falls behind fast, and the round limit is near. -/
+def makeFast (seed : Nat) : Except String (GameDef × Array (Law × String) × Array (Float × Float)) := do
+  let mut r : Rng := ⟨UInt64.ofNat seed * 0xA0761D6478BD642F + 0x5A57⟩
+  let (nhex, r1) := r.range 18 30; r := r1
+  let (hexes, r1) := patch nhex r; r := r1
+  let (nres, r1) := r.range 4 6; r := r1
+  let rs := resNames.extract 0 nres
+  let goods := rs.extract 0 (nres - 1)
+  let star := rs[nres - 1]!
+  let (tiles, r1) := tilesFor hexes goods 10 2 6 false r; r := r1
+  let spots := spotsOf tiles
+  let g (i : Nat) := goods[i % goods.size]!
+  let (a, r1) := r.range 0 (goods.size - 1); r := r1
+  let pay := 1
+  let worth := 1
+  let pieces : List PieceDef :=
+    [ { name := "hut", cost := [(g a, 1), (g (a + 1), 1)], points := 1, placement := .spot, yield := 1, limit := 6 }
+    , { name := "path", cost := [(g (a + 2), 1)], points := 0, placement := .link, yield := 0, limit := 15 }
+    , { name := "fort", cost := [(g (a + 1), 2), (g (a + 3), 1)], points := 2, placement := .upgrade "hut", yield := 2
+        limit := 5 } ]
+  let pieces := pieces.map fun d => { d with cost := (d.cost.foldl (fun acc (gd, k) =>
+      if acc.any (·.1 == gd) then acc.map (fun (h, m) => if h == gd then (h, m + k) else (h, m)) else acc ++ [(gd, k)]) []) }
+  let (bank, r1) := r.range 2 4; r := r1
+  let (target, r1) := r.range 22 30; r := r1
+  let (rounds, r1) := r.range 8 10; r := r1
+  let G0 : GameDef :=
+    { name := s!"Pack fast world {seed}"
+      resources := rs.toList.map fun n => { name := n, stock := 999 }
+      pieces, map := { spotCount := spots.length, links := linksOf tiles, regions := regionsOf tiles }
+      diceCount := 2, diceSides := 6, targetPoints := target, rounds, bankRate := bank
+      setupPieces := ["hut", "path", "hut", "path"] }
+  if !G0.checks then throw s!"pack fast world {seed} does not pass G.checks"
+  let found := [s!"(law \"Building pays\" (set-worth {star} {worth}) (on-build hut (transfer bank actor {star} {pay})) (on-build fort (transfer bank actor {star} {pay + 1})))"]
+  let ks := (pieces.map (·.name)).toArray
+  return finish G0 rs found goods #[star] ks r spots
+
+/-- A world of the pack in a style: a general world (0), a chain world (1) or a fast world (2). -/
+def make (seed : Nat) (style : Nat := 0) : Except String (GameDef × Array (Law × String) × Array (Float × Float)) :=
+  match style with
+  | 1 => makeChain seed
+  | 2 => makeFast seed
+  | _ => makeGeneral seed
+
 /-- The tables of world `n` of a set (`train` or `val`). A seed whose world fails the checks is skipped: the next
 seed is tried, so every `n` has a world. -/
 def world (set : String) (n : Nat) : Tables := Id.run do
   for k in [0:64] do
-    match make (seedOf set n + 7919 * k) with
+    match make (seedOf set n + 7919 * k) (n % 3) with
     | .ok (G, library, xy) => return Tables.make s!"pack-{set}-{n}" G Charter.minSeats Charter.maxSeats library xy
     | .error _ => pure ()
   return default
