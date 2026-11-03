@@ -31,10 +31,12 @@ If you've played Catan, Charter will feel familiar. Now imagine that Catan guara
 
 Charter is inspired by:
 
-- **Catan**, for its complexity, its table talk and its fun gameplay loop.
-- **SimCity and Civ**, for a 3D isometric board that seems to grow on its own as you play.
-- **Paradox games, RimWorld and Dwarf Fortress**, for the stories that emerge.
-- **Nomic**, for obvious reasons.
+- **Catan**'s complexity, table talk and structured gameplay loop.
+- **SimCity and Civ**, 3D isometric art style that grows as you play.
+- **Paradox games, RimWorld and Dwarf Fortress**, emergent storytelling.
+- [Nomic](https://www.nomic.net/), for obvious reasons.
+
+(end human text)
 
 ## Play it
 
