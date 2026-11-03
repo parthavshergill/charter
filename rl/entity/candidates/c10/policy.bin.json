@@ -1,0 +1,42 @@
+{
+ "format": "puffer-entity",
+ "encoder": "entity",
+ "layout": 2,
+ "obs_size": 15177,
+ "act_size": 516,
+ "hidden": 128,
+ "layers": 1,
+ "entity_dim": 32,
+ "pointer": 1,
+ "stale_wait": 1,
+ "steps": 41287680,
+ "train_args": "r3-long2",
+ "commit": "823e4e6",
+ "settings": {
+  "vote_mode": "bot",
+  "move_rows": true,
+  "declare_always": true,
+  "stale_wait": true,
+  "prune_declares": true,
+  "declare_once_per_turn": true
+ },
+ "moves": 1,
+ "name": "candidates/c10/policy.bin",
+ "distilled_from": "c7-pruned/policy.bin",
+ "expert_iter": {
+  "c": 100.0,
+  "epochs": 3,
+  "lr": 0.0003,
+  "decisions": 321787,
+  "data": [
+   "entity2/ei/r1/part-100..163.npz (C9 + mix4c100)",
+   "entity2/ei/r2/part-200..263.npz (ei1 + mix4c100)"
+  ],
+  "imitate": 0.0,
+  "no_declare_bonus": true
+ },
+ "moves_order": "ranked",
+ "candidate": 10,
+ "note": "CANDIDATE 9's weights distilled toward the decision-time blend's improved moves (rl/entity/expert_iter.py), no lookahead bonus on declarations; evaluate with the blend off",
+ "distilled_at": "3d9453a (expert_iter.py at daf53a8; data from collect at 2595dd6 and daf53a8)"
+}
