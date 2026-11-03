@@ -36,6 +36,9 @@ typedef float obs_t;
 #define OBS_SIZE CHARTER_BASE_OBS
 #endif
 #define NOOP_ACTION CHARTER_ACTS
+// Declarations' action numbers in layout 2 (rl/layout.json: actions.declare to actions.place), for learner_no_declare.
+#define CHARTER_ACT_DECLARE 259
+#define CHARTER_ACT_PLACE 387
 #define ACT_SIZES {CHARTER_ACTS + 1}
 #define NUM_ATNS 1
 #define REWARD_SEATS 6
@@ -62,6 +65,7 @@ struct Env {
     int bot_policy;
     float bot_share;
     float last_seat_share;
+    int learner_no_declare;  // training only: the learner's mask leaves out declarations (entity4, round 4)
     int playing;           // agents in this game: the seat count, or 1 when bots took the others' seats
     int seats;             // seats in this game
     int seat_choices[SEATS];
@@ -131,6 +135,16 @@ static void write_outputs(Env* env) {
             charter_obs(G(env), a->observations, OBS_SIZE);
             charter_mask(G(env), a->action_mask, CHARTER_ACTS);
             a->action_mask[NOOP_ACTION] = 0;
+            if (env->learner_no_declare) {
+                // Training only: the learner may not declare. If declarations were all it could do, keep the mask.
+                int other = 0;
+                for (int k = 0; k < CHARTER_ACTS; k++) {
+                    other += a->action_mask[k] && (k < CHARTER_ACT_DECLARE || k >= CHARTER_ACT_PLACE);
+                }
+                if (other > 0) {
+                    memset(a->action_mask + CHARTER_ACT_DECLARE, 0, CHARTER_ACT_PLACE - CHARTER_ACT_DECLARE);
+                }
+            }
             env->zeroed[i] = 0;
             env->decided[i] = 1;
         } else if (!env->zeroed[i]) {
@@ -392,6 +406,7 @@ void puf_init(Env* env, Dict* kwargs) {
         env->decided[i] = 0;
     }
     env->stale_wait = (int)opt_num(kwargs, "stale_wait", 0);
+    env->learner_no_declare = (int)opt_num(kwargs, "learner_no_declare", 0);
     int move_rows = (int)opt_num(kwargs, "move_rows", 0);
 #ifdef CHARTER_MOVE_ROWS
     assert(move_rows && "built with CHARTER_MOVE_ROWS: set env.move_rows = 1");
