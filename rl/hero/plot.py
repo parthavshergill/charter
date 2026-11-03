@@ -176,14 +176,8 @@ def draw(theme_name, rows, sonnet, out_paths):
         fig.text(0.07, 0.92, f"Trained with PPO, our bot {verdict}", fontsize=28, fontweight="bold", color=t["ink"])
     fig.text(0.07, 0.865, "Charter, 4 players. Warm-started by copying an older rule-based bot, then trained against "
              "itself and an evolved rival*.", fontsize=16, color=t["ink2"])
-    n_s = sum(r["games"] for r in pts)
-    foot = ("* Evolved by program synthesis [read: Claude keeps rewriting the bot and we keep whatever wins].\n"
-            "The bot it copied is an older rule-based bot. The bot at our tables today is stronger: after more "
-            "training, our bot wins 22% against it across nine worlds, where an equal player wins 25%.\n"
-            "Bot games: 800 per point on Island and Not Catan, with 95% intervals.\n"
-            f"Sonnet: {n_s} games on Island, our bot in every seat in turn. Sonnet gets only our bot's moves "
-            "(no laws, talk or player trades). Small samples, so wide bars.")
-    fig.text(0.07, 0.025, foot, fontsize=11, color=t["muted"], va="bottom", linespacing=1.6)
+    foot = "* Made by evolutionary program synthesis [i.e. Claude keeps rewriting the bot and we keep whatever wins]."
+    fig.text(0.07, 0.05, foot, fontsize=13, color=t["muted"], va="bottom", linespacing=1.6)
     for path in out_paths:
         fig.savefig(path, facecolor=t["bg"], dpi=120)
     plt.close(fig)
