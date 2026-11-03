@@ -129,6 +129,8 @@ def build_puffer(move_rows=False, out="puffer", patch=True, encoder="flat"):
           else f"cd {PUFFER} && git checkout -q -- src"))
     lib = f"{REPO}/rl/build"
     extra = f"-L{lib} -lcharter_rl -Xlinker=-rpath -Xlinker={lib}" + (" -DCHARTER_MOVE_ROWS" if move_rows else "")
+    if os.environ.get("CHARTER_STALE_WAIT") == "1":  # waiting players keep their last observation (charter.h)
+        extra += " -DCHARTER_STALE_WAIT"
     if encoder != "flat":
         e = encoder_dir(encoder)
         if os.path.isdir(f"{e}/patches"):
@@ -173,6 +175,12 @@ def train(run: str, train_args: str = "", seconds: int = 600, move_rows: bool = 
     t0 = time.time()
     sh("ln -sf /usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1 /usr/lib/x86_64-linux-gnu/libnvidia-ml.so; "
        "nvidia-smi --query-gpu=name,driver_version --format=csv,noheader")
+    extra = json.loads(meta_extra) if meta_extra else {}  # rl/entity/puffer_build.sh reads these two
+    os.environ["CHARTER_ENTITY_DIM"], os.environ["CHARTER_POINTER"] = str(extra.get("entity_dim", 32)), str(extra.get("pointer", 0))
+    os.environ["CHARTER_STALE_WAIT"] = str(extra.get("stale_wait", 0))
+    os.environ["CHARTER_MOVE_ROWS"] = "1" if move_rows else "0"   # rl/entity/puffer_build.sh: the moves pointer
+    os.environ["CHARTER_NO_END_LINEAR"] = str(extra.get("no_end_linear", 0))   # end turn from its moves row only
+    os.environ["CHARTER_RESID"] = str(extra.get("resid", 0))   # the encoder's residual block (CE_RESID)
     code, text = build_puffer(move_rows, patch=patch, encoder=encoder)
     if code != 0:
         return {"build": code, "tail": text[-2000:]}
@@ -231,13 +239,17 @@ def train(run: str, train_args: str = "", seconds: int = 600, move_rows: bool = 
 
 
 @app.function(cpu=8, memory=8192, timeout=3 * 3600, volumes={VOL: vol})
-def evaluate(subjects: list, out: str, games: int = 200, quick: bool = False, opponents: str = "", logs: int = 2):
+def evaluate(subjects: list, out: str, games: int = 200, quick: bool = False, opponents: str = "", logs: int = 2,
+             eval_args: str = ""):
     """Run rl/eval on these subjects (`random`, `hand`, `champion`, or policy paths on the volume) and save the report,
     with `logs` saved games per table in `out/games/`."""
     vol.reload()
+    if "turnreset" in out:  # rl/reference/policy.py: reset the GRU state to its waiting fixed point after end turn
+        os.environ["CHARTER_TURN_RESET"] = "1"
+    os.environ["CHARTER_DIAG_DIR"] = f"{out}/diag"  # rl/entity/entity_numpy.py: time per decision, for `#time`
     opp = f"--opponents {shlex.quote(opponents)}" if opponents else ""
     code, text = sh(f"cd {SRC}/.. && python3 rl/eval/eval.py {' '.join(map(shlex.quote, subjects))} --games {games} "
-                    f"--jobs 8 --out {out} {'--quick' if quick else ''} {opp} --logs {logs}")
+                    f"--jobs 8 --out {out} {'--quick' if quick else ''} {opp} --logs {logs} {eval_args}")
     vol.commit()
     return {"exit": code, "report": open(f"{out}/report.md").read() if os.path.exists(f"{out}/report.md") else text[-4000:]}
 
@@ -288,7 +300,7 @@ def guard(max_dollars, gpu, cpu, gib, want_seconds):
 def main(action: str = "test", run: str = "smoke", minutes: float = 10, max_dollars: float = 1.0,
          train_args: str = "", games: int = 200, subjects: str = "", quick: bool = False, move_rows: bool = False,
          no_patch: bool = False, encoder: str = "flat", meta_extra: str = "", opponents: str = "", logs: int = 2,
-         eval_name: str = "eval"):
+         eval_name: str = "eval", eval_args: str = ""):
     if action == "test":
         total = guard(max_dollars, None, 4, 8, 1500)
         print(json.dumps(test.with_options(timeout=total).remote(quick), indent=1))
@@ -307,7 +319,7 @@ def main(action: str = "test", run: str = "smoke", minutes: float = 10, max_doll
         subs = subjects.split(",") if subjects else ["random", "hand"]
         bots = ("random", "hand", "champion", "champion-closed", "table")
         r = evaluate_.remote([s if s in bots or s.startswith("/") else f"{VOL}/{s}" for s in subs],
-                            f"{VOL}/{run}/{eval_name}", games, quick, opponents, logs)
+                            f"{VOL}/{run}/{eval_name}", games, quick, opponents, logs, eval_args)
         print(r["report"])
     elif action == "wild":
         # The honesty filter over every wild world, in parts of 1024 worlds, 8 CPUs each. Verdicts go to the volume
