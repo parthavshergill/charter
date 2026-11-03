@@ -21,13 +21,19 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("reports", nargs="+")
     ap.add_argument("--opponent", default="table")
+    ap.add_argument("--laws", action="store_true", help="games with laws (the wild sets are judged with laws on)")
     a = ap.parse_args()
     for path in a.reports:
         for subject, rows in json.load(open(path)).items():
-            rows = [r for r in rows if r["opponent"] == a.opponent and r["phase"] == "whole" and not r["laws"]]
+            rows = [r for r in rows if r["opponent"] == a.opponent and r["phase"] == "whole" and (a.laws or not r["laws"])]
             by = {r["game"]: r for r in rows}
-            if not all(w in by for w in ORDER):
-                print(f"{subject}: not all nine worlds in {path}")
+            if not all(w in by for w in ORDER):   # another world set (wild, pack): each game id on its own
+                print(subject)
+                for g, r in by.items():
+                    print(f"  {g}: {100 * r['wins'] / r['games']:.1f} (clean {100 * r.get('wins_no_declare', float('nan')) / r['games']:.1f})"
+                          f" | limit wins {100 * r['win_how']['limit'] / max(r['wins'], 1):.0f}% of wins"
+                          f" | declarations {r.get('declares', 0) / r['games']:.2f} a game, most {r.get('most_declares_in_turn', 0)}"
+                          f" | {r['games']} games")
                 continue
             pct = {w: 100 * by[w]["wins"] / by[w]["games"] for w in ORDER}
             clean = {w: 100 * by[w].get("wins_no_declare", float("nan")) / by[w]["games"] for w in ORDER}
