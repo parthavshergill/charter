@@ -5,7 +5,7 @@
   </picture>
 </p>
 
-Charter is a multiplayer tabletop economy game with a fixed constitution and an evolving ruleset.
+Charter is a multiplayer tabletop economy game engine with a fixed constitution and an evolving ruleset.
 
 If you've played Catan, Charter will feel familiar. Now imagine that Catan guaranteed a set of fairness\* properties nobody could change, and let players add any rule they can describe. You write a rule in plain English, the clerk (Claude) drafts it as a law, and the table votes. If it passes, it runs.
 
